@@ -15,14 +15,14 @@ format:
 
 ## Summary
 
-Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 7 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
+Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
 
 ## Core Skills/Competencies
 
 - **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
 - **Biochemistry**: Protein purification from bacterial and fungi, Electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays
 - **Yeast Genetics**: genetic screen design and validation, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and CRISPR-based genome editing, drug-sensitivity assays, flow-cytometry analysis,
-- **Bioinformatics**: Multiple-sequence alignment, `PyMOL`, Analysis of whole-genome sequencing data (alignment, variant calling, CHIP-seq, track visualization, peak calling)
+- **Bioinformatics**: Multiple-sequence alignment, PyMOL, Analysis of whole-genome sequencing data (alignment, variant calling, CHIP-seq, track visualization, peak calling)
 - **Programming**: Basic knowledge of R and Python
 - **Cell Biology**: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System
 
@@ -31,4 +31,59 @@ Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecula
 ### MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA
 **Graduate student researcher**
 *2016-2023*
-Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during *Saccharomyces cerevisiae* DNA replication.
+Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during _Saccharomyces cerevisiae_ DNA replication.
+  - Design and validation of a genetic screen for suppressors of a lethal allele of the _ORC4_ gene. Performed the analysis of the whole-genome sequencing data
+  - Genetic characterization of the suppressor alleles through allele-specificity and drug-sensitivity experiments.
+  - Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
+  - CHIP-seq analysis of ORC and Mcm2-7 complex. Performed analysis of the sequencing data.
+
+### Additional research experience
+UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP), San Juan, PR                                           2012-2016
+*Undergraduate research assistant* (2013-2015)
+Lipidic Sponge Phase crystallization of the nicotinic acetylcholine receptor derived from Torpedo californica
+
+*Undergraduate research assistant* (2012-2013)
+Aerogel Synthesis derived from ash of native algae around the island of Puerto Rico
+
+UNIVERSITY OF NORTH CAROLINA - CHAPEL HILL (UVA), Charlottesville, VA                                      2014
+*Undergraduate summer research assistant*
+Characterizing minimal aa-tRNA synthetase ATPase domains derived from opposite strands of a gene
+
+MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                                                 2015
+*Undergraduate summer research assistant*
+Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface display using fluorescence polarization
+
+### Education
+*Ph.D. in Biology*, MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA, 2023
+  - Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in Saccharomyces cerevisiae
+
+*B.Sc. in Cellular and Molecular Biology*, UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP), San Juan, PR, 2016
+
+### Publications
+  - Martinez-Rodriguez, L., Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., . Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. Journal of Biological Chemistry, 290(32), 19710-19725. http://doi.org/10.1074/jbc.M115.642876
+
+### Teaching Experience
+MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                              2017 and 2020
+Teaching assistant for MIT Department of Biology
+Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing process for introductory biology and biochemistry courses.
+
+### Volunteer Work
+MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                                     2016-2020
+*Summer research program volunteer* (2017-2020)
+Participated in weekly meetings to provide guidance and advice on research and graduate school to undergraduate students from underrepresented backgrounds assisting to the MIT-biology summer research program.
+
+*Summer research program mentor* (2019)
+Mentored and trained one undergraduate student to perform molecular and biochemical assays
+
+*Summer research program application review committee member* (2018-2023)
+Collaborated with other committee members to review and select candidates best suited for the summer research program.
+
+*Member of the BioRefs Volunteer Group* (2017-2020)
+Received conflict-management training, organized monthly community events, served as a confidential for other graduate students
+
+*Building 68 Data-and-Drinks Seminar Series* (2017-2020)
+Organized biweekly seminars where graduate students and post-doc present their work
+
+### Selected presentations
+  - MIT Cell Biology Supergroup, oral presentation. Oral presentation. Cambridge, MA, 2018.
+  - Department of Biology Building 68 Annual Summer Retreat. Oral presentation. Plymouth, MA, 2021.
