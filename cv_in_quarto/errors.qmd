@@ -61,3 +61,18 @@ The solution was to set the enconding to utf8 in the yaml header.
     fontsize: 11pt
 ```
 
+### Custom function does not run from neovim.
+- Command
+```{neovim}
+:! view_files -t pdf cv_in_quarto
+```
+- Commit hash
+ed339e7a1add733c75bf04945df8c7f119d9da1e
+- Error
+The script is executed in a non-interactive non-login shell. .bashrc is never accesible.
+```{error}
+/bin/bash: line 1: view_files: command not found shell returned 127
+```
+- Solution
+Turn function into script or run terminal
+Remember to exit using Ctrl+\ Ctrl+n
