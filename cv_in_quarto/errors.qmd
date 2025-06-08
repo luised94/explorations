@@ -34,3 +34,30 @@ fc-match Arial
 quarto render cv_in_quarto/luis_martinez_cv.qmd
 ```
 
+### Digraphs do not show up
+- Command
+```{bash}
+# see the resulting pdf.
+quarto render cv_in_quarto/luis_martinez_cv.qmd
+```
+- Commit hash
+a810d19c8aba6b2d3e8830f2dabdbc6927600fa5
+- Error
+```{error}
+Digraphs do not show in the pdf. The digraphs are the accented i present in my lastname.
+```
+- Solution
+Tried putting it in latex but it doesnt work if it is in the yaml.
+```{attempt}
+title: "Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D."
+ERROR: YAMLException: unknown escape sequence (2:22)
+```
+The solution was to set the enconding to utf8 in the yaml header.
+```{quarto}
+  pdf:
+    mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
+    fontsize: 11pt
+```
+

@@ -1,13 +1,16 @@
 ---
-title: "Luis E. Martínez-Rodríguez, Ph.D."
+title: "Luis E. MartÃ­nez-RodrÃ­guez, Ph.D."
 author: |
   [linkedin.com/in/luis-martinez-1394b619a](https://linkedin.com/in/luis-martinez-1394b619a)
   luised94@mit.edu | github.com/luised94
 format:
   pdf:
+    pdf-engine: xelatex
     mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
     fontsize: 11pt
-geometry: margin=1in
+    geometry: margin=1in
 ---
 
 ## Summary

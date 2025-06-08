@@ -11,3 +11,6 @@ Notes are split by day.
 ## 2025-06-08
 Was considering doing it manually but wanted to see if GPT4o could create a template based on the picture. To achieve this, I took a screenshot, used illustrator to crop and then just told GPT, via the web interface, to give me a template.
 That is the basis of the first version of the file.
+
+Encountered the error that Arial was not available. Solved pretty easily by install a package.
+Now there are some problems with some characters displaying but I think I can add all of the content first and then start mucking with the quarto features
