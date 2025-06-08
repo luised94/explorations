@@ -1,0 +1,30 @@
+---
+title: "Luis E. Mart¡nez-Rodr¡guez, Ph.D."
+format: pdf
+author: |
+  [linkedin.com/in/luis-martinez-1394b619a](https://linkedin.com/in/luis-martinez-1394b619a)
+  luised94@mit.edu | github.com/luised94
+mainfont: "Arial"
+fontsize: 11pt
+geometry: margin=1in
+---
+
+## Summary
+
+Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 7 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
+
+## Core Skills/Competencies
+
+- **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
+- **Biochemistry**: Protein purification from bacterial and fungi, Electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays
+- **Yeast Genetics**: genetic screen design and validation, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and CRISPR-based genome editing, drug-sensitivity assays, flow-cytometry analysis,
+- **Bioinformatics**: Multiple-sequence alignment, `PyMOL`, Analysis of whole-genome sequencing data (alignment, variant calling, CHIP-seq, track visualization, peak calling)
+- **Programming**: Basic knowledge of R and Python
+- **Cell Biology**: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System
+
+## Experience
+
+### MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA
+**Graduate student researcher**
+*2016-2023*
+Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during *Saccharomyces cerevisiae* DNA replication.
