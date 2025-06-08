@@ -14,9 +14,11 @@ Convert my word-based curriculum vitae into a quarto-based document. Develop sim
 - Adjust based on job application
 
 ## Dependencies
+All of the development is done on WSL1 or WSL2 on Windows.
+
 - quarto/1.7.31: See my_config repository for specific installation instructions.
+- ttf-mscorefonts-installer: install via apt.
 - Any browser? I use Brave but I dont know how using other browsers will affect this. I am sure you can just open the files in any browser to inspect.
 
-All of the development is done on WSL1 or WSL2 on Windows.
 
 ## References

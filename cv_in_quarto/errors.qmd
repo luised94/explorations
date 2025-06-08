@@ -1,0 +1,36 @@
+---
+title: "Errors encountered during cv_in_quarto project completion"
+date: 2025-06-08
+---
+
+# Overview
+Erros encountered during completion of the cv_in_quarto project. Organized by date encountered. 
+Each one will include the cli command or commit, the error and the solution.
+To revisit the state:
+git checkout <commit-hash>
+
+## 2025-06-08
+### Arial not found
+- Command
+```{bash}
+quarto render cv_in_quarto/luis_martinez_cv.qmd
+```
+- Commit hash
+1b83ac541932effd0bf01c4d1763372678a67c18
+- Error
+```{error}
+ERROR:
+compilation failed- no matching packages
+Package fontspec Error: The font "Arial" cannot be found.
+```
+- Solution
+```{bash}
+sudo apt update
+sudo apt install ttf-mscorefonts-installer
+fc-cache -fv
+# Confirm
+fc-match Arial
+# Render to confirm
+quarto render cv_in_quarto/luis_martinez_cv.qmd
+```
+

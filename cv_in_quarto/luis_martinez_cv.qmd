@@ -1,11 +1,12 @@
 ---
 title: "Luis E. Martínez-Rodríguez, Ph.D."
-format: pdf
 author: |
   [linkedin.com/in/luis-martinez-1394b619a](https://linkedin.com/in/luis-martinez-1394b619a)
   luised94@mit.edu | github.com/luised94
-mainfont: "Arial"
-fontsize: 11pt
+format:
+  pdf:
+    mainfont: "Arial"
+    fontsize: 11pt
 geometry: margin=1in
 ---
 
