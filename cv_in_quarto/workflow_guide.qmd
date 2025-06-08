@@ -1,0 +1,13 @@
+---
+title: "Development Log of cv_in_quarto"
+date: 2025-06-08
+---
+
+# Intro
+
+Write down notes, ideas, thoughts while working on the small cv_in_quarto project.
+Notes are split by day.
+
+## 2025-06-08
+Was considering doing it manually but wanted to see if GPT4o could create a template based on the picture. To achieve this, I took a screenshot, used illustrator to crop and then just told GPT, via the web interface, to give me a template.
+That is the basis of the first version of the file.

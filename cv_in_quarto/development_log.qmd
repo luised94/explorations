@@ -1,0 +1,22 @@
+---
+title: "Workflow guide of cv_in_quarto"
+date: 2025-06-08
+---
+
+# Overview
+Convert my word-based curriculum vitae into a quarto-based document. Develop simple iteration cycle for working with quarto files.
+
+# Goals
+### Required
+- Use quarto as document format for my cv instead of word
+- Replicate current version using quarto
+### Optional
+- Adjust based on job application
+
+## Dependencies
+- quarto/1.7.31: See my_config repository for specific installation instructions.
+- Any browser? I use Brave but I dont know how using other browsers will affect this. I am sure you can just open the files in any browser to inspect.
+
+All of the development is done on WSL1 or WSL2 on Windows.
+
+## References
