@@ -1,24 +1,17 @@
 ---
-title: "Workflow guide of cv_in_quarto"
+title: "Development Log of cv_in_quarto"
 date: 2025-06-08
 ---
 
-# Overview
-Convert my word-based curriculum vitae into a quarto-based document. Develop simple iteration cycle for working with quarto files.
+# Intro
 
-# Goals
-### Required
-- Use quarto as document format for my cv instead of word
-- Replicate current version using quarto
-### Optional
-- Adjust based on job application
+Write down notes, ideas, thoughts while working on the small cv_in_quarto project.
+Notes are split by day.
 
-## Dependencies
-All of the development is done on WSL1 or WSL2 on Windows.
+## 2025-06-08
+Was considering doing it manually but wanted to see if GPT4o could create a template based on the picture. To achieve this, I took a screenshot, used illustrator to crop and then just told GPT, via the web interface, to give me a template.
+That is the basis of the first version of the file.
 
-- quarto/1.7.31: See my_config repository for specific installation instructions.
-- ttf-mscorefonts-installer: install via apt.
-- Any browser? I use Brave but I dont know how using other browsers will affect this. I am sure you can just open the files in any browser to inspect.
-
-
-## References
+Encountered the error that Arial was not available. Solved pretty easily by install a package.
+Now there are some problems with some characters displaying but I think I can add all of the content first and then start mucking with the quarto features
+Just had to set the encoding to utf8.
