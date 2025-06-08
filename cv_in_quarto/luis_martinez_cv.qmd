@@ -1,5 +1,5 @@
 ---
-title: "Luis E. Mart¡nez-Rodr¡guez, Ph.D."
+title: "Luis E. Martínez-Rodríguez, Ph.D."
 format: pdf
 author: |
   [linkedin.com/in/luis-martinez-1394b619a](https://linkedin.com/in/luis-martinez-1394b619a)
