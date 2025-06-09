@@ -35,7 +35,7 @@ format:
   \normalsize
   Curriculum Vitae \\
   \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \\
-  luised94@mit.edu \,\textbar\, [github.com/luised94](https://github.com/luised94)
+  luised94@mit.edu \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
 \end{center}
 ```
 \vspace{-0.5em}

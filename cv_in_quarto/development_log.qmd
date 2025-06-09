@@ -62,3 +62,8 @@ Set spacing in header to 0 was too much.
 ```
 Set line break with two spaces and newline. Add \vspace{-1.3em} selectively. Add \vspace the the cvsection command.
 Always do a crazy number first to see effect then adjust.
+
+### title
+Disable by removing the title. Add manually and control spacing.
+
+Think that about does it. Basically replicated the word document at this point. Mostly need to adjust the actual content.
