@@ -52,3 +52,13 @@ While wrapping all of the instances using a macro, realized I could have used su
 :%s//\\uline{&}/g
 ```
 Also the ulem package is required for ulem.
+
+### Spacing
+Set spacing in header to 0 was too much.
+```{quarto}
+% Reduce paragraph spacing
+    \setlength{\parskip}{0pt}  % No space between paragraphs
+    \setlength{\parindent}{0pt}  % No paragraph indentation
+```
+Set line break with two spaces and newline. Add \vspace{-1.3em} selectively. Add \vspace the the cvsection command.
+Always do a crazy number first to see effect then adjust.
