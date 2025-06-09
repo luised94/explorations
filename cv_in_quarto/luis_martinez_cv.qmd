@@ -1,10 +1,17 @@
 ---
-title: "Luis E. Martínez-Rodríguez, Ph.D."
-author: |
-  [linkedin.com/in/luis-martinez-1394b619a](https://linkedin.com/in/luis-martinez-1394b619a)
-  luised94@mit.edu | github.com/luised94
+#title: "Luis E. Martínez-Rodríguez, Ph.D."
+#author: |
+#  [linkedin.com/in/luis-martinez-1394b619a](https://linkedin.com/in/luis-martinez-1394b619a)
+#  luised94@mit.edu | github.com/luised94
 format:
   pdf:
+    pdf-engine: xelatex
+    title-block-style: none
+    mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
+    fontsize: 10pt
+    geometry: margin=1in
     include-in-header:
       text: |
         % For custom underlining
@@ -21,14 +28,17 @@ format:
         % These settings make lists very compact.
         \usepackage{enumitem} % Highly recommended package for list customization
         \setlist{itemsep=0pt, parsep=0pt, topsep=0pt, partopsep=0pt}
-    pdf-engine: xelatex
-    mainfont: "Arial"
-    fontenc: "T1"
-    inputenc: "utf8"
-    fontsize: 10pt
-    geometry: margin=1in
 ---
-
+```{=latex}
+\begin{center}
+  {\large \textbf{Luis E. Martínez-Rodríguez, Ph.D.  }}\\[0.5ex]
+  \normalsize
+  Curriculum Vitae \\
+  \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \\
+  luised94@mit.edu \,\textbar\, [github.com/luised94](https://github.com/luised94)
+\end{center}
+```
+\vspace{-0.5em}
 \cvsection{Summary}
 Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
 
@@ -71,17 +81,20 @@ Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface disp
 
 \cvsection{Education}
 
-**Ph.D. in Biology**, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA, 2023  
-  - Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in Saccharomyces cerevisiae
+**Ph.D. in Biology**, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA, 2023
+\vspace{-0.5em}
+
+- Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in Saccharomyces cerevisiae
 
 **B.Sc. in Cellular and Molecular Biology**, \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR, 2016
 
 \cvsection{Publications}
-  - Martinez-Rodriguez, L., Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., . Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. Journal of Biological Chemistry, 290(32), 19710-19725. http://doi.org/10.1074/jbc.M115.642876
+  - \textbf{Martinez-Rodriguez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., . Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. Journal of Biological Chemistry, 290(32), 19710-19725. http://doi.org/10.1074/jbc.M115.642876
 
 \cvsection{Teaching Experience}
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                              2017 and 2020  
 Teaching assistant for MIT Department of Biology
+
   - Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing process for introductory biology and biochemistry courses.
 
 \cvsection{Volunteer Work}
@@ -102,5 +115,7 @@ Received conflict-management training, organized monthly community events, serve
 Organized biweekly seminars where graduate students and post-doc present their work
 
 \cvsection{Selected presentations}
+
   - MIT Cell Biology Supergroup, oral presentation. Oral presentation. Cambridge, MA, 2018.
+
   - Department of Biology Building 68 Annual Summer Retreat. Oral presentation. Plymouth, MA, 2021.
