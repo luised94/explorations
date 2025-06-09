@@ -45,3 +45,10 @@ Add normalem option to restore italics or use latex command \textit{}.
 
 Also the following regex would be useful to move between underscore surrounded words: _\w\+ \+\w\+
 Managed to replace all of them straightforwardly using a register and macro along with a search for exactly three hashes (/#\{3}).
+
+Using the fullunderline custom command caused the whole line to be taken up (because of makebox). Shifted to \uline{} command which does what I want. Remove the fullunderline command from the header. Nice.
+While wrapping all of the instances using a macro, realized I could have used substitution.
+```{vim}
+:%s//\\uline{&}/g
+```
+Also the ulem package is required for ulem.

@@ -8,9 +8,6 @@ format:
     include-in-header:
       text: |
         \usepackage{ulem} % For custom underlining
-        \newcommand{\fullunderline}[1]{%
-          \noindent\makebox[\linewidth][l]{\uline{#1}}%
-        }
     pdf-engine: xelatex
     mainfont: "Arial"
     fontenc: "T1"
@@ -39,7 +36,7 @@ Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecula
 \section*{\underline{\makebox[\linewidth][l]{Experience}}}
 ```
 
-### \fullunderline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}  Cambridge, MA
+### \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}  Cambridge, MA
 **Graduate student researcher** (2016-2023)
 
 Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
@@ -53,7 +50,7 @@ Use of genetic and biochemical assays to understand the function of ATP hydrolys
 \section*{\underline{\makebox[\linewidth][l]{Additional research experience}}}
 ```
 
-UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP), San Juan, PR                                           2012-2016
+\uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR                                           2012-2016
 
 **Undergraduate research assistant** (2013-2015)
 
@@ -63,13 +60,13 @@ Lipidic Sponge Phase crystallization of the nicotinic acetylcholine receptor der
 
 Aerogel Synthesis derived from ash of native algae around the island of Puerto Rico
 
-UNIVERSITY OF NORTH CAROLINA - CHAPEL HILL (UVA), Charlottesville, VA                                      2014
+\uline{UNIVERSITY OF NORTH CAROLINA - CHAPEL HILL (UVA)}, Charlottesville, VA                                      2014
 
 **Undergraduate summer research assistant**
 
 Characterizing minimal aa-tRNA synthetase ATPase domains derived from opposite strands of a gene
 
-MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                                                 2015
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                                                 2015
 
 **Undergraduate summer research assistant**
 
@@ -79,11 +76,11 @@ Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface disp
 \section*{\underline{\makebox[\linewidth][l]{Education}}}
 ```
 
-**Ph.D. in Biology**, MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA, 2023
+**Ph.D. in Biology**, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA, 2023
 
   - Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in Saccharomyces cerevisiae
 
-**B.Sc. in Cellular and Molecular Biology**, UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP), San Juan, PR, 2016
+**B.Sc. in Cellular and Molecular Biology**, \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR, 2016
 
 
 ```{=latex}
@@ -97,7 +94,7 @@ Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface disp
 \section*{\underline{\makebox[\linewidth][l]{Teaching Experience}}}
 ```
 
-MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                              2017 and 2020
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                              2017 and 2020
 
 Teaching assistant for MIT Department of Biology
   - Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing process for introductory biology and biochemistry courses.
@@ -107,7 +104,7 @@ Teaching assistant for MIT Department of Biology
 \section*{\underline{\makebox[\linewidth][l]{Volunteer Work}}}
 ```
 
-MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                                     2016-2020
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                                     2016-2020
 
 **Summer research program volunteer** (2017-2020)
 
