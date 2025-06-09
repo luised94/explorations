@@ -38,3 +38,9 @@ This is the only one that did what I wanted.
 \section*{\underline{\makebox[\linewidth][l]{Summary}}}
 ```
 ```
+```
+Now I used the first mode to add underline to a particular text. Turns out ulem centers by default and turns the markdown way to italicize into underline.
+Add [l] after [\linewidth] to align left.
+Add normalem option to restore italics or use latex command \textit{}.
+
+Also the following regex would be useful to move between underscore surrounded words: _\w\+ \+\w\+

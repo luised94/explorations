@@ -76,3 +76,21 @@ The script is executed in a non-interactive non-login shell. .bashrc is never ac
 - Solution
 Turn function into script or run terminal
 Remember to exit using Ctrl+\ Ctrl+n
+
+### Custom function does not run from neovim.
+- Command
+```{bash}
+quarto render cv_in_quarto/luis_martinez_cv.qmd
+```
+- Commit hash
+ae33a7c5212320d7eba18302d865cb1fc18f83d3
+- Error
+```{error}
+ERROR:
+compilation failed- error
+Undefined control sequence.
+<argument> \fullunderline
+...
+```
+- Solution
+Requires the definition of control sequence in the header. See the underline section in the development_log.qmd.
