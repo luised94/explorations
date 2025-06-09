@@ -8,22 +8,22 @@ format:
     include-in-header:
       text: |
         \usepackage{ulem} % For custom underlining
+        \newcommand{\cvsection}[1]{%
+          \section*{\fontsize{11}{13}\selectfont\underline{\makebox[\linewidth][l]{#1}}}%
+        }
     pdf-engine: xelatex
     mainfont: "Arial"
     fontenc: "T1"
     inputenc: "utf8"
-    fontsize: 11pt
+    fontsize: 10pt
     geometry: margin=1in
 ---
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Summary}}}
-```
+\cvsection{Summary}
+
 Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Core Skills/Competencies}}}
-```
+\cvsection{Core Skills/Competencies}
 
 - **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
 - **Biochemistry**: Protein purification from bacterial and fungi, Electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays
@@ -32,9 +32,7 @@ Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecula
 - **Programming**: Basic knowledge of R and Python
 - **Cell Biology**: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Experience}}}
-```
+\cvsection{Experience}
 
 ### \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}  Cambridge, MA
 **Graduate student researcher** (2016-2023)
@@ -46,11 +44,9 @@ Use of genetic and biochemical assays to understand the function of ATP hydrolys
   - Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
   - CHIP-seq analysis of ORC and Mcm2-7 complex. Performed analysis of the sequencing data.
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Additional research experience}}}
-```
+\cvsection{Additional research experience}
 
-\uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR                                           2012-2016
+\uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR
 
 **Undergraduate research assistant** (2013-2015)
 
@@ -60,21 +56,19 @@ Lipidic Sponge Phase crystallization of the nicotinic acetylcholine receptor der
 
 Aerogel Synthesis derived from ash of native algae around the island of Puerto Rico
 
-\uline{UNIVERSITY OF NORTH CAROLINA - CHAPEL HILL (UVA)}, Charlottesville, VA                                      2014
+\uline{UNIVERSITY OF NORTH CAROLINA - CHAPEL HILL (UVA)}, Charlottesville, VA
 
-**Undergraduate summer research assistant**
+**Undergraduate summer research assistant** (2014)
 
 Characterizing minimal aa-tRNA synthetase ATPase domains derived from opposite strands of a gene
 
-\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                                                 2015
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
 
-**Undergraduate summer research assistant**
+**Undergraduate summer research assistant** (2015)
 
 Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface display using fluorescence polarization
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Education}}}
-```
+\cvsection{Education}
 
 **Ph.D. in Biology**, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA, 2023
 
@@ -83,16 +77,12 @@ Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface disp
 **B.Sc. in Cellular and Molecular Biology**, \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR, 2016
 
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Publications}}}
-```
+\cvsection{Publications}
 
   - Martinez-Rodriguez, L., Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., . Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. Journal of Biological Chemistry, 290(32), 19710-19725. http://doi.org/10.1074/jbc.M115.642876
 
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Teaching Experience}}}
-```
+\cvsection{Teaching Experience}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                              2017 and 2020
 
@@ -100,9 +90,7 @@ Teaching assistant for MIT Department of Biology
   - Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing process for introductory biology and biochemistry courses.
 
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Volunteer Work}}}
-```
+\cvsection{Volunteer Work}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA                                     2016-2020
 
@@ -127,9 +115,7 @@ Received conflict-management training, organized monthly community events, serve
 Organized biweekly seminars where graduate students and post-doc present their work
 
 
-```{=latex}
-\section*{\underline{\makebox[\linewidth][l]{Selected presentations}}}
-```
+\cvsection{Selected presentations}
 
   - MIT Cell Biology Supergroup, oral presentation. Oral presentation. Cambridge, MA, 2018.
   - Department of Biology Building 68 Annual Summer Retreat. Oral presentation. Plymouth, MA, 2021.
