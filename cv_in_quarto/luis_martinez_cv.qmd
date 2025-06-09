@@ -7,7 +7,7 @@ format:
   pdf:
     include-in-header:
       text: |
-        \usepackage[normalem]{ulem} % For custom underlining
+        \usepackage{ulem} % For custom underlining
         \newcommand{\fullunderline}[1]{%
           \noindent\makebox[\linewidth][l]{\uline{#1}}%
         }
@@ -28,8 +28,6 @@ Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecula
 \section*{\underline{\makebox[\linewidth][l]{Core Skills/Competencies}}}
 ```
 
-## Core Skills/Competencies
-
 - **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
 - **Biochemistry**: Protein purification from bacterial and fungi, Electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays
 - **Yeast Genetics**: genetic screen design and validation, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and CRISPR-based genome editing, drug-sensitivity assays, flow-cytometry analysis,
@@ -37,18 +35,24 @@ Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecula
 - **Programming**: Basic knowledge of R and Python
 - **Cell Biology**: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System
 
-## Experience
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Experience}}}
+```
 
-### \fullunderline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
+### \fullunderline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}  Cambridge, MA
 **Graduate student researcher** (2016-2023)
 
 Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
-  - Design and validation of a genetic screen for suppressors of a lethal allele of the _ORC4_ gene. Performed the analysis of the whole-genome sequencing data
+
+  - Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data
   - Genetic characterization of the suppressor alleles through allele-specificity and drug-sensitivity experiments.
   - Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
   - CHIP-seq analysis of ORC and Mcm2-7 complex. Performed analysis of the sequencing data.
 
-### Additional research experience
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Additional research experience}}}
+```
+
 UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP), San Juan, PR                                           2012-2016
 
 **Undergraduate research assistant** (2013-2015)
@@ -71,23 +75,38 @@ MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                      
 
 Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface display using fluorescence polarization
 
-### Education
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Education}}}
+```
+
 **Ph.D. in Biology**, MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA, 2023
 
   - Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in Saccharomyces cerevisiae
 
 **B.Sc. in Cellular and Molecular Biology**, UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP), San Juan, PR, 2016
 
-### Publications
+
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Publications}}}
+```
+
   - Martinez-Rodriguez, L., Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., . Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. Journal of Biological Chemistry, 290(32), 19710-19725. http://doi.org/10.1074/jbc.M115.642876
 
-### Teaching Experience
+
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Teaching Experience}}}
+```
+
 MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                              2017 and 2020
 
 Teaching assistant for MIT Department of Biology
   - Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing process for introductory biology and biochemistry courses.
 
-### Volunteer Work
+
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Volunteer Work}}}
+```
+
 MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT), Cambridge, MA                                     2016-2020
 
 **Summer research program volunteer** (2017-2020)
@@ -110,6 +129,10 @@ Received conflict-management training, organized monthly community events, serve
 
 Organized biweekly seminars where graduate students and post-doc present their work
 
-### Selected presentations
+
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Selected presentations}}}
+```
+
   - MIT Cell Biology Supergroup, oral presentation. Oral presentation. Cambridge, MA, 2018.
   - Department of Biology Building 68 Annual Summer Retreat. Oral presentation. Plymouth, MA, 2021.

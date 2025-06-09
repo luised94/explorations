@@ -44,3 +44,4 @@ Add [l] after [\linewidth] to align left.
 Add normalem option to restore italics or use latex command \textit{}.
 
 Also the following regex would be useful to move between underscore surrounded words: _\w\+ \+\w\+
+Managed to replace all of them straightforwardly using a register and macro along with a search for exactly three hashes (/#\{3}).
