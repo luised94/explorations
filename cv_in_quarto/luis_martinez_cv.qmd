@@ -13,8 +13,9 @@ format:
     geometry: margin=1in
 ---
 
-## Summary
-
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Summary}}}
+```
 Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
 
 ## Core Skills/Competencies

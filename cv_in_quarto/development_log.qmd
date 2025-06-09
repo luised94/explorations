@@ -15,3 +15,26 @@ That is the basis of the first version of the file.
 Encountered the error that Arial was not available. Solved pretty easily by install a package.
 Now there are some problems with some characters displaying but I think I can add all of the content first and then start mucking with the quarto features
 Just had to set the encoding to utf8.
+
+### Underlining
+Tried multiple things for underlining a section.
+```{quarto}
+format:
+  pdf:
+    include-in-header:
+      text: |
+        \usepackage{ulem} % For custom underlining
+        \newcommand{\fullunderline}[1]{%
+          \noindent\makebox[\linewidth]{\uline{#1}}%
+        }
+## \fullunderline{Summary}
+
+::: {.full-underline}
+## Summary
+:::
+
+This is the only one that did what I wanted.
+```{=latex}
+\section*{\underline{\makebox[\linewidth][l]{Summary}}}
+```
+```
