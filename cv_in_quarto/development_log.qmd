@@ -67,3 +67,16 @@ Always do a crazy number first to see effect then adjust.
 Disable by removing the title. Add manually and control spacing.
 
 Think that about does it. Basically replicated the word document at this point. Mostly need to adjust the actual content.
+
+## 2025-06-10
+Tried a few things to remove the header but geometry parameter in the yaml was the simplest.
+I would like to enhance the content but not sure how to handle a bunch of files. Either have many cvs, git worktrees or something else?
+I think I will use worktrees.
+
+```{bash}
+cd ~/explorations/cv_in_quarto
+git worktree add ../cv_variant_layout layout-tweaks
+git worktree add ../cv_variant_content content-update
+```
+To render all and see I can use a small script render_all.sh to take care of that and then just use view_files -t to plot the all or refresh after they are loaded.
+
