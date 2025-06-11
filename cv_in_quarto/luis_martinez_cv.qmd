@@ -5,13 +5,19 @@
 #  luised94@mit.edu | github.com/luised94
 format:
   pdf:
+    # Engine and fonts
     pdf-engine: xelatex
-    title-block-style: none
     mainfont: "Arial"
     fontenc: "T1"
     inputenc: "utf8"
     fontsize: 10pt
-    #geometry: margin=1in
+    title-block-style: none
+
+    # Links (important for CV contact info)
+    colorlinks: true
+    urlcolor: blue
+    linkcolor: blue
+
     geometry: "top=1.5cm, bottom=2cm, left=2cm, right=2cm"
     include-in-header:
       text: |
