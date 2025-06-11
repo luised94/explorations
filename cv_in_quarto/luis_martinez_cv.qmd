@@ -18,7 +18,9 @@ format:
     urlcolor: blue
     linkcolor: blue
 
+    # === Page Geometry ===
     geometry: "top=1.5cm, bottom=2cm, left=2cm, right=2cm"
+    papersize: letter         # Explicit even if default (US)
     include-in-header:
       text: |
         % Coloring
