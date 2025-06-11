@@ -74,9 +74,14 @@ I would like to enhance the content but not sure how to handle a bunch of files.
 I think I will use worktrees.
 
 ```{bash}
-cd ~/explorations/cv_in_quarto
-git worktree add ../cv_variant_layout layout-tweaks
-git worktree add ../cv_variant_content content-update
+cd ~/explorations
+mkdir -p ../cv_worktrees
+git checkout -b cv_summary
+git checkout -b cv_remove_summary
+
+git worktree add ../cv_worktrees/cv_summary cv_summary
+git worktree add ../cv_worktrees/cv_remove_summary cv_remove_summary
 ```
 To render all and see I can use a small script render_all.sh to take care of that and then just use view_files -t to plot the all or refresh after they are loaded.
 
+Create a simple set of scripts to help with working the worktrees.
