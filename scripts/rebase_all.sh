@@ -14,13 +14,14 @@ if ! git rev-parse --is-inside-work-tree &>/dev/null; then
   exit 1
 fi
 
-# --- Pull all ---
+# --- Rebase all on master ---
+REBASING_BRANCH="master"
+git fetch origin "$REBASING_BRANCH"
+
 git worktree list --porcelain | awk '/worktree /{print $2}' | while read wt; do
-  echo "Pulling $wt"
+  echo "Rebasing $wt onto $REBASING_BRANCH"
   (
     cd "$wt" || exit
-    branch=$(git rev-parse --abbrev-ref HEAD)
-    echo "On branch $branch"
-    git pull origin "$branch"
+    git rebase "$REBASING_BRANCH"
   )
 done

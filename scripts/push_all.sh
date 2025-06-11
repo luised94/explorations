@@ -14,13 +14,13 @@ if ! git rev-parse --is-inside-work-tree &>/dev/null; then
   exit 1
 fi
 
-# --- Pull all ---
+# --- Push all ---
 git worktree list --porcelain | awk '/worktree /{print $2}' | while read wt; do
-  echo "Pulling $wt"
+  echo "Pushing $wt"
   (
     cd "$wt" || exit
     branch=$(git rev-parse --abbrev-ref HEAD)
     echo "On branch $branch"
-    git pull origin "$branch"
+    git push origin "$branch"
   )
 done
