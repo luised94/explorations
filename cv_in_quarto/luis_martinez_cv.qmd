@@ -11,9 +11,12 @@ format:
     fontenc: "T1"
     inputenc: "utf8"
     fontsize: 10pt
-    geometry: margin=1in
+    #geometry: margin=1in
+    geometry: "top=1.5cm, bottom=2cm, left=2cm, right=2cm"
     include-in-header:
       text: |
+        % Coloring
+        \usepackage{xcolor}
         % For custom underlining
         \usepackage{ulem}
         \newcommand{\cvsection}[1]{%
@@ -33,12 +36,12 @@ format:
 \begin{center}
   {\large \textbf{Luis E. Martínez-Rodríguez, Ph.D.  }}\\[0.5ex]
   \normalsize
-  Curriculum Vitae \\
+  Curriculum Vitae \\[0.5ex]
   \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \\
   luised94@mit.edu \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
 \end{center}
 ```
-\vspace{-0.5em}
+\vspace{-1.2em}
 \cvsection{Summary}
 Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
 
