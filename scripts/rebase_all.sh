@@ -18,10 +18,10 @@ fi
 REBASING_BRANCH="master"
 git fetch origin "$REBASING_BRANCH"
 
-git worktree list --porcelain | awk '/worktree /{print $2}' | while read wt; do
-  echo "Rebasing $wt onto $REBASING_BRANCH"
+git worktree list --porcelain | awk '/worktree /{print $2}' | while read worktree; do
+  echo "Rebasing $worktree onto $REBASING_BRANCH"
   (
-    cd "$wt" || exit
+    cd "$worktree" || exit
     git rebase "$REBASING_BRANCH"
   )
 done

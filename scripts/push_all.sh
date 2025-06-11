@@ -15,10 +15,10 @@ if ! git rev-parse --is-inside-work-tree &>/dev/null; then
 fi
 
 # --- Push all ---
-git worktree list --porcelain | awk '/worktree /{print $2}' | while read wt; do
-  echo "Pushing $wt"
+git worktree list --porcelain | awk '/worktree /{print $2}' | while read worktree; do
+  echo "Pushing $worktree"
   (
-    cd "$wt" || exit
+    cd "$worktree" || exit
     branch=$(git rev-parse --abbrev-ref HEAD)
     echo "On branch $branch"
     git push origin "$branch"

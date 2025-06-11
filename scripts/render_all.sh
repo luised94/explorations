@@ -19,13 +19,13 @@ if ! git rev-parse --is-inside-work-tree &>/dev/null; then
 fi
 
 # --- Render all ---
-git worktree list --porcelain | awk '/worktree /{print $2}' | while read wt; do
-  CV_PATH="$wt/cv_in_quarto/${CV_FILENAME}"
+git worktree list --porcelain | awk '/worktree /{print $2}' | while read worktree; do
+  CV_PATH="$worktree/cv_in_quarto/${CV_FILENAME}"
   if [ -f "$CV_PATH" ]; then
-    echo "Rendering CV in: $wt"
+    echo "Rendering CV in: $worktree"
     echo "PATH: ${CV_PATH}"
     #quarto render "$CV_PATH"
   else
-    echo "Skipped: No CV found in $wt"
+    echo "Skipped: No CV found in $worktree"
   fi
 done
