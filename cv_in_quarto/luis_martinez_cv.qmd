@@ -5,6 +5,14 @@
 #  luised94@mit.edu | github.com/luised94
 format:
   pdf:
+    # Document structure
+    #documentclass: article
+    lang: en
+    toc: false
+    number-sections: false
+
+    keep-tex: false
+
     # Engine and fonts
     pdf-engine: xelatex
     mainfont: "Arial"
