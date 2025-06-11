@@ -21,6 +21,11 @@ format:
     # === Page Geometry ===
     geometry: "top=1.5cm, bottom=2cm, left=2cm, right=2cm"
     papersize: letter         # Explicit even if default (US)
+
+    # === Micro-Typography ===
+    microtype: true           # Enables font expansion (usually default)
+    linestretch: 1.0          # Single spacing (better than 'setspace' for CVs)
+
     include-in-header:
       text: |
         % Coloring
