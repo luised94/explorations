@@ -62,6 +62,7 @@ format:
   luised94@mit.edu \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
 \end{center}
 ```
+CV_Version: Experience
 \vspace{-1.2em}
 \cvsection{Summary}
 Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
@@ -82,9 +83,13 @@ Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecula
 Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
 
 - Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data.
-- Genetic characterization of the suppressor alleles through allele-specificity and drug-sensitivity experiments.
+- Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
 - Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
-- CHIP-seq analysis of ORC and Mcm2-7 complex. Performed analysis of the sequencing data.
+
+**Post-doctoral researcher** (2023-present)  
+\textit{In vivo} characterization of ATPase-deficient lethal allele of the origin recognition complex and its suppressors using chromatin immunoprecipitation
+
+- CHIP-seq sample preparation and sequencing data analysis using bash and R in a linux cluster environment
 
 \cvsection{Additional research experience}
 
