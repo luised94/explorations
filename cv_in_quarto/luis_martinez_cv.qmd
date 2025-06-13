@@ -66,7 +66,11 @@ format:
 CV_Version: Experience
 \vspace{-1.2em}
 \cvsection{Researcher Profile}
-Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. Specialization in DNA replication mechanisms. Highly proficient at biochemical and genetic screen assay development, bioinformatic analysis.
+\begin{center}
+Protein Purification | Genetic screens | Chromatin Immunoprecipitation Analysis
+\end{center}
+\vspace{-1.3em}
+Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, molecular biology, and yeast genetics, specializating in DNA replication mechanisms, advanced biochemical/genetic screen assay development, and bioinformatic analysis.
 
 \cvsection{Core Skills/Competencies}
 - **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
