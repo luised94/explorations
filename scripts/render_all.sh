@@ -24,7 +24,7 @@ git worktree list --porcelain | awk '/worktree /{print $2}' | while read worktre
   if [ -f "$CV_PATH" ]; then
     echo "Rendering CV in: $worktree"
     echo "PATH: ${CV_PATH}"
-    #quarto render "$CV_PATH"
+    quarto render "$CV_PATH"
   else
     echo "Skipped: No CV found in $worktree"
   fi
