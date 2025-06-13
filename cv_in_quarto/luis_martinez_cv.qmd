@@ -65,10 +65,10 @@ format:
 ```
 \cvsection{Researcher Profile}
 \begin{center}
-Protein Purification | Genetic screens | NGS Analysis
+Protein Purification | Genetic engineering | NGS Analysis
 \end{center}
 \vspace{-1.3em}
-Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, molecular biology, and yeast genetics, specializing in DNA replication mechanisms, advanced biochemical/genetic screen assay development, and bioinformatic analysis.
+Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. Specialization in DNA replication mechanisms. Highly proficient at biochemical and genetic screen assay development, bioinformatic analysis.
 
 \cvsection{Core Skills/Competencies}
 - **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
