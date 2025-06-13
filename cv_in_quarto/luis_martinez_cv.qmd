@@ -62,9 +62,10 @@ format:
   luised94@mit.edu \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
 \end{center}
 ```
+CV_Version: Summary modification
 \vspace{-1.2em}
-\cvsection{Summary}
-Ph.D. with deep understanding of protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. 9 years of experience in biochemistry, molecular biology, and yeast genetics. Goal-oriented scientist with outstanding organization and time management skills. Proficient at executing and troubleshooting molecular biology and biochemical assays. Passionate about learning and applying innovative scientific advances. Efficient, productive, and independent researcher that also excels in collaborative team projects. Committed to mentoring. Excellent writing and oral presentation skills.
+\cvsection{Researcher Profile}
+Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. Specialization in DNA replication mechanisms. Highly proficient at biochemical and genetic screen assay development, bioinformatic analysis.
 
 \cvsection{Core Skills/Competencies}
 - **Molecular biology**: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
