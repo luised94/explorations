@@ -46,6 +46,31 @@ format:
           \section*{\fontsize{11}{13}\selectfont\underline{\makebox[\linewidth][l]{#1}}}%
           \vspace{-1.3em}
         }
+        \newcommand{\cvsectionbracket}[1]{%
+          \vspace{-1.5em}
+          {\fontsize{11}{13}\selectfont
+          \noindent\textcolor{gray!70}{\rule{0.15\linewidth}{0.5pt}}\hspace{0.5em}%
+          \textbf{#1}%
+          \hspace{0.5em}\textcolor{gray!70}{\rule{0.15\linewidth}{0.5pt}}}
+          \vspace{-1.3em}
+        }
+        % In your preamble:
+        \definecolor{sectionblue}{RGB}{28, 74, 140}   % Or any color that fits
+        % Redefine section command for pop:
+        \newcommand{\cvsectioncolor}[1]{%
+          \vspace{2em}%
+          {\large\bfseries\color{sectionblue} #1}%
+          \vspace{0.5em}\\%
+          \hrule height 1.2pt \vspace{1em}
+        }
+        \newcommand{\cvsectionleftbar}[1]{%
+          \vspace{1.5em}%
+          {\color{sectionblue}\rule{2pt}{1.5em}}
+          \hspace{0.5em}
+          {\large\bfseries #1}
+          \vspace{0.3em}\\%
+          \hrule height 0.8pt \vspace{1em}
+        }
         % Line spacing control
         \usepackage{setspace}
         \singlespacing
@@ -64,8 +89,14 @@ format:
 \end{center}
 ```
 CV_Version: Experience
-\vspace{-1.2em}
+\vspace{1.2em}
+\cvsectionbracket{Researcher Profile}
+\vspace{1.2em}
+\cvsectioncolor{Researcher Profile}
+\vspace{1.2em}
 \cvsection{Researcher Profile}
+\vspace{1.2em}
+\cvsectionleftbar{Researcher Profile}
 Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, molecular biology, and yeast genetics. Specialization in DNA replication mechanisms. Highly proficient at biochemical and genetic screen assay development, bioinformatic analysis.
 
 \cvsection{Core Skills/Competencies}
