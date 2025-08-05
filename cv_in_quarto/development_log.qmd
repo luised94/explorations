@@ -85,3 +85,22 @@ git worktree add ../cv_worktrees/cv_remove_summary cv_remove_summary
 To render all and see I can use a small script render_all.sh to take care of that and then just use view_files -t to plot the all or refresh after they are loaded.
 
 Create a simple set of scripts to help with working the worktrees.
+
+Trying some modifications to the cvsection. Color version is terrible. Maybe bracket one is salvageable.
+```latex
+        \definecolor{cvblue}{RGB}{0,102,153}  % Professional blue
+        \newcommand{\cvsectioncolor}[1]{%
+          \vspace{-1.5em}
+          \section*{\fontsize{11}{13}\selectfont\textcolor{cvblue}{\textbf{#1}}}%
+          \noindent\textcolor{cvblue}{\rule{0.3\linewidth}{0.8pt}}
+          \vspace{-1.3em}
+        }
+        \newcommand{\cvsectionbracket}[1]{%
+          \vspace{-1.5em}
+          {\fontsize{11}{13}\selectfont
+          \noindent\textcolor{gray!70}{\rule{0.15\linewidth}{0.5pt}}\hspace{0.5em}%
+          \textbf{#1}%
+          \hspace{0.5em}\textcolor{gray!70}{\rule{0.15\linewidth}{0.5pt}}}
+          \vspace{-1.3em}
+        }
+```
