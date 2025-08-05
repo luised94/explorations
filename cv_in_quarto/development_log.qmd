@@ -104,3 +104,9 @@ Trying some modifications to the cvsection. Color version is terrible. Maybe bra
           \vspace{-1.3em}
         }
 ```
+
+## 2025-06-12
+Trying to get feedback on styles and content.
+Best to leave summary but it has to be high in affordance and impact.
+Considering adding some aesthetic improvements to cvsection
+Added post-doc experience
