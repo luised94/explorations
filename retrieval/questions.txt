@@ -1,0 +1,25 @@
+Q: Provide a brief description of the AAA+ family of proteins.
+A:
+The AAA+ family of proteins consists of proteins that contain domains of roughly 200 amino acids, adopting a Rossman fold.
+They typically form six subunit complexes with an interface between each subunit that forms an ATPase site.
+One subunit contributes highly conserved motifs named Walker A and B that are important for ATP binding and hydrolysis while the other subunit contributes the arginine finger motif which is important for ATP hydrolysis. They function in a diverse array of biological processes such as proteome homeostatis, dna replication, and organelle biogenesis.
+---
+Q: Write a simple for loop in R.
+A:
+array = list, vector of numbers or strings
+index = one of the elements of list or vector
+for (index in array) {
+  message("The current index is:", index)
+}
+---
+Q: What is the number one cause of death of children and young adults? How many are injured in accidents related to the cause?
+A:
+According to the Massachusetts Drivers Manual, it is motor crashes. One third of Americans will be injured or killed in a motor vehicle crash.
+Accoridng to search by Claude, firearms are the leading cause of death.
+---
+Q: Recite the first verse of the first sonnet of the "Antologia poetica" of Lope de Vega.
+A:
+Versos de amor, conceptos esparcidos,
+engendrados del alma en mis cuidados;
+partos de mis sentidos abrasados, con más dolor que libertad nacidos;
+---
