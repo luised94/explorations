@@ -20,3 +20,9 @@ A:
 ```
 
 Could have format in readable form and process to csv.
+
+### 2025-09-16
+Primero determiné como unir el rango de cada par de pregunta y contestación.
+Seleccionar rango, e usar un for loop sencillo para convertir a dataframe.
+Solo hay dos posibilidades: ser pregunta o contestación. Lo único sería manejar la presencia de "Q:" o "A:".
+También tenía que añadir una linea nueva al agregar nuevo contenido a constestacion o linea.
