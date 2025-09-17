@@ -93,3 +93,28 @@ for (index in 1:nrow(indexes_for_pairs)){
 
 }
 
+subset_size <- 2
+random_questions_idx <- sample(
+  nrow(qa_dataframe),
+  subset_size,
+  replace = FALSE
+)
+
+random_subset_df <- qa_dataframe[random_questions_idx, ]
+stopifnot(
+  "Rows should be same as number sampled." =
+  subset_size == nrow(random_subset_df)
+)
+random_subset_df$user_answers <- rep(NA, nrow(random_subset_df))
+
+for (row_idx in 1:subset_size) {
+  message("--------------------------")
+  exercise_pair <- random_subset_df[row_idx, ]
+  message("Question ", row_idx, " out of ", subset_size)
+  message("---")
+  message(exercise_pair[1, 1])
+  message("---")
+  user_answer <- readline(prompt = "")
+  random_subset_df[row_idx, "user_answers"] <- user_answer
+  message("--------------------------")
+}

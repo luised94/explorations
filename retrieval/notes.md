@@ -26,3 +26,8 @@ Primero determiné como unir el rango de cada par de pregunta y contestación.
 Seleccionar rango, e usar un for loop sencillo para convertir a dataframe.
 Solo hay dos posibilidades: ser pregunta o contestación. Lo único sería manejar la presencia de "Q:" o "A:".
 También tenía que añadir una linea nueva al agregar nuevo contenido a constestacion o linea.
+
+#### Session 2
+Should I figure out how to print the dataframe as an alternative to typing the name while working on the REPL?
+Got the loop. Estoy seguro que algo asi de sencillo seria bastante efectivo como quiera.
+Puedo facilmente añadir mas preguntas. Ahora tendria que añadir categorias y ver si es mejor generar archivos tipo texto, markdown, html o user el repl u otras formas mas interactivas.
