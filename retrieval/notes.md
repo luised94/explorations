@@ -31,3 +31,7 @@ También tenía que añadir una linea nueva al agregar nuevo contenido a constes
 Should I figure out how to print the dataframe as an alternative to typing the name while working on the REPL?
 Got the loop. Estoy seguro que algo asi de sencillo seria bastante efectivo como quiera.
 Puedo facilmente añadir mas preguntas. Ahora tendria que añadir categorias y ver si es mejor generar archivos tipo texto, markdown, html o user el repl u otras formas mas interactivas.
+
+### 2025-10-14
+First time in a while. Never did the clean up.
+Turns out a recent article came out in Hacker news (plain text spaced repetition) and used a similar format for the Q&A pairs. Good signs?
