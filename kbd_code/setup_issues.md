@@ -51,3 +51,7 @@ git commit -m "init"
 git push -u origin master
 git pull # Should show 'already up to date' message.
 ```
+
+Used initial kbd_setup.sh functions.
+ksuboff returns: 'umount: /mnt/d: target is busy.' because a the directory was opened in a tmux pane. Afterwards, kusboff worked and was able to eject. Disconneted the usb and reconnected to run kbd_find_usb.
+Fixed bug where I inverted a test. '-z $VARIABLE' is true if empty.

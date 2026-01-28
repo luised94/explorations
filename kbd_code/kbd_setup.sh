@@ -11,15 +11,17 @@ kbd_find_usb() {
     local marker="$KBD_USB_MARKER"
 
     # Check if WSL
-    if [[ -z "$WSL_DISTRO_NAME" ]]; then
+    if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
+        echo "kbd: WSL_DISTRO_NAME found." >&2
         # WSL: use PowerShell to find drive letter with marker
         local drive
         drive=$(powershell.exe -NoProfile -Command 'Get-Volume |
-                  Where-Object { $_.DriveLetter -and (Test-Path -LiteralPath "$($_.DriveLetter):\.kbd-usb-marker") } |
-                  Select-Object -ExpandProperty DriveLetter' 2>/dev/null | tr -d '\r')
+          Where-Object { $_.DriveLetter -and (Test-Path -LiteralPath "$($_.DriveLetter):\.kbd-usb-marker") } |
+          Select-Object -ExpandProperty DriveLetter' 2>/dev/null | tr -d '\r')
 
         if [ -z "$drive" ]; then
             echo "kbd: USB with marker '$marker' not found" >&2
+            echo "kbd: Drive is '$drive'" >&2
             return 1
         fi
 
