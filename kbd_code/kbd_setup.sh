@@ -171,6 +171,11 @@ ksync() {
 
 # Unmount USB (run before ejecting)
 kusboff() {
+  if [ "$KBD_USB_CONNECTED" = false ]; then
+    echo "kbd: USB is not connected. Nothing to dismount."
+    return 1
+
+  fi
     local usb
     usb=$(kbd_find_usb) || return 1
 
@@ -180,10 +185,10 @@ kusboff() {
 }
 
 # Open journal
-alias j='nvim "$KBD_LOCAL_DIR/journal.txt"'
+alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
 
 # Open notes
-alias n='nvim "$KBD_LOCAL_DIR/notes.txt"'
+alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
 
 # Quick status
 alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
