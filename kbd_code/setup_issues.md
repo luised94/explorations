@@ -55,3 +55,26 @@ git pull # Should show 'already up to date' message.
 Used initial kbd_setup.sh functions.
 ksuboff returns: 'umount: /mnt/d: target is busy.' because a the directory was opened in a tmux pane. Afterwards, kusboff worked and was able to eject. Disconneted the usb and reconnected to run kbd_find_usb.
 Fixed bug where I inverted a test. '-z $VARIABLE' is true if empty.
+
+## 2026-01-28
+Tried to transfer the repo via usb to a new device. The drive was not showing up on wsl.
+```error
+mount: /mnt/d: mount point does not exist.
+```
+
+Had to create the directory and then mount.
+
+```bash
+sudo mkdir -p /mnt/d
+kbd_find_usb # takes care of mounting the drive.
+ls /mnt/d # should show contents now.
+```
+
+Once the drive's contents are visible, git clone. May get the ownership issue again. Just run the same command.
+
+```bash
+git config --global --add safe.directory /mnt/d/personal_repos/kbd.git
+git clone /mnt/d/personal_repos/kbd.git ~/personal_repos/kbd
+cd ~/personal_repos/kbd
+git log # check the HEAD log.
+```
