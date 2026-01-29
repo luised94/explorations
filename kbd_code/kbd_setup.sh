@@ -20,10 +20,16 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
 
   if [ -z "$KBD_USB_DRIVE" ]; then
     echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
+    echo "kbd: Ensure KBD USB is connected." >&2
     return 1
   fi
 
   export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
+
+  # Ensure mount point directory exists
+  if [ ! -d "$KBD_MOUNT_POINT" ]; then
+      sudo mkdir -p "$KBD_MOUNT_POINT"
+  fi
 
   if [ ! -d "$KBD_MOUNT_POINT/personal_repos" ]; then
     echo "kbd: mounting ${KBD_USB_DRIVE}: to $KBD_MOUNT_POINT"
@@ -37,7 +43,7 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
   echo "kbd: Mount point is '$KBD_MOUNT_POINT'"
 
 else
-  # Native Linux: scan common mount points
+  # Native Linux: scan common mount points (NOT TESTED)
   for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
     if [ -f "$dir/$KBD_USB_MARKER" ]; then
       export KBD_MOUNT_POINT="$dir"
@@ -47,6 +53,7 @@ else
 
   if [ -z "$KBD_MOUNT_POINT" ]; then
       echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
+      echo "kbd: Ensure KBD USB is connected." >&2
       return 1
   fi
 
