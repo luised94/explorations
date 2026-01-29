@@ -127,23 +127,6 @@ kbd_refresh() {
     fi
 }
 
-# Get path to origin dir (bare repo on USB)
-kbd_check_origin() {
-  if [[ -z "$KBD_ORIGIN_DIR" ]]; then
-    echo "kbd: KBD_ORIGIN_DIR unset."
-    return 1
-
-  fi
-  # add additional error handling?
-  if [[ ! -d "$KBD_ORIGIN_DIR" ]]; then
-    echo "kbd: KBD_ORIGIN_DIR does not exist."
-    return 1
-
-  fi
-
-  echo "$KBD_ORIGIN_DIR"
-}
-
 # Pull from USB
 kpull() {
     if [ "$KBD_USB_CONNECTED" != true ]; then
@@ -151,10 +134,21 @@ kpull() {
         return 1
     fi
 
+    # Check local repo exists and is a git repo
+    if [ ! -d "$KBD_LOCAL_DIR/.git" ]; then
+        echo "kbd[ERROR]: $KBD_LOCAL_DIR is not a git repository"
+        return 1
+    fi
+
     local remote_unavailable=false
     local remote="origin"
     local url
     url=$(git -C "$KBD_LOCAL_DIR" remote get-url "$remote" 2>/dev/null)
+
+    if [ -z "$url" ]; then
+        echo "kbd[ERROR]: Remote 'origin' not configured"
+        return 1
+    fi
 
     if [[ "$url" == /* || "$url" == file://* ]]; then
         [[ ! -d "${url#file://}" ]] && remote_unavailable=true
@@ -177,10 +171,21 @@ ksync() {
         return 1
     fi
 
-    local remote_unavailable=false    # Add 'local'
-    local remote="origin"             # Add 'local'
-    local url                         # Add 'local'
+    # Check local repo exists and is a git repo
+    if [ ! -d "$KBD_LOCAL_DIR/.git" ]; then
+        echo "kbd[ERROR]: $KBD_LOCAL_DIR is not a git repository"
+        return 1
+    fi
+
+    local remote_unavailable=false
+    local remote="origin"
+    local url
     url=$(git -C "$KBD_LOCAL_DIR" remote get-url "$remote" 2>/dev/null)
+
+    if [ -z "$url" ]; then
+        echo "kbd[ERROR]: Remote 'origin' not configured"
+        return 1
+    fi
 
     if [[ "$url" == /* || "$url" == file://* ]]; then
         [[ ! -d "${url#file://}" ]] && remote_unavailable=true
@@ -199,8 +204,20 @@ ksync() {
     else
         git commit
     fi
+    # Check if there are commits to push
+    local unpushed
+    unpushed=$(git rev-list --count origin/master..HEAD 2>/dev/null)
+    
+    if [ -z "$unpushed" ]; then
+        echo "kbd: cannot determine push status, pushing anyway"
+        git push origin master
+    elif [ "$unpushed" -gt 0 ]; then
+        echo "kbd: pushing $unpushed commit(s)"
+        git push origin master
+    else
+        echo "kbd: nothing to push"
+    fi
 
-    git push origin master
     cd - > /dev/null
 }
 
