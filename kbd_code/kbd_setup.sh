@@ -7,6 +7,7 @@ export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
 # Marker file placed on USB root to identify it
 export KBD_USB_MARKER=".kbd-usb-marker"
 
+
 if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
   export KBD_USB_DRIVE=$(powershell.exe -NoProfile -Command '
     Get-Volume |
@@ -19,51 +20,65 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
   )
 
   if [ -z "$KBD_USB_DRIVE" ]; then
-    echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
-    echo "kbd: Ensure KBD USB is connected." >&2
-    echo "kbd: Afterwards, source kbd_setup.sh." >&2
-    echo "Local aliases (j, n) still work. Sync (kpull, ksync) won't."
+    echo ""
+    echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
+    echo "kbd: Ensure KBD USB is connected."
+    echo "kbd: Afterwards, source kbd_setup.sh"
+    echo "kbd: Local aliases (j, n) still work. Sync (kpull, ksync) won't."
+    echo ""
     export KBD_USB_CONNECTED=false
-  fi
+  else
+    export KBD_USB_CONNECTED=true
+    export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
 
-  export KBD_USB_CONNECTED=true
-  export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
-
-  # Ensure mount point directory exists
-  if [ ! -d "$KBD_MOUNT_POINT" ]; then
+    if [ ! -d "$KBD_MOUNT_POINT" ]; then
       sudo mkdir -p "$KBD_MOUNT_POINT"
-  fi
+    fi
 
-  if [ ! -d "$KBD_MOUNT_POINT/personal_repos" ]; then
-    echo "kbd: mounting ${KBD_USB_DRIVE}: to $KBD_MOUNT_POINT"
-    sudo mount -t drvfs "${KBD_USB_DRIVE}:" "$KBD_MOUNT_POINT" -o metadata
-    if [ $? -ne 0 ]; then
-      echo "kbd: mount failed" >&2
-      return 1
+    if [ ! -d "$KBD_MOUNT_POINT/personal_repos" ]; then
+      echo "kbd: mounting ${KBD_USB_DRIVE}: to $KBD_MOUNT_POINT"
+      sudo mount -t drvfs "${KBD_USB_DRIVE}:" "$KBD_MOUNT_POINT" -o metadata
+      if [ $? -ne 0 ]; then
+        echo "kbd: mount failed" >&2
+        export KBD_USB_CONNECTED=false
+      fi
+    fi
+
+    if [ "$KBD_USB_CONNECTED" = true ]; then
+      echo "kbd: Mount point is '$KBD_MOUNT_POINT'"
+      export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
     fi
   fi
 
-  echo "kbd: Mount point is '$KBD_MOUNT_POINT'"
-
 else
   # Native Linux: scan common mount points (NOT TESTED)
+  export KBD_USB_CONNECTED=false
+  
   for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
     if [ -f "$dir/$KBD_USB_MARKER" ]; then
       export KBD_MOUNT_POINT="$dir"
+      export KBD_USB_CONNECTED=true
+      export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
       break
     fi
   done
 
-  if [ -z "$KBD_MOUNT_POINT" ]; then
-      echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
-      echo "kbd: Ensure KBD USB is connected." >&2
-      return 1
+  if [ "$KBD_USB_CONNECTED" = false ]; then
+    echo ""
+    echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
+    echo "kbd: Ensure KBD USB is connected."
+    echo "kbd: Afterwards, source kbd_setup.sh"
+    echo "kbd: Local aliases (j, n) still work. Sync (kpull, ksync) won't."
+    echo ""
   fi
-
 fi
 
-export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
+# Aliases always defined - they use KBD_LOCAL_DIR, not USB
+alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
+alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
+alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 
+# Sync functions need USB - they check KBD_USB_CONNECTED internally
 # Find and optionally mount USB, returns mount point path
 kbd_refresh() {
     local marker="$KBD_USB_MARKER"
@@ -183,12 +198,3 @@ kusboff() {
     sudo umount "$usb"
     echo "kbd: unmounted $usb, safe to eject"
 }
-
-# Open journal
-alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
-
-# Open notes
-alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
-
-# Quick status
-alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
