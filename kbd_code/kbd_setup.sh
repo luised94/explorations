@@ -53,7 +53,7 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
 else
   # Native Linux: scan common mount points (NOT TESTED)
   export KBD_USB_CONNECTED=false
-  
+
   for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
     if [ -f "$dir/$KBD_USB_MARKER" ]; then
       export KBD_MOUNT_POINT="$dir"
@@ -146,13 +146,24 @@ kbd_check_origin() {
 
 # Pull from USB
 kpull() {
-  if [ "$KBD_USB_CONNECTED" = false ]; then
-    echo "kbd: USB is not connected. Sync not available."
-    return 1
-  fi
+    if [ "$KBD_USB_CONNECTED" != true ]; then
+        echo "kbd[ERROR]: USB not connected. Plug in and run: source ~/.config/mc_extensions/kbd_setup.sh"
+        return 1
+    fi
 
-    local repo
-    repo=$(kbd_check_origin) || return 1
+    local remote_unavailable=false
+    local remote="origin"
+    local url
+    url=$(git -C "$KBD_LOCAL_DIR" remote get-url "$remote" 2>/dev/null)
+
+    if [[ "$url" == /* || "$url" == file://* ]]; then
+        [[ ! -d "${url#file://}" ]] && remote_unavailable=true
+    fi
+
+    if [[ "$remote_unavailable" == true ]]; then
+        echo "kbd[ERROR]: Remote unavailable: $url"
+        return 1
+    fi
 
     cd "$KBD_LOCAL_DIR" || return 1
     git pull origin master
@@ -161,23 +172,32 @@ kpull() {
 
 # Sync to USB: add all, commit with date, push
 ksync() {
-  if [ "$KBD_USB_CONNECTED" = false ]; then
-    echo "kbd: USB is not connected. Sync not available."
-    return 1
+    if [ "$KBD_USB_CONNECTED" != true ]; then
+        echo "kbd[ERROR]: USB not connected. Plug in and run: source ~/.config/mc_extensions/kbd_setup.sh"
+        return 1
+    fi
 
-  fi
+    local remote_unavailable=false    # Add 'local'
+    local remote="origin"             # Add 'local'
+    local url                         # Add 'local'
+    url=$(git -C "$KBD_LOCAL_DIR" remote get-url "$remote" 2>/dev/null)
 
-    local repo
-    repo=$(kbd_check_origin) || return 1
+    if [[ "$url" == /* || "$url" == file://* ]]; then
+        [[ ! -d "${url#file://}" ]] && remote_unavailable=true
+    fi
+
+    if [[ "$remote_unavailable" == true ]]; then
+        echo "kbd[ERROR]: Remote unavailable: $url"
+        return 1
+    fi
 
     cd "$KBD_LOCAL_DIR" || return 1
     git add -A
 
-    # Only commit if there are changes
     if git diff --cached --quiet; then
         echo "kbd: nothing to commit"
     else
-        git commit -m "$(date +%F)"
+        git commit
     fi
 
     git push origin master
@@ -186,15 +206,19 @@ ksync() {
 
 # Unmount USB (run before ejecting)
 kusboff() {
-  if [ "$KBD_USB_CONNECTED" = false ]; then
-    echo "kbd: USB is not connected. Nothing to dismount."
-    return 1
-
-  fi
-    local usb
-    usb=$(kbd_find_usb) || return 1
+    if [ "$KBD_USB_CONNECTED" != true ]; then
+        echo "kbd: USB is not connected. Nothing to unmount."
+        return 0
+    fi
 
     cd ~
-    sudo umount "$usb"
-    echo "kbd: unmounted $usb, safe to eject"
+    sudo umount "$KBD_MOUNT_POINT"
+
+    if [ $? -eq 0 ]; then
+        echo "kbd: unmounted $KBD_MOUNT_POINT, safe to eject"
+        export KBD_USB_CONNECTED=false    # Update state
+    else
+        echo "kbd[ERROR]: unmount failed - files may be in use"
+        return 1
+    fi
 }
