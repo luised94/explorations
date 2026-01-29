@@ -1,13 +1,61 @@
 # kbd.sh - shell tooling for kbd (knowledge base desk)
 # Source this file or place in extensions directory
 
-export KBD_DIR="$HOME/personal_repos/kbd"
+# Local directory
+export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
 
 # Marker file placed on USB root to identify it
-KBD_USB_MARKER=".kbd-usb-marker"
+export KBD_USB_MARKER=".kbd-usb-marker"
+
+if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
+  export KBD_USB_DRIVE=$(powershell.exe -NoProfile -Command '
+    Get-Volume |
+    Where-Object {
+      $_.DriveLetter -and
+      (Test-Path -LiteralPath "$($_.DriveLetter):\.kbd-usb-marker") 
+    } |
+    Select-Object -ExpandProperty DriveLetter
+    ' 2>/dev/null | tr -d '\r'
+  )
+
+  if [ -z "$KBD_USB_DRIVE" ]; then
+    echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
+    return 1
+  fi
+
+  export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
+
+  if [ ! -d "$KBD_MOUNT_POINT/personal_repos" ]; then
+    echo "kbd: mounting ${KBD_USB_DRIVE}: to $KBD_MOUNT_POINT"
+    sudo mount -t drvfs "${KBD_USB_DRIVE}:" "$KBD_MOUNT_POINT" -o metadata
+    if [ $? -ne 0 ]; then
+      echo "kbd: mount failed" >&2
+      return 1
+    fi
+  fi
+
+  echo "kbd: Mount point is '$KBD_MOUNT_POINT'"
+
+else
+  # Native Linux: scan common mount points
+  for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
+    if [ -f "$dir/$KBD_USB_MARKER" ]; then
+      export KBD_MOUNT_POINT="$dir"
+      break
+    fi
+  done
+
+  if [ -z "$KBD_MOUNT_POINT" ]; then
+      echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
+      return 1
+  fi
+
+fi
+
+export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
 
 # Find and optionally mount USB, returns mount point path
-kbd_find_usb() {
+kbd_refresh() {
     local marker="$KBD_USB_MARKER"
 
     # Check if WSL
@@ -54,19 +102,29 @@ kbd_find_usb() {
     fi
 }
 
-# Get path to bare repo on USB
-kbd_repo_path() {
-    local usb
-    usb=$(kbd_find_usb) || return 1
-    echo "$usb/personal_repos/kbd.git"
+# Get path to origin dir (bare repo on USB)
+kbd_check_origin() {
+  if [[ -z "$KBD_ORIGIN_DIR" ]]; then
+    echo "kbd: KBD_ORIGIN_DIR unset."
+    return 1
+
+  fi
+  # add additional error handling?
+  if [[ ! -d "$KBD_ORIGIN_DIR" ]]; then
+    echo "kbd: KBD_ORIGIN_DIR does not exist."
+    return 1
+
+  fi
+
+  echo "$KBD_ORIGIN_DIR"
 }
 
 # Pull from USB
 kpull() {
     local repo
-    repo=$(kbd_repo_path) || return 1
+    repo=$(kbd_check_origin) || return 1
 
-    cd "$KBD_DIR" || return 1
+    cd "$KBD_LOCAL_DIR" || return 1
     git pull origin master
     cd - > /dev/null
 }
@@ -74,9 +132,9 @@ kpull() {
 # Sync to USB: add all, commit with date, push
 ksync() {
     local repo
-    repo=$(kbd_repo_path) || return 1
+    repo=$(kbd_check_origin) || return 1
 
-    cd "$KBD_DIR" || return 1
+    cd "$KBD_LOCAL_DIR" || return 1
     git add -A
 
     # Only commit if there are changes
@@ -101,10 +159,10 @@ kusboff() {
 }
 
 # Open journal
-alias j='nvim "$KBD_DIR/journal.txt"'
+alias j='nvim "$KBD_LOCAL_DIR/journal.txt"'
 
 # Open notes
-alias n='nvim "$KBD_DIR/notes.txt"'
+alias n='nvim "$KBD_LOCAL_DIR/notes.txt"'
 
 # Quick status
-alias kst='cd "$KBD_DIR" && git status && cd - > /dev/null'
+alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
