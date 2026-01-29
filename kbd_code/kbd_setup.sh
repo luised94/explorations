@@ -21,9 +21,12 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
   if [ -z "$KBD_USB_DRIVE" ]; then
     echo "kbd: USB with marker '$KBD_USB_MARKER' not found" >&2
     echo "kbd: Ensure KBD USB is connected." >&2
-    return 1
+    echo "kbd: Afterwards, source kbd_setup.sh." >&2
+    echo "Local aliases (j, n) still work. Sync (kpull, ksync) won't."
+    export KBD_USB_CONNECTED=false
   fi
 
+  export KBD_USB_CONNECTED=true
   export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
 
   # Ensure mount point directory exists
@@ -128,6 +131,11 @@ kbd_check_origin() {
 
 # Pull from USB
 kpull() {
+  if [ "$KBD_USB_CONNECTED" = false ]; then
+    echo "kbd: USB is not connected. Sync not available."
+    return 1
+  fi
+
     local repo
     repo=$(kbd_check_origin) || return 1
 
@@ -138,6 +146,12 @@ kpull() {
 
 # Sync to USB: add all, commit with date, push
 ksync() {
+  if [ "$KBD_USB_CONNECTED" = false ]; then
+    echo "kbd: USB is not connected. Sync not available."
+    return 1
+
+  fi
+
     local repo
     repo=$(kbd_check_origin) || return 1
 
