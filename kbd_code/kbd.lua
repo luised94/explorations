@@ -75,6 +75,58 @@ local function insert_date_header()
     vim.api.nvim_win_set_cursor(0, {new_line_count, 0})
 end
 
+-- === NEW NOTE SECTION ===
+
+local function add_note_section()
+    -- Prompt for citation key
+    local citation_key = vim.fn.input("Citation key: @")
+
+    -- User cancelled or empty input
+    if citation_key == nil or citation_key == "" then
+        vim.notify("kbd: cancelled", vim.log.levels.INFO)
+        return
+    end
+
+    local header = string.format("## @%s", citation_key)
+
+    -- Get all lines in buffer
+    local line_count = vim.api.nvim_buf_line_count(0)
+    local all_lines = vim.api.nvim_buf_get_lines(0, 0, line_count, false)
+
+    -- Check if this citation key already exists
+    for line_number, line in ipairs(all_lines) do
+        if line == header then
+            vim.notify(string.format("kbd: @%s already exists, jumping to it", citation_key), vim.log.levels.INFO)
+            vim.api.nvim_win_set_cursor(0, {line_number, 0})
+            return
+        end
+    end
+
+    -- Go to end of file
+    vim.cmd("normal! G")
+
+    -- Add blank line if file doesn't end with one
+    local last_line = vim.api.nvim_buf_get_lines(0, -2, -1, false)[1] or ""
+    local lines_to_insert = {}
+
+    if last_line ~= "" then
+        table.insert(lines_to_insert, "")
+    end
+
+    table.insert(lines_to_insert, header)
+    table.insert(lines_to_insert, "")
+
+    -- Insert after last line
+    vim.api.nvim_buf_set_lines(0, -1, -1, false, lines_to_insert)
+
+    -- Move cursor to the blank line after header (ready to type)
+    local new_line_count = vim.api.nvim_buf_line_count(0)
+    vim.api.nvim_win_set_cursor(0, {new_line_count, 0})
+
+    vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
+end
+
+
 local function open_journal()
     local command = string.format("edit %s", journal_path)
     vim.cmd(command)
@@ -111,4 +163,10 @@ vim.keymap.set(
     { desc = "kbd: open notes" }
 )
 
+vim.keymap.set(
+    mode_normal,
+    string.format("%s%s", leader_k, "c"),
+    add_note_section,
+    { desc = "kbd: add citation section to notes" }
+)
 -- vim.notify("kbd.lua: loading complete", vim.log.levels.INFO)
