@@ -79,52 +79,21 @@ alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
 alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 
 # Sync functions need USB - they check KBD_USB_CONNECTED internally
+
 # Find and optionally mount USB, returns mount point path
+
 kbd_refresh() {
-    local marker="$KBD_USB_MARKER"
+    local script_path="${BASH_SOURCE[0]}"
 
-    # Check if WSL
-    if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
-        echo "kbd: WSL_DISTRO_NAME found." >&2
-        # WSL: use PowerShell to find drive letter with marker
-        local drive
-        drive=$(powershell.exe -NoProfile -Command 'Get-Volume |
-          Where-Object { $_.DriveLetter -and (Test-Path -LiteralPath "$($_.DriveLetter):\.kbd-usb-marker") } |
-          Select-Object -ExpandProperty DriveLetter' 2>/dev/null | tr -d '\r')
-
-        if [ -z "$drive" ]; then
-            echo "kbd: USB with marker '$marker' not found" >&2
-            echo "kbd: Drive is '$drive'" >&2
-            return 1
-        fi
-
-        local mount_point="/mnt/${drive,,}"  # lowercase
-
-        # Mount if not already mounted with content
-        if [ ! -d "$mount_point/personal_repos" ]; then
-            echo "kbd: mounting ${drive}: to $mount_point"
-            sudo mount -t drvfs "${drive}:" "$mount_point" -o metadata
-            if [ $? -ne 0 ]; then
-                echo "kbd: mount failed" >&2
-                return 1
-            fi
-        fi
-
-        echo "$mount_point"
-        return 0
-    else
-        # Native Linux: scan common mount points
-        local dir
-        for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
-            if [ -f "$dir/$marker" ]; then
-                echo "$dir"
-                return 0
-            fi
-        done
-
-        echo "kbd: USB with marker '$marker' not found" >&2
+    if [ -z "$script_path" ]; then
+        echo "kbd: cannot determine script path, manually run:"
+        echo "kbd: source ~/.config/mc_extensions/kbd_setup.sh"
         return 1
     fi
+
+    echo "kbd: refreshing from $script_path..."
+    source "$script_path"
+
 }
 
 # Pull from USB
