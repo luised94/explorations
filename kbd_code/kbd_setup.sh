@@ -20,7 +20,6 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
     # Check PowerShell availability
     if command -v powershell.exe &> /dev/null; then
         export KBD_POWERSHELL_AVAILABLE=true
-        local ps_version
         ps_version=$(powershell.exe -NoProfile -Command '$PSVersionTable.PSVersion.Major' 2>/dev/null | tr -d '\r')
         if [ -n "$ps_version" ] && [ "$ps_version" -lt 5 ]; then
             echo "kbd[WARN]: PowerShell version $ps_version < 5. Some features may not work."
