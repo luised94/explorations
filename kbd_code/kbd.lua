@@ -30,6 +30,13 @@ end
 -- Normalize to an absolute path with no trailing slash.
 kbd_local_dir = vim.fn.fnamemodify(kbd_local_dir, ":p"):gsub("/$", "")
 
+-- === Usercommands ===
+-- Open the digraph help (includes the digraph table you can search with /).
+vim.api.nvim_create_user_command("ShowDigraphs", function()
+  vim.cmd("help digraph-table")
+end, {})
+
+-- === Autocommands ===
 local aug = vim.api.nvim_create_augroup("kbd_txt_markdown", { clear = true })
 
 -- Add highlighting to txt files as if they are markdown.
