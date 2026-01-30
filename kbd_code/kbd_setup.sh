@@ -16,7 +16,7 @@ alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 # === WSL/ENVIRONMENT DETECTION ===
 if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
     export KBD_ENV="wsl"
-    
+
     # Check PowerShell availability
     if command -v powershell.exe &> /dev/null; then
         export KBD_POWERSHELL_AVAILABLE=true
@@ -53,7 +53,15 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
             export KBD_USB_CONNECTED=true
             export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
 
+            # Handle stale mount point (exists but broken after eject)
+            if [ -e "$KBD_MOUNT_POINT" ] && [ ! -d "$KBD_MOUNT_POINT" ]; then
+                echo "kbd: Removing stale mount point."
+                sudo rmdir "$KBD_MOUNT_POINT" 2>/dev/null
+            fi
+
             if [ ! -d "$KBD_MOUNT_POINT" ]; then
+                echo "kbd: KBD_MOUNT_POINT dir does not exist."
+                echo "kbd: Requires mounting."
                 sudo mkdir -p "$KBD_MOUNT_POINT"
             fi
 
@@ -195,6 +203,7 @@ ksync() {
     else
         git commit
     fi
+
     # Check if there are commits to push
     local unpushed
     unpushed=$(git rev-list --count origin/master..HEAD 2>/dev/null)
@@ -219,15 +228,59 @@ kusboff() {
         return 0
     fi
 
-    cd ~
-    sudo umount "$KBD_MOUNT_POINT"
+    # Step 1: Leave mount directory if inside it
+    local current_dir
+    current_dir=$(pwd)
 
-    if [ $? -eq 0 ]; then
-        echo "kbd: unmounted $KBD_MOUNT_POINT, safe to eject"
-        export KBD_USB_CONNECTED=false    # Update state
-    else
-        echo "kbd[ERROR]: unmount failed - files may be in use"
-        return 1
+    if [[ "$current_dir" == "$KBD_MOUNT_POINT"* ]]; then
+        cd ~
+        echo "kbd: changed directory from $current_dir to ~"
     fi
 
+    # Step 2: Unmount from WSL
+    if mountpoint -q "$KBD_MOUNT_POINT" 2>/dev/null; then
+        echo "kbd: unmounting $KBD_MOUNT_POINT from WSL..."
+        if ! sudo umount "$KBD_MOUNT_POINT" 2>&1; then
+            echo "kbd[WARN]: WSL unmount failed"
+            echo "kbd: Check other tmux panes, terminal tabs, VS Code terminals"
+        fi
+    else
+        echo "kbd: $KBD_MOUNT_POINT not mounted in WSL"
+    fi
+
+    # Step 2b: Remove mount point directory
+    if [ -d "$KBD_MOUNT_POINT" ] || [ -e "$KBD_MOUNT_POINT" ]; then
+        sudo rmdir "$KBD_MOUNT_POINT" 2>/dev/null
+    fi
+
+    # Step 3: Windows eject (skip dismount, go straight to eject)
+    if [ "$KBD_POWERSHELL_AVAILABLE" != true ]; then
+        echo "kbd: WSL unmounted. Manually eject from Windows Explorer."
+        export KBD_USB_CONNECTED=false
+        return 0
+    fi
+
+    echo "kbd: ejecting ${KBD_USB_DRIVE}: from Windows..."
+    powershell.exe -NoProfile -Command "
+        \$dl = '$KBD_USB_DRIVE:'
+        (New-Object -ComObject Shell.Application).NameSpace(17).ParseName(\$dl).InvokeVerb('Eject')
+    " 2>/dev/null
+
+    # Give Windows a moment, then check if drive still exists
+    sleep 1
+    local drive_exists
+    drive_exists=$(powershell.exe -NoProfile -Command "
+        if (Test-Path '${KBD_USB_DRIVE}:\') { Write-Output 'yes' } else { Write-Output 'no' }
+    " 2>/dev/null | tr -d '\r')
+
+    if [ "$drive_exists" = "no" ]; then
+        echo "kbd: ejected ${KBD_USB_DRIVE}: - safe to unplug"
+        export KBD_USB_CONNECTED=false
+        return 0
+    else
+        echo "kbd[WARN]: Eject requested but drive still present"
+        echo "kbd: May be safe to unplug, or check Windows for 'busy' notification"
+        export KBD_USB_CONNECTED=false
+        return 0
+    fi
 }
