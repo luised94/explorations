@@ -27,6 +27,24 @@ if kbd_local_dir == nil then
     kbd_local_dir = string.format("%s/personal_repos/kbd", os.getenv("HOME"))
 end
 
+-- Normalize to an absolute path with no trailing slash.
+kbd_local_dir = vim.fn.fnamemodify(kbd_local_dir, ":p"):gsub("/$", "")
+
+local aug = vim.api.nvim_create_augroup("kbd_txt_markdown", { clear = true })
+
+-- Add highlighting to txt files as if they are markdown.
+vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
+  group = aug,
+  pattern = "*.txt",
+  callback = function(args)
+    local file = vim.api.nvim_buf_get_name(args.buf) -- full path (or "" for [No Name]) [web:19]
+    if file == "" then return end
+    if vim.startswith(file, kbd_local_dir .. "/") then
+      vim.bo[args.buf].filetype = "markdown"
+    end
+  end,
+})
+
 local journal_path = string.format("%s/journal.txt", kbd_local_dir)
 local notes_path = string.format("%s/notes.txt", kbd_local_dir)
 
