@@ -169,7 +169,7 @@ local leader_k = '<leader>k'
 
 vim.keymap.set(
     mode_normal,
-    string.format("%s%s", leader_k, "d"),
+    string.format("%s%s", leader_k, "h"),
     insert_date_header,
     { desc = "kbd: insert date header" }
 )
