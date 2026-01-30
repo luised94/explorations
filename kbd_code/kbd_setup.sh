@@ -1,87 +1,109 @@
 # kbd.sh - shell tooling for kbd (knowledge base desk)
 # Source this file or place in extensions directory
 
+# === LOCAL CONFIGURATION (always available) ===
 # Local directory
 export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
 
 # Marker file placed on USB root to identify it
 export KBD_USB_MARKER=".kbd-usb-marker"
 
-
-if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
-  export KBD_USB_DRIVE=$(powershell.exe -NoProfile -Command '
-    Get-Volume |
-    Where-Object {
-      $_.DriveLetter -and
-      (Test-Path -LiteralPath "$($_.DriveLetter):\.kbd-usb-marker") 
-    } |
-    Select-Object -ExpandProperty DriveLetter
-    ' 2>/dev/null | tr -d '\r'
-  )
-
-  if [ -z "$KBD_USB_DRIVE" ]; then
-    echo ""
-    echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
-    echo "kbd: Ensure KBD USB is connected."
-    echo "kbd: Afterwards, source kbd_setup.sh"
-    echo "kbd: Local aliases (j, n) still work. Sync (kpull, ksync) won't."
-    echo ""
-    export KBD_USB_CONNECTED=false
-  else
-    export KBD_USB_CONNECTED=true
-    export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
-
-    if [ ! -d "$KBD_MOUNT_POINT" ]; then
-      sudo mkdir -p "$KBD_MOUNT_POINT"
-    fi
-
-    if [ ! -d "$KBD_MOUNT_POINT/personal_repos" ]; then
-      echo "kbd: mounting ${KBD_USB_DRIVE}: to $KBD_MOUNT_POINT"
-      sudo mount -t drvfs "${KBD_USB_DRIVE}:" "$KBD_MOUNT_POINT" -o metadata
-      if [ $? -ne 0 ]; then
-        echo "kbd: mount failed" >&2
-        export KBD_USB_CONNECTED=false
-      fi
-    fi
-
-    if [ "$KBD_USB_CONNECTED" = true ]; then
-      echo "kbd: Mount point is '$KBD_MOUNT_POINT'"
-      export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-    fi
-  fi
-
-else
-  # Native Linux: scan common mount points (NOT TESTED)
-  export KBD_USB_CONNECTED=false
-
-  for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
-    if [ -f "$dir/$KBD_USB_MARKER" ]; then
-      export KBD_MOUNT_POINT="$dir"
-      export KBD_USB_CONNECTED=true
-      export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-      break
-    fi
-  done
-
-  if [ "$KBD_USB_CONNECTED" = false ]; then
-    echo ""
-    echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
-    echo "kbd: Ensure KBD USB is connected."
-    echo "kbd: Afterwards, source kbd_setup.sh"
-    echo "kbd: Local aliases (j, n) still work. Sync (kpull, ksync) won't."
-    echo ""
-  fi
-fi
-
 # Aliases always defined - they use KBD_LOCAL_DIR, not USB
 alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
 alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
 alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 
+# === WSL/ENVIRONMENT DETECTION ===
+if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
+    export KBD_ENV="wsl"
+    
+    # Check PowerShell availability
+    if command -v powershell.exe &> /dev/null; then
+        export KBD_POWERSHELL_AVAILABLE=true
+        local ps_version
+        ps_version=$(powershell.exe -NoProfile -Command '$PSVersionTable.PSVersion.Major' 2>/dev/null | tr -d '\r')
+        if [ -n "$ps_version" ] && [ "$ps_version" -lt 5 ]; then
+            echo "kbd[WARN]: PowerShell version $ps_version < 5. Some features may not work."
+        fi
+    else
+        export KBD_POWERSHELL_AVAILABLE=false
+        echo "kbd[WARN]: powershell.exe not found. USB features disabled."
+    fi
+
+    # USB detection (requires PowerShell)
+    if [ "$KBD_POWERSHELL_AVAILABLE" = true ]; then
+        export KBD_USB_DRIVE=$(powershell.exe -NoProfile -Command '
+            Get-Volume |
+            Where-Object {
+                $_.DriveLetter -and
+                (Test-Path -LiteralPath "$($_.DriveLetter):\.kbd-usb-marker") 
+            } |
+            Select-Object -ExpandProperty DriveLetter
+            ' 2>/dev/null | tr -d '\r'
+        )
+
+        if [ -z "$KBD_USB_DRIVE" ]; then
+            echo ""
+            echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
+            echo "kbd: Plug in USB, then run: kbd_refresh"
+            echo "kbd: Local aliases (j, n) work. Sync (kpull, ksync) won't."
+            echo ""
+            export KBD_USB_CONNECTED=false
+        else
+            export KBD_USB_CONNECTED=true
+            export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
+
+            if [ ! -d "$KBD_MOUNT_POINT" ]; then
+                sudo mkdir -p "$KBD_MOUNT_POINT"
+            fi
+
+            if [ ! -d "$KBD_MOUNT_POINT/personal_repos" ]; then
+                echo "kbd: mounting ${KBD_USB_DRIVE}: to $KBD_MOUNT_POINT"
+                sudo mount -t drvfs "${KBD_USB_DRIVE}:" "$KBD_MOUNT_POINT" -o metadata
+                if [ $? -ne 0 ]; then
+                    echo "kbd[ERROR]: mount failed"
+                    export KBD_USB_CONNECTED=false
+                fi
+            fi
+
+            if [ "$KBD_USB_CONNECTED" = true ]; then
+                echo "kbd: USB connected at $KBD_MOUNT_POINT"
+                export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
+            fi
+        fi
+    else
+        export KBD_USB_CONNECTED=false
+    fi
+
+else
+    # Native Linux
+    export KBD_ENV="linux"
+    export KBD_POWERSHELL_AVAILABLE=false
+    export KBD_USB_CONNECTED=false
+
+    for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
+        if [ -f "$dir/$KBD_USB_MARKER" ]; then
+            export KBD_MOUNT_POINT="$dir"
+            export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
+            export KBD_USB_CONNECTED=true
+            echo "kbd: USB connected at $KBD_MOUNT_POINT"
+            break
+        fi
+    done
+
+    if [ "$KBD_USB_CONNECTED" = false ]; then
+        echo ""
+        echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
+        echo "kbd: Plug in USB, then run: kbd_refresh"
+        echo "kbd: Local aliases (j, n) work. Sync (kpull, ksync) won't."
+        echo ""
+    fi
+fi
+
+# === FUNCTIONS (defined after variables set) ===
 # Sync functions need USB - they check KBD_USB_CONNECTED internally
 
 # Find and optionally mount USB, returns mount point path
-
 kbd_refresh() {
     local script_path="${BASH_SOURCE[0]}"
 
@@ -176,7 +198,7 @@ ksync() {
     # Check if there are commits to push
     local unpushed
     unpushed=$(git rev-list --count origin/master..HEAD 2>/dev/null)
-    
+
     if [ -z "$unpushed" ]; then
         echo "kbd: cannot determine push status, pushing anyway"
         git push origin master
@@ -207,4 +229,5 @@ kusboff() {
         echo "kbd[ERROR]: unmount failed - files may be in use"
         return 1
     fi
+
 }
