@@ -78,3 +78,22 @@ git clone /mnt/d/personal_repos/kbd.git ~/personal_repos/kbd
 cd ~/personal_repos/kbd
 git log # check the HEAD log.
 ```
+
+## 2026-02-02
+### WSL Permission Drift
+The WSL drvfs mount with -o metadata is fragile. Windows antivirus locking files, Unicode normalization differences (NFD vs NFC in filenames), and case-sensitivity mismatches (Windows is case-preserving, Linux is case-sensitive) will corrupt your git index over time. You'll see "modified" files in git status that you haven't touched, caused by line-ending or permission-bit changes (644 vs 755).
+
+Mitigation: Enforce a .gitattributes with * text=auto eol=lf and *.txt text. Store a git config core.filemode false in the repo's local config. Never run git gc on the USB bare repo from WSL; always from native Linux or Windows Git.
+
+```bash
+# Create .gitattributes
+echo "* text=auto eol=lf" >> .gitattributes
+echo "*.txt text" >> .gitattributes
+
+# Set core.filemode for this repo
+git config core.filemode false
+
+# Commit
+git add .gitattributes
+git commit -m "add gitattributes for WSL compatibility"
+```
