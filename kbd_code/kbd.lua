@@ -57,39 +57,56 @@ local notes_path = string.format("%s/notes.txt", kbd_local_dir)
 
 -- === FUNCTIONS ===
 
-local function insert_date_header()--{
+local function insert_date_header()
+    local api = vim.api
+    local bufnr = 0
+
+    -- Don't touch the buffer if we can't modify it.
+    if not api.nvim_buf_get_option(bufnr, "modifiable") then
+        return
+    end
+
+    -- Fixed-width format "## YYYY-MM-DD" (13 chars).
     local date_string = os.date("## %Y-%m-%d")
 
-    -- Get all lines in buffer
-    local line_count = vim.api.nvim_buf_line_count(0)
-    local all_lines = vim.api.nvim_buf_get_lines(0, 0, line_count, false)
+    -- Only touch hot data (header region). Scan until we leave the prefix.
+    -- Assumption: All headers are contiguous at line 0..N with no gaps.
+    local header_region_limit = 50
+    local lines = api.nvim_buf_get_lines(bufnr, 0, header_region_limit, false)
 
-    -- Check if today's header already exists
-    -- NOTE: This scans entire buffer.
-    -- Function appends at the top.
-    for _, line in ipairs(all_lines) do
+    local existing_row = nil
+
+    --Use numeric index to avoid iterator overhead (ipairs allocates closure).
+    for i = 1, #lines do
+        local line = lines[i]
+
         if line == date_string then
-            vim.notify("kbd: today's date header already exists", vim.log.levels.INFO)
-            -- Optional: jump to it instead of duplicating
-            vim.cmd(string.format("/%s", date_string))
-            return
+            existing_row = i
+            break
+        end
+
+        -- Early termination. Cold data starts after header block ends.
+        -- If not a header pattern, we passed the contiguous header region.
+        if line:sub(1, 3) ~= "## " then
+            break
         end
     end
 
-    -- Go to end of file
-    vim.cmd("normal! ggO")
+    if existing_row then
+        -- Minimal side effects on duplicate. Just move cursor.
+        vim.notify("kbd: today's header exists", vim.log.levels.INFO)
+        api.nvim_win_set_cursor(0, {existing_row + 1, 0})
+        return
+    end
 
-    -- nvim_buf_set_lines accepts tables
-    local lines_to_insert = {}
-    table.insert(lines_to_insert, date_string)
-    table.insert(lines_to_insert, "")
+    -- Defer allocation until insertion is confirmed necessary.
+    -- (Duplicate path is now allocation-free).
+    local insertion_block = {date_string, ""}
+    api.nvim_buf_set_lines(bufnr, 0, 0, false, insertion_block)
 
-    -- Insert after first line
-    vim.api.nvim_buf_set_lines(0, 0, 0, false, lines_to_insert)
-
-    -- Move cursor to the blank line after header (ready to type)
-    vim.api.nvim_win_set_cursor(0, {2, 0})
-end--}
+    -- Cursor to blank line (row 2)
+    api.nvim_win_set_cursor(0, {2, 0})
+end
 
 local function add_note_section()
     -- Prompt for citation key
