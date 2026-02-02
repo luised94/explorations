@@ -55,9 +55,9 @@ vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
 local journal_path = string.format("%s/journal.txt", kbd_local_dir)
 local notes_path = string.format("%s/notes.txt", kbd_local_dir)
 
--- === ACTIONS ===
+-- === FUNCTIONS ===
 
-local function insert_date_header()
+local function insert_date_header()--{
     local date_string = os.date("## %Y-%m-%d")
 
     -- Get all lines in buffer
@@ -65,10 +65,8 @@ local function insert_date_header()
     local all_lines = vim.api.nvim_buf_get_lines(0, 0, line_count, false)
 
     -- Check if today's header already exists
-    -- NOTE: This scans entire buffer. For very large files (10k+ lines),
-    -- could optimize by: searching backwards from end, only checking ## lines,
-    -- or using vim.fn.search(). Premature for now - journal would need
-    -- years of daily entries before this matters.
+    -- NOTE: This scans entire buffer.
+    -- Function appends at the top.
     for _, line in ipairs(all_lines) do
         if line == date_string then
             vim.notify("kbd: today's date header already exists", vim.log.levels.INFO)
@@ -79,28 +77,19 @@ local function insert_date_header()
     end
 
     -- Go to end of file
-    vim.cmd("normal! G")
+    vim.cmd("normal! ggO")
 
-    -- Add blank line if file doesn't end with one
-    local last_line = vim.api.nvim_buf_get_lines(0, -2, -1, false)[1] or ""
+    -- nvim_buf_set_lines accepts tables
     local lines_to_insert = {}
-
-    if last_line ~= "" then
-        table.insert(lines_to_insert, "")
-    end
-
     table.insert(lines_to_insert, date_string)
     table.insert(lines_to_insert, "")
 
-    -- Insert after last line
-    vim.api.nvim_buf_set_lines(0, -1, -1, false, lines_to_insert)
+    -- Insert after first line
+    vim.api.nvim_buf_set_lines(0, 0, 0, false, lines_to_insert)
 
     -- Move cursor to the blank line after header (ready to type)
-    local new_line_count = vim.api.nvim_buf_line_count(0)
-    vim.api.nvim_win_set_cursor(0, {new_line_count, 0})
-end
-
--- === NEW NOTE SECTION ===
+    vim.api.nvim_win_set_cursor(0, {2, 0})
+end--}
 
 local function add_note_section()
     -- Prompt for citation key
@@ -150,6 +139,7 @@ local function add_note_section()
 
     vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
 end
+--}
 
 
 local function open_journal()
