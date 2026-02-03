@@ -4,12 +4,15 @@
 # === LOCAL CONFIGURATION (always available) ===
 # Local directory
 export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
+export KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
 
 # Marker file placed on USB root to identify it
 export KBD_USB_MARKER=".kbd-usb-marker"
 
-# Aliases always defined - they use KBD_LOCAL_DIR, not USB
+# === ALIASES ===
+# Always defined - they use KBD_LOCAL_DIR, not USB
 alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
+alias kt='nvim "$KBD_LOCAL_DIR/tasks.txt"'
 alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
 alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 
