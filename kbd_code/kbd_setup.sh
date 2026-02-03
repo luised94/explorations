@@ -110,8 +110,8 @@ else
         if [ -f "$dir/$KBD_USB_MARKER" ]; then
             export KBD_MOUNT_POINT="$dir"
             export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-            if [ -f "$KBD_USB_BIB" ] && [ "$KBD_USB_BIB" -nt "$KBD_LOCAL_BIB" ]; then
-              cp "$KBD_USB_BIB" "$KBD_LOCAL_BIB"
+            if [ -f "$KBD_USB_ZOTERO_BIB" ] && [ "$KBD_USB_ZOTERO_BIB" -nt "$KBD_LOCAL_ZOTERO_BIB" ]; then
+              cp "$KBD_USB_ZOTERO_BIB" "$KBD_LOCAL_ZOTERO_BIB"
               echo "kbd: zotero_library.bib synced from USB"
             fi
             export KBD_USB_CONNECTED=true
