@@ -1,0 +1,37 @@
+## Lua Coding Guidelines (Explicit & Data-Oriented)
+
+**Phase 1: Structure**
+Organize as: CONFIG  PREPROCESSING  MAIN LOGIC
+- Config: Semantic constants (formats, limits, patterns) that answer "why this value?"
+- Preprocessing: Data fetching and computed values reused in logic
+- Logic: Control flow with named intermediates for multi-step operations
+
+**Phase 2: Naming Heuristics (Balance)**
+Name it | Inline it
+---|---
+Reused identifiers (`bufnr`, `winid`) | Single-use API defaults (`false`, `0` for strict_indexing)
+Semantic configuration (`SCAN_WINDOW`, `DATE_FORMAT`) | Obvious literals (`local i = 1`, `return nil`)
+Complex derivations (`cursor_target = {row + offset, col}`) | Self-documenting strings (`"kbd: exists"`)
+Values that might change (magic numbers) | Contextually obvious operations (`line:sub(1, 3)` when `"## "` is nearby)
+
+**Phase 3: Data-Oriented Design (Acton)**
+- Document data layout assumptions in comments (contiguous regions, hot/cold splits)
+- Optimize for the 99% case; early termination when leaving valid data regions
+- Numeric loops (`for i = 1, #t`) over iterators (`ipairs`) when bounds known
+- Local cache for API tables (`local api = vim.api`)
+- Zero-allocation fast paths: defer table construction until mutation confirmed
+
+**Phase 4: Robustness (Carmack)**
+- Fail fast: Guard clauses at top of logic section (modifiable checks, nil guards)
+- Separate find/mutate phases: search returns result, mutation acts on it
+- Minimal side effects on duplicate/missing paths (notify and return vs. heavy setup)
+- Explicit cursor positioning: named target variables for row/col calculations
+
+**Anti-Patterns:**
+- Naming every literal parameter (too verbose)
+- Inline complex table construction (magic numbers in cursor calls)
+- Mixed concerns: configuration embedded in logic, preprocessing after guards
+- Generic scanning when data layout allows early termination
+
+**Review Request:**
+Check structure adherence, apply naming heuristics for balanced verbosity, enforce data-oriented access patterns, verify fail-fast guards exist.

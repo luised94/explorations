@@ -9,6 +9,10 @@ export KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
 # Marker file placed on USB root to identify it
 export KBD_USB_MARKER=".kbd-usb-marker"
 
+# Cache usb in case environment reloaded during editing.
+CACHE_FILE="/tmp/kbd_usb_drive_cache"
+KBD_SCRIPT_PATH="$HOME/.config/mc_extensions/kbd_setup.sh"
+
 # === ALIASES ===
 # Always defined - they use KBD_LOCAL_DIR, not USB
 alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
@@ -79,6 +83,12 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
             if [ "$KBD_USB_CONNECTED" = true ]; then
                 echo "kbd: USB connected at $KBD_MOUNT_POINT"
                 export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
+                KBD_USB_BIB="$KBD_MOUNT_POINT/zotero_library.bib"
+                KBD_LOCAL_BIB="$KBD_LOCAL_DIR/zotero_library.bib"
+                if [ -f "$KBD_USB_BIB" ] && [ "$KBD_USB_BIB" -nt "$KBD_LOCAL_BIB" ]; then
+                    cp "$KBD_USB_BIB" "$KBD_LOCAL_BIB"
+                    echo "kbd: zotero_library.bib synced from USB"
+                fi
             fi
         fi
     else
@@ -88,13 +98,16 @@ if [[ ! -z "$WSL_DISTRO_NAME" ]]; then
 else
     # Native Linux
     export KBD_ENV="linux"
-    export KBD_POWERSHELL_AVAILABLE=false
     export KBD_USB_CONNECTED=false
 
     for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
         if [ -f "$dir/$KBD_USB_MARKER" ]; then
             export KBD_MOUNT_POINT="$dir"
             export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
+            if [ -f "$KBD_USB_BIB" ] && [ "$KBD_USB_BIB" -nt "$KBD_LOCAL_BIB" ]; then
+              cp "$KBD_USB_BIB" "$KBD_LOCAL_BIB"
+              echo "kbd: zotero_library.bib synced from USB"
+            fi
             export KBD_USB_CONNECTED=true
             echo "kbd: USB connected at $KBD_MOUNT_POINT"
             break
@@ -162,6 +175,15 @@ kpull() {
 
     cd "$KBD_LOCAL_DIR" || return 1
     git pull origin master
+
+    # Sync bib if USB version is newer
+    local usb_bib="$KBD_MOUNT_POINT/zotero_library.bib"
+    local local_bib="$KBD_LOCAL_DIR/zotero_library.bib"
+    if [ -f "$usb_bib" ] && [ "$usb_bib" -nt "$local_bib" ]; then
+        cp "$usb_bib" "$local_bib"
+        echo "kbd: zotero_library.bib updated"
+    fi
+
     cd - > /dev/null
 }
 
@@ -221,6 +243,30 @@ ksync() {
     fi
 
     cd - > /dev/null
+}
+
+kbib_sync() {
+    local windows_user="${MC_WINDOWS_USER:-Luised94}"
+    local source="/mnt/c/Users/$windows_user/Zotero/zotero_library.bib"
+    local dest="$KBD_MOUNT_POINT/zotero_library.bib"
+
+    if [ "$KBD_USB_CONNECTED" != true ]; then
+        echo "kbd[ERROR]: USB not connected"
+        return 1
+    fi
+
+    if [ ! -f "$source" ]; then
+        echo "kbd[ERROR]: Source bib not found: $source"
+        return 1
+    fi
+
+    # Only copy if source is newer
+    if [ "$source" -nt "$dest" ]; then
+        cp "$source" "$dest"
+        echo "kbd: zotero_library.bib updated on USB"
+    else
+        echo "kbd: zotero_library.bib already current"
+    fi
 }
 
 # Unmount USB (run before ejecting)

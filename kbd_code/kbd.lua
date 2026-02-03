@@ -30,6 +30,15 @@ end
 -- Normalize to an absolute path with no trailing slash.
 kbd_local_dir = vim.fn.fnamemodify(kbd_local_dir, ":p"):gsub("/$", "")
 
+local kbd_mount_point = os.getenv("KBD_MOUNT_POINT")
+local bib_path = kbd_mount_point
+    and string.format("%s/zotero_library.bib", kbd_mount_point)
+    or string.format("%s/zotero_library.bib", kbd_local_dir)
+
+-- Citation key extraction pattern for grep.
+-- BetterBibTeX format: @type{citekey, -> extract citekey
+local BIB_GREP_PATTERN = "@[^{]+\\{\\K[^,]+"
+
 -- === Usercommands ===
 -- Open the digraph help (includes the digraph table you can search with /).
 vim.api.nvim_create_user_command("ShowDigraphs", function()
@@ -189,6 +198,63 @@ local function prepend_note_section()
     vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
 end
 
+local function insert_citation_from_bib()
+    -- GUARDS
+    if not bib_path then
+        vim.notify("kbd: bib_path not configured", vim.log.levels.ERROR)
+        return
+    end
+
+    local bib_exists = vim.fn.filereadable(bib_path) == 1
+    if not bib_exists then
+        vim.notify(string.format("kbd: bib not found: %s", bib_path), vim.log.levels.ERROR)
+        return
+    end
+
+    -- PREPROCESSING
+    -- Extract citation keys via grep. -o outputs only matches, -P enables Perl regex.
+    local grep_command = string.format("grep -oP '%s' %s", BIB_GREP_PATTERN, bib_path)
+    local raw_output = vim.fn.system(grep_command)
+
+    local grep_failed = vim.v.shell_error ~= 0
+    if grep_failed then
+        vim.notify("kbd: grep failed on bib file", vim.log.levels.ERROR)
+        return
+    end
+
+    local citation_list = vim.split(raw_output, "\n", { trimempty = true })
+
+    local no_citations = #citation_list == 0
+    if no_citations then
+        vim.notify("kbd: no citations found in bib", vim.log.levels.WARN)
+        return
+    end
+
+    -- MAIN LOGIC
+    -- vim.ui.select integrates with telescope if configured.
+    local select_opts = {
+        prompt = "Select citation:",
+        format_item = function(item)
+            return "@" .. item
+        end,
+    }
+
+    local on_selection = function(choice)
+        if not choice then
+            vim.notify("kbd: no citation selected", vim.log.levels.INFO)
+            return
+        end
+
+        local formatted_citation = "@" .. choice
+        local insert_mode = 'c'      -- character-wise
+        local insert_after = true
+        local move_cursor = true
+        vim.api.nvim_put({formatted_citation}, insert_mode, insert_after, move_cursor)
+    end
+
+    vim.ui.select(citation_list, select_opts, on_selection)
+end
+
 local function open_journal()
     local command = string.format("edit %s", journal_path)
     vim.cmd(command)
@@ -230,5 +296,12 @@ vim.keymap.set(
     string.format("%s%s", leader_k, "c"),
     prepend_note_section,
     { desc = "kbd: add citation section to notes" }
+)
+
+vim.keymap.set(
+    mode_normal,
+    string.format("%s%s", leader_k, "i"),
+    insert_citation_from_bib,
+    { desc = "kbd: insert citation at cursor" }
 )
 -- vim.notify("kbd.lua: loading complete", vim.log.levels.INFO)
