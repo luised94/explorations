@@ -23,10 +23,13 @@ alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
 alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 
 # === Setup ===
+# Reset vars
+export KBD_USB_CONNECTED=false
+unset KBD_MOUNT_POINT
+
 [[ "$1" == "force" ]] && rm -f "$CACHE_FILE"
 
 # --- WSL/ENVIRONMENT DETECTION ---
-# === WSL LOGIC ===
 if [[ -n "$WSL_DISTRO_NAME" ]]; then
     export KBD_ENV="wsl"
 
@@ -35,44 +38,38 @@ if [[ -n "$WSL_DISTRO_NAME" ]]; then
         CACHED_DRIVE=$(cat "$CACHE_FILE")
         POTENTIAL_MOUNT="/mnt/${CACHED_DRIVE,,}"
 
-        if [[ -f "$POTENTIAL_MOUNT/.kbd-usb-marker" ]]; then
-            export KBD_USB_CONNECTED=true
+        if [[ -f "$POTENTIAL_MOUNT/$KBD_USB_MARKER" ]]; then
+            export KBD_USB_DRIVE="$CACHED_DRIVE"
             export KBD_MOUNT_POINT="$POTENTIAL_MOUNT"
-            export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-
-            # Sync bib if USB version is newer
-            KBD_USB_ZOTERO_BIB="$KBD_MOUNT_POINT/zotero_library.bib"
-            KBD_LOCAL_ZOTERO_BIB="$KBD_LOCAL_DIR/zotero_library.bib"
-            if [[ -f "$KBD_USB_ZOTERO_BIB" ]] && [[ "$KBD_USB_ZOTERO_BIB" -nt "$KBD_LOCAL_ZOTERO_BIB" ]]; then
-                cp "$KBD_USB_ZOTERO_BIB" "$KBD_LOCAL_ZOTERO_BIB"
-                echo "kbd: bib synced from USB"
-            fi
-
-            return 0
+            export KBD_USB_CONNECTED=true
+        else
+          # Cache stale, continue to slow path
+          rm -f "$CACHE_FILE"
         fi
-        # Cache stale, continue to slow path
-        rm -f "$CACHE_FILE"
     fi
 
     # 2. SLOW PATH: PowerShell detection
-    if command -v powershell.exe &>/dev/null; then
+    if [[ "$KBD_USB_CONNECTED" == false ]] && command -v powershell.exe &>/dev/null; then
         KBD_USB_DRIVE=$(powershell.exe -NoProfile -Command '
-            Get-Volume | Where-Object { 
-                $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\.kbd-usb-marker") 
+            Get-Volume | Where-Object {
+                $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\.kbd-usb-marker")
             } | Select-Object -ExpandProperty DriveLetter
         ' 2>/dev/null | tr -d '\r')
 
-        if [[ -z "$KBD_USB_DRIVE" ]]; then
-            export KBD_USB_CONNECTED=false
-            [[ "$1" == "force" ]] && echo "kbd: USB not found"
-        else
-            export KBD_USB_CONNECTED=true
+        if [[ -n "$KBD_USB_DRIVE" ]]; then
             export KBD_MOUNT_POINT="/mnt/${KBD_USB_DRIVE,,}"
+            export KBD_USB_CONNECTED=true
+
+            # Update Cache
             echo "$KBD_USB_DRIVE" > "$CACHE_FILE"
 
-            # Mount if needed
-            if [[ ! -d "$KBD_MOUNT_POINT/personal_repos" ]]; then
+            # Mount logic
+            if [[ ! -d "$KBD_MOUNT_POINT" ]]; then
                 sudo mkdir -p "$KBD_MOUNT_POINT"
+            fi
+
+            # Check if mount is actually active (has contents)
+            if [[ ! -d "$KBD_MOUNT_POINT/personal_repos" ]]; then
                 echo "kbd: mounting ${KBD_USB_DRIVE}:..."
                 if ! sudo mount -t drvfs "${KBD_USB_DRIVE}:" "$KBD_MOUNT_POINT" -o metadata; then
                     echo "kbd[ERROR]: mount failed"
@@ -80,40 +77,16 @@ if [[ -n "$WSL_DISTRO_NAME" ]]; then
                     rm -f "$CACHE_FILE"
                 fi
             fi
-
-            [[ "$KBD_USB_CONNECTED" == true ]] && \
-                export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-        fi
-    else
-        export KBD_USB_CONNECTED=false
-    fi
-
-    # 3. If usb bib is newer, sync to local..
-    if [[ "$KBD_USB_CONNECTED" == true ]]; then
-        export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-
-        # Sync bib if USB version is newer
-        KBD_USB_ZOTERO_BIB="$KBD_MOUNT_POINT/zotero_library.bib"
-        KBD_LOCAL_ZOTERO_BIB="$KBD_LOCAL_DIR/zotero_library.bib"
-        if [[ -f "$KBD_USB_ZOTERO_BIB" ]] && [[ "$KBD_USB_ZOTERO_BIB" -nt "$KBD_LOCAL_ZOTERO_BIB" ]]; then
-            cp "$KBD_USB_ZOTERO_BIB" "$KBD_LOCAL_ZOTERO_BIB"
-            echo "kbd: bib synced from USB"
         fi
     fi
 
 else
     # Native Linux
     export KBD_ENV="linux"
-    export KBD_USB_CONNECTED=false
 
     for dir in /mnt/* /media/"$USER"/* /run/media/"$USER"/*; do
-        if [ -f "$dir/$KBD_USB_MARKER" ]; then
+        if [[ -f "$dir/$KBD_USB_MARKER" ]]; then
             export KBD_MOUNT_POINT="$dir"
-            export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
-            if [ -f "$KBD_USB_ZOTERO_BIB" ] && [ "$KBD_USB_ZOTERO_BIB" -nt "$KBD_LOCAL_ZOTERO_BIB" ]; then
-              cp "$KBD_USB_ZOTERO_BIB" "$KBD_LOCAL_ZOTERO_BIB"
-              echo "kbd: zotero_library.bib synced from USB"
-            fi
             export KBD_USB_CONNECTED=true
             echo "kbd: USB connected at $KBD_MOUNT_POINT"
             break
@@ -122,13 +95,29 @@ else
 
 fi
 
-# Let user know something went wrong with usb connection.
-[[ "$1" == "force" ]] && if [ "$KBD_USB_CONNECTED" = false ]; then
-  echo ""
-  echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
-  echo "kbd: Plug in USB, then run: kbd_refresh"
-  echo "kbd: Local aliases (j, n) work. Sync (kpull, ksync) won't."
-  echo ""
+# ==========================================
+# PHASE 2: EXECUTION
+# ==========================================
+if [[ "$KBD_USB_CONNECTED" == true ]]; then
+    export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
+
+    # Unified Bib Sync Logic (Runs for both WSL and Linux)
+    # Define paths once
+    KBD_USB_ZOTERO_BIB="$KBD_MOUNT_POINT/zotero_library.bib"
+    KBD_LOCAL_ZOTERO_BIB="$KBD_LOCAL_DIR/zotero_library.bib"
+
+    if [[ -f "$KBD_USB_ZOTERO_BIB" ]] && [[ "$KBD_USB_ZOTERO_BIB" -nt "$KBD_LOCAL_ZOTERO_BIB" ]]; then
+        cp "$KBD_USB_ZOTERO_BIB" "$KBD_LOCAL_ZOTERO_BIB"
+        echo "kbd: zotero_library.bib synced from USB"
+    fi
+
+elif [[ "$1" == "force" ]]; then
+    # Only warn if user explicitly requested a refresh
+    echo ""
+    echo "kbd: USB with marker '$KBD_USB_MARKER' not found"
+    echo "kbd: Plug in USB, then run: kbd_refresh"
+    echo "kbd: Local aliases (j, n) work. Sync (kpull, ksync) won't."
+    echo ""
 fi
 
 # === FUNCTIONS (defined after variables set) ===
@@ -312,13 +301,6 @@ kusboff() {
         sudo rmdir "$KBD_MOUNT_POINT" 2>/dev/null
     fi
 
-    # Step 3: Windows eject (skip dismount, go straight to eject)
-    if [ "$KBD_POWERSHELL_AVAILABLE" != true ]; then
-        echo "kbd: WSL unmounted. Manually eject from Windows Explorer."
-        export KBD_USB_CONNECTED=false
-        return 0
-    fi
-
     echo "kbd: ejecting ${KBD_USB_DRIVE}: from Windows..."
     powershell.exe -NoProfile -Command "
         \$dl = '$KBD_USB_DRIVE:'
@@ -354,5 +336,6 @@ if [ -z $MC_PS1 ]; then
   MC_PS1='\u@\h:\w\$ '
   echo "kbd: MC_PS1 not set. Setting to default..."
 fi
+
 MC_PS1="\$(kbd_usb_indicator)${MC_PS1}"
 export PS1="$MC_PS1"
