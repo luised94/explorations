@@ -57,12 +57,19 @@ local notes_path = string.format("%s/notes.txt", kbd_local_dir)
 
 -- === FUNCTIONS ===
 
-local function insert_date_header()
+local function prepend_date_header()
     local api = vim.api
     local bufnr = 0
 
     -- Don't touch the buffer if we can't modify it.
     if not api.nvim_buf_get_option(bufnr, "modifiable") then
+        return
+    end
+  --
+    -- Guard: only run in journal.txt
+    local bufname = vim.api.nvim_buf_get_name(bufnr)
+    if not bufname:match("journal%.txt$") then
+        vim.notify("kbd: date header only in journal.txt", vim.log.levels.WARN)
         return
     end
 
@@ -108,56 +115,79 @@ local function insert_date_header()
     api.nvim_win_set_cursor(0, {2, 0})
 end
 
-local function add_note_section()
-    -- Prompt for citation key
-    local citation_key = vim.fn.input("Citation key: @")
+local function prepend_note_section()
+    local api = vim.api
+    local bufnr = 0
 
-    -- User cancelled or empty input
-    if citation_key == nil or citation_key == "" then
+    -- Don't touch the buffer if we can't modify it.
+    if not api.nvim_buf_get_option(bufnr, "modifiable") then
+        return
+    end
+
+    -- Guard: only run in notes.txt
+    local bufname = vim.api.nvim_buf_get_name(bufnr)
+    if not bufname:match("notes%.txt$") then
+        vim.notify("kbd: note section only in notes.txt", vim.log.levels.WARN)
+        return
+    end
+
+    -- Prompt for citation key (BetterBibTeX format: author + year + firstword).
+    local citation_key = vim.fn.input("Citation key: @")
+    if not citation_key or citation_key == "" then
         vim.notify("kbd: cancelled", vim.log.levels.INFO)
         return
     end
 
-    local header = string.format("## @%s", citation_key)
+    -- Fixed format: "## @citekey"
+    local header = "## @" .. citation_key
 
-    -- Get all lines in buffer
-    local line_count = vim.api.nvim_buf_line_count(0)
-    local all_lines = vim.api.nvim_buf_get_lines(0, 0, line_count, false)
+    -- Scan for existing header. Unlike journal (headers contiguous at top),
+    -- notes have headers interspersed with content. Scan deeper but bounded
+    -- to avoid pathological cases on huge files.
+    local scan_limit = 500
+    local line_count = api.nvim_buf_line_count(bufnr)
+    local actual_limit = math.min(scan_limit, line_count)
+    local lines = api.nvim_buf_get_lines(bufnr, 0, actual_limit, false)
 
-    -- Check if this citation key already exists
-    for line_number, line in ipairs(all_lines) do
-        if line == header then
-            vim.notify(string.format("kbd: @%s already exists, jumping to it", citation_key), vim.log.levels.INFO)
-            vim.api.nvim_win_set_cursor(0, {line_number, 0})
-            return
+    -- Escape pattern magic chars in citation key for robust matching.
+    local header_pattern = "^## @" .. vim.pesc(citation_key) .. "$"
+
+    local existing_row = nil
+    -- Numeric loop avoids ipairs iterator allocation.
+    for i = 1, #lines do
+        local line = lines[i]
+        -- Fast prefix check before full pattern match.
+        if line:sub(1, 4) == "## @" and line:match(header_pattern) then
+            existing_row = i
+            break
         end
     end
 
-    -- Go to end of file
-    vim.cmd("normal! G")
-
-    -- Add blank line if file doesn't end with one
-    local last_line = vim.api.nvim_buf_get_lines(0, -2, -1, false)[1] or ""
-    local lines_to_insert = {}
-
-    if last_line ~= "" then
-        table.insert(lines_to_insert, "")
+    if existing_row then
+        -- Minimal side effects on duplicate. Just move cursor.
+        vim.notify(string.format("kbd: @%s exists, jumping", citation_key), vim.log.levels.INFO)
+        -- Jump to line after header (content area).
+        api.nvim_win_set_cursor(0, {existing_row + 1, 0})
+        return
     end
 
-    table.insert(lines_to_insert, header)
-    table.insert(lines_to_insert, "")
+    -- Warn if file exceeds scan limit (header might exist beyond).
+    if line_count > scan_limit then
+        vim.notify(
+            string.format("kbd: scanned %d/%d lines", scan_limit, line_count),
+            vim.log.levels.WARN
+        )
+    end
 
-    -- Insert after last line
-    vim.api.nvim_buf_set_lines(0, -1, -1, false, lines_to_insert)
+    -- Prepend at top (newest-first, consistent with journal).
+    -- Deferred allocation until insertion confirmed necessary.
+    local insertion_block = {header, ""}
+    api.nvim_buf_set_lines(bufnr, 0, 0, false, insertion_block)
 
-    -- Move cursor to the blank line after header (ready to type)
-    local new_line_count = vim.api.nvim_buf_line_count(0)
-    vim.api.nvim_win_set_cursor(0, {new_line_count, 0})
-
+    -- Cursor to blank line (row 2), ready to type.
+    api.nvim_win_set_cursor(0, {2, 0})
     vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
 end
---}
-
 
 local function open_journal()
     local command = string.format("edit %s", journal_path)
@@ -177,7 +207,7 @@ local leader_k = '<leader>k'
 vim.keymap.set(
     mode_normal,
     string.format("%s%s", leader_k, "h"),
-    insert_date_header,
+    prepend_date_header,
     { desc = "kbd: insert date header" }
 )
 
@@ -198,7 +228,7 @@ vim.keymap.set(
 vim.keymap.set(
     mode_normal,
     string.format("%s%s", leader_k, "c"),
-    add_note_section,
+    prepend_note_section,
     { desc = "kbd: add citation section to notes" }
 )
 -- vim.notify("kbd.lua: loading complete", vim.log.levels.INFO)
