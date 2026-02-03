@@ -63,6 +63,7 @@ vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
 
 local journal_path = string.format("%s/journal.txt", kbd_local_dir)
 local notes_path = string.format("%s/notes.txt", kbd_local_dir)
+local tasks_path = string.format("%s/tasks.txt", kbd_local_dir)
 
 -- === FUNCTIONS ===
 
@@ -265,6 +266,11 @@ local function open_notes()
     vim.cmd(command)
 end
 
+local function open_tasks()
+    local command = string.format("edit %s", tasks_path)
+    vim.cmd(command)
+end
+
 -- === KEYBINDINGS ===
 
 local mode_normal = 'n'
@@ -296,6 +302,13 @@ vim.keymap.set(
     string.format("%s%s", leader_k, "c"),
     prepend_note_section,
     { desc = "kbd: add citation section to notes" }
+)
+
+vim.keymap.set(
+    mode_normal,
+    string.format("%s%s", leader_k, "t"),
+    open_tasks,
+    { desc = "kbd: open tasks.txt" }
 )
 
 vim.keymap.set(

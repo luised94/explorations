@@ -35,6 +35,7 @@ if [[ -n "$WSL_DISTRO_NAME" ]]; then
 
     # 1. FAST PATH: Check cache
     if [[ -f "$CACHE_FILE" ]]; then
+      echo "kbd: Found cache file $CACHE_FILE"
         CACHED_DRIVE=$(cat "$CACHE_FILE")
         POTENTIAL_MOUNT="/mnt/${CACHED_DRIVE,,}"
 
@@ -99,6 +100,8 @@ fi
 # PHASE 2: EXECUTION
 # ==========================================
 if [[ "$KBD_USB_CONNECTED" == true ]]; then
+
+    echo "kbd: USB is connected..."
     export KBD_ORIGIN_DIR="$KBD_MOUNT_POINT/personal_repos/kbd.git"
 
     # Unified Bib Sync Logic (Runs for both WSL and Linux)
