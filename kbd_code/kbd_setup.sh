@@ -286,3 +286,16 @@ kusboff() {
         return 0
     fi
 }
+
+# Modify PS1 with indicator.
+kbd_usb_indicator() {
+    [ -f "${KBD_MOUNT_POINT}/.kbd-usb-marker" ] && echo "[U] "
+}
+
+# Prepend indicator to existing prompt
+if [ -z $MC_PS1 ]; then
+  MC_PS1='\u@\h:\w\$ '
+  echo "kbd: MC_PS1 not set. Setting to default..."
+fi
+MC_PS1="\$(kbd_usb_indicator)${MC_PS1}"
+export PS1="$MC_PS1"
