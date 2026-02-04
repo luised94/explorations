@@ -20,6 +20,7 @@ KBD_SCRIPT_PATH="$HOME/.config/mc_extensions/kbd_setup.sh"
 alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
 alias kt='nvim "$KBD_LOCAL_DIR/tasks.txt"'
 alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
+alias kva='kvim -a'
 alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
 
 # === Setup ===
@@ -123,9 +124,65 @@ elif [[ "$1" == "force" ]]; then
     echo ""
 fi
 
-# === FUNCTIONS (defined after variables set) ===
-# Sync functions need USB - they check KBD_USB_CONNECTED internally
+# === FUNCTIONS ===
+# --- MULTI-FILE EDITING ---
+_kvim_usage() {
+  cat <<EOF
+Usage: kvim [OPTIONS]
 
+Open kbd files for editing.
+
+Options:
+  -a, --all      All files in KBD_LOCAL_DIR (uses vimall if available)
+  -c, --core     Core files only: journal, tasks, notes (default)
+  -d, --dir DIR  Specific subdirectory
+  -h, --help     Show this help
+EOF
+}
+
+kvim() {
+  local mode="core"
+  local subdir=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)  _kvim_usage; return 0 ;;
+      -a|--all)   mode="all"; shift ;;
+      -c|--core)  mode="core"; shift ;;
+      -d|--dir)
+        [[ -z "$2" || "$2" == -* ]] && { echo "kvim: -d requires argument" >&2; return 1; }
+        mode="subdir"; subdir="$2"; shift 2
+        ;;
+      *)          echo "kvim: unknown option: $1" >&2; return 1 ;;
+    esac
+  done
+
+  case "$mode" in
+    core)
+      # Deterministic, no dependency needed
+      "${EDITOR:-nvim}" "$KBD_LOCAL_DIR"/{journal,tasks,notes}.txt
+      ;;
+    all)
+      if declare -f vimall &>/dev/null; then
+        vimall -d "$KBD_LOCAL_DIR"
+      else
+        echo "Note: vimall unavailable, opening core files only" >&2
+        "${EDITOR:-nvim}" "$KBD_LOCAL_DIR"/{journal,tasks,notes}.txt
+      fi
+      ;;
+    subdir)
+      local target="$KBD_LOCAL_DIR/$subdir"
+      [[ -d "$target" ]] || { echo "kvim: not a directory: $target" >&2; return 1; }
+      if declare -f vimall &>/dev/null; then
+        vimall -d "$target"
+      else
+        find "$target" -type f | head -50 | xargs "${EDITOR:-nvim}"
+      fi
+      ;;
+  esac
+}
+
+# --- Sync functions --- Need USB ---
 # Find and optionally mount USB, returns mount point path
 kbd_refresh() {
     if [ ! -f "$KBD_SCRIPT_PATH" ]; then
@@ -145,6 +202,7 @@ kbd_refresh() {
     fi
 }
 
+# --- Sync functions --- Need USB ---
 # Pull from USB
 kpull() {
     if [ "$KBD_USB_CONNECTED" != true ]; then
@@ -251,6 +309,7 @@ ksync() {
     cd - > /dev/null
 }
 
+# Sync from Zotero to USB.
 kbib_sync() {
 
     if [ "$KBD_USB_CONNECTED" != true ]; then
