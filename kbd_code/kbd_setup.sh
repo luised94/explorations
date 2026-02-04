@@ -402,6 +402,14 @@ kusboff() {
     rm -f "$CACHE_FILE"
 }
 
+# --- Usage metrics ---
+kbd_usage_stats() {
+  local hist="${HISTFILE:-$HOME/.bash_history}"
+  echo "kbd command usage (from history):"
+  grep -oE '\bk(j|t|n|vim|st|sync|pull)\b' "$hist" 2>/dev/null | sort | uniq -c | sort -rn
+}
+
+# --- Interface ---
 # Modify PS1 with indicator.
 kbd_usb_indicator() {
   if [ -f "${KBD_MOUNT_POINT}/$KBD_USB_MARKER" ]; then
