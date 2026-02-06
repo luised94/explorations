@@ -18,6 +18,18 @@ if vim.api == nil then
     return
 end
 
+local has_telescope, telescope_builtin = pcall(require, "telescope.builtin")
+if not has_telescope then
+  error("kbd: telescope.builtin unavailable; install nvim-telescope/telescope.nvim")
+end
+
+local uv = vim.uv or vim.loop
+if not uv then
+  error("kbd: vim.uv or vim.loop required but unavailable")
+end
+
+
+
 -- vim.notify("kbd.lua: loading started", vim.log.levels.INFO)
 
 -- === CONFIGURATION ===
@@ -256,6 +268,26 @@ local function insert_citation_from_bib()
     vim.ui.select(citation_list, select_opts, on_selection)
 end
 
+local function kvim_all_telescope()
+  local kbd_local_dir = os.getenv("KBD_LOCAL_DIR")
+  if kbd_local_dir == nil or kbd_local_dir == "" then
+    kbd_local_dir = string.format("%s/personal_repos/kbd", os.getenv("HOME") or "")
+  end
+
+  local st = uv.fs_stat(kbd_local_dir)
+  if not st or st.type ~= "directory" then
+    vim.notify(string.format("kbd: directory does not exist: %s", kbd_local_dir), vim.log.levels.ERROR)
+    return
+  end
+
+  telescope_builtin.find_files({
+    prompt_title = string.format("KBD (%s)", kbd_local_dir),
+    cwd = kbd_local_dir,
+    hidden = true,
+    follow = true,
+  })
+end
+
 local function open_journal()
     local command = string.format("edit %s", journal_path)
     vim.cmd(command)
@@ -316,5 +348,12 @@ vim.keymap.set(
     string.format("%s%s", leader_k, "i"),
     insert_citation_from_bib,
     { desc = "kbd: insert citation at cursor" }
+)
+
+vim.keymap.set(
+  mode_normal,
+  string.format("%s%s", leader_k, "f"),
+  kvim_all_telescope,
+  { desc = "kbd: find files (telescope, rooted at KBD_LOCAL_DIR)" }
 )
 -- vim.notify("kbd.lua: loading complete", vim.log.levels.INFO)
