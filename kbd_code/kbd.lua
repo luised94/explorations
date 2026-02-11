@@ -160,19 +160,19 @@ local function prepend_note_section()
     local api = vim.api
     local bufnr = 0
 
-    -- Don't touch the buffer if we can't modify it.
     if not api.nvim_buf_get_option(bufnr, "modifiable") then
         return
     end
 
-    -- Guard: only run in notes.txt
+    -- Guard: Only run in notes.txt
     local bufname = api.nvim_buf_get_name(bufnr)
     if not bufname:match("notes%.txt$") then
         vim.notify("kbd: note section only in notes.txt", vim.log.levels.WARN)
         return
     end
 
-    -- Bib guards (mirror insert_citation_from_bib)
+    -- Bib guards: function requires bib file.
+    -- Note: Ah. I have accidentally made dependent on bib file. Need fallback.
     if not bib_path then
         vim.notify("kbd: bib_path not configured", vim.log.levels.ERROR)
         return
@@ -190,7 +190,7 @@ local function prepend_note_section()
     local actual_limit = math.min(scan_limit, line_count)
     local lines = api.nvim_buf_get_lines(bufnr, 0, actual_limit, false)
 
-    -- Extract citation keys via grep. -o outputs only matches, -P enables Perl regex.
+    -- Extract @citationkeys. -o outputs only matches, -P enables perl regex.
     local grep_command = string.format("grep -oP '%s' %s", BIB_GREP_PATTERN, bib_path)
     local raw_output = vim.fn.system(grep_command)
 
@@ -200,6 +200,7 @@ local function prepend_note_section()
         return
     end
 
+    -- NOTE: system() output contains real newlines.
     local citation_list = vim.split(raw_output, "\n", { trimempty = true })
 
     local no_citations = #citation_list == 0
@@ -208,11 +209,17 @@ local function prepend_note_section()
         return
     end
 
+    local MANUAL_ENTRY_LABEL = "Manual entry."
+    table.insert(citation_list, 1, MANUAL_ENTRY_LABEL)
+
     -- MAIN LOGIC
-    -- Telescope-backed UI (via vim.ui.select) will let you search-as-you-type.
+    -- UI will let you search as you type.
     local select_opts = {
         prompt = "Select citation for notes section:",
         format_item = function(item)
+            if item == MANUAL_ENTRY_LABEL then
+                return item
+            end
             return "@" .. item
         end,
     }
@@ -224,9 +231,29 @@ local function prepend_note_section()
         end
 
         local citation_key = choice
-        local header = string.format("## @%s", citation_key)
+        if choice == MANUAL_ENTRY_LABEL then
+            local manual = vim.fn.input("Citation key (manual): @")
+            if not manual or manual == "" then
+                vim.notify("kbd: cancelled", vim.log.levels.INFO)
+                return
+            end
 
-        -- Escape pattern magic chars in citation key for robust matching.
+            -- Lightweight validation:
+            -- - Disallow whitespace
+            -- - Disallow a few "weird" characters that commonly cause trouble in headers/patterns
+            if manual:match("%s") then
+                vim.notify("kbd: citation key cannot contain spaces", vim.log.levels.ERROR)
+                return
+            end
+            if manual:match("[#%[%]%(%){}<>\"'`|\\]") then
+                vim.notify("kbd: citation key contains unsupported characters", vim.log.levels.ERROR)
+                return
+            end
+
+            citation_key = manual
+        end
+
+        local header = string.format("## @%s", citation_key)
         local header_pattern = string.format("^## @%s$", vim.pesc(citation_key))
 
         local existing_row = nil
@@ -251,15 +278,13 @@ local function prepend_note_section()
             )
         end
 
-        local insertion_block = { header, "" }
-        api.nvim_buf_set_lines(bufnr, 0, 0, false, insertion_block)
+        api.nvim_buf_set_lines(bufnr, 0, 0, false, { header, "" })
         api.nvim_win_set_cursor(0, { 2, 0 })
         vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
     end
 
     vim.ui.select(citation_list, select_opts, on_selection)
 end
-
 local function insert_citation_from_bib()
     -- GUARDS
     if not bib_path then
