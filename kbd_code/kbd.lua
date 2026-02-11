@@ -51,6 +51,24 @@ local bib_path = kbd_mount_point
 -- BetterBibTeX format: @type{citekey, -> extract citekey
 local BIB_GREP_PATTERN = "@[^{]+\\{\\K[^,]+"
 
+-- Directories to ignore (relative to KBD_LOCAL_DIR)
+local KBD_EXCLUDE_DIRS = {
+  ".git",
+  "node_modules",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "env",
+  "build",
+  "dist",
+  "target",
+  "out",
+  ".cache",
+  "tmp",
+  "temp",
+  "coverage",
+}
+
 -- === Usercommands ===
 -- Open the digraph help (includes the digraph table you can search with /).
 vim.api.nvim_create_user_command("ShowDigraphs", function()
@@ -280,11 +298,20 @@ local function kvim_all_telescope()
     return
   end
 
+  local file_ignore_patterns = {}
+  for i = 1, #KBD_EXCLUDE_DIRS do
+    local dir = KBD_EXCLUDE_DIRS[i]
+    -- Escape Lua pattern magic so ".git" matches literally.
+    local escaped = dir:gsub("([^%w])", "%%%1")
+    file_ignore_patterns[#file_ignore_patterns + 1] = string.format("^%s/", escaped)
+  end
+
   telescope_builtin.find_files({
     prompt_title = string.format("KBD (%s)", kbd_local_dir),
     cwd = kbd_local_dir,
     hidden = true,
     follow = true,
+    file_ignore_patterns = file_ignore_patterns,
   })
 end
 
