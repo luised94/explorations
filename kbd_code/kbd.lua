@@ -156,6 +156,7 @@ local function prepend_date_header()
 end
 
 local function prepend_note_section()
+    -- GUARDS
     local api = vim.api
     local bufnr = 0
 
@@ -165,68 +166,98 @@ local function prepend_note_section()
     end
 
     -- Guard: only run in notes.txt
-    local bufname = vim.api.nvim_buf_get_name(bufnr)
+    local bufname = api.nvim_buf_get_name(bufnr)
     if not bufname:match("notes%.txt$") then
         vim.notify("kbd: note section only in notes.txt", vim.log.levels.WARN)
         return
     end
 
-    -- Prompt for citation key (BetterBibTeX format: author + year + firstword).
-    local citation_key = vim.fn.input("Citation key: @")
-    if not citation_key or citation_key == "" then
-        vim.notify("kbd: cancelled", vim.log.levels.INFO)
+    -- Bib guards (mirror insert_citation_from_bib)
+    if not bib_path then
+        vim.notify("kbd: bib_path not configured", vim.log.levels.ERROR)
         return
     end
 
-    -- Fixed format: "## @citekey"
-    local header = "## @" .. citation_key
+    local bib_exists = vim.fn.filereadable(bib_path) == 1
+    if not bib_exists then
+        vim.notify(string.format("kbd: bib not found: %s", bib_path), vim.log.levels.ERROR)
+        return
+    end
 
-    -- Scan for existing header. Unlike journal (headers contiguous at top),
-    -- notes have headers interspersed with content. Scan deeper but bounded
-    -- to avoid pathological cases on huge files.
+    -- PREPROCESSING
     local scan_limit = 500
     local line_count = api.nvim_buf_line_count(bufnr)
     local actual_limit = math.min(scan_limit, line_count)
     local lines = api.nvim_buf_get_lines(bufnr, 0, actual_limit, false)
 
-    -- Escape pattern magic chars in citation key for robust matching.
-    local header_pattern = "^## @" .. vim.pesc(citation_key) .. "$"
+    -- Extract citation keys via grep. -o outputs only matches, -P enables Perl regex.
+    local grep_command = string.format("grep -oP '%s' %s", BIB_GREP_PATTERN, bib_path)
+    local raw_output = vim.fn.system(grep_command)
 
-    local existing_row = nil
-    -- Numeric loop avoids ipairs iterator allocation.
-    for i = 1, #lines do
-        local line = lines[i]
-        -- Fast prefix check before full pattern match.
-        if line:sub(1, 4) == "## @" and line:match(header_pattern) then
-            existing_row = i
-            break
-        end
-    end
-
-    if existing_row then
-        -- Minimal side effects on duplicate. Just move cursor.
-        vim.notify(string.format("kbd: @%s exists, jumping", citation_key), vim.log.levels.INFO)
-        -- Jump to line after header (content area).
-        api.nvim_win_set_cursor(0, {existing_row + 1, 0})
+    local grep_failed = vim.v.shell_error ~= 0
+    if grep_failed then
+        vim.notify("kbd: grep failed on bib file", vim.log.levels.ERROR)
         return
     end
 
-    -- Warn if file exceeds scan limit (header might exist beyond).
-    if line_count > scan_limit then
-        vim.notify(
-            string.format("kbd: scanned %d/%d lines", scan_limit, line_count),
-            vim.log.levels.WARN
-        )
+    local citation_list = vim.split(raw_output, "\n", { trimempty = true })
+
+    local no_citations = #citation_list == 0
+    if no_citations then
+        vim.notify("kbd: no citations found in bib", vim.log.levels.WARN)
+        return
     end
 
-    -- Prepend at top (newest-first, consistent with journal).
-    -- Deferred allocation until insertion confirmed necessary.
-    local insertion_block = {header, ""}
-    api.nvim_buf_set_lines(bufnr, 0, 0, false, insertion_block)
+    -- MAIN LOGIC
+    -- Telescope-backed UI (via vim.ui.select) will let you search-as-you-type.
+    local select_opts = {
+        prompt = "Select citation for notes section:",
+        format_item = function(item)
+            return "@" .. item
+        end,
+    }
 
-    -- Cursor to blank line (row 2), ready to type.
-    api.nvim_win_set_cursor(0, {2, 0})
-    vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
+    local on_selection = function(choice)
+        if not choice then
+            vim.notify("kbd: no citation selected", vim.log.levels.INFO)
+            return
+        end
+
+        local citation_key = choice
+        local header = string.format("## @%s", citation_key)
+
+        -- Escape pattern magic chars in citation key for robust matching.
+        local header_pattern = string.format("^## @%s$", vim.pesc(citation_key))
+
+        local existing_row = nil
+        for i = 1, #lines do
+            local line = lines[i]
+            if line:sub(1, 4) == "## @" and line:match(header_pattern) then
+                existing_row = i
+                break
+            end
+        end
+
+        if existing_row then
+            vim.notify(string.format("kbd: @%s exists, jumping", citation_key), vim.log.levels.INFO)
+            api.nvim_win_set_cursor(0, { existing_row + 1, 0 })
+            return
+        end
+
+        if line_count > scan_limit then
+            vim.notify(
+                string.format("kbd: scanned %d/%d lines", scan_limit, line_count),
+                vim.log.levels.WARN
+            )
+        end
+
+        local insertion_block = { header, "" }
+        api.nvim_buf_set_lines(bufnr, 0, 0, false, insertion_block)
+        api.nvim_win_set_cursor(0, { 2, 0 })
+        vim.notify(string.format("kbd: added @%s", citation_key), vim.log.levels.INFO)
+    end
+
+    vim.ui.select(citation_list, select_opts, on_selection)
 end
 
 local function insert_citation_from_bib()
