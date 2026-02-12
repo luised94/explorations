@@ -8,6 +8,8 @@ import argparse
 import sqlite3
 import sys
 from pathlib import Path
+import json
+from datetime import datetime, timezone
 
 # --- constants ---
 
@@ -20,6 +22,11 @@ parser = argparse.ArgumentParser(description="LLM thread archive")
 subparsers = parser.add_subparsers(dest="command")
 
 subparsers.add_parser("init", help="Initialize the database")
+import_parser = subparsers.add_parser("import", help="Import conversations from provider export")
+import_parser.add_argument("path", type=Path, help="Export file or directory")
+import_parser.add_argument("--provider", required=True,
+                           choices=["claude", "chatgpt", "deepseek", "qwen"],
+                           help="Source provider format")
 
 args = parser.parse_args()
 
@@ -40,6 +47,16 @@ if args.command == "init":
 
     connection.close()
 
+elif args.command == "import":
+    path = args.path.resolve()
+    if not path.exists():
+        print(f"error: path not found: {path}", file=sys.stderr)
+        sys.exit(1)
+    if not DATABASE_PATH.exists():
+        print(f"error: database not found - run 'init' first", file=sys.stderr)
+        sys.exit(1)
+    print(f"error: provider '{args.provider}' not yet implemented", file=sys.stderr)
+    sys.exit(1)
 else:
     parser.print_help()
     sys.exit(1)
