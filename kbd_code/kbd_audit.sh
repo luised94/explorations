@@ -64,7 +64,7 @@ echo
 echo "-- 3. DAILY PRACTICE ADHERENCE --"
 echo "  Marker totals:"
 for m in "Intent:" "Done:" "Noticed:" "Question:" "Connection:"; do
-  printf "    %-14s %d\n" "$m" "$(grep -c "$m" "$J" 2>/dev/null || true)"
+  printf "    %-14s %d\n" "$m" "$(grep -r "$m" *.txt 2>/dev/null | wc -l)"
 done
 echo
 echo "  Per-date marker presence:"
@@ -206,7 +206,7 @@ else
   echo "  Intent->Done rate: n/a (no Intent: markers found)"
 fi
 
-q_c=$(grep -c 'Question:' "$J" 2>/dev/null || true)
+q_c=$(grep -r 'Question:' *.txt 2>/dev/null | wc -l)
 printf "  Open questions captured: %d" "$q_c"
 (( q_c == 0 )) && echo "  (none -- drop Question: or start using it)" || echo ""
 
