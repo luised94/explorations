@@ -98,7 +98,6 @@ elif args.command == "import":
                 sender = msg.get("sender")
                 if not text or not text.strip():
                     stats["msgs_skip"] += 1
-                    warnings.append(f"conv {cid} msg[{pos}]: empty text")
                     continue
                 if sender not in ("human", "assistant"):
                     stats["msgs_skip"] += 1
@@ -131,6 +130,8 @@ elif args.command == "import":
     print(f"{args.provider} import complete:", file=sys.stderr)
     print(f"  conversations: {stats['convs']} processed, {stats['convs_skip']} skipped", file=sys.stderr)
     print(f"  messages:      {stats['msgs']} imported, {stats['msgs_dupe']} duplicates, {stats['msgs_skip']} skipped", file=sys.stderr)
+    if stats["msgs_skip"]:
+        print(f"  note: {stats['msgs_skip']} messages skipped (empty text)", file=sys.stderr)
     if warnings:
         print(f"  warnings ({len(warnings)}):", file=sys.stderr)
         for w in warnings:
