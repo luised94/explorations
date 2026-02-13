@@ -5,6 +5,7 @@ Everything else is just efficiency.
 
 @karpathy
 """
+
 import os       # os.path.exists
 import math     # math.log, math.exp
 import random   # random.seed, random.choices, random.gauss, random.shuffle
@@ -122,7 +123,6 @@ for layer_index in range(number_of_layers):
     allocate_matrix(f'layer{layer_index}.attn_wo', embedding_dimension, embedding_dimension, std=0)
     allocate_matrix(f'layer{layer_index}.mlp_fc1', 4 * embedding_dimension, embedding_dimension)
     allocate_matrix(f'layer{layer_index}.mlp_fc2', embedding_dimension, 4 * embedding_dimension, std=0)
-
 print(f"num params: {len(parameter_data)}")
 
 # Define the model architecture: a stateless function mapping token sequence and parameters to logits over what comes next.
@@ -381,9 +381,9 @@ def forward_inference(token_id: int, position_index: int, keys: list[list[list[f
     return logits
 
 # Let there be Adam, the blessed optimizer and its buffers
-learning_rate, beta1, beta2, eps_adam = 1e-2, 0.9, 0.95, 1e-8
-m = [0.0] * len(parameter_data) # first moment buffer
-v = [0.0] * len(parameter_data) # second moment buffer
+learning_rate, beta1, beta2, epsilon_adam = 1e-2, 0.9, 0.95, 1e-8
+first_moment = [0.0] * len(parameter_data) # first moment buffer
+second_moment = [0.0] * len(parameter_data) # second moment buffer
 
 # Repeat in sequence
 num_steps = 500 # number of training steps
@@ -406,24 +406,25 @@ for step in range(num_steps):
         logits = forward_training(token_id, position_index, keys, values)
         probs = softmax_tape(logits)
         neg_one = tape_append_node(-1.0, (), ())
-        loss_t = tape_multiply(neg_one, tape_log(probs[target_id]))
-        losses.append(loss_t)
+        position_loss = tape_multiply(neg_one, tape_log(probs[target_id]))
+        losses.append(position_loss)
     
-    loss_sum = losses[0]
-    for loss_t in losses[1:]:
-        loss_sum = tape_add(loss_sum, loss_t)
-    scale = tape_append_node(1.0 / sequence_length, (), ())
-    loss = tape_multiply(scale, loss_sum)
+    total_loss_sum = losses[0]
+    for position_loss in losses[1:]:
+        total_loss_sum = tape_add(total_loss_sum, position_loss)
+    
+    loss_scale = tape_append_node(1.0 / sequence_length, (), ())
+    loss = tape_multiply(loss_scale, total_loss_sum)
     
     tape_backward(loss)
     
-    lr_t = learning_rate * 0.5 * (1 + math.cos(math.pi * step / num_steps))
+    adjusted_learning_rate = learning_rate * 0.5 * (1 + math.cos(math.pi * step / num_steps))
     for parameter_index in range(len(parameter_data)):
-        m[parameter_index] = beta1 * m[parameter_index] + (1 - beta1) * tape_grad[parameter_index]
-        v[parameter_index] = beta2 * v[parameter_index] + (1 - beta2) * tape_grad[parameter_index] ** 2
-        m_hat = m[parameter_index] / (1 - beta1 ** (step + 1))
-        v_hat = v[parameter_index] / (1 - beta2 ** (step + 1))
-        parameter_data[parameter_index] -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
+        first_moment[parameter_index] = beta1 * first_moment[parameter_index] + (1 - beta1) * tape_grad[parameter_index]
+        second_moment[parameter_index] = beta2 * second_moment[parameter_index] + (1 - beta2) * tape_grad[parameter_index] ** 2
+        first_moment_corrected = first_moment[parameter_index] / (1 - beta1 ** (step + 1))
+        second_moment_corrected = second_moment[parameter_index] / (1 - beta2 ** (step + 1))
+        parameter_data[parameter_index] -= adjusted_learning_rate * first_moment_corrected / (second_moment_corrected ** 0.5 + epsilon_adam)
     
     print(f"step {step+1:4d} / {num_steps:4d} | loss {tape_data[loss]:.4f}")
 
@@ -433,7 +434,6 @@ print("\n--- inference ---")
 for sample_idx in range(20):
     keys: list[list[list[float]]] = [[] for _ in range(number_of_layers)]
     values: list[list[list[float]]] = [[] for _ in range(number_of_layers)]
-    
     token_id = BOS
     sample = []
     for position_index in range(block_size):
