@@ -245,41 +245,41 @@ def rmsnorm_float(x: list[float]) -> list[float]:
 def forward_training(token_id: int, position_index: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
     wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
     tok_emb_start = wte_start + token_id * wte_cols
-    tok_emb: list[int] = list(range(tok_emb_start, tok_emb_start + wte_cols))
+    token_embedding: list[int] = list(range(tok_emb_start, tok_emb_start + wte_cols))
     
     wpe_start, wpe_rows, wpe_cols = parameter_offset_table['wpe']
     pos_emb_start = wpe_start + position_index * wpe_cols
-    pos_emb: list[int] = list(range(pos_emb_start, pos_emb_start + wpe_cols))
+    position_embedding: list[int] = list(range(pos_emb_start, pos_emb_start + wpe_cols))
     
-    x: list[int] = []
-    for tok_index, pos_index in zip(tok_emb, pos_emb):
-        x.append(tape_add(tok_index, pos_index))
+    hidden: list[int] = []
+    for tok_index, pos_index in zip(token_embedding, position_embedding):
+        hidden.append(tape_add(tok_index, pos_index))
     
-    x = rmsnorm_tape(x)
+    hidden = rmsnorm_tape(hidden)
     
     for layer_index in range(number_of_layers):
-        x_residual = x
-        x = rmsnorm_tape(x)
+        residual = hidden
+        hidden = rmsnorm_tape(hidden)
         
-        q = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.attn_wq'))
-        k = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.attn_wk'))
-        v = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.attn_wv'))
+        query = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.attn_wq'))
+        key = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.attn_wk'))
+        value = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.attn_wv'))
         
-        keys[layer_index].append(k)
-        values[layer_index].append(v)
+        keys[layer_index].append(key)
+        values[layer_index].append(value)
         
-        x_attn: list[int] = []
+        attention_output: list[int] = []
         for head_index in range(number_of_heads):
             head_start = head_index * head_dimension
-            q_h = q[head_start:head_start+head_dimension]
-            k_h = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
-            v_h = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
+            query_head = query[head_start:head_start+head_dimension]
+            key_head = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
+            value_head = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
             
             attn_logits: list[int] = []
-            for time_step in range(len(k_h)):
+            for time_step in range(len(key_head)):
                 dot_product = None
                 for dimension_index in range(head_dimension):
-                    product = tape_multiply(q_h[dimension_index], k_h[time_step][dimension_index])
+                    product = tape_multiply(query_head[dimension_index], key_head[time_step][dimension_index])
                     if dot_product is None:
                         dot_product = product
                     else:
@@ -293,69 +293,69 @@ def forward_training(token_id: int, position_index: int, keys: list[list[list[in
             
             for dimension_index in range(head_dimension):
                 head_out_j = None
-                for time_step in range(len(v_h)):
-                    product = tape_multiply(attn_weights[time_step], v_h[time_step][dimension_index])
+                for time_step in range(len(value_head)):
+                    product = tape_multiply(attn_weights[time_step], value_head[time_step][dimension_index])
                     if head_out_j is None:
                         head_out_j = product
                     else:
                         head_out_j = tape_add(head_out_j, product)
-                x_attn.append(head_out_j)
+                attention_output.append(head_out_j)
         
-        x = linear_tape(x_attn, get_weight_matrix_tape(f'layer{layer_index}.attn_wo'))
-        x = [tape_add(a, b) for a, b in zip(x, x_residual)]
+        hidden = linear_tape(attention_output, get_weight_matrix_tape(f'layer{layer_index}.attn_wo'))
+        hidden = [tape_add(a, b) for a, b in zip(hidden, residual)]
         
-        x_residual = x
-        x = rmsnorm_tape(x)
-        x = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc1'))
-        x = [tape_power(tape_relu(xi), 2.0) for xi in x]
-        x = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc2'))
-        x = [tape_add(a, b) for a, b in zip(x, x_residual)]
+        residual = hidden
+        hidden = rmsnorm_tape(hidden)
+        hidden = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc1'))
+        hidden = [tape_power(tape_relu(xi), 2.0) for xi in hidden]
+        hidden = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc2'))
+        hidden = [tape_add(a, b) for a, b in zip(hidden, residual)]
     
-    logits = linear_tape(x, get_weight_matrix_tape('lm_head'))
+    logits = linear_tape(hidden, get_weight_matrix_tape('lm_head'))
     return logits
 
 def forward_inference(token_id: int, position_index: int, keys: list[list[list[float]]], values: list[list[list[float]]]) -> list[float]:
     wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
     tok_emb_start = wte_start + token_id * wte_cols
-    tok_emb: list[float] = []
+    token_embedding: list[float] = []
     for column_index in range(wte_cols):
-        tok_emb.append(parameter_data[tok_emb_start + column_index])
+        token_embedding.append(parameter_data[tok_emb_start + column_index])
     
     wpe_start, wpe_rows, wpe_cols = parameter_offset_table['wpe']
     pos_emb_start = wpe_start + position_index * wpe_cols
-    pos_emb: list[float] = []
+    position_embedding: list[float] = []
     for column_index in range(wpe_cols):
-        pos_emb.append(parameter_data[pos_emb_start + column_index])
+        position_embedding.append(parameter_data[pos_emb_start + column_index])
     
-    x: list[float] = []
-    for tok_value, pos_value in zip(tok_emb, pos_emb):
-        x.append(tok_value + pos_value)
+    hidden: list[float] = []
+    for tok_value, pos_value in zip(token_embedding, position_embedding):
+        hidden.append(tok_value + pos_value)
     
-    x = rmsnorm_float(x)
+    hidden = rmsnorm_float(hidden)
     
     for layer_index in range(number_of_layers):
-        x_residual = x
-        x = rmsnorm_float(x)
+        residual = hidden
+        hidden = rmsnorm_float(hidden)
         
-        q = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.attn_wq'))
-        k = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.attn_wk'))
-        v = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.attn_wv'))
+        query = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.attn_wq'))
+        key = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.attn_wk'))
+        value = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.attn_wv'))
         
-        keys[layer_index].append(k)
-        values[layer_index].append(v)
+        keys[layer_index].append(key)
+        values[layer_index].append(value)
         
-        x_attn: list[float] = []
+        attention_output: list[float] = []
         for head_index in range(number_of_heads):
             head_start = head_index * head_dimension
-            q_h = q[head_start:head_start+head_dimension]
-            k_h = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
-            v_h = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
+            query_head = query[head_start:head_start+head_dimension]
+            key_head = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
+            value_head = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
             
             attn_logits: list[float] = []
-            for time_step in range(len(k_h)):
+            for time_step in range(len(key_head)):
                 dot_product = 0.0
                 for dimension_index in range(head_dimension):
-                    dot_product += q_h[dimension_index] * k_h[time_step][dimension_index]
+                    dot_product += query_head[dimension_index] * key_head[time_step][dimension_index]
                 scaled_logit = dot_product / (head_dimension ** 0.5)
                 attn_logits.append(scaled_logit)
             
@@ -363,21 +363,21 @@ def forward_inference(token_id: int, position_index: int, keys: list[list[list[f
             
             for dimension_index in range(head_dimension):
                 head_out_j = 0.0
-                for time_step in range(len(v_h)):
-                    head_out_j += attn_weights[time_step] * v_h[time_step][dimension_index]
-                x_attn.append(head_out_j)
+                for time_step in range(len(value_head)):
+                    head_out_j += attn_weights[time_step] * value_head[time_step][dimension_index]
+                attention_output.append(head_out_j)
         
-        x = linear_float(x_attn, get_weight_matrix_float(f'layer{layer_index}.attn_wo'))
-        x = [a + b for a, b in zip(x, x_residual)]
+        hidden = linear_float(attention_output, get_weight_matrix_float(f'layer{layer_index}.attn_wo'))
+        hidden = [a + b for a, b in zip(hidden, residual)]
         
-        x_residual = x
-        x = rmsnorm_float(x)
-        x = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.mlp_fc1'))
-        x = [max(0.0, xi) ** 2.0 for xi in x]
-        x = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.mlp_fc2'))
-        x = [a + b for a, b in zip(x, x_residual)]
+        residual = hidden
+        hidden = rmsnorm_float(hidden)
+        hidden = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.mlp_fc1'))
+        hidden = [max(0.0, xi) ** 2.0 for xi in hidden]
+        hidden = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.mlp_fc2'))
+        hidden = [a + b for a, b in zip(hidden, residual)]
     
-    logits = linear_float(x, get_weight_matrix_float('lm_head'))
+    logits = linear_float(hidden, get_weight_matrix_float('lm_head'))
     return logits
 
 # Let there be Adam, the blessed optimizer and its buffers
