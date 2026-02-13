@@ -5,7 +5,6 @@ Everything else is just efficiency.
 
 @karpathy
 """
-
 import os       # os.path.exists
 import math     # math.log, math.exp
 import random   # random.seed, random.choices, random.gauss, random.shuffle
@@ -129,7 +128,7 @@ print(f"num params: {len(parameter_data)}")
 # Define the model architecture: a stateless function mapping token sequence and parameters to logits over what comes next.
 # Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU^2
 
-def get_weight_matrix(name: str) -> list[list[int]]:
+def get_weight_matrix_tape(name: str) -> list[list[int]]:
     start_index, number_of_rows, number_of_columns = parameter_offset_table[name]
     matrix: list[list[int]] = []
     for row_index in range(number_of_rows):
@@ -140,7 +139,7 @@ def get_weight_matrix(name: str) -> list[list[int]]:
         matrix.append(row)
     return matrix
 
-def linear(x: list[int], w: list[list[int]]) -> list[int]:
+def linear_tape(x: list[int], w: list[list[int]]) -> list[int]:
     result: list[int] = []
     for weight_row in w:
         accumulator = None
@@ -153,7 +152,7 @@ def linear(x: list[int], w: list[list[int]]) -> list[int]:
         result.append(accumulator)
     return result
 
-def softmax(logits: list[int]) -> list[int]:
+def softmax_tape(logits: list[int]) -> list[int]:
     max_val = max(tape_data[idx] for idx in logits)
     shifted: list[int] = []
     for logit_index in logits:
@@ -176,7 +175,7 @@ def softmax(logits: list[int]) -> list[int]:
         result.append(normalized)
     return result
 
-def rmsnorm(x: list[int]) -> list[int]:
+def rmsnorm_tape(x: list[int]) -> list[int]:
     squares: list[int] = []
     for x_index in x:
         square = tape_power(x_index, 2.0)
@@ -196,7 +195,7 @@ def rmsnorm(x: list[int]) -> list[int]:
         result.append(scaled)
     return result
 
-def gpt(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
+def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
     wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
     tok_emb_start = wte_start + token_id * wte_cols
     tok_emb: list[int] = list(range(tok_emb_start, tok_emb_start + wte_cols))
@@ -209,15 +208,15 @@ def gpt(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[li
     for t, p in zip(tok_emb, pos_emb):
         x.append(tape_add(t, p))
     
-    x = rmsnorm(x)
+    x = rmsnorm_tape(x)
     
     for layer_index in range(number_of_layers):
         x_residual = x
-        x = rmsnorm(x)
+        x = rmsnorm_tape(x)
         
-        q = linear(x, get_weight_matrix(f'layer{layer_index}.attn_wq'))
-        k = linear(x, get_weight_matrix(f'layer{layer_index}.attn_wk'))
-        v = linear(x, get_weight_matrix(f'layer{layer_index}.attn_wv'))
+        q = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.attn_wq'))
+        k = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.attn_wk'))
+        v = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.attn_wv'))
         
         keys[layer_index].append(k)
         values[layer_index].append(v)
@@ -243,7 +242,7 @@ def gpt(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[li
                 scaled_logit = tape_multiply(dot_product, inv_scale)
                 attn_logits.append(scaled_logit)
             
-            attn_weights = softmax(attn_logits)
+            attn_weights = softmax_tape(attn_logits)
             
             for j in range(head_dimension):
                 head_out_j = None
@@ -255,17 +254,17 @@ def gpt(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[li
                         head_out_j = tape_add(head_out_j, product)
                 x_attn.append(head_out_j)
         
-        x = linear(x_attn, get_weight_matrix(f'layer{layer_index}.attn_wo'))
+        x = linear_tape(x_attn, get_weight_matrix_tape(f'layer{layer_index}.attn_wo'))
         x = [tape_add(a, b) for a, b in zip(x, x_residual)]
         
         x_residual = x
-        x = rmsnorm(x)
-        x = linear(x, get_weight_matrix(f'layer{layer_index}.mlp_fc1'))
+        x = rmsnorm_tape(x)
+        x = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc1'))
         x = [tape_power(tape_relu(xi), 2.0) for xi in x]
-        x = linear(x, get_weight_matrix(f'layer{layer_index}.mlp_fc2'))
+        x = linear_tape(x, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc2'))
         x = [tape_add(a, b) for a, b in zip(x, x_residual)]
     
-    logits = linear(x, get_weight_matrix('lm_head'))
+    logits = linear_tape(x, get_weight_matrix_tape('lm_head'))
     return logits
 
 # Let there be Adam, the blessed optimizer and its buffers
@@ -287,11 +286,12 @@ for step in range(num_steps):
     
     keys: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
     values: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
+    
     losses: list[int] = []
     for pos_id in range(n):
         token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
-        logits = gpt(token_id, pos_id, keys, values)
-        probs = softmax(logits)
+        logits = forward_training(token_id, pos_id, keys, values)
+        probs = softmax_tape(logits)
         neg_one = tape_append_node(-1.0, (), ())
         loss_t = tape_multiply(neg_one, tape_log(probs[target_id]))
         losses.append(loss_t)
@@ -325,14 +325,15 @@ for sample_idx in range(20):
     
     keys: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
     values: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
+    
     token_id = BOS
     sample = []
     for pos_id in range(block_size):
-        logits = gpt(token_id, pos_id, keys, values)
+        logits = forward_training(token_id, pos_id, keys, values)
         temp_node = tape_append_node(temperature, (), ())
         inv_temp = tape_power(temp_node, -1.0)
         scaled_logits = [tape_multiply(l, inv_temp) for l in logits]
-        probs = softmax(scaled_logits)
+        probs = softmax_tape(scaled_logits)
         token_id = random.choices(range(vocab_size), weights=[tape_data[p] for p in probs])[0]
         if token_id == BOS:
             break
