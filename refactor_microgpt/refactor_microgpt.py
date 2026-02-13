@@ -2,15 +2,12 @@
 The most atomic way to train and inference a GPT in pure, dependency-free Python.
 This file is the complete algorithm.
 Everything else is just efficiency.
-
 @karpathy
 """
-
 import os       # os.path.exists
 import math     # math.log, math.exp
 import random   # random.seed, random.choices, random.gauss, random.shuffle
 random.seed(42) # Let there be order among chaos
-
 # Let there be an input dataset `docs`: list[str] of documents (e.g. a dataset of names)
 if not os.path.exists('input.txt'):
     import urllib.request
@@ -19,31 +16,25 @@ if not os.path.exists('input.txt'):
 docs = [l.strip() for l in open('input.txt').read().strip().split('\n') if l.strip()] # list[str] of documents
 random.shuffle(docs)
 print(f"num docs: {len(docs)}")
-
 # Let there be a Tokenizer to translate strings to discrete symbols and back
 uchars = sorted(set(''.join(docs))) # unique characters in the dataset become token ids 0..n-1
 BOS = len(uchars) # token id for the special Beginning of Sequence (BOS) token
 vocab_size = len(uchars) + 1 # total number of unique tokens, +1 is for BOS
 print(f"vocab size: {vocab_size}")
-
 # Let there be an Autograd to apply the chain rule recursively across a computation graph
 class Value:
     """Stores a single scalar value and its gradient, as a node in a computation graph."""
-
     def __init__(self, data, children=(), local_grads=()):
         self.data = data                # scalar value of this node calculated during forward pass
         self.grad = 0                   # derivative of the loss w.r.t. this node, calculated in backward pass
         self._children = children       # children of this node in the computation graph
         self._local_grads = local_grads # local derivative of this node w.r.t. its children
-
     def __add__(self, other):
         other = other if isinstance(other, Value) else Value(other)
         return Value(self.data + other.data, (self, other), (1, 1))
-
     def __mul__(self, other):
         other = other if isinstance(other, Value) else Value(other)
         return Value(self.data * other.data, (self, other), (other.data, self.data))
-
     def __pow__(self, other): return Value(self.data**other, (self,), (other * self.data**(other-1),))
     def log(self): return Value(math.log(self.data), (self,), (1/self.data,))
     def exp(self): return Value(math.exp(self.data), (self,), (math.exp(self.data),))
@@ -55,7 +46,6 @@ class Value:
     def __rmul__(self, other): return self * other
     def __truediv__(self, other): return self * other**-1
     def __rtruediv__(self, other): return other * self**-1
-
     def backward(self):
         topo = []
         visited = set()
@@ -70,47 +60,65 @@ class Value:
         for v in reversed(topo):
             for child, local_grad in zip(v._children, v._local_grads):
                 child.grad += local_grad * v.grad
-
 # Initialize the parameters, to store the knowledge of the model.
 n_embd = 16     # embedding dimension
 n_head = 4      # number of attention heads
 n_layer = 1     # number of layers
 block_size = 8  # maximum sequence length
 head_dim = n_embd // n_head # dimension of each head
-matrix = lambda nout, nin, std=0.02: [[Value(random.gauss(0, std)) for _ in range(nin)] for _ in range(nout)]
-state_dict = {'wte': matrix(vocab_size, n_embd), 'wpe': matrix(block_size, n_embd), 'lm_head': matrix(vocab_size, n_embd)}
-for i in range(n_layer):
-    state_dict[f'layer{i}.attn_wq'] = matrix(n_embd, n_embd)
-    state_dict[f'layer{i}.attn_wk'] = matrix(n_embd, n_embd)
-    state_dict[f'layer{i}.attn_wv'] = matrix(n_embd, n_embd)
-    state_dict[f'layer{i}.attn_wo'] = matrix(n_embd, n_embd, std=0)
-    state_dict[f'layer{i}.mlp_fc1'] = matrix(4 * n_embd, n_embd)
-    state_dict[f'layer{i}.mlp_fc2'] = matrix(n_embd, 4 * n_embd, std=0)
-params = [p for mat in state_dict.values() for row in mat for p in row] # flatten params into a single list[Value]
+# Build flat parameter storage with offset table
+parameter_offset_table: dict[str, tuple[int, int, int]] = {}
+parameter_data: list[float] = []
+current_offset = 0
+def allocate_matrix(name: str, number_of_rows: int, number_of_columns: int, std: float = 0.02):
+    global current_offset
+    start_index = current_offset
+    parameter_offset_table[name] = (start_index, number_of_rows, number_of_columns)
+    for _ in range(number_of_rows * number_of_columns):
+        parameter_data.append(random.gauss(0, std))
+    current_offset += number_of_rows * number_of_columns
+allocate_matrix('wte', vocab_size, n_embd)
+allocate_matrix('wpe', block_size, n_embd)
+allocate_matrix('lm_head', vocab_size, n_embd)
+for layer_index in range(n_layer):
+    allocate_matrix(f'layer{layer_index}.attn_wq', n_embd, n_embd)
+    allocate_matrix(f'layer{layer_index}.attn_wk', n_embd, n_embd)
+    allocate_matrix(f'layer{layer_index}.attn_wv', n_embd, n_embd)
+    allocate_matrix(f'layer{layer_index}.attn_wo', n_embd, n_embd, std=0)
+    allocate_matrix(f'layer{layer_index}.mlp_fc1', 4 * n_embd, n_embd)
+    allocate_matrix(f'layer{layer_index}.mlp_fc2', n_embd, 4 * n_embd, std=0)
+parameter_grad: list[float] = [0.0] * len(parameter_data)
+# Rebuild params list[Value] and state_dict from flat storage
+params: list[Value] = [Value(parameter_data[i]) for i in range(len(parameter_data))]
+state_dict: dict[str, list[list[Value]]] = {}
+for name, (start_index, number_of_rows, number_of_columns) in parameter_offset_table.items():
+    matrix: list[list[Value]] = []
+    for row_index in range(number_of_rows):
+        row: list[Value] = []
+        for column_index in range(number_of_columns):
+            flat_index = start_index + row_index * number_of_columns + column_index
+            row.append(params[flat_index])
+        matrix.append(row)
+    state_dict[name] = matrix
 print(f"num params: {len(params)}")
-
 # Define the model architecture: a stateless function mapping token sequence and parameters to logits over what comes next.
 # Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU^2
 def linear(x, w):
     return [sum(wi * xi for wi, xi in zip(wo, x)) for wo in w]
-
 def softmax(logits):
     max_val = max(val.data for val in logits)
     exps = [(val - max_val).exp() for val in logits]
     total = sum(exps)
     return [e / total for e in exps]
-
 def rmsnorm(x):
     ms = sum(xi * xi for xi in x) / len(x)
     scale = (ms + 1e-5) ** -0.5
     return [xi * scale for xi in x]
-
 def gpt(token_id, pos_id, keys, values):
     tok_emb = state_dict['wte'][token_id] # token embedding
     pos_emb = state_dict['wpe'][pos_id] # position embedding
     x = [t + p for t, p in zip(tok_emb, pos_emb)] # joint token and position embedding
     x = rmsnorm(x)
-
     for li in range(n_layer):
         # 1) Multi-head attention block
         x_residual = x
@@ -139,24 +147,19 @@ def gpt(token_id, pos_id, keys, values):
         x = [xi.relu() ** 2 for xi in x]
         x = linear(x, state_dict[f'layer{li}.mlp_fc2'])
         x = [a + b for a, b in zip(x, x_residual)]
-
     logits = linear(x, state_dict['lm_head'])
     return logits
-
 # Let there be Adam, the blessed optimizer and its buffers
 learning_rate, beta1, beta2, eps_adam = 1e-2, 0.9, 0.95, 1e-8
-m = [0.0] * len(params) # first moment buffer
-v = [0.0] * len(params) # second moment buffer
-
+m = [0.0] * len(parameter_data) # first moment buffer
+v = [0.0] * len(parameter_data) # second moment buffer
 # Repeat in sequence
 num_steps = 500 # number of training steps
 for step in range(num_steps):
-
     # Take single document, tokenize it, surround it with BOS special token on both sides
     doc = docs[step % len(docs)]
     tokens = [BOS] + [uchars.index(ch) for ch in doc] + [BOS]
     n = min(block_size, len(tokens) - 1)
-
     # Forward the token sequence through the model, building up the computation graph all the way to the loss.
     keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
     losses = []
@@ -167,22 +170,25 @@ for step in range(num_steps):
         loss_t = -probs[target_id].log()
         losses.append(loss_t)
     loss = (1 / n) * sum(losses) # final average loss over the document sequence. May yours be low.
-
     # Backward the loss, calculating the gradients with respect to all model parameters.
     loss.backward()
-
+    # Extract gradients from Value objects into flat gradient array
+    for i in range(len(params)):
+        parameter_grad[i] = params[i].grad
     # Adam optimizer update: update the model parameters based on the corresponding gradients.
     lr_t = learning_rate * 0.5 * (1 + math.cos(math.pi * step / num_steps)) # cosine learning rate decay
-    for i, p in enumerate(params):
-        m[i] = beta1 * m[i] + (1 - beta1) * p.grad
-        v[i] = beta2 * v[i] + (1 - beta2) * p.grad ** 2
+    for i in range(len(parameter_data)):
+        m[i] = beta1 * m[i] + (1 - beta1) * parameter_grad[i]
+        v[i] = beta2 * v[i] + (1 - beta2) * parameter_grad[i] ** 2
         m_hat = m[i] / (1 - beta1 ** (step + 1))
         v_hat = v[i] / (1 - beta2 ** (step + 1))
-        p.data -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
-        p.grad = 0
-
+        parameter_data[i] -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
+        parameter_grad[i] = 0
+    # Sync updated parameter values back into Value objects
+    for i in range(len(params)):
+        params[i].data = parameter_data[i]
+        params[i].grad = 0
     print(f"step {step+1:4d} / {num_steps:4d} | loss {loss.data:.4f}")
-
 # Inference: may the model babble back to us
 temperature = 0.5 # in (0, 1], control the "creativity" of generated text, low to high
 print("\n--- inference ---")
