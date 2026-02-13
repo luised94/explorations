@@ -124,7 +124,6 @@ for layer_index in range(number_of_layers):
     allocate_matrix(f'layer{layer_index}.mlp_fc1', 4 * embedding_dimension, embedding_dimension)
     allocate_matrix(f'layer{layer_index}.mlp_fc2', embedding_dimension, 4 * embedding_dimension, std=0)
 
-parameter_grad: list[float] = [0.0] * len(parameter_data)
 print(f"num params: {len(parameter_data)}")
 
 # Define the model architecture: a stateless function mapping token sequence and parameters to logits over what comes next.
@@ -305,13 +304,10 @@ for step in range(num_steps):
     
     tape_backward(loss)
     
-    for i in range(len(parameter_data)):
-        parameter_grad[i] = tape_grad[i]
-    
     lr_t = learning_rate * 0.5 * (1 + math.cos(math.pi * step / num_steps))
     for i in range(len(parameter_data)):
-        m[i] = beta1 * m[i] + (1 - beta1) * parameter_grad[i]
-        v[i] = beta2 * v[i] + (1 - beta2) * parameter_grad[i] ** 2
+        m[i] = beta1 * m[i] + (1 - beta1) * tape_grad[i]
+        v[i] = beta2 * v[i] + (1 - beta2) * tape_grad[i] ** 2
         m_hat = m[i] / (1 - beta1 ** (step + 1))
         v_hat = v[i] / (1 - beta2 ** (step + 1))
         parameter_data[i] -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
