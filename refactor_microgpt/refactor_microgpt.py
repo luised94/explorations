@@ -242,18 +242,18 @@ def rmsnorm_float(x: list[float]) -> list[float]:
         result.append(x_value * scale)
     return result
 
-def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
+def forward_training(token_id: int, position_index: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
     wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
     tok_emb_start = wte_start + token_id * wte_cols
     tok_emb: list[int] = list(range(tok_emb_start, tok_emb_start + wte_cols))
     
     wpe_start, wpe_rows, wpe_cols = parameter_offset_table['wpe']
-    pos_emb_start = wpe_start + pos_id * wpe_cols
+    pos_emb_start = wpe_start + position_index * wpe_cols
     pos_emb: list[int] = list(range(pos_emb_start, pos_emb_start + wpe_cols))
     
     x: list[int] = []
-    for t, p in zip(tok_emb, pos_emb):
-        x.append(tape_add(t, p))
+    for tok_index, pos_index in zip(tok_emb, pos_emb):
+        x.append(tape_add(tok_index, pos_index))
     
     x = rmsnorm_tape(x)
     
@@ -276,10 +276,10 @@ def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], va
             v_h = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
             
             attn_logits: list[int] = []
-            for t in range(len(k_h)):
+            for time_step in range(len(k_h)):
                 dot_product = None
-                for j in range(head_dimension):
-                    product = tape_multiply(q_h[j], k_h[t][j])
+                for dimension_index in range(head_dimension):
+                    product = tape_multiply(q_h[dimension_index], k_h[time_step][dimension_index])
                     if dot_product is None:
                         dot_product = product
                     else:
@@ -291,10 +291,10 @@ def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], va
             
             attn_weights = softmax_tape(attn_logits)
             
-            for j in range(head_dimension):
+            for dimension_index in range(head_dimension):
                 head_out_j = None
-                for t in range(len(v_h)):
-                    product = tape_multiply(attn_weights[t], v_h[t][j])
+                for time_step in range(len(v_h)):
+                    product = tape_multiply(attn_weights[time_step], v_h[time_step][dimension_index])
                     if head_out_j is None:
                         head_out_j = product
                     else:
@@ -314,22 +314,22 @@ def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], va
     logits = linear_tape(x, get_weight_matrix_tape('lm_head'))
     return logits
 
-def forward_inference(token_id: int, pos_id: int, keys: list[list[list[float]]], values: list[list[list[float]]]) -> list[float]:
+def forward_inference(token_id: int, position_index: int, keys: list[list[list[float]]], values: list[list[list[float]]]) -> list[float]:
     wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
     tok_emb_start = wte_start + token_id * wte_cols
     tok_emb: list[float] = []
-    for i in range(wte_cols):
-        tok_emb.append(parameter_data[tok_emb_start + i])
+    for column_index in range(wte_cols):
+        tok_emb.append(parameter_data[tok_emb_start + column_index])
     
     wpe_start, wpe_rows, wpe_cols = parameter_offset_table['wpe']
-    pos_emb_start = wpe_start + pos_id * wpe_cols
+    pos_emb_start = wpe_start + position_index * wpe_cols
     pos_emb: list[float] = []
-    for i in range(wpe_cols):
-        pos_emb.append(parameter_data[pos_emb_start + i])
+    for column_index in range(wpe_cols):
+        pos_emb.append(parameter_data[pos_emb_start + column_index])
     
     x: list[float] = []
-    for t, p in zip(tok_emb, pos_emb):
-        x.append(t + p)
+    for tok_value, pos_value in zip(tok_emb, pos_emb):
+        x.append(tok_value + pos_value)
     
     x = rmsnorm_float(x)
     
@@ -352,19 +352,19 @@ def forward_inference(token_id: int, pos_id: int, keys: list[list[list[float]]],
             v_h = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
             
             attn_logits: list[float] = []
-            for t in range(len(k_h)):
+            for time_step in range(len(k_h)):
                 dot_product = 0.0
-                for j in range(head_dimension):
-                    dot_product += q_h[j] * k_h[t][j]
+                for dimension_index in range(head_dimension):
+                    dot_product += q_h[dimension_index] * k_h[time_step][dimension_index]
                 scaled_logit = dot_product / (head_dimension ** 0.5)
                 attn_logits.append(scaled_logit)
             
             attn_weights = softmax_float(attn_logits)
             
-            for j in range(head_dimension):
+            for dimension_index in range(head_dimension):
                 head_out_j = 0.0
-                for t in range(len(v_h)):
-                    head_out_j += attn_weights[t] * v_h[t][j]
+                for time_step in range(len(v_h)):
+                    head_out_j += attn_weights[time_step] * v_h[time_step][dimension_index]
                 x_attn.append(head_out_j)
         
         x = linear_float(x_attn, get_weight_matrix_float(f'layer{layer_index}.attn_wo'))
@@ -395,15 +395,15 @@ for step in range(num_steps):
     
     doc = docs[step % len(docs)]
     tokens = [BOS] + [character_to_token[character] for character in doc] + [BOS]
-    n = min(block_size, len(tokens) - 1)
+    sequence_length = min(block_size, len(tokens) - 1)
     
     keys: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
     values: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
     
     losses: list[int] = []
-    for pos_id in range(n):
-        token_id, target_id = tokens[pos_id], tokens[pos_id + 1]
-        logits = forward_training(token_id, pos_id, keys, values)
+    for position_index in range(sequence_length):
+        token_id, target_id = tokens[position_index], tokens[position_index + 1]
+        logits = forward_training(token_id, position_index, keys, values)
         probs = softmax_tape(logits)
         neg_one = tape_append_node(-1.0, (), ())
         loss_t = tape_multiply(neg_one, tape_log(probs[target_id]))
@@ -412,18 +412,18 @@ for step in range(num_steps):
     loss_sum = losses[0]
     for loss_t in losses[1:]:
         loss_sum = tape_add(loss_sum, loss_t)
-    scale = tape_append_node(1.0 / n, (), ())
+    scale = tape_append_node(1.0 / sequence_length, (), ())
     loss = tape_multiply(scale, loss_sum)
     
     tape_backward(loss)
     
     lr_t = learning_rate * 0.5 * (1 + math.cos(math.pi * step / num_steps))
-    for i in range(len(parameter_data)):
-        m[i] = beta1 * m[i] + (1 - beta1) * tape_grad[i]
-        v[i] = beta2 * v[i] + (1 - beta2) * tape_grad[i] ** 2
-        m_hat = m[i] / (1 - beta1 ** (step + 1))
-        v_hat = v[i] / (1 - beta2 ** (step + 1))
-        parameter_data[i] -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
+    for parameter_index in range(len(parameter_data)):
+        m[parameter_index] = beta1 * m[parameter_index] + (1 - beta1) * tape_grad[parameter_index]
+        v[parameter_index] = beta2 * v[parameter_index] + (1 - beta2) * tape_grad[parameter_index] ** 2
+        m_hat = m[parameter_index] / (1 - beta1 ** (step + 1))
+        v_hat = v[parameter_index] / (1 - beta2 ** (step + 1))
+        parameter_data[parameter_index] -= lr_t * m_hat / (v_hat ** 0.5 + eps_adam)
     
     print(f"step {step+1:4d} / {num_steps:4d} | loss {tape_data[loss]:.4f}")
 
@@ -436,8 +436,8 @@ for sample_idx in range(20):
     
     token_id = BOS
     sample = []
-    for pos_id in range(block_size):
-        logits = forward_inference(token_id, pos_id, keys, values)
+    for position_index in range(block_size):
+        logits = forward_inference(token_id, position_index, keys, values)
         scaled_logits: list[float] = []
         for logit_value in logits:
             scaled_logits.append(logit_value / temperature)
