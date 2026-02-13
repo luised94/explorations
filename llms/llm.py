@@ -50,6 +50,17 @@ show_parser = subparsers.add_parser("show", help="Display a full conversation th
 show_parser.add_argument("conversation", type=str,
                          help="Conversation ID (integer) or source UUID prefix")
 
+list_parser = subparsers.add_parser("list", help="Browse conversations")
+list_parser.add_argument("--limit", type=int, default=50,
+                         help="Maximum number of conversations (default: 50)")
+list_parser.add_argument("--provider",
+                         choices=["claude", "chatgpt", "deepseek", "qwen"],
+                         help="Filter to a single provider")
+list_parser.add_argument("--sort",
+                         choices=["recent", "oldest", "messages"],
+                         default="recent",
+                         help="Sort order (default: recent)")
+
 args = parser.parse_args()
 cmd_start = time.monotonic()
 result_count = 0
@@ -340,6 +351,86 @@ elif args.command == "show":
         print(message["content"])
 
     print(f"\n{separator}")
+    connection.close()
+
+elif args.command == "list":
+    if not DATABASE_PATH.exists():
+        print("error: database not found - run 'init' first", file=sys.stderr)
+        sys.exit(1)
+
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.row_factory = sqlite3.Row
+
+    # Sort order mapping
+    sort_clauses = {
+        "recent": "conversations.updated_at DESC",
+        "oldest": "conversations.created_at ASC",
+        "messages": "message_count DESC",
+    }
+    order_by = sort_clauses[args.sort]
+
+    # Build WHERE clause
+    where_parts: list[str] = []
+    where_parameters: list = []
+
+    if args.provider:
+        where_parts.append("conversations.provider = ?")
+        where_parameters.append(args.provider)
+
+    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    where_parameters.append(args.limit)
+
+    # Single query: conversation metadata + message count + first human message as preview
+    list_sql = f"""
+        SELECT
+            conversations.id,
+            conversations.provider,
+            conversations.title,
+            conversations.created_at,
+            conversations.updated_at,
+            COUNT(messages.id) AS message_count,
+            (
+                SELECT content FROM messages AS first_human
+                WHERE first_human.conversation_id = conversations.id
+                  AND first_human.role = 'human'
+                ORDER BY first_human.position ASC
+                LIMIT 1
+            ) AS first_human_message
+        FROM conversations
+        LEFT JOIN messages ON messages.conversation_id = conversations.id
+        {where_clause}
+        GROUP BY conversations.id
+        ORDER BY {order_by}
+        LIMIT ?
+    """
+
+    conversation_rows = connection.execute(list_sql, where_parameters).fetchall()
+    result_count = len(conversation_rows)
+
+    if result_count == 0:
+        print("No conversations found.", file=sys.stderr)
+    else:
+        for row in conversation_rows:
+            conversation_title = row["title"] or "(untitled)"
+            conversation_date = row["created_at"][:10] if row["created_at"] else "no date"
+            message_count = row["message_count"]
+
+            # Truncate preview: first human message, single line, ~100 chars
+            preview = ""
+            if row["first_human_message"]:
+                preview = row["first_human_message"].replace("\n", " ").strip()
+                if len(preview) > 100:
+                    preview = preview[:100] + "..."
+
+            print(f"{COLOR_BOLD}{row['id']:>4}{COLOR_RESET}  {conversation_title}")
+            print(f"      {COLOR_DIM}{row['provider']} . {conversation_date} . {message_count} msgs{COLOR_RESET}")
+            if preview:
+                print(f"      {COLOR_DIM}{preview}{COLOR_RESET}")
+
+        print(f"\n{result_count} conversation{'s' if result_count != 1 else ''}", file=sys.stderr)
+
     connection.close()
 
 else:
