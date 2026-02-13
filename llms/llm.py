@@ -17,6 +17,15 @@ from datetime import datetime, timezone
 DATABASE_PATH = Path(__file__).parent / "llm.db"
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
+# Terminal formatting - ANSI codes when stdout is a tty, empty strings otherwise
+SNIPPET_MARKER_START = "\x01"
+SNIPPET_MARKER_END = "\x02"
+USE_COLOR = sys.stdout.isatty()
+COLOR_BOLD = "\033[1m" if USE_COLOR else ""
+COLOR_DIM = "\033[2m" if USE_COLOR else ""
+COLOR_BOLD_YELLOW = "\033[1;33m" if USE_COLOR else ""
+COLOR_RESET = "\033[0m" if USE_COLOR else ""
+
 # --- argument parsing ---
 
 parser = argparse.ArgumentParser(description="LLM thread archive")
@@ -28,6 +37,14 @@ import_parser.add_argument("path", type=Path, help="Export file or directory")
 import_parser.add_argument("--provider", required=True,
                            choices=["claude", "chatgpt", "deepseek", "qwen"],
                            help="Source provider format")
+
+search_parser = subparsers.add_parser("search", help="Full-text search across messages")
+search_parser.add_argument("query", type=str, help="FTS5 search query")
+search_parser.add_argument("--limit", type=int, default=20,
+                           help="Maximum number of results (default: 20)")
+search_parser.add_argument("--provider",
+                           choices=["claude", "chatgpt", "deepseek", "qwen"],
+                           help="Filter results to a single provider")
 
 args = parser.parse_args()
 cmd_start = time.monotonic()
@@ -140,6 +157,110 @@ elif args.command == "import":
         print(f"  warnings ({len(warnings)}):", file=sys.stderr)
         for w in warnings:
             print(f"    {w}", file=sys.stderr)
+
+elif args.command == "search":
+    if not DATABASE_PATH.exists():
+        print("error: database not found - run 'init' first", file=sys.stderr)
+        sys.exit(1)
+
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.row_factory = sqlite3.Row
+
+    # Build WHERE clause - always has FTS MATCH, optionally filtered by provider
+    where_parts: list[str] = ["messages_fts MATCH ?"]
+    where_parameters: list = [args.query]
+
+    if args.provider:
+        where_parts.append("messages.provider = ?")
+        where_parameters.append(args.provider)
+
+    where_parameters.append(args.limit)
+
+    # snippet() extracts a ~48-token window around each match with markers for highlighting.
+    # Parameters are bound left-to-right: snippet markers first, then WHERE params, then LIMIT.
+    search_sql = f"""
+        SELECT
+            messages.id,
+            messages.provider,
+            messages.role,
+            messages.position,
+            messages.created_at,
+            messages.conversation_id,
+            snippet(messages_fts, 0, ?, ?, '.', 48) AS matched_snippet,
+            conversations.title,
+            conversations.source_conversation_id
+        FROM messages_fts
+        JOIN messages ON messages.id = messages_fts.rowid
+        LEFT JOIN conversations ON conversations.id = messages.conversation_id
+        WHERE {" AND ".join(where_parts)}
+        ORDER BY messages_fts.rank
+        LIMIT ?
+    """
+
+    # Snippet marker params come first (they appear in SELECT before WHERE)
+    all_parameters: list = [SNIPPET_MARKER_START, SNIPPET_MARKER_END] + where_parameters
+
+    try:
+        search_results = connection.execute(search_sql, all_parameters).fetchall()
+    except sqlite3.OperationalError as error:
+        print(f"error: search failed: {error}", file=sys.stderr)
+        connection.close()
+        sys.exit(1)
+
+    result_count = len(search_results)
+
+    if result_count == 0:
+        print("No results.", file=sys.stderr)
+    else:
+        for index, row in enumerate(search_results):
+            # Fetch the preceding message in this conversation for context
+            # (e.g. the human question that prompted a matching assistant answer).
+            # Uses MAX(position < current) to handle gaps from skipped empty messages.
+            preceding_message = None
+            if row["conversation_id"] is not None:
+                preceding_message = connection.execute(
+                    """SELECT role, content FROM messages
+                       WHERE conversation_id = ? AND position < ?
+                       ORDER BY position DESC LIMIT 1""",
+                    (row["conversation_id"], row["position"]),
+                ).fetchone()
+
+            # Format header fields
+            conversation_title = row["title"] or "(untitled)"
+            message_date = row["created_at"][:10] if row["created_at"] else "no date"
+
+            # Replace snippet markers with ANSI highlighting or plain-text brackets
+            snippet_text = row["matched_snippet"]
+            if USE_COLOR:
+                snippet_text = snippet_text.replace(SNIPPET_MARKER_START, COLOR_BOLD_YELLOW)
+                snippet_text = snippet_text.replace(SNIPPET_MARKER_END, COLOR_RESET)
+            else:
+                snippet_text = snippet_text.replace(SNIPPET_MARKER_START, ">>")
+                snippet_text = snippet_text.replace(SNIPPET_MARKER_END, "<<")
+
+            # Print result block
+            separator = "-" * 60
+            print(f"\n{COLOR_DIM}{separator}{COLOR_RESET}")
+            print(f"{COLOR_BOLD}[{index + 1}/{result_count}]{COLOR_RESET} {conversation_title}")
+            print(f"  {COLOR_DIM}{row['provider']} -> {message_date} -> message #{row['position']}{COLOR_RESET}")
+
+            if preceding_message:
+                preceding_text = preceding_message["content"]
+                if len(preceding_text) > 200:
+                    preceding_text = preceding_text[:200] + "."
+                preceding_text = preceding_text.replace("\n", " ")
+                preceding_role = preceding_message["role"]
+                print(f"  {COLOR_DIM}[{preceding_role}] {preceding_text}{COLOR_RESET}")
+
+            print(f"  [{row['role']}] {snippet_text}")
+
+        # Summary to stderr so piped output stays clean
+        print(f"\n{COLOR_DIM}{'-' * 60}{COLOR_RESET}")
+        print(f"{result_count} result{'s' if result_count != 1 else ''}", file=sys.stderr)
+
+    connection.close()
+
 else:
     parser.print_help()
     sys.exit(1)
