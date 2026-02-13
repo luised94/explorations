@@ -314,6 +314,72 @@ def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], va
     logits = linear_tape(x, get_weight_matrix_tape('lm_head'))
     return logits
 
+def forward_inference(token_id: int, pos_id: int, keys: list[list[list[float]]], values: list[list[list[float]]]) -> list[float]:
+    wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
+    tok_emb_start = wte_start + token_id * wte_cols
+    tok_emb: list[float] = []
+    for i in range(wte_cols):
+        tok_emb.append(parameter_data[tok_emb_start + i])
+    
+    wpe_start, wpe_rows, wpe_cols = parameter_offset_table['wpe']
+    pos_emb_start = wpe_start + pos_id * wpe_cols
+    pos_emb: list[float] = []
+    for i in range(wpe_cols):
+        pos_emb.append(parameter_data[pos_emb_start + i])
+    
+    x: list[float] = []
+    for t, p in zip(tok_emb, pos_emb):
+        x.append(t + p)
+    
+    x = rmsnorm_float(x)
+    
+    for layer_index in range(number_of_layers):
+        x_residual = x
+        x = rmsnorm_float(x)
+        
+        q = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.attn_wq'))
+        k = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.attn_wk'))
+        v = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.attn_wv'))
+        
+        keys[layer_index].append(k)
+        values[layer_index].append(v)
+        
+        x_attn: list[float] = []
+        for head_index in range(number_of_heads):
+            head_start = head_index * head_dimension
+            q_h = q[head_start:head_start+head_dimension]
+            k_h = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
+            v_h = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
+            
+            attn_logits: list[float] = []
+            for t in range(len(k_h)):
+                dot_product = 0.0
+                for j in range(head_dimension):
+                    dot_product += q_h[j] * k_h[t][j]
+                scaled_logit = dot_product / (head_dimension ** 0.5)
+                attn_logits.append(scaled_logit)
+            
+            attn_weights = softmax_float(attn_logits)
+            
+            for j in range(head_dimension):
+                head_out_j = 0.0
+                for t in range(len(v_h)):
+                    head_out_j += attn_weights[t] * v_h[t][j]
+                x_attn.append(head_out_j)
+        
+        x = linear_float(x_attn, get_weight_matrix_float(f'layer{layer_index}.attn_wo'))
+        x = [a + b for a, b in zip(x, x_residual)]
+        
+        x_residual = x
+        x = rmsnorm_float(x)
+        x = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.mlp_fc1'))
+        x = [max(0.0, xi) ** 2.0 for xi in x]
+        x = linear_float(x, get_weight_matrix_float(f'layer{layer_index}.mlp_fc2'))
+        x = [a + b for a, b in zip(x, x_residual)]
+    
+    logits = linear_float(x, get_weight_matrix_float('lm_head'))
+    return logits
+
 # Let there be Adam, the blessed optimizer and its buffers
 learning_rate, beta1, beta2, eps_adam = 1e-2, 0.9, 0.95, 1e-8
 m = [0.0] * len(parameter_data) # first moment buffer
@@ -365,23 +431,18 @@ for step in range(num_steps):
 temperature = 0.5
 print("\n--- inference ---")
 for sample_idx in range(20):
-    tape_data = parameter_data.copy()
-    tape_grad = [0.0] * len(parameter_data)
-    tape_children = [() for _ in range(len(parameter_data))]
-    tape_local_grads = [() for _ in range(len(parameter_data))]
-    
-    keys: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
-    values: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
+    keys: list[list[list[float]]] = [[] for _ in range(number_of_layers)]
+    values: list[list[list[float]]] = [[] for _ in range(number_of_layers)]
     
     token_id = BOS
     sample = []
     for pos_id in range(block_size):
-        logits = forward_training(token_id, pos_id, keys, values)
-        temp_node = tape_append_node(temperature, (), ())
-        inv_temp = tape_power(temp_node, -1.0)
-        scaled_logits = [tape_multiply(l, inv_temp) for l in logits]
-        probs = softmax_tape(scaled_logits)
-        token_id = random.choices(range(vocab_size), weights=[tape_data[p] for p in probs])[0]
+        logits = forward_inference(token_id, pos_id, keys, values)
+        scaled_logits: list[float] = []
+        for logit_value in logits:
+            scaled_logits.append(logit_value / temperature)
+        probs = softmax_float(scaled_logits)
+        token_id = random.choices(range(vocab_size), weights=probs)[0]
         if token_id == BOS:
             break
         sample.append(token_to_character[token_id])
