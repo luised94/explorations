@@ -125,7 +125,8 @@ CREATE TABLE access_log (
     timestamp TEXT NOT NULL,              -- ISO 8601
     command TEXT NOT NULL,                -- subcommand name (init, import, search, etc.)
     args TEXT,                            -- JSON-encoded arguments for reproducibility
-    result_count INTEGER                  -- number of results returned, if applicable
+    result_count INTEGER,                  -- number of results returned, if applicable
+    elapsed_ms INTEGER
 );
 
 -- ============================================================

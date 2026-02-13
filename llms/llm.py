@@ -7,6 +7,7 @@
 import argparse
 import sqlite3
 import sys
+import time
 from pathlib import Path
 import json
 from datetime import datetime, timezone
@@ -29,6 +30,8 @@ import_parser.add_argument("--provider", required=True,
                            help="Source provider format")
 
 args = parser.parse_args()
+cmd_start = time.monotonic()
+result_count = 0
 
 # --- command dispatch ---
 
@@ -127,6 +130,7 @@ elif args.command == "import":
         sys.exit(1)
 
     conn.close()
+    result_count = stats["msgs"]
     print(f"{args.provider} import complete:", file=sys.stderr)
     print(f"  conversations: {stats['convs']} processed, {stats['convs_skip']} skipped", file=sys.stderr)
     print(f"  messages:      {stats['msgs']} imported, {stats['msgs_dupe']} duplicates, {stats['msgs_skip']} skipped", file=sys.stderr)
@@ -139,3 +143,16 @@ elif args.command == "import":
 else:
     parser.print_help()
     sys.exit(1)
+
+# --- access log ---
+if DATABASE_PATH.exists():
+    elapsed = int((time.monotonic() - cmd_start) * 1000)
+    log_conn = sqlite3.connect(DATABASE_PATH)
+    log_conn.execute(
+        "INSERT INTO access_log (timestamp, command, args, result_count, elapsed_ms) VALUES (?, ?, ?, ?, ?)",
+        (datetime.now(timezone.utc).isoformat(), args.command,
+         json.dumps({k: str(v) for k, v in vars(args).items() if k != "command"}, default=str),
+         result_count, elapsed),
+    )
+    log_conn.commit()
+    log_conn.close()
