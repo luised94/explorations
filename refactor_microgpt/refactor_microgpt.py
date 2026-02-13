@@ -141,27 +141,39 @@ def softmax(logits: list[int]) -> list[int]:
         neg_max = tape_multiply(max_node, neg_one)
         shifted_logit = tape_add(logit_index, neg_max)
         shifted.append(shifted_logit)
-    exps = [tape_exp(idx) for idx in shifted]
+    exps: list[int] = []
+    for shifted_index in shifted:
+        exp_index = tape_exp(shifted_index)
+        exps.append(exp_index)
     total = exps[0]
     for exp_index in exps[1:]:
         total = tape_add(total, exp_index)
+    inv_total = tape_power(total, -1.0)
     result: list[int] = []
     for exp_index in exps:
-        inv_total = tape_power(total, -1.0)
-        result.append(tape_multiply(exp_index, inv_total))
+        normalized = tape_multiply(exp_index, inv_total)
+        result.append(normalized)
     return result
 
 def rmsnorm(x: list[int]) -> list[int]:
-    squares = [tape_power(xi, 2.0) for xi in x]
+    squares: list[int] = []
+    for x_index in x:
+        square = tape_power(x_index, 2.0)
+        squares.append(square)
     sum_squares = squares[0]
-    for sq in squares[1:]:
-        sum_squares = tape_add(sum_squares, sq)
+    for square in squares[1:]:
+        sum_squares = tape_add(sum_squares, square)
     n_const = tape_append_node(float(len(x)), (), ())
-    ms = tape_multiply(sum_squares, tape_power(n_const, -1.0))
+    inv_n = tape_power(n_const, -1.0)
+    ms = tape_multiply(sum_squares, inv_n)
     epsilon = tape_append_node(1e-5, (), ())
     ms_eps = tape_add(ms, epsilon)
     scale = tape_power(ms_eps, -0.5)
-    return [tape_multiply(xi, scale) for xi in x]
+    result: list[int] = []
+    for x_index in x:
+        scaled = tape_multiply(x_index, scale)
+        result.append(scaled)
+    return result
 
 def gpt(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
     tok_emb = state_dict['wte'][token_id]
@@ -194,7 +206,8 @@ def gpt(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[li
                     else:
                         dot_product = tape_add(dot_product, product)
                 scale = tape_append_node(head_dimension ** 0.5, (), ())
-                scaled_logit = tape_multiply(dot_product, tape_power(scale, -1.0))
+                inv_scale = tape_power(scale, -1.0)
+                scaled_logit = tape_multiply(dot_product, inv_scale)
                 attn_logits.append(scaled_logit)
             attn_weights = softmax(attn_logits)
             for j in range(head_dimension):
@@ -301,7 +314,8 @@ for sample_idx in range(20):
     for pos_id in range(block_size):
         logits = gpt(token_id, pos_id, keys, values)
         temp_node = tape_append_node(temperature, (), ())
-        scaled_logits = [tape_multiply(l, tape_power(temp_node, -1.0)) for l in logits]
+        inv_temp = tape_power(temp_node, -1.0)
+        scaled_logits = [tape_multiply(l, inv_temp) for l in logits]
         probs = softmax(scaled_logits)
         token_id = random.choices(range(vocab_size), weights=[tape_data[p] for p in probs])[0]
         if token_id == BOS:
