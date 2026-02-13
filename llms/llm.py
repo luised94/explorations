@@ -46,6 +46,10 @@ search_parser.add_argument("--provider",
                            choices=["claude", "chatgpt", "deepseek", "qwen"],
                            help="Filter results to a single provider")
 
+show_parser = subparsers.add_parser("show", help="Display a full conversation thread")
+show_parser.add_argument("conversation", type=str,
+                         help="Conversation ID (integer) or source UUID prefix")
+
 args = parser.parse_args()
 cmd_start = time.monotonic()
 result_count = 0
@@ -243,7 +247,7 @@ elif args.command == "search":
             separator = "-" * 60
             print(f"\n{COLOR_DIM}{separator}{COLOR_RESET}")
             print(f"{COLOR_BOLD}[{index + 1}/{result_count}]{COLOR_RESET} {conversation_title}")
-            print(f"  {COLOR_DIM}{row['provider']} -> {message_date} -> message #{row['position']}{COLOR_RESET}")
+            print(f"  {COLOR_DIM}{row['provider']} -> {row['source_conversation_id']} | {message_date} -> message #{row['position']} -> conv {row['conversation_id']}{COLOR_RESET}")
 
             if preceding_message:
                 preceding_text = preceding_message["content"]
@@ -259,6 +263,83 @@ elif args.command == "search":
         print(f"\n{COLOR_DIM}{'-' * 60}{COLOR_RESET}")
         print(f"{result_count} result{'s' if result_count != 1 else ''}", file=sys.stderr)
 
+    connection.close()
+
+elif args.command == "show":
+    if not DATABASE_PATH.exists():
+        print("error: database not found - run 'init' first", file=sys.stderr)
+        sys.exit(1)
+
+    connection = sqlite3.connect(DATABASE_PATH)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.row_factory = sqlite3.Row
+
+    # Resolve the conversation: try integer id first, then UUID prefix match
+    conversation_row = None
+    identifier = args.conversation
+
+    if identifier.isdigit():
+        conversation_row = connection.execute(
+            "SELECT * FROM conversations WHERE id = ?", (int(identifier),)
+        ).fetchone()
+    
+    if conversation_row is None:
+        # Prefix match on source_conversation_id (e.g. "301727d0" matches full UUID)
+        matching_conversations = connection.execute(
+            "SELECT * FROM conversations WHERE source_conversation_id LIKE ? || '%'",
+            (identifier,),
+        ).fetchall()
+
+        if len(matching_conversations) == 1:
+            conversation_row = matching_conversations[0]
+        elif len(matching_conversations) > 1:
+            print(f"error: '{identifier}' matches {len(matching_conversations)} conversations:", file=sys.stderr)
+            for match in matching_conversations:
+                title = match["title"] or "(untitled)"
+                print(f"  {match['id']}: {title} ({match['provider']}, {match['source_conversation_id'][:12]}...)", file=sys.stderr)
+            connection.close()
+            sys.exit(1)
+
+    if conversation_row is None:
+        print(f"error: no conversation found for '{identifier}'", file=sys.stderr)
+        connection.close()
+        sys.exit(1)
+
+    # Fetch all messages in position order
+    messages = connection.execute(
+        """SELECT role, content, position, created_at FROM messages
+           WHERE conversation_id = ?
+           ORDER BY position ASC""",
+        (conversation_row["id"],),
+    ).fetchall()
+
+    result_count = len(messages)
+
+    # Print conversation header
+    conversation_title = conversation_row["title"] or "(untitled)"
+    conversation_date = conversation_row["created_at"][:10] if conversation_row["created_at"] else "no date"
+    separator = "=" * 60
+
+    print(f"{COLOR_BOLD}{conversation_title}{COLOR_RESET}")
+    print(f"{COLOR_DIM}{conversation_row['provider']} . {conversation_date} . {result_count} messages . id {conversation_row['id']}{COLOR_RESET}")
+    print(f"{COLOR_DIM}{conversation_row['source_conversation_id']}{COLOR_RESET}")
+    print(separator)
+
+    # Print each message
+    for message in messages:
+        message_role = message["role"]
+        message_time = message["created_at"][11:16] if message["created_at"] and len(message["created_at"]) > 16 else ""
+
+        if message_role == "human":
+            role_label = f"{COLOR_BOLD}[human]{COLOR_RESET}"
+        else:
+            role_label = f"[{message_role}]"
+
+        time_stamp = f" {COLOR_DIM}{message_time}{COLOR_RESET}" if message_time else ""
+        print(f"\n{role_label}{time_stamp}")
+        print(message["content"])
+
+    print(f"\n{separator}")
     connection.close()
 
 else:
