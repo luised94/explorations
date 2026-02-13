@@ -13,13 +13,24 @@ if not os.path.exists('input.txt'):
     import urllib.request
     names_url = 'https://raw.githubusercontent.com/karpathy/makemore/refs/heads/master/names.txt'
     urllib.request.urlretrieve(names_url, 'input.txt')
-docs = [l.strip() for l in open('input.txt').read().strip().split('\n') if l.strip()] # list[str] of documents
+file_content = open('input.txt').read().strip()
+document_lines = file_content.split('\n')
+docs: list[str] = []
+for line in document_lines:
+    stripped_line = line.strip()
+    if stripped_line:
+        docs.append(stripped_line)
 random.shuffle(docs)
 print(f"num docs: {len(docs)}")
 # Let there be a Tokenizer to translate strings to discrete symbols and back
-uchars = sorted(set(''.join(docs))) # unique characters in the dataset become token ids 0..n-1
-BOS = len(uchars) # token id for the special Beginning of Sequence (BOS) token
-vocab_size = len(uchars) + 1 # total number of unique tokens, +1 is for BOS
+all_characters = ''.join(docs)
+unique_characters = sorted(set(all_characters))
+character_to_token: dict[str, int] = {}
+for token_id, character in enumerate(unique_characters):
+    character_to_token[character] = token_id
+token_to_character = unique_characters  # list for inverse lookup
+BOS = len(unique_characters) # token id for the special Beginning of Sequence (BOS) token
+vocab_size = len(unique_characters) + 1 # total number of unique tokens, +1 is for BOS
 print(f"vocab size: {vocab_size}")
 # Let there be an Autograd to apply the chain rule recursively across a computation graph
 class Value:
@@ -158,7 +169,7 @@ num_steps = 500 # number of training steps
 for step in range(num_steps):
     # Take single document, tokenize it, surround it with BOS special token on both sides
     doc = docs[step % len(docs)]
-    tokens = [BOS] + [uchars.index(ch) for ch in doc] + [BOS]
+    tokens = [BOS] + [character_to_token[character] for character in doc] + [BOS]
     n = min(block_size, len(tokens) - 1)
     # Forward the token sequence through the model, building up the computation graph all the way to the loss.
     keys, values = [[] for _ in range(n_layer)], [[] for _ in range(n_layer)]
@@ -202,5 +213,5 @@ for sample_idx in range(20):
         token_id = random.choices(range(vocab_size), weights=[p.data for p in probs])[0]
         if token_id == BOS:
             break
-        sample.append(uchars[token_id])
+        sample.append(token_to_character[token_id])
     print(f"sample {sample_idx+1:2d}: {''.join(sample)}")
