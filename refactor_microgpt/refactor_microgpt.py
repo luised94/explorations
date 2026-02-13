@@ -139,6 +139,17 @@ def get_weight_matrix_tape(name: str) -> list[list[int]]:
         matrix.append(row)
     return matrix
 
+def get_weight_matrix_float(name: str) -> list[list[float]]:
+    start_index, number_of_rows, number_of_columns = parameter_offset_table[name]
+    matrix: list[list[float]] = []
+    for row_index in range(number_of_rows):
+        row: list[float] = []
+        for column_index in range(number_of_columns):
+            flat_index = start_index + row_index * number_of_columns + column_index
+            row.append(parameter_data[flat_index])
+        matrix.append(row)
+    return matrix
+
 def linear_tape(x: list[int], w: list[list[int]]) -> list[int]:
     result: list[int] = []
     for weight_row in w:
@@ -149,6 +160,15 @@ def linear_tape(x: list[int], w: list[list[int]]) -> list[int]:
                 accumulator = product
             else:
                 accumulator = tape_add(accumulator, product)
+        result.append(accumulator)
+    return result
+
+def linear_float(x: list[float], w: list[list[float]]) -> list[float]:
+    result: list[float] = []
+    for weight_row in w:
+        accumulator = 0.0
+        for weight_value, x_value in zip(weight_row, x):
+            accumulator += weight_value * x_value
         result.append(accumulator)
     return result
 
@@ -175,6 +195,22 @@ def softmax_tape(logits: list[int]) -> list[int]:
         result.append(normalized)
     return result
 
+def softmax_float(logits: list[float]) -> list[float]:
+    max_val = max(logits)
+    shifted: list[float] = []
+    for logit_value in logits:
+        shifted.append(logit_value - max_val)
+    exps: list[float] = []
+    for shifted_value in shifted:
+        exps.append(math.exp(shifted_value))
+    total = 0.0
+    for exp_value in exps:
+        total += exp_value
+    result: list[float] = []
+    for exp_value in exps:
+        result.append(exp_value / total)
+    return result
+
 def rmsnorm_tape(x: list[int]) -> list[int]:
     squares: list[int] = []
     for x_index in x:
@@ -193,6 +229,17 @@ def rmsnorm_tape(x: list[int]) -> list[int]:
     for x_index in x:
         scaled = tape_multiply(x_index, scale)
         result.append(scaled)
+    return result
+
+def rmsnorm_float(x: list[float]) -> list[float]:
+    sum_squares = 0.0
+    for x_value in x:
+        sum_squares += x_value * x_value
+    ms = sum_squares / float(len(x))
+    scale = 1.0 / ((ms + 1e-5) ** 0.5)
+    result: list[float] = []
+    for x_value in x:
+        result.append(x_value * scale)
     return result
 
 def forward_training(token_id: int, pos_id: int, keys: list[list[list[int]]], values: list[list[list[int]]]) -> list[int]:
