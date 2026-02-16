@@ -33,13 +33,7 @@ STYLE_GRAY: str = "\033[90m" if STDERR_IS_TERMINAL else ""
 STYLE_GREEN: str = "\033[32m" if STDERR_IS_TERMINAL else ""
 STYLE_BOLD_YELLOW: str = "\033[1;33m" if STDERR_IS_TERMINAL else ""
 
-# Level-to-style mapping
-MESSAGE_LEVELS: dict[str, dict[str, int | str]] = {
-    "ERROR": {"priority": 1, "style": STYLE_RED},
-    "WARN": {"priority": 2, "style": STYLE_YELLOW},
-    "INFO": {"priority": 3, "style": STYLE_CYAN},
-    "DEBUG": {"priority": 4, "style": STYLE_GRAY},
-}
+
 
 
 # ============================================================================
@@ -299,26 +293,22 @@ def _write_message(level: str, priority: int, style_code: str, message: str) -> 
 
 def msg_error(message: str) -> None:
     """Write an error message to stderr. Shown at verbosity >= 1."""
-    level_config = MESSAGE_LEVELS["ERROR"]
-    _write_message("ERROR", level_config["priority"], level_config["style"], message)
+    _write_message("ERROR", 1, STYLE_RED, message)
 
 
 def msg_warn(message: str) -> None:
     """Write a warning message to stderr. Shown at verbosity >= 2."""
-    level_config = MESSAGE_LEVELS["WARN"]
-    _write_message("WARN", level_config["priority"], level_config["style"], message)
+    _write_message("WARN", 2, STYLE_YELLOW, message)
 
 
 def msg_info(message: str) -> None:
     """Write an info message to stderr. Shown at verbosity >= 3."""
-    level_config = MESSAGE_LEVELS["INFO"]
-    _write_message("INFO", level_config["priority"], level_config["style"], message)
+    _write_message("INFO", 3, STYLE_CYAN, message)
 
 
 def msg_debug(message: str) -> None:
     """Write a debug message to stderr. Shown at verbosity >= 4."""
-    level_config = MESSAGE_LEVELS["DEBUG"]
-    _write_message("DEBUG", level_config["priority"], level_config["style"], message)
+    _write_message("DEBUG", 4, STYLE_GRAY, message)
 
 
 def msg_success(message: str) -> None:
