@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Demo script for terminal_output.py - executable documentation."""
 
-import terminal_output as term
+import terminal_output
 
 
 # ============================================================================
@@ -9,9 +9,9 @@ import terminal_output as term
 # ============================================================================
 
 print("=== Module Constants ===")
-print(f"stderr is terminal: {term.STDERR_IS_TERMINAL}")
-print(f"terminal width: {term.TERMINAL_WIDTH}")
-print(f"verbosity level: {term.VERBOSITY}")
+print(f"stderr is terminal: {terminal_output.STDERR_IS_TERMINAL}")
+print(f"terminal width: {terminal_output.TERMINAL_WIDTH}")
+print(f"verbosity level: {terminal_output.VERBOSITY}")
 print()
 
 
@@ -22,39 +22,39 @@ print()
 print("=== apply_style() with STYLE_* constants ===")
 
 # Direct styling - no wrapper functions
-print(f"Bold: {term.apply_style('important text', term.STYLE_BOLD)}")
-print(f"Dim: {term.apply_style('secondary info', term.STYLE_DIM)}")
-print(f"Red: {term.apply_style('error-like', term.STYLE_RED)}")
-print(f"Yellow: {term.apply_style('warning-like', term.STYLE_YELLOW)}")
-print(f"Cyan: {term.apply_style('info-like', term.STYLE_CYAN)}")
-print(f"Gray: {term.apply_style('debug-like', term.STYLE_GRAY)}")
-print(f"Green: {term.apply_style('success-like', term.STYLE_GREEN)}")
-print(f"Bold yellow: {term.apply_style('highlighted', term.STYLE_BOLD_YELLOW)}")
+print(f"Bold: {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}")
+print(f"Dim: {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}")
+print(f"Red: {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}")
+print(f"Yellow: {terminal_output.apply_style('warning-like', terminal_output.STYLE_YELLOW)}")
+print(f"Cyan: {terminal_output.apply_style('info-like', terminal_output.STYLE_CYAN)}")
+print(f"Gray: {terminal_output.apply_style('debug-like', terminal_output.STYLE_GRAY)}")
+print(f"Green: {terminal_output.apply_style('success-like', terminal_output.STYLE_GREEN)}")
+print(f"Bold yellow: {terminal_output.apply_style('highlighted', terminal_output.STYLE_BOLD_YELLOW)}")
 
 # Empty style code returns plain text
-print(f"No style: {term.apply_style('plain text', '')}")
+print(f"No style: {terminal_output.apply_style('plain text', '')}")
 print()
 
 # Practical examples showing typical usage patterns
 print("=== Practical Usage Patterns ===")
 
 # Headers and emphasis
-header = term.apply_style("Configuration Settings", term.STYLE_BOLD)
+header = terminal_output.apply_style("Configuration Settings", terminal_output.STYLE_BOLD)
 print(f"{header}")
-print(f"This is {term.apply_style('critical', term.STYLE_BOLD)} information")
-print(f"{term.apply_style('Status:', term.STYLE_BOLD)} Active")
+print(f"This is {terminal_output.apply_style('critical', terminal_output.STYLE_BOLD)} information")
+print(f"{terminal_output.apply_style('Status:', terminal_output.STYLE_BOLD)} Active")
 
 # Separators and metadata
-separator = term.apply_style("-" * 40, term.STYLE_DIM)
-metadata = term.apply_style("Last updated: 2025-02-14", term.STYLE_DIM)
-note = term.apply_style("(optional parameter)", term.STYLE_DIM)
+separator = terminal_output.apply_style("-" * 40, terminal_output.STYLE_DIM)
+metadata = terminal_output.apply_style("Last updated: 2025-02-14", terminal_output.STYLE_DIM)
+note = terminal_output.apply_style("(optional parameter)", terminal_output.STYLE_DIM)
 print(separator)
 print(metadata)
 print(note)
 
 # Composed output
-section_title = term.apply_style("API Response", term.STYLE_BOLD)
-section_border = term.apply_style("=" * 50, term.STYLE_DIM)
+section_title = terminal_output.apply_style("API Response", terminal_output.STYLE_BOLD)
+section_border = terminal_output.apply_style("=" * 50, terminal_output.STYLE_DIM)
 print(section_border)
 print(section_title)
 print(section_border)
