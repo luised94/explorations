@@ -21,7 +21,6 @@ print()
 
 print("=== apply_style() with STYLE_* constants ===")
 
-# Direct styling - no wrapper functions
 print(f"Bold: {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}")
 print(f"Dim: {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}")
 print(f"Red: {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}")
@@ -35,51 +34,16 @@ print()
 
 
 # ============================================================================
-# Practical Usage Patterns
-# ============================================================================
-
-print("=== Practical Usage Patterns ===")
-
-# Headers and emphasis
-header = terminal_output.apply_style("Configuration Settings", terminal_output.STYLE_BOLD)
-print(header)
-print(f"This is {terminal_output.apply_style('critical', terminal_output.STYLE_BOLD)} information")
-print(f"{terminal_output.apply_style('Status:', terminal_output.STYLE_BOLD)} Active")
-
-# Separators and metadata
-separator = terminal_output.apply_style("-" * 40, terminal_output.STYLE_DIM)
-metadata = terminal_output.apply_style("Last updated: 2025-02-14", terminal_output.STYLE_DIM)
-note = terminal_output.apply_style("(optional parameter)", terminal_output.STYLE_DIM)
-print(separator)
-print(metadata)
-print(note)
-
-# Composed output
-section_title = terminal_output.apply_style("API Response", terminal_output.STYLE_BOLD)
-section_border = terminal_output.apply_style("=" * 50, terminal_output.STYLE_DIM)
-print(section_border)
-print(section_title)
-print(section_border)
-print()
-
-
-# ============================================================================
 # format_highlight() - Semantic Highlighting
 # ============================================================================
 
 print("=== format_highlight() ===")
 
-# Search result highlighting (primary use case)
 search_query = "neural"
 result_text = "Understanding neural networks and neural architectures"
 highlighted_result = result_text.replace("neural", terminal_output.format_highlight("neural"))
 print(f"Search for '{search_query}':")
 print(f"  {highlighted_result}")
-
-# Multiple highlights in same line
-multi_match = "The neural network uses neural pathways"
-multi_highlighted = multi_match.replace("neural", terminal_output.format_highlight("neural"))
-print(f"  {multi_highlighted}")
 print()
 
 
@@ -89,19 +53,9 @@ print()
 
 print("=== format_label() ===")
 
-# Labels without values
 print(f"{terminal_output.format_label('dry-run')} Showing preview only")
-print(f"{terminal_output.format_label('cached')} Using stored response")
-print(f"{terminal_output.format_label('experimental')} Feature in testing")
-
-# Labels with values
 print(f"{terminal_output.format_label('model', 'claude-sonnet-4-20250514')}")
 print(f"{terminal_output.format_label('tokens', '850 in / 320 out')}")
-print(f"{terminal_output.format_label('cost', '$0.0032')}")
-print(f"{terminal_output.format_label('status', 'success')}")
-
-# Combined in context
-print(f"\n{terminal_output.format_label('request')} API call to {terminal_output.format_label('model', 'sonnet')}")
 print()
 
 
@@ -111,23 +65,8 @@ print()
 
 print("=== format_separator() ===")
 
-# Default separator (hyphen, terminal width)
 print(terminal_output.format_separator())
-
-# Custom character
-print(terminal_output.format_separator("="))
-
-# Custom width
-print(terminal_output.format_separator("-", 30))
-
-# Different characters for different purposes
 print(terminal_output.format_separator("=", 60))
-print("Section Header")
-print(terminal_output.format_separator("=", 60))
-print()
-print(terminal_output.format_separator("-", 60))
-print("Subsection")
-print(terminal_output.format_separator("-", 60))
 print()
 
 
@@ -137,22 +76,9 @@ print()
 
 print("=== format_token_counts() ===")
 
-# Typical API call scenarios
-print("Small request:")
-print(f"  {terminal_output.format_token_counts(150, 80)}")
-
-print("Medium conversation:")
-print(f"  {terminal_output.format_token_counts(850, 320)}")
-
-print("Large context:")
-print(f"  {terminal_output.format_token_counts(4500, 1200)}")
-
-print("Code generation:")
-print(f"  {terminal_output.format_token_counts(320, 2400)}")
-
-# Used with labels
-token_info = terminal_output.format_token_counts(850, 320)
-print(f"\n{terminal_output.format_label('tokens', token_info)}")
+print(f"Small: {terminal_output.format_token_counts(150, 80)}")
+print(f"Medium: {terminal_output.format_token_counts(850, 320)}")
+print(f"Large: {terminal_output.format_token_counts(4500, 1200)}")
 print()
 
 
@@ -162,29 +88,85 @@ print()
 
 print("=== format_cost() ===")
 
-# Different magnitude scenarios
-print("Very small costs (4 decimals):")
-print(f"  Tiny request: {terminal_output.format_cost(0.0008)}")
-print(f"  Small request: {terminal_output.format_cost(0.0032)}")
-print(f"  Threshold: {terminal_output.format_cost(0.0099)}")
+print(f"Tiny: {terminal_output.format_cost(0.0008)}")
+print(f"Small: {terminal_output.format_cost(0.0032)}")
+print(f"Medium: {terminal_output.format_cost(0.125)}")
+print(f"Large: {terminal_output.format_cost(3.45)}")
+print()
 
-print("\nSmall costs (3 decimals):")
-print(f"  Just over threshold: {terminal_output.format_cost(0.010)}")
-print(f"  Medium request: {terminal_output.format_cost(0.125)}")
-print(f"  Large request: {terminal_output.format_cost(0.850)}")
 
-print("\nLarge costs (2 decimals):")
-print(f"  Dollar threshold: {terminal_output.format_cost(1.00)}")
-print(f"  Multiple requests: {terminal_output.format_cost(3.45)}")
-print(f"  Heavy usage: {terminal_output.format_cost(24.80)}")
+# ============================================================================
+# format_block() - Block Formatting
+# ============================================================================
 
-# Used with labels
-cost_value = terminal_output.format_cost(0.0032)
-print(f"\n{terminal_output.format_label('estimated cost', cost_value)}")
+print("=== format_block() ===")
 
-# Combined token + cost display
+# Simple block
+simple_content = "This is the content inside the block."
+simple_block = terminal_output.format_block("Simple Block", simple_content)
+print(simple_block)
+print()
+
+# Multi-line content
+api_request = "POST /v1/messages\nmodel: claude-sonnet-4-20250514\nmax_tokens: 1024"
+request_block = terminal_output.format_block("API Request", api_request)
+print(request_block)
+print()
+
+# Block with formatted content inside
 tokens = terminal_output.format_token_counts(850, 320)
 cost = terminal_output.format_cost(0.0032)
-print(f"{terminal_output.format_label('tokens', tokens)}")
-print(f"{terminal_output.format_label('cost', cost)}")
+summary_content = f"Tokens: {tokens}\nCost: {cost}\nStatus: Success"
+summary_block = terminal_output.format_block("Request Summary", summary_content)
+print(summary_block)
+print()
+
+# Nested formatting - block containing labels
+config_lines = [
+    f"{terminal_output.format_label('model', 'sonnet')}",
+    f"{terminal_output.format_label('temperature', '1.0')}",
+    f"{terminal_output.format_label('max_tokens', '2048')}"
+]
+config_content = "\n".join(config_lines)
+config_block = terminal_output.format_block("Configuration", config_content)
+print(config_block)
+print()
+
+
+# ============================================================================
+# wrap_text() - Text Wrapping
+# ============================================================================
+
+print("=== wrap_text() ===")
+
+# Long single paragraph
+long_text = "This is a very long line of text that will definitely exceed the typical terminal width and needs to be wrapped to multiple lines for readability. It demonstrates how the wrap_text function handles text that is too long for a single line."
+
+print("No wrap (raw):")
+print(long_text)
+print()
+
+print("Wrapped to 60 chars:")
+wrapped_60 = terminal_output.wrap_text(long_text, width=60)
+print(wrapped_60)
+print()
+
+print("Wrapped to 60 chars with 4-space indent:")
+wrapped_indented = terminal_output.wrap_text(long_text, indent=4, width=60)
+print(wrapped_indented)
+print()
+
+# Multiple paragraphs
+multi_paragraph = "First paragraph is here and it is quite long so it will wrap.\n\nSecond paragraph is also long and will wrap independently of the first paragraph."
+
+print("Multi-paragraph wrapped to 50 chars:")
+wrapped_multi = terminal_output.wrap_text(multi_paragraph, width=50)
+print(wrapped_multi)
+print()
+
+# Practical example: wrapping help text
+help_text = "The --verbose flag increases output verbosity. Use -v for basic debug output, -vv for detailed trace output including function calls, or -vvv for maximum verbosity with all internal state."
+print("Help text wrapped to 70 chars with 2-space indent:")
+wrapped_help = terminal_output.wrap_text(help_text, indent=2, width=70)
+print(wrapped_help)
 print()

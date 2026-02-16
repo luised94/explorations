@@ -9,6 +9,7 @@ All messaging goes to stderr. Data output goes to stdout (caller's responsibilit
 
 import sys
 import shutil
+import textwrap
 
 
 # ============================================================================
@@ -157,3 +158,78 @@ def format_cost(cost_dollars: float) -> str:
         return f"${cost_dollars:.3f}"
     else:
         return f"${cost_dollars:.2f}"
+
+
+def format_block(header: str, content: str) -> str:
+    """Format a block with header and bordered content.
+    
+    Builds multi-line output with styled separators and header.
+    Returns a single string with embedded newlines.
+    
+    Args:
+        header: Block header text
+        content: Block content (may contain multiple lines)
+        
+    Returns:
+        Multi-line string with format:
+        --- header ---
+        content
+        --------------
+        
+    Example:
+        format_block("API Request", "POST /messages\\nmodel: sonnet")
+        produces:
+        --- API Request ---
+        POST /messages
+        model: sonnet
+        -------------------
+    """
+    header_separator = apply_style(f"--- {header} ---", STYLE_DIM)
+    header_length = len(f"--- {header} ---")
+    footer_separator = apply_style("-" * header_length, STYLE_DIM)
+    
+    lines = [header_separator, content, footer_separator]
+    return "\n".join(lines)
+
+
+def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
+    """Wrap text to specified width with optional indentation.
+    
+    Preserves existing paragraph breaks (double newlines).
+    Each paragraph is wrapped independently and rejoined.
+    
+    Args:
+        text: Text to wrap (may contain newlines)
+        indent: Number of spaces to indent wrapped lines (default: 0)
+        width: Maximum line width (default: TERMINAL_WIDTH)
+        
+    Returns:
+        Wrapped text as single string with newlines
+        
+    Example:
+        wrap_text("This is a very long line that needs wrapping", indent=2, width=20)
+        produces lines indented by 2 spaces, max 20 chars wide
+    """
+    if width is None:
+        width = TERMINAL_WIDTH
+    
+    effective_width = width - indent
+    if effective_width <= 0:
+        effective_width = 1
+    
+    paragraphs = text.split("\n")
+    wrapped_paragraphs = []
+    
+    for paragraph in paragraphs:
+        if paragraph.strip() == "":
+            wrapped_paragraphs.append("")
+        else:
+            wrapped = textwrap.fill(
+                paragraph,
+                width=effective_width,
+                initial_indent=" " * indent,
+                subsequent_indent=" " * indent
+            )
+            wrapped_paragraphs.append(wrapped)
+    
+    return "\n".join(wrapped_paragraphs)
