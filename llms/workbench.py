@@ -26,6 +26,7 @@ Data contracts:
 
 import argparse
 import json
+import readline  # noqa: F401 - enhances input() with line editing and history
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -176,7 +177,10 @@ if __name__ == "__main__":
 
     # -- DISPLAY -------------------------------------------------------
 
-    print(response_data["response_text"])
+    if sys.stdout.isatty():
+        print(terminal_output.wrap_text(response_data["response_text"], width=80))
+    else:
+        print(response_data["response_text"])
 
     tokens_in: int = response_data["tokens_in"]
     tokens_out: int = response_data["tokens_out"]
