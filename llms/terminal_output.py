@@ -61,3 +61,58 @@ def apply_style(text: str, style_code: str) -> str:
     if not style_code:
         return text
     return f"{style_code}{text}{STYLE_RESET}"
+
+
+def format_highlight(text: str) -> str:
+    """Format text as a highlight (bold yellow).
+    
+    Semantic function - encodes the meaning "this is highlighted content"
+    rather than just "make this bold yellow". Primary use: FTS search
+    match highlighting.
+    
+    Args:
+        text: Plain string to highlight
+        
+    Returns:
+        Highlighted string (or plain if terminal styling disabled)
+    """
+    return apply_style(text, STYLE_BOLD_YELLOW)
+
+
+def format_label(name: str, value: str | None = None) -> str:
+    """Format a bracketed label with optional value.
+    
+    Builds structured label syntax used throughout CLI output.
+    
+    Args:
+        name: Label name (e.g., "dry-run", "model")
+        value: Optional value to display after colon
+        
+    Returns:
+        "[name]" or "[name: value]", styled in cyan
+        
+    Examples:
+        format_label("dry-run") -> "[dry-run]"
+        format_label("model", "sonnet") -> "[model: sonnet]"
+    """
+    if value is None:
+        label_text = f"[{name}]"
+    else:
+        label_text = f"[{name}: {value}]"
+    return apply_style(label_text, STYLE_CYAN)
+
+
+def format_separator(character: str = "-", width: int | None = None) -> str:
+    """Generate a separator line of repeated characters.
+    
+    Args:
+        character: Single character to repeat (default: "-")
+        width: Line width (default: TERMINAL_WIDTH)
+        
+    Returns:
+        Dim-styled line of repeated characters
+    """
+    if width is None:
+        width = TERMINAL_WIDTH
+    separator_line = character * width
+    return apply_style(separator_line, STYLE_DIM)
