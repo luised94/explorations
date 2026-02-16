@@ -51,3 +51,26 @@ def apply_style(text: str, style_code: str) -> str:
     if not style_code:
         return text
     return f"{style_code}{text}{STYLE_RESET}"
+
+def format_bold(text: str) -> str:
+    """Format text in bold.
+    
+    Args:
+        text: Plain string
+        
+    Returns:
+        Bold-styled string (or plain if terminal styling disabled)
+    """
+    return apply_style(text, STYLE_BOLD)
+
+
+def format_dim(text: str) -> str:
+    """Format text in dim/faint style.
+    
+    Args:
+        text: Plain string
+        
+    Returns:
+        Dim-styled string (or plain if terminal styling disabled)
+    """
+    return apply_style(text, STYLE_DIM)

@@ -3,7 +3,6 @@
 
 import terminal_output as term
 
-
 # ============================================================================
 # Module Constants
 # ============================================================================
@@ -33,4 +32,29 @@ print(f"Bold yellow: {term.apply_style('highlighted', term.STYLE_BOLD_YELLOW)}")
 
 # Empty style code returns plain text
 print(f"No style: {term.apply_style('plain text', '')}")
+print()
+
+
+# ============================================================================
+# format_bold() and format_dim() - Common Styling Wrappers
+# ============================================================================
+
+print("=== format_bold() and format_dim() ===")
+
+# format_bold examples
+print(f"Header: {term.format_bold('Configuration Settings')}")
+print(f"Emphasis: This is {term.format_bold('critical')} information")
+print(f"Label: {term.format_bold('Status:')} Active")
+
+# format_dim examples
+print(f"Separator: {term.format_dim('-' * 40)}")
+print(f"Metadata: {term.format_dim('Last updated: 2025-02-14')}")
+print(f"Subdued: {term.format_dim('(optional parameter)')}")
+
+# Combined usage
+section_title = term.format_bold("API Response")
+section_border = term.format_dim("=" * 50)
+print(f"{section_border}")
+print(f"{section_title}")
+print(f"{section_border}")
 print()
