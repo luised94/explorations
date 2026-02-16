@@ -3,6 +3,7 @@
 
 import terminal_output as term
 
+
 # ============================================================================
 # Module Constants
 # ============================================================================
@@ -15,12 +16,12 @@ print()
 
 
 # ============================================================================
-# apply_style() - Core Styling Function
+# apply_style() - Core Styling Primitive
 # ============================================================================
 
-print("=== apply_style() ===")
+print("=== apply_style() with STYLE_* constants ===")
 
-# Basic styles
+# Direct styling - no wrapper functions
 print(f"Bold: {term.apply_style('important text', term.STYLE_BOLD)}")
 print(f"Dim: {term.apply_style('secondary info', term.STYLE_DIM)}")
 print(f"Red: {term.apply_style('error-like', term.STYLE_RED)}")
@@ -34,27 +35,27 @@ print(f"Bold yellow: {term.apply_style('highlighted', term.STYLE_BOLD_YELLOW)}")
 print(f"No style: {term.apply_style('plain text', '')}")
 print()
 
+# Practical examples showing typical usage patterns
+print("=== Practical Usage Patterns ===")
 
-# ============================================================================
-# format_bold() and format_dim() - Common Styling Wrappers
-# ============================================================================
+# Headers and emphasis
+header = term.apply_style("Configuration Settings", term.STYLE_BOLD)
+print(f"{header}")
+print(f"This is {term.apply_style('critical', term.STYLE_BOLD)} information")
+print(f"{term.apply_style('Status:', term.STYLE_BOLD)} Active")
 
-print("=== format_bold() and format_dim() ===")
+# Separators and metadata
+separator = term.apply_style("-" * 40, term.STYLE_DIM)
+metadata = term.apply_style("Last updated: 2025-02-14", term.STYLE_DIM)
+note = term.apply_style("(optional parameter)", term.STYLE_DIM)
+print(separator)
+print(metadata)
+print(note)
 
-# format_bold examples
-print(f"Header: {term.format_bold('Configuration Settings')}")
-print(f"Emphasis: This is {term.format_bold('critical')} information")
-print(f"Label: {term.format_bold('Status:')} Active")
-
-# format_dim examples
-print(f"Separator: {term.format_dim('-' * 40)}")
-print(f"Metadata: {term.format_dim('Last updated: 2025-02-14')}")
-print(f"Subdued: {term.format_dim('(optional parameter)')}")
-
-# Combined usage
-section_title = term.format_bold("API Response")
-section_border = term.format_dim("=" * 50)
-print(f"{section_border}")
-print(f"{section_title}")
-print(f"{section_border}")
+# Composed output
+section_title = term.apply_style("API Response", term.STYLE_BOLD)
+section_border = term.apply_style("=" * 50, term.STYLE_DIM)
+print(section_border)
+print(section_title)
+print(section_border)
 print()

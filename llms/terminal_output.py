@@ -1,5 +1,15 @@
+"""Terminal output utility - styling and messaging for CLI scripts.
+
+Two layers:
+1. Styling functions - pure transforms, no I/O
+2. Messaging functions - write leveled output to stderr
+
+All messaging goes to stderr. Data output goes to stdout (caller's responsibility).
+"""
+
 import sys
 import shutil
+
 
 # ============================================================================
 # Section 1: Constants (determined at module import)
@@ -51,26 +61,3 @@ def apply_style(text: str, style_code: str) -> str:
     if not style_code:
         return text
     return f"{style_code}{text}{STYLE_RESET}"
-
-def format_bold(text: str) -> str:
-    """Format text in bold.
-    
-    Args:
-        text: Plain string
-        
-    Returns:
-        Bold-styled string (or plain if terminal styling disabled)
-    """
-    return apply_style(text, STYLE_BOLD)
-
-
-def format_dim(text: str) -> str:
-    """Format text in dim/faint style.
-    
-    Args:
-        text: Plain string
-        
-    Returns:
-        Dim-styled string (or plain if terminal styling disabled)
-    """
-    return apply_style(text, STYLE_DIM)
