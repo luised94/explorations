@@ -129,3 +129,62 @@ print(terminal_output.format_separator("-", 60))
 print("Subsection")
 print(terminal_output.format_separator("-", 60))
 print()
+
+
+# ============================================================================
+# format_token_counts() - Token Count Formatting
+# ============================================================================
+
+print("=== format_token_counts() ===")
+
+# Typical API call scenarios
+print("Small request:")
+print(f"  {terminal_output.format_token_counts(150, 80)}")
+
+print("Medium conversation:")
+print(f"  {terminal_output.format_token_counts(850, 320)}")
+
+print("Large context:")
+print(f"  {terminal_output.format_token_counts(4500, 1200)}")
+
+print("Code generation:")
+print(f"  {terminal_output.format_token_counts(320, 2400)}")
+
+# Used with labels
+token_info = terminal_output.format_token_counts(850, 320)
+print(f"\n{terminal_output.format_label('tokens', token_info)}")
+print()
+
+
+# ============================================================================
+# format_cost() - Cost Formatting
+# ============================================================================
+
+print("=== format_cost() ===")
+
+# Different magnitude scenarios
+print("Very small costs (4 decimals):")
+print(f"  Tiny request: {terminal_output.format_cost(0.0008)}")
+print(f"  Small request: {terminal_output.format_cost(0.0032)}")
+print(f"  Threshold: {terminal_output.format_cost(0.0099)}")
+
+print("\nSmall costs (3 decimals):")
+print(f"  Just over threshold: {terminal_output.format_cost(0.010)}")
+print(f"  Medium request: {terminal_output.format_cost(0.125)}")
+print(f"  Large request: {terminal_output.format_cost(0.850)}")
+
+print("\nLarge costs (2 decimals):")
+print(f"  Dollar threshold: {terminal_output.format_cost(1.00)}")
+print(f"  Multiple requests: {terminal_output.format_cost(3.45)}")
+print(f"  Heavy usage: {terminal_output.format_cost(24.80)}")
+
+# Used with labels
+cost_value = terminal_output.format_cost(0.0032)
+print(f"\n{terminal_output.format_label('estimated cost', cost_value)}")
+
+# Combined token + cost display
+tokens = terminal_output.format_token_counts(850, 320)
+cost = terminal_output.format_cost(0.0032)
+print(f"{terminal_output.format_label('tokens', tokens)}")
+print(f"{terminal_output.format_label('cost', cost)}")
+print()

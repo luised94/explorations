@@ -116,3 +116,44 @@ def format_separator(character: str = "-", width: int | None = None) -> str:
         width = TERMINAL_WIDTH
     separator_line = character * width
     return apply_style(separator_line, STYLE_DIM)
+
+
+def format_token_counts(tokens_in: int, tokens_out: int) -> str:
+    """Format token input/output counts with total.
+    
+    Produces standard token count display format used in API call reporting.
+    No styling applied - caller decides context.
+    
+    Args:
+        tokens_in: Input token count
+        tokens_out: Output token count
+        
+    Returns:
+        Formatted string: "850 in / 320 out (1170 total)"
+    """
+    total_tokens = tokens_in + tokens_out
+    return f"{tokens_in} in / {tokens_out} out ({total_tokens} total)"
+
+
+def format_cost(cost_dollars: float) -> str:
+    """Format monetary cost with appropriate precision.
+    
+    Uses precision based on magnitude to keep small costs readable:
+    - Under $0.01: 4 decimal places
+    - Under $1.00: 3 decimal places
+    - Otherwise: 2 decimal places
+    
+    No styling applied - caller decides context.
+    
+    Args:
+        cost_dollars: Cost in dollars
+        
+    Returns:
+        Formatted cost string: "$0.0032", "$0.032", "$1.24"
+    """
+    if cost_dollars < 0.01:
+        return f"${cost_dollars:.4f}"
+    elif cost_dollars < 1.00:
+        return f"${cost_dollars:.3f}"
+    else:
+        return f"${cost_dollars:.2f}"
