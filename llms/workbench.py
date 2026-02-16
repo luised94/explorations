@@ -26,9 +26,13 @@ Data contracts:
 
 import argparse
 import json
+import os
 import readline  # noqa: F401 - enhances input() with line editing and history
+import shutil
 import sqlite3
+import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -178,7 +182,31 @@ if __name__ == "__main__":
     # -- DISPLAY -------------------------------------------------------
 
     if sys.stdout.isatty():
-        print(terminal_output.wrap_text(response_data["response_text"], width=80))
+        wrapped_response: str = terminal_output.wrap_text(
+            response_data["response_text"], width=80
+        )
+        terminal_height: int = shutil.get_terminal_size().lines
+        response_line_count: int = wrapped_response.count("\n") + 1
+
+        if response_line_count > terminal_height:
+            pager_command: str = os.environ.get("PAGER", "less -R")
+            pager_parts: list[str] = pager_command.split()
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".md", delete=False
+            ) as pager_file:
+                pager_file.write(wrapped_response)
+                pager_file_path: str = pager_file.name
+
+            try:
+                subprocess.run(pager_parts + [pager_file_path])
+            except (FileNotFoundError, OSError):
+                terminal_output.msg_warn("Pager not available, printing directly.")
+                print(wrapped_response)
+            finally:
+                os.unlink(pager_file_path)
+        else:
+            print(wrapped_response)
     else:
         print(response_data["response_text"])
 
