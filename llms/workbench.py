@@ -1,3 +1,4 @@
+
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
@@ -8,20 +9,21 @@
 """Personal LLM Workbench -- Phase 1: One Working Loop.
 
 Pipeline:
-    PARSE    -- read CLI arguments, resolve model config
-    INPUT    -- get prompt text from argument or stdin
-    ASSEMBLE -- build messages array with optional system prompt
+    PARSE    -- read CLI arguments, resolve model config, validate flags
+    INPUT    -- get prompt text from argument or stdin (single-shot only)
+    ASSEMBLE -- initialize messages array with optional system prompt
     DRY-RUN  -- if --dry-run, show context and cost estimate, then exit
-    CALL     -- send to Anthropic API, unpack response to plain dict
-    DISPLAY  -- print response text to stdout, metadata to stderr
-    LOG      -- append call record to SQLite
+    INIT     -- connect to SQLite, create/migrate table, create API client
+    LOOP     -- read input, call API, display response, log to database
+               (single-shot: one iteration; interactive: until /quit or Ctrl-C)
+    CLEANUP  -- close database connection, print session summary
 
 Data contracts:
-    messages      -- list[dict] with keys: role (system|user), content
-    response_data -- dict with keys: response_text, tokens_in, tokens_out,
-                    model, stop_reason
-    calls table   -- append-only, one row per API call, full context
-                    preserved in messages_json
+    messages        -- list[dict] with keys: role (system|user|assistant), content
+    response_data   -- dict with keys: response_text, tokens_in, tokens_out,
+                       model, stop_reason
+    calls table     -- append-only, one row per turn, full context in
+                       messages_json, grouped by conversation_id
 """
 
 import argparse
@@ -35,6 +37,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import anthropic
 import terminal_output
@@ -62,13 +65,15 @@ parser = argparse.ArgumentParser(description="Personal LLM Workbench")
 parser.add_argument("text", nargs="?", default=None,
                     help="Prompt text (reads stdin if omitted)")
 parser.add_argument("--model", "-m", choices=MODELS.keys(), default=DEFAULT_MODEL,
-                    help="Model to use (default: sonnet)")
+                    help="Model to use (default: haiku)")
 parser.add_argument("--system", "-s", type=str, default=None,
                     help="System prompt text")
+parser.add_argument("--interactive", "-i", action="store_true",
+                    help="Start an interactive multi-turn conversation")
 parser.add_argument("--dry-run", action="store_true",
                     help="Preview context and cost without calling the API")
 parser.add_argument("--notes", "-n", type=str, default=None,
-                    help="Freeform note stored with this call")
+                    help="Freeform note stored with each turn")
 parser.add_argument("--prompt", type=Path, default=None,
                     help="(placeholder -- not yet implemented)")
 parser.add_argument("--input", type=Path, default=None,
@@ -91,16 +96,32 @@ if __name__ == "__main__":
     if parsed_arguments.input is not None:
         terminal_output.msg_warn("--input flag is not yet implemented. Ignoring.")
 
+    interactive_mode: bool = parsed_arguments.interactive
     model_name: str = parsed_arguments.model
     model_config: dict = MODELS[model_name]
 
+    if parsed_arguments.dry_run and interactive_mode:
+        terminal_output.msg_error("--dry-run is not compatible with --interactive.")
+        sys.exit(1)
+
+    if interactive_mode and not sys.stdin.isatty():
+        terminal_output.msg_error(
+            "Interactive mode requires a terminal (stdin is not a tty)."
+        )
+        sys.exit(1)
+
     # -- INPUT ---------------------------------------------------------
 
+    user_input: str = ""
+    has_initial_input: bool = False
+
     if parsed_arguments.text is not None:
-        user_input: str = parsed_arguments.text
-    elif not sys.stdin.isatty():
+        user_input = parsed_arguments.text
+        has_initial_input = True
+    elif not sys.stdin.isatty() and not interactive_mode:
         user_input = sys.stdin.read().strip()
-    else:
+        has_initial_input = True
+    elif not interactive_mode:
         terminal_output.msg_error(
             "No input provided. Pass text as an argument or pipe via stdin."
         )
@@ -111,14 +132,19 @@ if __name__ == "__main__":
     messages: list[dict[str, str]] = []
     if parsed_arguments.system is not None:
         messages.append({"role": "system", "content": parsed_arguments.system})
-    messages.append({"role": "user", "content": user_input})
 
     # -- DRY-RUN -------------------------------------------------------
 
     if parsed_arguments.dry_run:
+        dry_run_messages: list[dict[str, str]] = messages + [
+            {"role": "user", "content": user_input}
+        ]
+
         estimated_input_tokens: int = 0
-        for message in messages:
-            estimated_input_tokens = estimated_input_tokens + len(message["content"]) // 4
+        for message in dry_run_messages:
+            estimated_input_tokens = (
+                estimated_input_tokens + len(message["content"]) // 4
+            )
 
         estimated_input_cost: float = (
             (estimated_input_tokens / 1_000_000) * model_config["cost_in"]
@@ -126,14 +152,14 @@ if __name__ == "__main__":
 
         summary_lines: list[str] = [
             "Model: " + model_config["id"],
-            "Messages: " + str(len(messages)),
+            "Messages: " + str(len(dry_run_messages)),
             "Estimated input tokens: ~" + str(estimated_input_tokens),
             "Estimated cost: ~" + terminal_output.format_cost(estimated_input_cost),
         ]
         print(terminal_output.format_block("DRY RUN", "\n".join(summary_lines)))
 
         context_lines: list[str] = []
-        for message in messages:
+        for message in dry_run_messages:
             role_label: str = terminal_output.format_label(message["role"])
             context_lines.append(role_label + " " + message["content"])
         print(terminal_output.format_block("CONTEXT", "\n\n".join(context_lines)))
@@ -141,119 +167,198 @@ if __name__ == "__main__":
         terminal_output.msg_info("No API call made.")
         sys.exit(0)
 
-    # -- CALL ----------------------------------------------------------
+    # -- INIT ----------------------------------------------------------
 
-    system_prompt: str | None = None
-    api_messages: list[dict[str, str]] = []
-    for message in messages:
-        if message["role"] == "system":
-            system_prompt = message["content"]
-        else:
-            api_messages.append(message)
+    connection = sqlite3.connect(DATABASE_PATH)
+    with connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                model TEXT NOT NULL,
+                messages_json TEXT NOT NULL,
+                response_text TEXT NOT NULL,
+                tokens_in INTEGER,
+                tokens_out INTEGER,
+                notes TEXT,
+                conversation_id TEXT
+            )
+        """)
+
+    # Migrate: add conversation_id if table predates this column
+    try:
+        with connection:
+            connection.execute(
+                "ALTER TABLE calls ADD COLUMN conversation_id TEXT"
+            )
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
     try:
         client = anthropic.Anthropic()
-        if system_prompt is not None:
-            api_response = client.messages.create(
-                model=model_config["id"],
-                max_tokens=MAX_RESPONSE_TOKENS,
-                system=system_prompt,
-                messages=api_messages,
-            )
-        else:
-            api_response = client.messages.create(
-                model=model_config["id"],
-                max_tokens=MAX_RESPONSE_TOKENS,
-                messages=api_messages,
-            )
     except anthropic.APIError as api_error:
-        terminal_output.msg_error("API call failed: " + str(api_error))
-        sys.exit(1)
-
-    # Unpack SDK response to plain data immediately
-    response_data: dict = {
-        "response_text": api_response.content[0].text,
-        "tokens_in": api_response.usage.input_tokens,
-        "tokens_out": api_response.usage.output_tokens,
-        "model": api_response.model,
-        "stop_reason": api_response.stop_reason,
-    }
-
-    # -- DISPLAY -------------------------------------------------------
-
-    if sys.stdout.isatty():
-        wrapped_response: str = terminal_output.wrap_text(
-            response_data["response_text"], width=80
+        terminal_output.msg_error(
+            "Failed to initialize API client: " + str(api_error)
         )
-        terminal_height: int = shutil.get_terminal_size().lines
-        response_line_count: int = wrapped_response.count("\n") + 1
-
-        if response_line_count > terminal_height:
-            pager_command: str = os.environ.get("PAGER", "less -R")
-            pager_parts: list[str] = pager_command.split()
-
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".md", delete=False
-            ) as pager_file:
-                pager_file.write(wrapped_response)
-                pager_file_path: str = pager_file.name
-
-            try:
-                subprocess.run(pager_parts + [pager_file_path])
-            except (FileNotFoundError, OSError):
-                terminal_output.msg_warn("Pager not available, printing directly.")
-                print(wrapped_response)
-            finally:
-                os.unlink(pager_file_path)
-        else:
-            print(wrapped_response)
-    else:
-        print(response_data["response_text"])
-
-    tokens_in: int = response_data["tokens_in"]
-    tokens_out: int = response_data["tokens_out"]
-    input_cost: float = (tokens_in / 1_000_000) * model_config["cost_in"]
-    output_cost: float = (tokens_out / 1_000_000) * model_config["cost_out"]
-    total_cost: float = input_cost + output_cost
-
-    terminal_output.msg_info(terminal_output.format_token_counts(tokens_in, tokens_out))
-    terminal_output.msg_info("Cost: " + terminal_output.format_cost(total_cost))
-
-    # -- LOG -----------------------------------------------------------
-
-    timestamp: str = datetime.now(timezone.utc).isoformat()
-    messages_json: str = json.dumps(messages)
-
-    connection = sqlite3.connect(DATABASE_PATH)
-    try:
-        with connection:
-            connection.execute("""
-                CREATE TABLE IF NOT EXISTS calls (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    messages_json TEXT NOT NULL,
-                    response_text TEXT NOT NULL,
-                    tokens_in INTEGER,
-                    tokens_out INTEGER,
-                    notes TEXT
-                )
-            """)
-        with connection:
-            connection.execute(
-                """
-                INSERT INTO calls (timestamp, model, messages_json, response_text,
-                                   tokens_in, tokens_out, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (timestamp, model_config["id"], messages_json,
-                 response_data["response_text"], tokens_in, tokens_out,
-                 parsed_arguments.notes),
-            )
-    except sqlite3.Error as database_error:
-        terminal_output.msg_error("Database write failed: " + str(database_error))
-        sys.exit(1)
-    finally:
         connection.close()
+        sys.exit(1)
 
-    terminal_output.msg_success("Logged to " + DATABASE_PATH)
+    conversation_id: str | None = None
+    if interactive_mode:
+        conversation_id = uuid4().hex[:12]
+        terminal_output.msg_info(
+            "Interactive mode ("
+            + terminal_output.format_label("model", model_config["id"])
+            + "). /quit or Ctrl-C to exit."
+        )
+
+    # -- CONVERSATION LOOP ---------------------------------------------
+
+    turn_count: int = 0
+
+    while True:
+
+        # Read input
+        if turn_count == 0 and has_initial_input:
+            pass  # user_input already set from argument or stdin
+        else:
+            try:
+                prompt_prefix: str = "\n" if turn_count > 0 else ""
+                user_input = input(prompt_prefix + "> ")
+            except (KeyboardInterrupt, EOFError):
+                print()
+                break
+            stripped_input: str = user_input.strip()
+            if stripped_input == "":
+                continue
+            if stripped_input in ("/quit", "/exit"):
+                break
+
+        messages.append({"role": "user", "content": user_input})
+
+        # CALL
+        system_prompt: str | None = None
+        api_messages: list[dict[str, str]] = []
+        for message in messages:
+            if message["role"] == "system":
+                system_prompt = message["content"]
+            else:
+                api_messages.append(message)
+
+        try:
+            if system_prompt is not None:
+                api_response = client.messages.create(
+                    model=model_config["id"],
+                    max_tokens=MAX_RESPONSE_TOKENS,
+                    system=system_prompt,
+                    messages=api_messages,
+                )
+            else:
+                api_response = client.messages.create(
+                    model=model_config["id"],
+                    max_tokens=MAX_RESPONSE_TOKENS,
+                    messages=api_messages,
+                )
+        except anthropic.APIError as api_error:
+            terminal_output.msg_error("API call failed: " + str(api_error))
+            messages.pop()  # remove the failed user message
+            if not interactive_mode:
+                connection.close()
+                sys.exit(1)
+            continue
+
+        # Unpack SDK response to plain data immediately
+        response_data: dict = {
+            "response_text": api_response.content[0].text,
+            "tokens_in": api_response.usage.input_tokens,
+            "tokens_out": api_response.usage.output_tokens,
+            "model": api_response.model,
+            "stop_reason": api_response.stop_reason,
+        }
+
+        messages.append(
+            {"role": "assistant", "content": response_data["response_text"]}
+        )
+
+        # DISPLAY
+        if sys.stdout.isatty():
+            wrapped_response: str = terminal_output.wrap_text(
+                response_data["response_text"], width=80
+            )
+            terminal_height: int = shutil.get_terminal_size().lines
+            response_line_count: int = wrapped_response.count("\n") + 1
+
+            if response_line_count > terminal_height:
+                pager_command: str = os.environ.get("PAGER", "less -R")
+                pager_parts: list[str] = pager_command.split()
+
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".md", delete=False
+                ) as pager_file:
+                    pager_file.write(wrapped_response)
+                    pager_file_path: str = pager_file.name
+
+                try:
+                    subprocess.run(pager_parts + [pager_file_path])
+                except (FileNotFoundError, OSError):
+                    terminal_output.msg_warn(
+                        "Pager not available, printing directly."
+                    )
+                    print(wrapped_response)
+                finally:
+                    os.unlink(pager_file_path)
+            else:
+                print(wrapped_response)
+        else:
+            print(response_data["response_text"])
+
+        tokens_in: int = response_data["tokens_in"]
+        tokens_out: int = response_data["tokens_out"]
+        input_cost: float = (tokens_in / 1_000_000) * model_config["cost_in"]
+        output_cost: float = (tokens_out / 1_000_000) * model_config["cost_out"]
+        total_cost: float = input_cost + output_cost
+
+        terminal_output.msg_info(
+            terminal_output.format_token_counts(tokens_in, tokens_out)
+        )
+        terminal_output.msg_info("Cost: " + terminal_output.format_cost(total_cost))
+
+        # LOG
+        timestamp: str = datetime.now(timezone.utc).isoformat()
+        messages_json: str = json.dumps(messages)
+        try:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO calls (timestamp, model, messages_json,
+                                       response_text, tokens_in, tokens_out,
+                                       notes, conversation_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (timestamp, model_config["id"], messages_json,
+                     response_data["response_text"], tokens_in, tokens_out,
+                     parsed_arguments.notes, conversation_id),
+                )
+        except sqlite3.Error as database_error:
+            terminal_output.msg_error(
+                "Database write failed: " + str(database_error)
+            )
+            if not interactive_mode:
+                connection.close()
+                sys.exit(1)
+
+        turn_count = turn_count + 1
+
+        if not interactive_mode:
+            break
+
+    # -- CLEANUP -------------------------------------------------------
+
+    connection.close()
+
+    if interactive_mode and turn_count > 0:
+        terminal_output.msg_info(
+            "Session ended. " + str(turn_count) + " turns logged."
+        )
+    elif not interactive_mode and turn_count > 0:
+        terminal_output.msg_success("Logged to " + DATABASE_PATH)
