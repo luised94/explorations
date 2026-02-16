@@ -44,7 +44,7 @@ MAX_RESPONSE_TOKENS: int = 4096
 MODELS: dict[str, dict] = {
     "sonnet": {"id": "claude-sonnet-4-20250514", "cost_in": 3.00, "cost_out": 15.00},
     "haiku":  {"id": "claude-haiku-4-5-20251001", "cost_in": 0.80, "cost_out": 4.00},
-    "opus":   {"id": "claude-opus-4-0-20250115", "cost_in": 15.00, "cost_out": 75.00},
+    "opus":   {"id": "claude-opus-4-6", "cost_in": 15.00, "cost_out": 75.00},
 }
 
 DEFAULT_MODEL: str = "haiku"
