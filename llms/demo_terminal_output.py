@@ -20,7 +20,6 @@ print()
 # ============================================================================
 
 print("=== apply_style() with STYLE_* constants ===")
-
 print(f"Bold: {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}")
 print(f"Dim: {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}")
 print(f"Red: {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}")
@@ -38,7 +37,6 @@ print()
 # ============================================================================
 
 print("=== format_highlight() ===")
-
 search_query = "neural"
 result_text = "Understanding neural networks and neural architectures"
 highlighted_result = result_text.replace("neural", terminal_output.format_highlight("neural"))
@@ -52,7 +50,6 @@ print()
 # ============================================================================
 
 print("=== format_label() ===")
-
 print(f"{terminal_output.format_label('dry-run')} Showing preview only")
 print(f"{terminal_output.format_label('model', 'claude-sonnet-4-20250514')}")
 print(f"{terminal_output.format_label('tokens', '850 in / 320 out')}")
@@ -64,7 +61,6 @@ print()
 # ============================================================================
 
 print("=== format_separator() ===")
-
 print(terminal_output.format_separator())
 print(terminal_output.format_separator("=", 60))
 print()
@@ -75,7 +71,6 @@ print()
 # ============================================================================
 
 print("=== format_token_counts() ===")
-
 print(f"Small: {terminal_output.format_token_counts(150, 80)}")
 print(f"Medium: {terminal_output.format_token_counts(850, 320)}")
 print(f"Large: {terminal_output.format_token_counts(4500, 1200)}")
@@ -87,7 +82,6 @@ print()
 # ============================================================================
 
 print("=== format_cost() ===")
-
 print(f"Tiny: {terminal_output.format_cost(0.0008)}")
 print(f"Small: {terminal_output.format_cost(0.0032)}")
 print(f"Medium: {terminal_output.format_cost(0.125)}")
@@ -158,7 +152,6 @@ print()
 
 # Multiple paragraphs
 multi_paragraph = "First paragraph is here and it is quite long so it will wrap.\n\nSecond paragraph is also long and will wrap independently of the first paragraph."
-
 print("Multi-paragraph wrapped to 50 chars:")
 wrapped_multi = terminal_output.wrap_text(multi_paragraph, width=50)
 print(wrapped_multi)
@@ -170,3 +163,133 @@ print("Help text wrapped to 70 chars with 2-space indent:")
 wrapped_help = terminal_output.wrap_text(help_text, indent=2, width=70)
 print(wrapped_help)
 print()
+
+
+# ============================================================================
+# set_verbosity() - Module Configuration
+# ============================================================================
+
+print("=== set_verbosity() ===")
+print(f"Current verbosity: {terminal_output.VERBOSITY}")
+terminal_output.set_verbosity(4)
+print(f"After set_verbosity(4): {terminal_output.VERBOSITY}")
+terminal_output.set_verbosity(3)
+print(f"Reset to default: {terminal_output.VERBOSITY}")
+print()
+
+
+# ============================================================================
+# Messaging Functions - Default Verbosity (3: error, warn, info)
+# ============================================================================
+
+print("=== Messaging at default verbosity (3) ===")
+print("(messages go to stderr, this label goes to stdout)")
+terminal_output.msg_error("API call failed: rate limited")
+terminal_output.msg_warn("Approaching monthly budget limit")
+terminal_output.msg_info("Model: claude-sonnet-4-20250514")
+terminal_output.msg_debug("Full context: 4832 characters")
+terminal_output.msg_success("Response received, 320 tokens")
+print("(debug was suppressed - verbosity 3 < debug priority 4)")
+print()
+
+
+# ============================================================================
+# Messaging Functions - Verbosity 4 (adds debug)
+# ============================================================================
+
+print("=== Messaging at verbosity 4 (adds debug) ===")
+terminal_output.set_verbosity(4)
+terminal_output.msg_error("API call failed: rate limited")
+terminal_output.msg_warn("Approaching monthly budget limit")
+terminal_output.msg_info("Model: claude-sonnet-4-20250514")
+terminal_output.msg_debug("Full context: 4832 characters")
+terminal_output.msg_success("Response received, 320 tokens")
+print("(all five messages visible)")
+print()
+
+
+# ============================================================================
+# Messaging Functions - Verbosity 1 (error only)
+# ============================================================================
+
+print("=== Messaging at verbosity 1 (error only) ===")
+terminal_output.set_verbosity(1)
+terminal_output.msg_error("API call failed: rate limited")
+terminal_output.msg_warn("This warn is suppressed")
+terminal_output.msg_info("This info is suppressed")
+terminal_output.msg_debug("This debug is suppressed")
+terminal_output.msg_success("This success is suppressed")
+print("(only error shown)")
+print()
+
+
+# ============================================================================
+# Messaging Functions - Verbosity 0 (silent)
+# ============================================================================
+
+print("=== Messaging at verbosity 0 (silent) ===")
+terminal_output.set_verbosity(0)
+terminal_output.msg_error("This error is suppressed")
+terminal_output.msg_warn("This warn is suppressed")
+terminal_output.msg_info("This info is suppressed")
+print("(nothing on stderr)")
+print()
+
+
+# ============================================================================
+# Messaging Functions - Verbosity 5 (trace with caller name)
+# ============================================================================
+
+print("=== Messaging at verbosity 5 (trace) ===")
+terminal_output.set_verbosity(5)
+terminal_output.msg_info("Trace mode shows caller function name")
+terminal_output.msg_debug("Useful for debugging message origins")
+print()
+
+
+# ============================================================================
+# Messaging Functions - Empty Message Guard
+# ============================================================================
+
+print("=== Empty message guard ===")
+terminal_output.set_verbosity(3)
+terminal_output.msg_info("")
+terminal_output.msg_info("   ")
+print("(two warnings about empty messages)")
+print()
+
+
+# ============================================================================
+# Practical: Workbench-Style Output
+# ============================================================================
+
+print("=== Practical: workbench-style output ===")
+terminal_output.set_verbosity(3)
+
+terminal_output.msg_info("Model: claude-sonnet-4-20250514")
+terminal_output.msg_info("Estimated tokens: ~850")
+terminal_output.msg_info("Estimated cost: " + terminal_output.format_cost(0.003))
+
+# Simulate API call
+terminal_output.msg_success("Response received")
+terminal_output.msg_info("Tokens: " + terminal_output.format_token_counts(850, 320))
+terminal_output.msg_info("Cost: " + terminal_output.format_cost(0.0032))
+print()
+
+
+# ============================================================================
+# Practical: Archive-Style Output
+# ============================================================================
+
+print("=== Practical: archive-style output ===")
+terminal_output.set_verbosity(4)
+
+terminal_output.msg_info("claude import complete")
+terminal_output.msg_info("  conversations: 142 processed, 0 skipped")
+terminal_output.msg_debug("  elapsed: 340ms")
+terminal_output.msg_warn("  3 messages skipped (empty text)")
+print()
+
+
+# Reset verbosity for any subsequent use
+terminal_output.set_verbosity(3)
