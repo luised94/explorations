@@ -288,7 +288,7 @@ def format_separator(character: str = "-", width: int | None = None) -> str:
         Dim-styled line of repeated characters
     """
     if width is None:
-        width = get_terminal_width()
+        width = _get_max_width()
     separator_line = character * width
     return apply_style(separator_line, STYLE_DIM)
 
@@ -580,7 +580,7 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
         produces lines indented by 2 spaces, max 20 chars wide
     """
     if width is None:
-        width = get_terminal_width()
+        width = _get_max_width()
     effective_width = width - indent
     if effective_width <= 0:
         effective_width = 1
