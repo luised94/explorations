@@ -365,6 +365,69 @@ def format_block(header: str, content: str) -> str:
     return "\n".join(lines)
 
 
+def format_choices(choices: list[tuple[str, str]], layout: str = "horizontal") -> str:
+    """Render labeled choices for user selection.
+
+    Horizontal layout places all choices on one line with bold keys and
+    even column spacing. Automatically falls back to vertical if the total
+    width exceeds _get_max_width().
+
+    Vertical layout right-aligns keys and left-aligns labels, one per line.
+
+    Args:
+        choices: List of (key, label) tuples, e.g. [("0", "failed"), ("1", "passed")].
+        layout: "horizontal" (default) or "vertical".
+
+    Returns:
+        Formatted string. No trailing whitespace. No newline at end.
+    """
+    if layout == "vertical":
+        return _format_choices_vertical(choices)
+    return _format_choices_horizontal(choices)
+
+
+def _format_choices_horizontal(choices: list[tuple[str, str]]) -> str:
+    """Horizontal layout with auto-fallback to vertical if too wide."""
+    entries: list[str] = []
+    for key, label in choices:
+        styled_key: str = apply_style(key, STYLE_BOLD)
+        entries.append(styled_key + " = " + label)
+
+    maximum_entry_width: int = 0
+    for entry in entries:
+        entry_visible_width: int = measure_width(entry)
+        if entry_visible_width > maximum_entry_width:
+            maximum_entry_width = entry_visible_width
+    column_width: int = maximum_entry_width + 4
+
+    total_width: int = column_width * len(entries)
+    if total_width > _get_max_width():
+        return _format_choices_vertical(choices)
+
+    result_parts: list[str] = []
+    for entry in entries:
+        visible_width: int = measure_width(entry)
+        padding: int = column_width - visible_width
+        result_parts.append(entry + " " * padding)
+
+    return "".join(result_parts).rstrip()
+
+
+def _format_choices_vertical(choices: list[tuple[str, str]]) -> str:
+    """Vertical layout with right-aligned keys and left-aligned labels."""
+    maximum_key_width: int = 0
+    for key, _label in choices:
+        if len(key) > maximum_key_width:
+            maximum_key_width = len(key)
+
+    lines: list[str] = []
+    for key, label in choices:
+        styled_key: str = apply_style(key.rjust(maximum_key_width), STYLE_BOLD)
+        lines.append("  " + styled_key + "  " + label)
+
+    return "\n".join(lines)
+
+
 def format_duration(days: float) -> str:
     """Convert a numeric day count to a human-readable relative duration.
 

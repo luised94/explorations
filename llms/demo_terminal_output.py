@@ -194,6 +194,43 @@ print(terminal_output.format_block("Configuration", "\n".join(config_lines)))
 print()
 
 # ============================================================================
+# format_choices() - User Selection Choices
+# ============================================================================
+print("=== format_choices() ===")
+
+standard_choices: list[tuple[str, str]] = [("0", "failed"), ("1", "passed"), ("2", "easy")]
+
+print("Horizontal (default):")
+print(terminal_output.format_choices(standard_choices))
+print()
+
+print("Vertical (explicit):")
+print(terminal_output.format_choices(standard_choices, layout="vertical"))
+print()
+
+print("Horizontal via emit() -- centered in terminal:")
+terminal_output.set_layout(max_width=76, align="center")
+terminal_output.emit(terminal_output.format_choices(standard_choices))
+terminal_output.set_layout(max_width=80, align="left")
+print()
+
+long_label_choices: list[tuple[str, str]] = [
+    ("1", "completely forgot"),
+    ("2", "wrong but close"),
+    ("3", "correct with effort"),
+    ("4", "correct with hesitation"),
+    ("5", "perfect recall"),
+    ("6", "too easy to count"),
+]
+print("Auto-fallback: 6 long-label choices overflow horizontal -> vertical:")
+print(terminal_output.format_choices(long_label_choices))
+print()
+
+print("Forced vertical for same choices:")
+print(terminal_output.format_choices(long_label_choices, layout="vertical"))
+print()
+
+# ============================================================================
 # format_duration() - Human-Readable Day Counts
 # ============================================================================
 print("=== format_duration() ===")
