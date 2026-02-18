@@ -258,6 +258,11 @@ connection = sqlite3.connect(DATABASE_PATH)
 
     while True:
 
+        # Display turn separator
+        terminal_output.emit(
+            terminal_output.format_labeled_separator("turn " + str(turn_count + 1))
+        )
+
         # Read input
         if turn_count == 0 and has_initial_input:
             pass  # user_input already set from argument or stdin
