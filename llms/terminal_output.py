@@ -95,7 +95,9 @@ def _get_max_width() -> int:
 def _get_align() -> str:
     return _layout_align
 
+
 def set_verbosity(level: int) -> None:
+
     """Set the module-level verbosity threshold.
 
     This is the only function that mutates module state. Called once at
@@ -363,6 +365,49 @@ def format_block(header: str, content: str) -> str:
     return "\n".join(lines)
 
 
+def format_duration(days: float) -> str:
+    """Convert a numeric day count to a human-readable relative duration.
+
+    Threshold evaluation is top-to-bottom, first match wins. Input is
+    float because scheduling algorithms produce float intervals; round()
+    is applied immediately before threshold checks.
+
+    Returns plain string with no styling. Caller applies styling as needed.
+
+    Args:
+        days: Number of days as float (may be negative for overdue items).
+
+    Returns:
+        Human-readable string: "overdue", "today", "tomorrow", "6 days",
+        "1 week", "3 months", "2 years", etc.
+    """
+    day_count: int = round(days)
+    if day_count < 0:
+        return "overdue"
+    if day_count == 0:
+        return "today"
+    if day_count == 1:
+        return "tomorrow"
+    if day_count < 7:
+        return str(day_count) + " days"
+    if day_count < 14:
+        return "1 week"
+    if day_count < 30:
+        week_count: int = round(day_count / 7)
+        return str(week_count) + " weeks"
+    if day_count < 60:
+        return "1 month"
+    if day_count < 365:
+        month_count: int = round(day_count / 30)
+        if month_count == 1:
+            return "1 month"
+        return str(month_count) + " months"
+    year_count: int = round(day_count / 365)
+    if year_count == 1:
+        return "1 year"
+    return str(year_count) + " years"
+
+
 def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
     """Wrap text to specified width with optional indentation.
 
@@ -400,7 +445,6 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
             )
             wrapped_paragraphs.append(wrapped)
     return "\n".join(wrapped_paragraphs)
-
 
 # ============================================================================
 # Section 5: Output Functions (perform I/O)

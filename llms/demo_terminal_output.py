@@ -194,6 +194,31 @@ print(terminal_output.format_block("Configuration", "\n".join(config_lines)))
 print()
 
 # ============================================================================
+# format_duration() - Human-Readable Day Counts
+# ============================================================================
+print("=== format_duration() ===")
+
+test_values: list[float] = [-3, 0, 1, 3, 6, 7, 10, 14, 21, 30, 45, 60, 90, 180, 365, 730]
+for days in test_values:
+    result = terminal_output.format_duration(days)
+    print(f"  days={days:>5} -> {result}")
+print()
+
+print("Float input (round() applied before thresholds):")
+print(f"  days=6.4  -> {terminal_output.format_duration(6.4)}")
+print(f"  days=6.6  -> {terminal_output.format_duration(6.6)}")
+print(f"  days=13.5 -> {terminal_output.format_duration(13.5)}")
+print()
+
+print("Styled usage example:")
+styled_duration = terminal_output.apply_style(
+    terminal_output.format_duration(6.0),
+    terminal_output.STYLE_BOLD
+)
+print(f"  Next review in {styled_duration}")
+print()
+
+# ============================================================================
 # wrap_text() - Text Wrapping
 # ============================================================================
 print("=== wrap_text() ===")
