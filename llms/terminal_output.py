@@ -58,6 +58,43 @@ STYLE_BOLD_YELLOW: str = "\033[1;33m" if STDERR_IS_TERMINAL else ""
 # Section 2: Module Configuration
 # ============================================================================
 
+_layout_max_width: int = 80
+_layout_align: str = "left"
+
+
+def set_layout(max_width: int = 80, align: str = "left") -> None:
+    """Set content width and alignment for all output functions.
+
+    Establishes the two-width model: content is constrained to max_width,
+    then positioned within the full terminal width via align_text.
+
+    max_width is clamped to (terminal_width - 4) on narrow terminals to
+    prevent content touching terminal edges. If the terminal is narrower
+    than max_width, content fills the terminal (padding = 0).
+
+    If set_layout() is never called, defaults are max_width=80 and
+    align="left" -- identical to previous module behavior.
+
+    Args:
+        max_width: Maximum content width in characters (default: 80).
+        align: "left", "center", or "right" (default: "left").
+    """
+    global _layout_max_width, _layout_align
+    terminal_width: int = get_terminal_width()
+    if terminal_width > max_width:
+        _layout_max_width = min(max_width, terminal_width - 4)
+    else:
+        _layout_max_width = terminal_width
+    _layout_align = align
+
+
+def _get_max_width() -> int:
+    return _layout_max_width
+
+
+def _get_align() -> str:
+    return _layout_align
+
 def set_verbosity(level: int) -> None:
     """Set the module-level verbosity threshold.
 
@@ -364,8 +401,28 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
             wrapped_paragraphs.append(wrapped)
     return "\n".join(wrapped_paragraphs)
 
+
 # ============================================================================
-# Section 5: Messaging Functions (write to stderr)
+# Section 5: Output Functions (perform I/O)
+# ============================================================================
+
+def emit(text: str) -> None:
+    """Write layout-aware content to stdout.
+
+    Applies alignment from set_layout() before printing. Use this for all
+    formatted content (cards, choices, etc.). Use plain print() only for
+    raw piped data where layout should not be applied.
+
+    Does not filter by verbosity -- content output is unconditional.
+
+    Args:
+        text: String to emit, may be multi-line, may contain ANSI codes.
+    """
+    aligned: str = align_text(text, align=_get_align(), width=get_terminal_width())
+    print(aligned)
+
+# ============================================================================
+# Section 6: Messaging Functions (write to stderr)
 # ============================================================================
 
 def _write_message(level: str, priority: int, style_code: str, message: str) -> None:

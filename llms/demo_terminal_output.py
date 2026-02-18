@@ -11,6 +11,30 @@ print(f"verbosity level: {terminal_output.VERBOSITY}")
 print()
 
 # ============================================================================
+# set_layout() and emit() - Layout Config and Stdout Output
+# ============================================================================
+print("=== set_layout() and emit() ===")
+
+terminal_output.set_layout(max_width=60, align="center")
+print("set_layout(max_width=60, align='center') -- content capped at 60, centered in terminal")
+print()
+
+terminal_output.emit("This line is emitted via emit() -- centered in terminal.")
+terminal_output.emit("Short line.")
+terminal_output.emit("A slightly longer line to show block alignment.")
+print()
+
+multiline_content = "First line of emitted block.\nSecond line, same left edge.\nThird line."
+print("Multi-line emit() -- all lines share identical left padding:")
+terminal_output.emit(multiline_content)
+print()
+
+print("Resetting to defaults: set_layout(max_width=80, align='left')")
+terminal_output.set_layout(max_width=80, align="left")
+terminal_output.emit("With default layout, emit() behaves like print().")
+print()
+
+# ============================================================================
 # get_terminal_width() - Cached Column Detection
 # ============================================================================
 print("=== get_terminal_width() ===")
