@@ -1,16 +1,39 @@
 """Terminal output utility - styling and messaging for CLI scripts.
 
-Two layers:
-1. Styling functions - pure transforms, no I/O
-2. Messaging functions - write leveled output to stderr
+Architecture (four layers):
+
+  CONFIG LAYER
+    set_verbosity(level)       -- filter msg_* output
+    set_layout(max_width, align) -- content width and alignment (commit 03)
+
+  PRIMITIVE LAYER  (pure functions, no I/O)
+    get_terminal_width()       -- cached column detection, default 80
+    measure_width(text)        -- ANSI-aware visible character count
+    align_text(text, align, width) -- block alignment (commit 02)
+
+  STYLING LAYER  (pure functions, return strings, no I/O)
+    apply_style(text, style_code)
+    format_highlight(text)
+    format_label(name, value)
+    format_separator(character, width)
+    format_token_counts(tokens_in, tokens_out)
+    format_cost(cost_dollars)
+    format_block(header, content)
+    wrap_text(text, indent, width)
+
+  OUTPUT LAYER  (write to stderr unless noted)
+    msg_error(message)
+    msg_warn(message)
+    msg_info(message)
+    msg_debug(message)
+    msg_success(message)
 
 All messaging goes to stderr. Data output goes to stdout (caller's responsibility).
 """
-
+import os
+import re
 import sys
-import shutil
 import textwrap
-
 
 # ============================================================================
 # Section 1: Constants (determined at module import)
@@ -18,23 +41,18 @@ import textwrap
 
 STDERR_IS_TERMINAL: bool = sys.stderr.isatty()
 
-TERMINAL_WIDTH: int = shutil.get_terminal_size().columns if STDERR_IS_TERMINAL else 80
-
 VERBOSITY: int = 3  # default: show error, warn, info
 
 # ANSI escape codes (empty strings if stderr is not a terminal)
-STYLE_RESET: str = "\033[0m" if STDERR_IS_TERMINAL else ""
-STYLE_BOLD: str = "\033[1m" if STDERR_IS_TERMINAL else ""
-STYLE_DIM: str = "\033[2m" if STDERR_IS_TERMINAL else ""
-STYLE_RED: str = "\033[31m" if STDERR_IS_TERMINAL else ""
-STYLE_YELLOW: str = "\033[33m" if STDERR_IS_TERMINAL else ""
-STYLE_CYAN: str = "\033[36m" if STDERR_IS_TERMINAL else ""
-STYLE_GRAY: str = "\033[90m" if STDERR_IS_TERMINAL else ""
-STYLE_GREEN: str = "\033[32m" if STDERR_IS_TERMINAL else ""
+STYLE_RESET: str      = "\033[0m"    if STDERR_IS_TERMINAL else ""
+STYLE_BOLD: str       = "\033[1m"    if STDERR_IS_TERMINAL else ""
+STYLE_DIM: str        = "\033[2m"    if STDERR_IS_TERMINAL else ""
+STYLE_RED: str        = "\033[31m"   if STDERR_IS_TERMINAL else ""
+STYLE_YELLOW: str     = "\033[33m"   if STDERR_IS_TERMINAL else ""
+STYLE_CYAN: str       = "\033[36m"   if STDERR_IS_TERMINAL else ""
+STYLE_GRAY: str       = "\033[90m"   if STDERR_IS_TERMINAL else ""
+STYLE_GREEN: str      = "\033[32m"   if STDERR_IS_TERMINAL else ""
 STYLE_BOLD_YELLOW: str = "\033[1;33m" if STDERR_IS_TERMINAL else ""
-
-
-
 
 # ============================================================================
 # Section 2: Module Configuration
@@ -60,9 +78,62 @@ def set_verbosity(level: int) -> None:
     global VERBOSITY
     VERBOSITY = level
 
+# ============================================================================
+# Section 3: Primitive Layer
+# ============================================================================
+
+_cached_terminal_width: int | None = None
+
+_ANSI_PATTERN: re.Pattern = re.compile(r'\033\[[0-9;]*m')
+
+def get_terminal_width() -> int:
+    """Return terminal column count, cached after first call.
+
+    Detects once via os.get_terminal_size(). Falls back to 80 if detection
+    fails (piped output, non-terminal environments).
+
+    Returns:
+        Integer column count.
+    """
+    global _cached_terminal_width
+    if _cached_terminal_width is None:
+        try:
+            _cached_terminal_width = os.get_terminal_size().columns
+        except OSError:
+            _cached_terminal_width = 80
+    return _cached_terminal_width
+
+
+def measure_width(text: str) -> int:
+    """Return visible character count, ignoring ANSI SGR escape sequences.
+
+    Strips all ANSI color/style codes before measuring. For multi-line
+    input, returns the width of the longest line.
+
+    Constraints:
+        - ASCII and Latin-1 only. No CJK double-width character support.
+        - Empty string returns 0.
+        - String with only ANSI codes returns 0.
+
+    Args:
+        text: String, possibly containing ANSI escape codes and newlines.
+
+    Returns:
+        Visible character width as integer.
+    """
+    stripped: str = _ANSI_PATTERN.sub('', text)
+    if '\n' not in stripped:
+        return len(stripped)
+    lines: list[str] = stripped.split('\n')
+    maximum_width: int = 0
+    for line in lines:
+        line_width: int = len(line)
+        if line_width > maximum_width:
+            maximum_width = line_width
+    return maximum_width
 
 # ============================================================================
-# Section 3: Styling Functions (pure - no I/O)
+# Section 4: Styling Functions (pure - no I/O)
 # ============================================================================
 
 def apply_style(text: str, style_code: str) -> str:
@@ -127,13 +198,13 @@ def format_separator(character: str = "-", width: int | None = None) -> str:
 
     Args:
         character: Single character to repeat (default: "-")
-        width: Line width (default: TERMINAL_WIDTH)
+        width: Line width (default: terminal width)
 
     Returns:
         Dim-styled line of repeated characters
     """
     if width is None:
-        width = TERMINAL_WIDTH
+        width = get_terminal_width()
     separator_line = character * width
     return apply_style(separator_line, STYLE_DIM)
 
@@ -219,7 +290,7 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
     Args:
         text: Text to wrap (may contain newlines)
         indent: Number of spaces to indent wrapped lines (default: 0)
-        width: Maximum line width (default: TERMINAL_WIDTH)
+        width: Maximum line width (default: terminal width)
 
     Returns:
         Wrapped text as single string with newlines
@@ -229,11 +300,10 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
         produces lines indented by 2 spaces, max 20 chars wide
     """
     if width is None:
-        width = TERMINAL_WIDTH
+        width = get_terminal_width()
     effective_width = width - indent
     if effective_width <= 0:
         effective_width = 1
-
     paragraphs = text.split("\n")
     wrapped_paragraphs = []
     for paragraph in paragraphs:
@@ -249,16 +319,14 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
             wrapped_paragraphs.append(wrapped)
     return "\n".join(wrapped_paragraphs)
 
-
 # ============================================================================
-# Section 4: Messaging Functions (write to stderr)
+# Section 5: Messaging Functions (write to stderr)
 # ============================================================================
 
 def _write_message(level: str, priority: int, style_code: str, message: str) -> None:
     """Write a styled, leveled message to stderr.
 
-    This is the core messaging primitive - the Python equivalent of the
-    bash _msg function. All public msg_* functions call this.
+    This is the core messaging primitive. All public msg_* functions call this.
 
     Logic:
         1. Suppress if current VERBOSITY < priority
@@ -275,18 +343,15 @@ def _write_message(level: str, priority: int, style_code: str, message: str) -> 
     """
     if VERBOSITY < priority:
         return
-
     if not message or message.isspace():
         sys.stderr.write(
             f"{STYLE_YELLOW}[WARN ] empty message passed to _write_message{STYLE_RESET}\n"
         )
         return
-
     trace_prefix = ""
     if VERBOSITY >= 5:
         caller_name = sys._getframe(2).f_code.co_name
         trace_prefix = f"({caller_name}) "
-
     formatted_line = f"{style_code}[{level:<5}] {trace_prefix}{message}{STYLE_RESET}\n"
     sys.stderr.write(formatted_line)
 
@@ -314,7 +379,6 @@ def msg_debug(message: str) -> None:
 def msg_success(message: str) -> None:
     """Write a success message to stderr. Shown at verbosity >= 3.
 
-    Not in the bash system but useful for the workbench.
     Same priority as info - informational, just styled differently.
     """
     _write_message("OK", 3, STYLE_GREEN, message)
