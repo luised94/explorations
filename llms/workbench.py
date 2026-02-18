@@ -102,6 +102,11 @@ if __name__ == "__main__":
     interactive_mode: bool = parsed_arguments.interactive
     model_name: str = parsed_arguments.model
     model_config: dict = MODELS[model_name]
+    # Derive short model name for prompt display
+    model_short: str = model_config["id"].split("/")[-1]
+
+    if len(model_short) > 20:
+        model_short = model_short[:17] + "..."
 
     if parsed_arguments.dry_run and interactive_mode:
         terminal_output.msg_error("--dry-run is not compatible with --interactive.")
@@ -268,13 +273,13 @@ connection = sqlite3.connect(DATABASE_PATH)
             pass  # user_input already set from argument or stdin
         else:
             try:
-                prompt_prefix: str = "\n" if turn_count > 0 else ""
                 if interactive_mode:
-                    prompt_text: str = (
-                        prompt_prefix + "[" + model_name + ":" + str(turn_count) + "] > "
+                    prompt_text: str = terminal_output.apply_style(
+                        "[" + model_short + ":" + str(turn_count + 1) + "] > ",
+                        terminal_output.STYLE_BOLD
                     )
                 else:
-                    prompt_text: str = prompt_prefix + "> "
+                    prompt_text: str = "> "
                 user_input = input(prompt_text)
             except (KeyboardInterrupt, EOFError):
                 print()
