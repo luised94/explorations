@@ -1,4 +1,3 @@
-
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
@@ -29,7 +28,7 @@ Data contracts:
 import argparse
 import json
 import os
-import readline  # noqa: F401 - enhances input() with line editing and history
+import readline  # noqa: F401 -- enhances input() with line editing and history
 import shutil
 import sqlite3
 import subprocess
@@ -75,7 +74,7 @@ parser.add_argument("--dry-run", action="store_true",
 parser.add_argument("--notes", "-n", type=str, default=None,
                     help="Freeform note stored with each turn")
 parser.add_argument("--prompt", type=Path, default=None,
-                    help="(placeholder -- not yet implemented)")
+                    help="Read system prompt from file")
 parser.add_argument("--input", type=Path, default=None,
                     help="(placeholder -- not yet implemented)")
 parser.add_argument("--verbose", "-v", action="count", default=3,
@@ -91,10 +90,14 @@ if __name__ == "__main__":
     parsed_arguments = parser.parse_args()
     terminal_output.set_verbosity(parsed_arguments.verbose)
 
-    if parsed_arguments.prompt is not None:
-        terminal_output.msg_warn("--prompt flag is not yet implemented. Ignoring.")
     if parsed_arguments.input is not None:
         terminal_output.msg_warn("--input flag is not yet implemented. Ignoring.")
+
+    if parsed_arguments.prompt is not None and parsed_arguments.system is not None:
+        terminal_output.msg_error(
+            "Cannot use both --prompt and --system. Choose one."
+        )
+        sys.exit(1)
 
     interactive_mode: bool = parsed_arguments.interactive
     model_name: str = parsed_arguments.model
@@ -130,8 +133,21 @@ if __name__ == "__main__":
     # -- ASSEMBLE ------------------------------------------------------
 
     messages: list[dict[str, str]] = []
-    if parsed_arguments.system is not None:
-        messages.append({"role": "system", "content": parsed_arguments.system})
+
+    system_prompt_text: str | None = None
+    if parsed_arguments.prompt is not None:
+        try:
+            system_prompt_text = parsed_arguments.prompt.read_text()
+        except (FileNotFoundError, PermissionError, OSError) as file_error:
+            terminal_output.msg_error(
+                "Failed to read prompt file: " + str(file_error)
+            )
+            sys.exit(1)
+    elif parsed_arguments.system is not None:
+        system_prompt_text = parsed_arguments.system
+
+    if system_prompt_text is not None:
+        messages.append({"role": "system", "content": system_prompt_text})
 
     # -- DRY-RUN -------------------------------------------------------
 
@@ -224,7 +240,13 @@ if __name__ == "__main__":
         else:
             try:
                 prompt_prefix: str = "\n" if turn_count > 0 else ""
-                user_input = input(prompt_prefix + "> ")
+                if interactive_mode:
+                    prompt_text: str = (
+                        prompt_prefix + "[" + model_name + ":" + str(turn_count) + "] > "
+                    )
+                else:
+                    prompt_text: str = prompt_prefix + "> "
+                user_input = input(prompt_text)
             except (KeyboardInterrupt, EOFError):
                 print()
                 break
@@ -322,6 +344,12 @@ if __name__ == "__main__":
             terminal_output.format_token_counts(tokens_in, tokens_out)
         )
         terminal_output.msg_info("Cost: " + terminal_output.format_cost(total_cost))
+
+        stop_reason: str = response_data["stop_reason"]
+        if stop_reason == "max_tokens":
+            terminal_output.msg_warn("Stop reason: " + stop_reason + " (response truncated)")
+        else:
+            terminal_output.msg_debug("Stop reason: " + stop_reason)
 
         # LOG
         timestamp: str = datetime.now(timezone.utc).isoformat()
