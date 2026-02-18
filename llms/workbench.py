@@ -242,6 +242,16 @@ connection = sqlite3.connect(DATABASE_PATH)
             + "). /quit or Ctrl-C to exit."
         )
 
+    # -- LAYOUT --------------------------------------------------------
+
+    # Set centered layout for interactive terminal sessions only.
+    # This is a data-routing decision (should output be centered?) not a
+    # formatting decision (should ANSI codes be used?). The terminal_output
+    # module handles its own ANSI detection via STDERR_IS_TERMINAL.
+    # Single-shot and piped output stay left-aligned for tool compatibility.
+    if interactive_mode and sys.stdout.isatty():
+        terminal_output.set_layout(max_width=76, align="center")
+
     # -- CONVERSATION LOOP ---------------------------------------------
 
     turn_count: int = 0
