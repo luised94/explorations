@@ -261,6 +261,11 @@ connection = sqlite3.connect(DATABASE_PATH)
 
     turn_count: int = 0
 
+    # Session accumulators for summary
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    total_cost: float = 0.0
+
     while True:
 
         # Display turn separator
@@ -368,16 +373,24 @@ connection = sqlite3.connect(DATABASE_PATH)
         else:
             print(response_data["response_text"])
 
+
         tokens_in: int = response_data["tokens_in"]
         tokens_out: int = response_data["tokens_out"]
         input_cost: float = (tokens_in / 1_000_000) * model_config["cost_in"]
         output_cost: float = (tokens_out / 1_000_000) * model_config["cost_out"]
-        total_cost: float = input_cost + output_cost
+        turn_cost: float = input_cost + output_cost
 
-        terminal_output.msg_info(
-            terminal_output.format_token_counts(tokens_in, tokens_out)
-        )
-        terminal_output.msg_info("Cost: " + terminal_output.format_cost(total_cost))
+        # Update session accumulators
+        total_tokens_in = total_tokens_in + tokens_in
+        total_tokens_out = total_tokens_out + tokens_out
+        total_cost = total_cost + turn_cost
+
+        # Display turn metadata
+        metadata_line: str = terminal_output.format_metadata_inline([
+            ("tokens", terminal_output.format_token_counts(tokens_in, tokens_out)),
+            ("cost", terminal_output.format_cost(turn_cost)),
+        ])
+        terminal_output.msg_info(metadata_line)
 
         stop_reason: str = response_data["stop_reason"]
         if stop_reason == "max_tokens":
