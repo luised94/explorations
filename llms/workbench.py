@@ -230,11 +230,14 @@ connection = sqlite3.connect(DATABASE_PATH)
         connection.close()
         sys.exit(1)
 
+
     conversation_id: str | None = None
     if interactive_mode:
         conversation_id = uuid4().hex[:12]
         terminal_output.msg_info(
             "Interactive mode ("
+            + terminal_output.format_label("conversation_id", conversation_id)
+            + ", "
             + terminal_output.format_label("model", model_config["id"])
             + "). /quit or Ctrl-C to exit."
         )
