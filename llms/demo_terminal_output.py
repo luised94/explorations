@@ -348,6 +348,29 @@ print(f"Reset to default: {terminal_output.VERBOSITY}")
 print()
 
 # ============================================================================
+# msg_* Alignment - Centered Alongside emit()
+# ============================================================================
+print("=== msg_* alignment with set_layout() ===")
+print("(msg_* goes to stderr, emit() goes to stdout -- both centered)")
+print()
+
+terminal_output.set_layout(max_width=60, align="center")
+terminal_output.emit(terminal_output.format_separator())
+terminal_output.emit("Content line via emit() -- stdout")
+terminal_output.msg_error("Something failed -- stderr")
+terminal_output.msg_warn("Watch out -- stderr")
+terminal_output.msg_info("Status update -- stderr")
+terminal_output.msg_debug("Internal detail -- stderr")
+terminal_output.msg_success("All good -- stderr")
+terminal_output.emit(terminal_output.format_separator())
+print()
+
+terminal_output.set_layout(max_width=80, align="left")
+print("Reset to align='left': msg_* output is left-aligned, identical to pre-retrofit.")
+terminal_output.msg_info("Back to default left alignment.")
+print()
+
+# ============================================================================
 # Messaging Functions - Default Verbosity (3)
 # ============================================================================
 print("=== Messaging at default verbosity (3) ===")
