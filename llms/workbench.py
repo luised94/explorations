@@ -185,7 +185,8 @@ if __name__ == "__main__":
 
     # -- INIT ----------------------------------------------------------
 
-    connection = sqlite3.connect(DATABASE_PATH)
+
+connection = sqlite3.connect(DATABASE_PATH)
     with connection:
         connection.execute("""
             CREATE TABLE IF NOT EXISTS calls (
@@ -197,7 +198,8 @@ if __name__ == "__main__":
                 tokens_in INTEGER,
                 tokens_out INTEGER,
                 notes TEXT,
-                conversation_id TEXT
+                conversation_id TEXT,
+                stop_reason TEXT
             )
         """)
 
@@ -206,6 +208,15 @@ if __name__ == "__main__":
         with connection:
             connection.execute(
                 "ALTER TABLE calls ADD COLUMN conversation_id TEXT"
+            )
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
+    # Migrate: add stop_reason if table predates this column
+    try:
+        with connection:
+            connection.execute(
+                "ALTER TABLE calls ADD COLUMN stop_reason TEXT"
             )
     except sqlite3.OperationalError:
         pass  # column already exists
@@ -354,18 +365,19 @@ if __name__ == "__main__":
         # LOG
         timestamp: str = datetime.now(timezone.utc).isoformat()
         messages_json: str = json.dumps(messages)
+
         try:
             with connection:
                 connection.execute(
                     """
                     INSERT INTO calls (timestamp, model, messages_json,
                                        response_text, tokens_in, tokens_out,
-                                       notes, conversation_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                       notes, conversation_id, stop_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (timestamp, model_config["id"], messages_json,
                      response_data["response_text"], tokens_in, tokens_out,
-                     parsed_arguments.notes, conversation_id),
+                     parsed_arguments.notes, conversation_id, stop_reason),
                 )
         except sqlite3.Error as database_error:
             terminal_output.msg_error(
