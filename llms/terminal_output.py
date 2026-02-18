@@ -132,6 +132,51 @@ def measure_width(text: str) -> int:
             maximum_width = line_width
     return maximum_width
 
+def align_text(text: str, align: str = "left", width: int | None = None) -> str:
+    """Position a text block within a target width by prepending spaces.
+
+    Computes padding from the widest line and applies it uniformly to all
+    lines (block alignment). This preserves internal relative alignment.
+
+    Does NOT right-pad. Trailing spaces cause wrapping artifacts and
+    interfere with copy-paste.
+
+    Args:
+        text: Input string, may contain ANSI codes, may be multi-line.
+        align: "left" (no-op), "center", or "right".
+        width: Target width in characters. Defaults to get_terminal_width().
+
+    Returns:
+        Text with uniform left padding applied, or original text unchanged
+        if align is "left", width <= 0, or content fills/overflows width.
+    """
+    if align == "left":
+        return text
+    if width is None:
+        width = get_terminal_width()
+    if width <= 0:
+        return text
+    lines: list[str] = text.split("\n")
+    maximum_width: int = 0
+    for line in lines:
+        line_visible_width: int = measure_width(line)
+        if line_visible_width > maximum_width:
+            maximum_width = line_visible_width
+    if maximum_width >= width:
+        return text
+    if align == "center":
+        padding: int = (width - maximum_width) // 2
+    elif align == "right":
+        padding = width - maximum_width
+    else:
+        return text
+    prefix: str = " " * padding
+    padded_lines: list[str] = []
+    for line in lines:
+        padded_lines.append(prefix + line)
+    return "\n".join(padded_lines)
+
+
 # ============================================================================
 # Section 4: Styling Functions (pure - no I/O)
 # ============================================================================

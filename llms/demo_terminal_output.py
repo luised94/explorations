@@ -52,6 +52,36 @@ print(f"Empty string:                measure_width = {empty_width}  (should be 0
 print()
 
 # ============================================================================
+# align_text() - Block Alignment Primitive
+# ============================================================================
+print("=== align_text() ===")
+
+three_line_block = "short\na medium line\nthe longest line here"
+print("Left-aligned in 80 chars (no change):")
+print(terminal_output.align_text(three_line_block, "left", 80))
+print()
+print("Centered in 80 chars:")
+print(terminal_output.align_text(three_line_block, "center", 80))
+print()
+print("Right-aligned in 80 chars:")
+print(terminal_output.align_text(three_line_block, "right", 80))
+print()
+
+styled_block = (
+    terminal_output.apply_style("bold line", terminal_output.STYLE_BOLD)
+    + "\n"
+    + terminal_output.apply_style("dim line, same visible length", terminal_output.STYLE_DIM)
+)
+print("Styled multi-line block centered in 80 chars (ANSI-aware padding):")
+print(terminal_output.align_text(styled_block, "center", 80))
+print()
+
+wide_block = "this line is definitely wider than forty chars"
+print("Block wider than target width (returned unchanged):")
+print(terminal_output.align_text(wide_block, "center", 40))
+print()
+
+# ============================================================================
 # apply_style() - Core Styling Primitive
 # ============================================================================
 print("=== apply_style() with STYLE_* constants ===")
