@@ -24,6 +24,53 @@ Data contracts:
     calls table     -- append-only, one row per turn, full context in
                        messages_json, grouped by conversation_id
 """
+# --- BRANCHING (Phase 2) ---
+#
+# The conversation is currently a linear list of messages. Phase 2
+# changes this to a tree:
+#
+# Data model:
+#   nodes = {
+#       node_id: {
+#           "role": "user" | "assistant",
+#           "content": str,
+#           "parent": node_id | None,
+#           "children": [node_id, ...],
+#       }
+#   }
+#   current_leaf = node_id
+#
+# The API always receives a linear messages list. To build it,
+# walk from root to current_leaf:
+#   path = []
+#   node = current_leaf
+#   while node is not None:
+#       path.append(nodes[node])
+#       node = nodes[node]["parent"]
+#   messages = [{"role": n["role"], "content": n["content"]}
+#               for n in reversed(path)]
+#
+# Branching occurs when the user edits a previous turn. The edit
+# creates a new child of the edited node's parent, forking the tree.
+#
+# Prompt format:
+#   Linear (current):    [model:turn]
+#   Branched (Phase 2):  [model:turn bN]    (branch indicator)
+#   Main branch shows no indicator -- backward compatible.
+#
+# Navigation commands (Phase 2):
+#   /branches   -- display tree via terminal_output.format_tree()
+#   /goto ID    -- switch current_leaf to node ID
+#   /edit N     -- re-enter at turn N, creating a new branch
+#   /back       -- move current_leaf to parent
+#
+# SQLite storage: conversation_id already groups turns. Branching
+# adds parent_node_id column to calls table. Existing NULL parent
+# rows are linear (no branches). Migration is additive.
+#
+# Tree display uses format_tree():
+#   tree_nodes = [(id, content[:40], parent_id) for id, node in nodes.items()]
+#   terminal_output.emit(terminal_output.format_tree(tree_nodes, current=current_leaf))
 
 import argparse
 import json
