@@ -603,6 +603,28 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
 # Section 5: Output Functions (perform I/O)
 # ============================================================================
 
+def clear_screen() -> None:
+    """Clear the terminal and move cursor to top-left.
+
+    Writes ANSI clear sequence to stderr if ANSI is supported, otherwise
+    pushes content off screen with newlines (pipe-safe fallback).
+
+    Writes to stderr, consistent with module convention (stdout is data).
+    Always executes regardless of verbosity -- screen clearing is a visual
+    operation, not a diagnostic message.
+    """
+    if STDERR_IS_TERMINAL:
+        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.flush()
+    else:
+        try:
+            height: int = os.get_terminal_size().lines
+        except OSError:
+            height = 24
+        sys.stderr.write("\n" * height)
+        sys.stderr.flush()
+
+
 def emit(text: str) -> None:
     """Write layout-aware content to stdout.
 

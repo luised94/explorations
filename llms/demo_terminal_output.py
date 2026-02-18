@@ -11,6 +11,18 @@ print(f"verbosity level: {terminal_output.VERBOSITY}")
 print()
 
 # ============================================================================
+# clear_screen() - Terminal Clear
+# ============================================================================
+print("=== clear_screen() ===")
+print("Screen will clear in 2 seconds...")
+import time
+time.sleep(2)
+terminal_output.clear_screen()
+print("Screen was cleared. Demo continues from top-left.")
+print("(In a pipe, fallback newlines are written to stderr instead.)")
+print()
+
+# ============================================================================
 # set_layout() and emit() - Layout Config and Stdout Output
 # ============================================================================
 print("=== set_layout() and emit() ===")
