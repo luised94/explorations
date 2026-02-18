@@ -288,11 +288,35 @@ connection = sqlite3.connect(DATABASE_PATH)
                 user_input = input(prompt_text)
             except (KeyboardInterrupt, EOFError):
                 print()
+                if turn_count > 0:
+                    terminal_output.emit(
+                        terminal_output.format_labeled_separator("session")
+                    )
+                    session_metadata: str = terminal_output.format_metadata_inline([
+                        ("turns", str(turn_count)),
+                        ("tokens", terminal_output.format_token_counts(
+                            total_tokens_in, total_tokens_out)),
+                        ("cost", terminal_output.format_cost(total_cost)),
+                    ])
+                    terminal_output.msg_info(session_metadata)
                 break
             stripped_input: str = user_input.strip()
+
             if stripped_input == "":
                 continue
+
             if stripped_input in ("/quit", "/exit"):
+                if turn_count > 0:
+                    terminal_output.emit(
+                        terminal_output.format_labeled_separator("session")
+                    )
+                    session_metadata: str = terminal_output.format_metadata_inline([
+                        ("turns", str(turn_count)),
+                        ("tokens", terminal_output.format_token_counts(
+                            total_tokens_in, total_tokens_out)),
+                        ("cost", terminal_output.format_cost(total_cost)),
+                    ])
+                    terminal_output.msg_info(session_metadata)
                 break
 
         messages.append({"role": "user", "content": user_input})
