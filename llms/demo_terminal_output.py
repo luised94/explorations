@@ -1,283 +1,185 @@
 #!/usr/bin/env python3
-"""Demo script for terminal_output.py - executable documentation."""
+"""Demo script for terminal_output.py - executable documentation.
+
+Sections:
+    1. Config
+    2. Primitives
+    3. Existing styling functions
+    4. New styling functions
+    5. Output functions
+    6. Integration scene (mock review session)
+    7. Edge cases
+"""
+import time
 import terminal_output
 
 # ============================================================================
-# Module Constants
+# Section 1: Config
 # ============================================================================
-print("=== Module Constants ===")
-print(f"stderr is terminal: {terminal_output.STDERR_IS_TERMINAL}")
-print(f"verbosity level: {terminal_output.VERBOSITY}")
+print("=== SECTION 1: Config ===")
 print()
 
-# ============================================================================
-# clear_screen() - Terminal Clear
-# ============================================================================
-print("=== clear_screen() ===")
-print("Screen will clear in 2 seconds...")
-import time
-time.sleep(2)
-terminal_output.clear_screen()
-print("Screen was cleared. Demo continues from top-left.")
-print("(In a pipe, fallback newlines are written to stderr instead.)")
+print("--- set_verbosity() ---")
+print(f"Default verbosity: {terminal_output.VERBOSITY}")
+terminal_output.set_verbosity(4)
+print(f"After set_verbosity(4): {terminal_output.VERBOSITY}")
+terminal_output.set_verbosity(3)
+print(f"Reset to default: {terminal_output.VERBOSITY}")
 print()
 
-# ============================================================================
-# set_layout() and emit() - Layout Config and Stdout Output
-# ============================================================================
-print("=== set_layout() and emit() ===")
+print("--- set_layout(): left-aligned (default) ---")
+terminal_output.set_layout(max_width=60, align="left")
+terminal_output.emit("Left-aligned content at max_width=60.")
+terminal_output.emit("Second line, same left edge.")
+print()
 
+print("--- set_layout(): centered ---")
 terminal_output.set_layout(max_width=60, align="center")
-print("set_layout(max_width=60, align='center') -- content capped at 60, centered in terminal")
+terminal_output.emit("Centered content at max_width=60.")
+terminal_output.emit("Second line, same left edge.")
 print()
 
-terminal_output.emit("This line is emitted via emit() -- centered in terminal.")
-terminal_output.emit("Short line.")
-terminal_output.emit("A slightly longer line to show block alignment.")
-print()
-
-multiline_content = "First line of emitted block.\nSecond line, same left edge.\nThird line."
-print("Multi-line emit() -- all lines share identical left padding:")
-terminal_output.emit(multiline_content)
-print()
-
-print("Resetting to defaults: set_layout(max_width=80, align='left')")
 terminal_output.set_layout(max_width=80, align="left")
-terminal_output.emit("With default layout, emit() behaves like print().")
+print("(Layout reset to defaults: max_width=80, align='left')")
 print()
 
 # ============================================================================
-# get_terminal_width() - Cached Column Detection
+# Section 2: Primitives
 # ============================================================================
-print("=== get_terminal_width() ===")
+print("=== SECTION 2: Primitives ===")
+print()
+
+print("--- get_terminal_width() ---")
 detected_width = terminal_output.get_terminal_width()
 print(f"Detected terminal width: {detected_width}")
-print(f"Calling again (cached): {terminal_output.get_terminal_width()}")
-print("(resize terminal, restart demo to see re-detection on fresh run)")
+print(f"Second call (cached):    {terminal_output.get_terminal_width()}")
 print()
 
-# ============================================================================
-# measure_width() - ANSI-Aware Visible Width
-# ============================================================================
-print("=== measure_width() ===")
-
+print("--- measure_width() ---")
 plain_text = "hello"
-styled_text = terminal_output.apply_style("hello", terminal_output.STYLE_BOLD)
-plain_width = terminal_output.measure_width(plain_text)
-styled_width = terminal_output.measure_width(styled_text)
-print(f"Plain string 'hello':        measure_width = {plain_width}")
-print(f"Bold styled 'hello':         measure_width = {styled_width}  (should match plain)")
-
-dim_text = terminal_output.apply_style("world", terminal_output.STYLE_DIM)
-cyan_text = terminal_output.apply_style("world", terminal_output.STYLE_CYAN)
-print(f"Dim styled 'world':          measure_width = {terminal_output.measure_width(dim_text)}")
-print(f"Cyan styled 'world':         measure_width = {terminal_output.measure_width(cyan_text)}")
+bold_text = terminal_output.apply_style("hello", terminal_output.STYLE_BOLD)
+dim_text = terminal_output.apply_style("hello", terminal_output.STYLE_DIM)
+cyan_text = terminal_output.apply_style("hello", terminal_output.STYLE_CYAN)
+print(f"Plain 'hello':                      {terminal_output.measure_width(plain_text)}  (expect 5)")
+print(f"Bold styled 'hello':                {terminal_output.measure_width(bold_text)}  (expect 5)")
+print(f"Dim styled 'hello':                 {terminal_output.measure_width(dim_text)}  (expect 5)")
+print(f"Cyan styled 'hello':                {terminal_output.measure_width(cyan_text)}  (expect 5)")
+print(f"Multi-line 'short\\nthis is longer': {terminal_output.measure_width('short' + chr(10) + 'this is longer')}  (expect 14)")
+print(f"ANSI-only string:                   {terminal_output.measure_width(terminal_output.STYLE_BOLD + terminal_output.STYLE_RESET)}  (expect 0)")
+print(f"Empty string:                       {terminal_output.measure_width('')}  (expect 0)")
 print()
 
-multiline_text = "short\nthis is longer"
-multiline_width = terminal_output.measure_width(multiline_text)
-print(f"Multi-line 'short\\nthis is longer': measure_width = {multiline_width}  (should be 14)")
+print("--- align_text() ---")
+block = "short\na medium line\nthe longest line here"
+print("Left (no-op):")
+print(terminal_output.align_text(block, "left", 80))
 print()
-
-ansi_only = terminal_output.STYLE_BOLD + terminal_output.STYLE_RESET
-ansi_only_width = terminal_output.measure_width(ansi_only)
-print(f"String with only ANSI codes: measure_width = {ansi_only_width}  (should be 0)")
-
-empty_width = terminal_output.measure_width("")
-print(f"Empty string:                measure_width = {empty_width}  (should be 0)")
+print("Center in 80 chars:")
+print(terminal_output.align_text(block, "center", 80))
 print()
-
-# ============================================================================
-# align_text() - Block Alignment Primitive
-# ============================================================================
-print("=== align_text() ===")
-
-three_line_block = "short\na medium line\nthe longest line here"
-print("Left-aligned in 80 chars (no change):")
-print(terminal_output.align_text(three_line_block, "left", 80))
+print("Right in 80 chars:")
+print(terminal_output.align_text(block, "right", 80))
 print()
-print("Centered in 80 chars:")
-print(terminal_output.align_text(three_line_block, "center", 80))
-print()
-print("Right-aligned in 80 chars:")
-print(terminal_output.align_text(three_line_block, "right", 80))
-print()
-
 styled_block = (
     terminal_output.apply_style("bold line", terminal_output.STYLE_BOLD)
     + "\n"
     + terminal_output.apply_style("dim line, same visible length", terminal_output.STYLE_DIM)
 )
-print("Styled multi-line block centered in 80 chars (ANSI-aware padding):")
+print("Styled multi-line centered (ANSI-aware padding):")
 print(terminal_output.align_text(styled_block, "center", 80))
 print()
-
-wide_block = "this line is definitely wider than forty chars"
-print("Block wider than target width (returned unchanged):")
-print(terminal_output.align_text(wide_block, "center", 40))
+print("Block wider than target (returned unchanged):")
+print(terminal_output.align_text("this line is definitely wider than forty chars", "center", 40))
 print()
 
 # ============================================================================
-# apply_style() - Core Styling Primitive
+# Section 3: Existing Styling Functions
 # ============================================================================
-print("=== apply_style() with STYLE_* constants ===")
-print(f"Bold: {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}")
-print(f"Dim: {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}")
-print(f"Red: {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}")
-print(f"Yellow: {terminal_output.apply_style('warning-like', terminal_output.STYLE_YELLOW)}")
-print(f"Cyan: {terminal_output.apply_style('info-like', terminal_output.STYLE_CYAN)}")
-print(f"Gray: {terminal_output.apply_style('debug-like', terminal_output.STYLE_GRAY)}")
-print(f"Green: {terminal_output.apply_style('success-like', terminal_output.STYLE_GREEN)}")
-print(f"Bold yellow: {terminal_output.apply_style('highlighted', terminal_output.STYLE_BOLD_YELLOW)}")
-print(f"No style: {terminal_output.apply_style('plain text', '')}")
+print("=== SECTION 3: Existing Styling Functions ===")
 print()
 
-# ============================================================================
-# format_highlight() - Semantic Highlighting
-# ============================================================================
-print("=== format_highlight() ===")
-search_query = "neural"
+print("--- apply_style() ---")
+print(f"STYLE_BOLD:        {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}")
+print(f"STYLE_DIM:         {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}")
+print(f"STYLE_RED:         {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}")
+print(f"STYLE_YELLOW:      {terminal_output.apply_style('warning-like', terminal_output.STYLE_YELLOW)}")
+print(f"STYLE_CYAN:        {terminal_output.apply_style('info-like', terminal_output.STYLE_CYAN)}")
+print(f"STYLE_GRAY:        {terminal_output.apply_style('debug-like', terminal_output.STYLE_GRAY)}")
+print(f"STYLE_GREEN:       {terminal_output.apply_style('success-like', terminal_output.STYLE_GREEN)}")
+print(f"STYLE_BOLD_YELLOW: {terminal_output.apply_style('highlighted', terminal_output.STYLE_BOLD_YELLOW)}")
+print(f"No style:          {terminal_output.apply_style('plain text', '')}")
+print()
+
+print("--- format_highlight() ---")
 result_text = "Understanding neural networks and neural architectures"
-highlighted_result = result_text.replace("neural", terminal_output.format_highlight("neural"))
-print(f"Search for '{search_query}':")
-print(f"  {highlighted_result}")
+highlighted = result_text.replace("neural", terminal_output.format_highlight("neural"))
+print(f"Search 'neural': {highlighted}")
 print()
 
-# ============================================================================
-# format_label() - Structured Labels
-# ============================================================================
-print("=== format_label() ===")
+print("--- format_label() ---")
 print(f"{terminal_output.format_label('dry-run')} Showing preview only")
 print(f"{terminal_output.format_label('model', 'claude-sonnet-4-20250514')}")
 print(f"{terminal_output.format_label('tokens', '850 in / 320 out')}")
 print()
 
-# ============================================================================
-# format_separator() - Separator Lines
-# ============================================================================
-print("=== format_separator() ===")
+print("--- format_separator() ---")
 print(terminal_output.format_separator())
 print(terminal_output.format_separator("=", 60))
+print(terminal_output.format_separator("~", 40))
 print()
 
-# ============================================================================
-# format_token_counts() - Token Count Formatting
-# ============================================================================
-print("=== format_token_counts() ===")
+print("--- format_token_counts() ---")
 print(f"Small: {terminal_output.format_token_counts(150, 80)}")
-print(f"Medium: {terminal_output.format_token_counts(850, 320)}")
 print(f"Large: {terminal_output.format_token_counts(4500, 1200)}")
 print()
 
-# ============================================================================
-# format_cost() - Cost Formatting
-# ============================================================================
-print("=== format_cost() ===")
-print(f"Tiny: {terminal_output.format_cost(0.0008)}")
-print(f"Small: {terminal_output.format_cost(0.0032)}")
+print("--- format_cost() ---")
+print(f"Tiny:   {terminal_output.format_cost(0.0008)}")
+print(f"Small:  {terminal_output.format_cost(0.0032)}")
 print(f"Medium: {terminal_output.format_cost(0.125)}")
-print(f"Large: {terminal_output.format_cost(3.45)}")
+print(f"Large:  {terminal_output.format_cost(3.45)}")
 print()
 
-# ============================================================================
-# format_block() - Block Formatting
-# ============================================================================
-print("=== format_block() ===")
-simple_block = terminal_output.format_block("Simple Block", "This is the content inside the block.")
-print(simple_block)
-print()
-
+print("--- format_block() ---")
 api_request = "POST /v1/messages\nmodel: claude-sonnet-4-20250514\nmax_tokens: 1024"
 print(terminal_output.format_block("API Request", api_request))
 print()
 
-tokens = terminal_output.format_token_counts(850, 320)
-cost = terminal_output.format_cost(0.0032)
-summary_content = f"Tokens: {tokens}\nCost: {cost}\nStatus: Success"
-print(terminal_output.format_block("Request Summary", summary_content))
+print("--- wrap_text() ---")
+long_text = "This is a very long line of text that will definitely exceed the typical terminal width and needs to be wrapped to multiple lines for readability."
+print("Wrapped to 60 chars:")
+print(terminal_output.wrap_text(long_text, width=60))
 print()
-
-config_lines = [
-    terminal_output.format_label('model', 'sonnet'),
-    terminal_output.format_label('temperature', '1.0'),
-    terminal_output.format_label('max_tokens', '2048'),
-]
-print(terminal_output.format_block("Configuration", "\n".join(config_lines)))
+print("Wrapped to 60 chars with 4-space indent:")
+print(terminal_output.wrap_text(long_text, indent=4, width=60))
 print()
 
 # ============================================================================
-# format_card() - Bordered Display Card
+# Section 4: New Styling Functions
 # ============================================================================
-print("=== format_card() ===")
-
-terminal_output.set_layout(max_width=76, align="center")
-
-print("Full card with all regions, via emit():")
-full_card = terminal_output.format_card(
-    header_left=terminal_output.apply_style("[3 / 47]", terminal_output.STYLE_BOLD),
-    header_right="geography",
-    body="What is the capital city of Japan?",
-    footer="0 = failed   1 = hard   2 = good   3 = easy",
-)
-terminal_output.emit(full_card)
+print("=== SECTION 4: New Styling Functions ===")
 print()
 
-print("Card without footer:")
-no_footer_card = terminal_output.format_card(
-    header_left=terminal_output.apply_style("[1 / 10]", terminal_output.STYLE_BOLD),
-    header_right="vocabulary",
-    body="Define: ephemeral",
-)
-terminal_output.emit(no_footer_card)
+print("--- format_duration() ---")
+test_values: list[float] = [-3, 0, 1, 3, 6, 7, 10, 14, 21, 30, 45, 60, 90, 180, 365, 730]
+for days in test_values:
+    result = terminal_output.format_duration(days)
+    print(f"  {days:>6} -> {result}")
+print()
+print("Float rounding:")
+print(f"  6.4  -> {terminal_output.format_duration(6.4)}")
+print(f"  6.6  -> {terminal_output.format_duration(6.6)}")
+print(f"  13.5 -> {terminal_output.format_duration(13.5)}")
 print()
 
-print("Card with long body (wrapping):")
-long_body = "Explain the difference between supervised and unsupervised learning in machine learning, including at least two examples of each and when you would choose one approach over the other."
-long_body_card = terminal_output.format_card(
-    header_left=terminal_output.apply_style("[7 / 20]", terminal_output.STYLE_BOLD),
-    header_right="machine learning",
-    body=long_body,
-    footer="Answer in your own words before revealing.",
-)
-terminal_output.emit(long_body_card)
-print()
-
-print("Card with styled body text (ANSI codes must not break border alignment):")
-styled_body = (
-    "Capital: " + terminal_output.apply_style("Tokyo", terminal_output.STYLE_BOLD)
-    + "\nPopulation: " + terminal_output.apply_style("13.96 million", terminal_output.STYLE_CYAN)
-)
-styled_card = terminal_output.format_card(
-    header_left=terminal_output.apply_style("[4 / 47]", terminal_output.STYLE_BOLD),
-    header_right="geography",
-    body=styled_body,
-)
-terminal_output.emit(styled_card)
-print()
-
-terminal_output.set_layout(max_width=80, align="left")
-
-# ============================================================================
-# format_choices() - User Selection Choices
-# ============================================================================
-print("=== format_choices() ===")
-
+print("--- format_choices() ---")
 standard_choices: list[tuple[str, str]] = [("0", "failed"), ("1", "passed"), ("2", "easy")]
-
-print("Horizontal (default):")
+print("Horizontal:")
 print(terminal_output.format_choices(standard_choices))
 print()
-
-print("Vertical (explicit):")
+print("Vertical:")
 print(terminal_output.format_choices(standard_choices, layout="vertical"))
 print()
-
-print("Horizontal via emit() -- centered in terminal:")
-terminal_output.set_layout(max_width=76, align="center")
-terminal_output.emit(terminal_output.format_choices(standard_choices))
-terminal_output.set_layout(max_width=80, align="left")
-print()
-
 long_label_choices: list[tuple[str, str]] = [
     ("1", "completely forgot"),
     ("2", "wrong but close"),
@@ -286,158 +188,191 @@ long_label_choices: list[tuple[str, str]] = [
     ("5", "perfect recall"),
     ("6", "too easy to count"),
 ]
-print("Auto-fallback: 6 long-label choices overflow horizontal -> vertical:")
+print("Auto-fallback (6 long labels overflow horizontal -> vertical):")
 print(terminal_output.format_choices(long_label_choices))
 print()
 
-print("Forced vertical for same choices:")
-print(terminal_output.format_choices(long_label_choices, layout="vertical"))
+print("--- format_card() ---")
+terminal_output.set_layout(max_width=76, align="center")
+print("Full card via emit():")
+terminal_output.emit(terminal_output.format_card(
+    header_left=terminal_output.apply_style("[3 / 47]", terminal_output.STYLE_BOLD),
+    header_right="geography",
+    body="What is the capital city of Japan?",
+    footer="0 = failed   1 = hard   2 = good   3 = easy",
+))
 print()
-
-# ============================================================================
-# format_duration() - Human-Readable Day Counts
-# ============================================================================
-print("=== format_duration() ===")
-
-test_values: list[float] = [-3, 0, 1, 3, 6, 7, 10, 14, 21, 30, 45, 60, 90, 180, 365, 730]
-for days in test_values:
-    result = terminal_output.format_duration(days)
-    print(f"  days={days:>5} -> {result}")
+print("No footer:")
+terminal_output.emit(terminal_output.format_card(
+    header_left=terminal_output.apply_style("[1 / 10]", terminal_output.STYLE_BOLD),
+    header_right="vocabulary",
+    body="Define: ephemeral",
+))
 print()
-
-print("Float input (round() applied before thresholds):")
-print(f"  days=6.4  -> {terminal_output.format_duration(6.4)}")
-print(f"  days=6.6  -> {terminal_output.format_duration(6.6)}")
-print(f"  days=13.5 -> {terminal_output.format_duration(13.5)}")
+print("Long body (wrapping):")
+terminal_output.emit(terminal_output.format_card(
+    header_left=terminal_output.apply_style("[7 / 20]", terminal_output.STYLE_BOLD),
+    header_right="machine learning",
+    body="Explain the difference between supervised and unsupervised learning, including two examples of each and when you would choose one approach over the other.",
+    footer="Answer in your own words before revealing.",
+))
 print()
-
-print("Styled usage example:")
-styled_duration = terminal_output.apply_style(
-    terminal_output.format_duration(6.0),
-    terminal_output.STYLE_BOLD
+print("Styled body (ANSI codes must not break border alignment):")
+styled_body = (
+    "Capital: " + terminal_output.apply_style("Tokyo", terminal_output.STYLE_BOLD)
+    + "\nPopulation: " + terminal_output.apply_style("13.96 million", terminal_output.STYLE_CYAN)
 )
-print(f"  Next review in {styled_duration}")
+terminal_output.emit(terminal_output.format_card(
+    header_left=terminal_output.apply_style("[4 / 47]", terminal_output.STYLE_BOLD),
+    header_right="geography",
+    body=styled_body,
+))
 print()
+terminal_output.set_layout(max_width=80, align="left")
 
 # ============================================================================
-# wrap_text() - Text Wrapping
+# Section 5: Output Functions
 # ============================================================================
-print("=== wrap_text() ===")
-long_text = "This is a very long line of text that will definitely exceed the typical terminal width and needs to be wrapped to multiple lines for readability. It demonstrates how the wrap_text function handles text that is too long for a single line."
-print("Wrapped to 60 chars:")
-print(terminal_output.wrap_text(long_text, width=60))
-print()
-print("Wrapped to 60 chars with 4-space indent:")
-print(terminal_output.wrap_text(long_text, indent=4, width=60))
+print("=== SECTION 5: Output Functions ===")
 print()
 
-multi_paragraph = "First paragraph is here and it is quite long so it will wrap.\n\nSecond paragraph is also long and will wrap independently of the first paragraph."
-print("Multi-paragraph wrapped to 50 chars:")
-print(terminal_output.wrap_text(multi_paragraph, width=50))
+print("--- emit() vs print() ---")
+terminal_output.set_layout(max_width=60, align="center")
+print("emit() -- layout applied (centered, capped at 60):")
+terminal_output.emit("This line goes through emit().")
+print("print() -- raw, no layout:")
+print("This line goes through print().")
+print()
+terminal_output.set_layout(max_width=80, align="left")
+
+print("--- clear_screen() ---")
+print("Screen will clear in 2 seconds...")
+time.sleep(2)
+terminal_output.clear_screen()
+print("Screen cleared. Demo continues.")
 print()
 
-# ============================================================================
-# set_verbosity() - Module Configuration
-# ============================================================================
-print("=== set_verbosity() ===")
-print(f"Current verbosity: {terminal_output.VERBOSITY}")
-terminal_output.set_verbosity(4)
-print(f"After set_verbosity(4): {terminal_output.VERBOSITY}")
-terminal_output.set_verbosity(3)
-print(f"Reset to default: {terminal_output.VERBOSITY}")
-print()
-
-# ============================================================================
-# msg_* Alignment - Centered Alongside emit()
-# ============================================================================
-print("=== msg_* alignment with set_layout() ===")
-print("(msg_* goes to stderr, emit() goes to stdout -- both centered)")
-print()
-
+print("--- msg_* with layout alignment ---")
+print("(msg_* to stderr, emit() to stdout -- both centered at max_width=60)")
 terminal_output.set_layout(max_width=60, align="center")
 terminal_output.emit(terminal_output.format_separator())
-terminal_output.emit("Content line via emit() -- stdout")
-terminal_output.msg_error("Something failed -- stderr")
-terminal_output.msg_warn("Watch out -- stderr")
-terminal_output.msg_info("Status update -- stderr")
-terminal_output.msg_debug("Internal detail -- stderr")
-terminal_output.msg_success("All good -- stderr")
+terminal_output.msg_error("Something failed")
+terminal_output.msg_warn("Watch out")
+terminal_output.msg_info("Status update")
+terminal_output.set_verbosity(4)
+terminal_output.msg_debug("Internal detail")
+terminal_output.set_verbosity(3)
+terminal_output.msg_success("All good")
 terminal_output.emit(terminal_output.format_separator())
 print()
-
 terminal_output.set_layout(max_width=80, align="left")
-print("Reset to align='left': msg_* output is left-aligned, identical to pre-retrofit.")
-terminal_output.msg_info("Back to default left alignment.")
-print()
 
-# ============================================================================
-# Messaging Functions - Default Verbosity (3)
-# ============================================================================
-print("=== Messaging at default verbosity (3) ===")
-print("(messages go to stderr)")
-terminal_output.msg_error("API call failed: rate limited")
-terminal_output.msg_warn("Approaching monthly budget limit")
-terminal_output.msg_info("Model: claude-sonnet-4-20250514")
-terminal_output.msg_debug("Full context: 4832 characters")
-terminal_output.msg_success("Response received, 320 tokens")
-print("(debug suppressed - verbosity 3 < debug priority 4)")
-print()
-
-# ============================================================================
-# Messaging Functions - Verbosity 4 (adds debug)
-# ============================================================================
-print("=== Messaging at verbosity 4 (adds debug) ===")
-terminal_output.set_verbosity(4)
-terminal_output.msg_error("API call failed: rate limited")
-terminal_output.msg_warn("Approaching monthly budget limit")
-terminal_output.msg_info("Model: claude-sonnet-4-20250514")
-terminal_output.msg_debug("Full context: 4832 characters")
-terminal_output.msg_success("Response received, 320 tokens")
-print("(all five messages visible)")
-print()
-
-# ============================================================================
-# Messaging Functions - Verbosity 1 (error only)
-# ============================================================================
-print("=== Messaging at verbosity 1 (error only) ===")
+print("--- Verbosity levels ---")
+print("verbosity=1 (error only):")
 terminal_output.set_verbosity(1)
-terminal_output.msg_error("API call failed: rate limited")
-terminal_output.msg_warn("This warn is suppressed")
-terminal_output.msg_info("This info is suppressed")
-terminal_output.msg_debug("This debug is suppressed")
-terminal_output.msg_success("This success is suppressed")
-print("(only error shown)")
+terminal_output.msg_error("Shown")
+terminal_output.msg_warn("Suppressed")
+terminal_output.msg_info("Suppressed")
 print()
-
-# ============================================================================
-# Messaging Functions - Verbosity 0 (silent)
-# ============================================================================
-print("=== Messaging at verbosity 0 (silent) ===")
+print("verbosity=0 (silent):")
 terminal_output.set_verbosity(0)
-terminal_output.msg_error("This error is suppressed")
-terminal_output.msg_warn("This warn is suppressed")
-terminal_output.msg_info("This info is suppressed")
+terminal_output.msg_error("Suppressed")
 print("(nothing on stderr)")
 print()
+print("verbosity=5 (trace -- shows caller name):")
+terminal_output.set_verbosity(5)
+terminal_output.msg_info("Trace mode active")
+print()
+terminal_output.set_verbosity(3)
 
 # ============================================================================
-# Messaging Functions - Verbosity 5 (trace)
+# Section 6: Integration Scene -- Mock Review Session
 # ============================================================================
-print("=== Messaging at verbosity 5 (trace) ===")
-terminal_output.set_verbosity(5)
-terminal_output.msg_info("Trace mode shows caller function name")
-terminal_output.msg_debug("Useful for debugging message origins")
+print("=== SECTION 6: Integration Scene ===")
+print()
+print("Mock review session starting in 2 seconds...")
+time.sleep(2)
+terminal_output.clear_screen()
+
+terminal_output.set_layout(max_width=76, align="center")
+
+terminal_output.emit(terminal_output.format_card(
+    header_left=terminal_output.apply_style("[12 / 47]", terminal_output.STYLE_BOLD),
+    header_right="history",
+    body="In what year did the Berlin Wall fall?",
+    footer="Think before revealing the answer.",
+))
 print()
 
+terminal_output.emit(terminal_output.format_choices([
+    ("0", "failed"),
+    ("1", "hard"),
+    ("2", "good"),
+    ("3", "easy"),
+]))
+print()
+
+terminal_output.msg_success(
+    "Passed. Next review in "
+    + terminal_output.apply_style(
+        terminal_output.format_duration(6.0),
+        terminal_output.STYLE_BOLD
+    )
+    + "."
+)
+print()
+terminal_output.set_layout(max_width=80, align="left")
+
 # ============================================================================
-# Messaging Functions - Empty Message Guard
+# Section 7: Edge Cases
 # ============================================================================
-print("=== Empty message guard ===")
+print("=== SECTION 7: Edge Cases ===")
+print()
+
+print("--- Empty strings ---")
+print(f"measure_width(''): {terminal_output.measure_width('')}")
+print(f"align_text('', 'center', 80): '{terminal_output.align_text('', 'center', 80)}'")
+print(f"format_duration(0.0): {terminal_output.format_duration(0.0)}")
+print(f"format_choices([]): '{terminal_output.format_choices([])}'")
+print()
+
+print("--- Narrow layout (max_width=30) ---")
+terminal_output.set_layout(max_width=30, align="center")
+terminal_output.emit("Short line fits fine.")
+terminal_output.emit(terminal_output.format_separator())
+terminal_output.emit(terminal_output.format_card(
+    header_left=terminal_output.apply_style("[1/5]", terminal_output.STYLE_BOLD),
+    header_right="test",
+    body="Body wraps tightly at narrow width.",
+))
+print()
+terminal_output.set_layout(max_width=80, align="left")
+
+print("--- Content wider than max_width ---")
+terminal_output.set_layout(max_width=30, align="center")
+wide_content = "This line is much longer than the configured max_width of 30 chars."
+terminal_output.emit(wide_content)
+print("(content passes through unchanged, no truncation)")
+print()
+terminal_output.set_layout(max_width=80, align="left")
+
+print("--- Multi-line ANSI content through align_text ---")
+multiline_ansi = "\n".join([
+    terminal_output.apply_style("line one bold", terminal_output.STYLE_BOLD),
+    terminal_output.apply_style("line two dim and longer", terminal_output.STYLE_DIM),
+    terminal_output.apply_style("line three cyan", terminal_output.STYLE_CYAN),
+])
+print("Centered (padding computed from widest visible line):")
+print(terminal_output.align_text(multiline_ansi, "center", 80))
+print()
+
+print("--- Empty message guard ---")
 terminal_output.set_verbosity(3)
 terminal_output.msg_info("")
 terminal_output.msg_info("   ")
-print("(two warnings about empty messages)")
+print("(two warnings about empty messages on stderr)")
 print()
 
-# Reset verbosity for any subsequent use
+# Reset to clean state
 terminal_output.set_verbosity(3)
+terminal_output.set_layout(max_width=80, align="left")
