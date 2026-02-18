@@ -1,34 +1,135 @@
 """Terminal output utility - styling and messaging for CLI scripts.
 
-Architecture (four layers):
+All additions are backward compatible. If set_layout() is never called,
+every existing caller sees identical behavior.
 
-  CONFIG LAYER
-    set_verbosity(level)       -- filter msg_* output
-    set_layout(max_width, align) -- content width and alignment (commit 03)
+-------------------------------------------------------------------------------
+TWO-WIDTH MODEL
+-------------------------------------------------------------------------------
+Content width and terminal width are kept separate.
 
-  PRIMITIVE LAYER  (pure functions, no I/O)
-    get_terminal_width()       -- cached column detection, default 80
-    measure_width(text)        -- ANSI-aware visible character count
-    align_text(text, align, width) -- block alignment (commit 02)
+  set_layout(max_width=76, align="center")
 
-  STYLING LAYER  (pure functions, return strings, no I/O)
-    apply_style(text, style_code)
-    format_highlight(text)
-    format_label(name, value)
-    format_separator(character, width)
-    format_token_counts(tokens_in, tokens_out)
-    format_cost(cost_dollars)
-    format_block(header, content)
-    wrap_text(text, indent, width)
+  max_width   -- how wide content is allowed to be (cards, separators, wrapped
+                 text). Defaults to 80. Clamped to terminal_width - 4 on narrow
+                 terminals so content never touches terminal edges.
 
-  OUTPUT LAYER  (write to stderr unless noted)
-    msg_error(message)
-    msg_warn(message)
-    msg_info(message)
-    msg_debug(message)
-    msg_success(message)
+  align       -- how that content block is positioned within the full terminal
+                 width. "left" (default), "center", or "right".
 
-All messaging goes to stderr. Data output goes to stdout (caller's responsibility).
+Example: on a 120-column terminal with max_width=76 and align="center",
+format_card() produces a 76-char-wide card and emit() centers it with 22
+spaces of left padding on every line.
+
+-------------------------------------------------------------------------------
+STDOUT / STDERR CONVENTION
+-------------------------------------------------------------------------------
+  stdout  -- data the user asked for. Use emit() for formatted content,
+             plain print() for raw piped output.
+  stderr  -- status and diagnostics. Use msg_*() functions.
+  stderr  -- terminal control. Use clear_screen().
+
+-------------------------------------------------------------------------------
+PUBLIC API
+-------------------------------------------------------------------------------
+CONFIG
+  set_verbosity(level)
+      Set msg_* filter threshold. 0=silent, 1=error, 2=+warn, 3=+info
+      (default), 4=+debug, 5=+trace. Call once at startup.
+
+  set_layout(max_width, align)
+      Set content width and alignment. Call once at startup. Safe to omit --
+      defaults (80, "left") preserve all prior behavior.
+
+PRIMITIVES  (pure functions, no I/O, no config reads)
+  get_terminal_width() -> int
+      Cached terminal column count. Falls back to 80 if detection fails.
+
+  measure_width(text) -> int
+      Visible character count after stripping ANSI SGR escape sequences.
+      Multi-line input returns width of longest line. ASCII/Latin-1 only.
+
+  align_text(text, align, width) -> str
+      Prepend uniform left padding to a text block. Padding computed from
+      the widest line and applied to all lines (block alignment). No-op when
+      align="left". Does not right-pad.
+
+STYLING  (pure functions, return strings, read layout config)
+  apply_style(text, style_code) -> str
+      Wrap text in an ANSI SGR code + reset. All other styling calls this.
+
+  format_highlight(text) -> str
+      Bold yellow. Semantic: "this matched a search query."
+
+  format_label(name, value=None) -> str
+      Cyan bracketed label: "[name]" or "[name: value]".
+
+  format_separator(character="-", width=None) -> str
+      Dim repeated-character rule. Defaults to _get_max_width().
+
+  format_token_counts(tokens_in, tokens_out) -> str
+      "850 in / 320 out (1170 total)". Unstyled.
+
+  format_cost(cost_dollars) -> str
+      "$0.0032", "$0.125", "$3.45". Precision scaled to magnitude. Unstyled.
+
+  format_block(header, content) -> str
+      Dim-bordered block with header label and free-form content.
+
+  wrap_text(text, indent=0, width=None) -> str
+      Paragraph-aware line wrapper. Defaults to _get_max_width().
+
+  format_duration(days) -> str
+      Float day count to human string: "today", "3 days", "2 weeks",
+      "1 month", "3 years", "overdue". Unstyled.
+
+  format_choices(choices, layout="horizontal") -> str
+      Render (key, label) tuples. Horizontal auto-falls back to vertical
+      when total width exceeds _get_max_width(). Keys are bold.
+
+  format_card(header_left, header_right, body, footer=None, width=None) -> str
+      Bordered multi-region card. header_right and footer styled dim.
+      Body unstyled -- caller controls. Uses measure_width internally so
+      ANSI codes in content do not break border alignment.
+
+OUTPUT  (perform I/O)
+  emit(text) -> None
+      Layout-aware stdout writer. Applies align_text using current layout
+      config. Use for all formatted content. Not filtered by verbosity.
+
+  clear_screen() -> None
+      ANSI clear + cursor home to stderr. Falls back to newlines when not
+      a terminal. Always executes regardless of verbosity.
+
+  msg_error(message) -> None    priority 1, red,   stderr
+  msg_warn(message) -> None     priority 2, yellow, stderr
+  msg_info(message) -> None     priority 3, cyan,   stderr
+  msg_debug(message) -> None    priority 4, gray,   stderr
+  msg_success(message) -> None  priority 3, green,  stderr
+      Leveled diagnostic messages. Filtered by set_verbosity(). All apply
+      align_text using current layout config before writing.
+
+STYLE CONSTANTS
+  STYLE_BOLD, STYLE_DIM, STYLE_RED, STYLE_YELLOW, STYLE_CYAN,
+  STYLE_GRAY, STYLE_GREEN, STYLE_BOLD_YELLOW
+      Empty strings when stderr is not a terminal.
+
+-------------------------------------------------------------------------------
+CALLER CONVENTION (COMPLETE)
+-------------------------------------------------------------------------------
+  terminal_output.set_verbosity(3)
+  terminal_output.set_layout(max_width=76, align="center")
+
+  terminal_output.emit(format_card(...))     # formatted content -> stdout
+  terminal_output.emit(format_choices(...))  # formatted content -> stdout
+  print(raw_data)                            # piped data -> stdout, no layout
+
+  terminal_output.msg_info("status")         # diagnostics -> stderr
+  terminal_output.msg_success("done")        # diagnostics -> stderr
+  terminal_output.clear_screen()             # terminal control -> stderr
+
+Use fully qualified calls throughout: terminal_output.emit(), not
+from terminal_output import emit.
 """
 import os
 import re
@@ -77,7 +178,8 @@ def set_layout(max_width: int = 80, align: str = "left") -> None:
 
     Args:
         max_width: Maximum content width in characters (default: 80).
-        align: "left", "center", or "right" (default: "left").
+        align: Alignment for all output: "left", "center", or "right"
+               (default: "left").
     """
     global _layout_max_width, _layout_align
     terminal_width: int = get_terminal_width()
