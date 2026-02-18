@@ -194,6 +194,58 @@ print(terminal_output.format_block("Configuration", "\n".join(config_lines)))
 print()
 
 # ============================================================================
+# format_card() - Bordered Display Card
+# ============================================================================
+print("=== format_card() ===")
+
+terminal_output.set_layout(max_width=76, align="center")
+
+print("Full card with all regions, via emit():")
+full_card = terminal_output.format_card(
+    header_left=terminal_output.apply_style("[3 / 47]", terminal_output.STYLE_BOLD),
+    header_right="geography",
+    body="What is the capital city of Japan?",
+    footer="0 = failed   1 = hard   2 = good   3 = easy",
+)
+terminal_output.emit(full_card)
+print()
+
+print("Card without footer:")
+no_footer_card = terminal_output.format_card(
+    header_left=terminal_output.apply_style("[1 / 10]", terminal_output.STYLE_BOLD),
+    header_right="vocabulary",
+    body="Define: ephemeral",
+)
+terminal_output.emit(no_footer_card)
+print()
+
+print("Card with long body (wrapping):")
+long_body = "Explain the difference between supervised and unsupervised learning in machine learning, including at least two examples of each and when you would choose one approach over the other."
+long_body_card = terminal_output.format_card(
+    header_left=terminal_output.apply_style("[7 / 20]", terminal_output.STYLE_BOLD),
+    header_right="machine learning",
+    body=long_body,
+    footer="Answer in your own words before revealing.",
+)
+terminal_output.emit(long_body_card)
+print()
+
+print("Card with styled body text (ANSI codes must not break border alignment):")
+styled_body = (
+    "Capital: " + terminal_output.apply_style("Tokyo", terminal_output.STYLE_BOLD)
+    + "\nPopulation: " + terminal_output.apply_style("13.96 million", terminal_output.STYLE_CYAN)
+)
+styled_card = terminal_output.format_card(
+    header_left=terminal_output.apply_style("[4 / 47]", terminal_output.STYLE_BOLD),
+    header_right="geography",
+    body=styled_body,
+)
+terminal_output.emit(styled_card)
+print()
+
+terminal_output.set_layout(max_width=80, align="left")
+
+# ============================================================================
 # format_choices() - User Selection Choices
 # ============================================================================
 print("=== format_choices() ===")

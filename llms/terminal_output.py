@@ -365,6 +365,96 @@ def format_block(header: str, content: str) -> str:
     return "\n".join(lines)
 
 
+def format_card(
+    header_left: str,
+    header_right: str,
+    body: str,
+    footer: str | None = None,
+    width: int | None = None
+) -> str:
+    """Render a bordered multi-region display card.
+
+    Regions: a two-column header row, a body (wrapped), and an optional
+    footer separated by a dim rule. Borders and header-right and footer
+    text are styled dim. Body is unstyled -- caller controls body styling.
+
+    content_line() uses measure_width for correct right-padding of styled
+    text so borders stay flush regardless of ANSI codes in content.
+
+    Args:
+        header_left: Left-aligned header text (e.g. progress counter).
+                     Caller styles before passing.
+        header_right: Right-aligned header text (e.g. domain/category).
+                      Styled dim by format_card.
+        body: Main content, may be multi-line. Unstyled by format_card.
+        footer: Optional single line (e.g. criteria). Styled dim.
+        width: Card width in characters. Defaults to _get_max_width().
+
+    Returns:
+        Multi-line string. All lines are exactly `width` visible chars wide.
+    """
+    if width is None:
+        width = _get_max_width()
+
+    inner: int = width - 4  # "| " + content + " |"
+
+    # --- header line ---
+    right_styled: str = apply_style(header_right, STYLE_DIM)
+    left_visible_width: int = measure_width(header_left)
+    right_visible_width: int = measure_width(right_styled)
+    gap: int = inner - left_visible_width - right_visible_width
+    if gap < 2:
+        right_styled = ""
+        gap = inner - left_visible_width
+    header_line: str = header_left + (" " * gap) + right_styled
+
+    # --- body lines ---
+    body_lines: list[str] = []
+    for paragraph in body.split("\n"):
+        if paragraph.strip() == "":
+            body_lines.append("")
+        else:
+            wrapped: str = wrap_text(paragraph, indent=0, width=inner)
+            for wrapped_line in wrapped.split("\n"):
+                body_lines.append(wrapped_line)
+
+    # --- footer lines ---
+    footer_lines: list[str] = []
+    if footer is not None:
+        wrapped_footer: str = wrap_text(footer, indent=0, width=inner)
+        for footer_line in wrapped_footer.split("\n"):
+            footer_lines.append(apply_style(footer_line, STYLE_DIM))
+
+    # --- assembly helpers ---
+    border_horizontal: str = apply_style("+" + ("-" * (width - 2)) + "+", STYLE_DIM)
+    empty_row: str = apply_style("|", STYLE_DIM) + (" " * (width - 2)) + apply_style("|", STYLE_DIM)
+
+    def content_line(text: str) -> str:
+        visible_width: int = measure_width(text)
+        right_padding: int = max(0, inner - visible_width)
+        left_border: str = apply_style("|", STYLE_DIM)
+        right_border: str = apply_style("|", STYLE_DIM)
+        return left_border + " " + text + (" " * right_padding) + " " + right_border
+
+    # --- assembly ---
+    lines: list[str] = []
+    lines.append(border_horizontal)
+    lines.append(empty_row)
+    lines.append(content_line(header_line))
+    lines.append(empty_row)
+    for body_line in body_lines:
+        lines.append(content_line(body_line))
+    lines.append(empty_row)
+    if footer_lines:
+        lines.append(content_line(apply_style("-" * inner, STYLE_DIM)))
+        for footer_line in footer_lines:
+            lines.append(content_line(footer_line))
+        lines.append(empty_row)
+    lines.append(border_horizontal)
+
+    return "\n".join(lines)
+
+
 def format_choices(choices: list[tuple[str, str]], layout: str = "horizontal") -> str:
     """Render labeled choices for user selection.
 
