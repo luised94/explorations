@@ -1,2 +1,4 @@
+*.db
 *.pdf
 *.tex
+llms/raw/*

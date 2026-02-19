@@ -1,0 +1,11 @@
+Final Revised Plan (Post-Review)
+Group C: Separate Inference Path
+Step 7. Rename tape-based functions to establish the dual-path naming convention: gpt  forward_training, linear  linear_tape, softmax  softmax_tape, rmsnorm  rmsnorm_tape, get_weight_matrix  get_weight_matrix_tape; update all call sites. Pure mechanical rename.
+Step 8. Extract linear_float, softmax_float, rmsnorm_float, and get_weight_matrix_float as plain-float inference helpers operating on list[float] with no tape interaction. (Muratori: intentional parallel duplication of tape variants - different data path, different functions.)
+Step 9. Extract forward_inference implementing the full GPT forward pass with float helpers, and rewrite the inference loop to call it - storing KV cache as list[list[list[float]]] and eliminating all tape initialization from inference. (Acton: ensure float-only data path is explicit end-to-end, including cache type change.)
+Group D: Naming Hygiene
+Step 10. Rename loop iteration variables throughout: n  sequence_length, pos_id  position_index, t  time_step, j  dimension_index, i  parameter_index.
+Step 11. Rename forward-pass intermediates in both forward_training and forward_inference: x  hidden, tok_emb  token_embedding, pos_emb  position_embedding, q/k/v  query/key/value, q_h/k_h/v_h  query_head/key_head/value_head, x_attn  attention_output, x_residual  residual. (Acton: added explicit x  hidden rename. Casey/Acton: keep scope-appropriate - hidden not hidden_state. Apply identically to both forward functions for parallel readability.)
+Step 12. Rename optimizer variables and training loop accumulators: m  first_moment, v  second_moment, lr_t  adjusted_learning_rate, m_hat  first_moment_corrected, v_hat  second_moment_corrected, eps_adam  epsilon_adam, loss_t  position_loss, loss_sum  total_loss_sum, training-loop scale  loss_scale.
+Group E: Type Hygiene
+Step 13. Add type hints to all function signatures (parameters and return types) and all major variable bindings in training and inference loops. (Carmack: flag allocate_matrix's global current_offset mutation as a style invariant violation to address. Muratori: skip TapeIndex alias - plain int is unambiguous.)
