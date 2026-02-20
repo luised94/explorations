@@ -11,7 +11,10 @@ from typing import TypeAlias
 # TYPES AND CONSTANTS
 # =============================================================================
 ParsedItem: TypeAlias = tuple[str, str, str, list[str], list[str]]
+# positions:                  id   content  criteria  tags     prerequisites
 
+
+DATABASE_PATH: str = "data/sm2.db"
 
 # =============================================================================
 # PARSER
@@ -142,6 +145,43 @@ def sm2_update(
 # =============================================================================
 # DATABASE SCHEMA
 # =============================================================================
+
+def initialize_database(database_path: str) -> sqlite3.Connection:
+    database_connection: sqlite3.Connection = sqlite3.connect(database_path)
+    database_connection.execute("PRAGMA journal_mode=WAL")
+    database_connection.execute("""
+        CREATE TABLE IF NOT EXISTS items (
+            item_id           TEXT PRIMARY KEY,
+            easiness_factor   REAL DEFAULT 2.5,
+            interval_days     REAL DEFAULT 0.0,
+            repetition_count  INTEGER DEFAULT 0,
+            due_date          INTEGER,
+            last_review       INTEGER DEFAULT 0,
+            lapse_count       INTEGER DEFAULT 0
+        )
+    """)
+    database_connection.execute("""
+        CREATE TABLE IF NOT EXISTS review_log (
+            id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id                   TEXT,
+            grade                     INTEGER,
+            sm2_grade                 INTEGER,
+            review_date               INTEGER,
+            elapsed_days              INTEGER,
+            easiness_factor_before    REAL,
+            easiness_factor_after     REAL,
+            interval_days_before      REAL,
+            interval_days_after       REAL,
+            repetition_count_before   INTEGER,
+            domain                    TEXT,
+            error_note                TEXT
+        )
+    """)
+    database_connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)"
+    )
+    database_connection.commit()
+    return database_connection
 
 
 # =============================================================================
