@@ -99,12 +99,6 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
 USER_GRADE_TO_SM2_GRADE: dict[int, int] = {0: 1, 1: 3, 2: 5}
 
 
-def extract_domain(item_id: str) -> str:
-    identifier_parts: list[str] = item_id.split("-")
-    domain: str = identifier_parts[0]
-    return domain
-
-
 def sm2_update(
     grade: int,
     easiness_factor: float,
