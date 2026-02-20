@@ -96,6 +96,53 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
 # =============================================================================
 # SM-2 ALGORITHM
 # =============================================================================
+USER_GRADE_TO_SM2_GRADE: dict[int, int] = {0: 1, 1: 3, 2: 5}
+
+
+def extract_domain(item_id: str) -> str:
+    identifier_parts: list[str] = item_id.split("-")
+    domain: str = identifier_parts[0]
+    return domain
+
+
+def sm2_update(
+    grade: int,
+    easiness_factor: float,
+    interval_days: float,
+    repetition_count: int,
+    lapse_count: int,
+    review_date: int,
+) -> dict[str, float | int]:
+    sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
+
+    ef_delta_inner: float = 0.08 + (5 - sm2_grade) * 0.02
+    ef_delta: float = 0.1 - (5 - sm2_grade) * ef_delta_inner
+    raw_easiness_factor: float = easiness_factor + ef_delta
+    new_easiness_factor: float = max(1.3, min(3.0, raw_easiness_factor))
+
+    if sm2_grade < 3:
+        new_repetition_count: int = 0
+        new_interval_days: float = 1.0
+        new_lapse_count: int = lapse_count + 1
+    else:
+        new_lapse_count = lapse_count
+        if repetition_count == 0:
+            new_interval_days = 1.0
+        elif repetition_count == 1:
+            new_interval_days = 6.0
+        else:
+            new_interval_days = interval_days * new_easiness_factor
+        new_repetition_count = repetition_count + 1
+
+    new_due_date: int = review_date + round(new_interval_days)
+
+    return {
+        "easiness_factor": new_easiness_factor,
+        "repetition_count": new_repetition_count,
+        "interval_days": new_interval_days,
+        "lapse_count": new_lapse_count,
+        "due_date": new_due_date,
+    }
 
 
 # =============================================================================
