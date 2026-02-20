@@ -7,6 +7,9 @@ from sm2 import USER_GRADE_TO_SM2_GRADE, sm2_update
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+# Fixed start date keeps results identical across any run date.
+# Accumulating into failure_count rather than stopping early gives a complete
+# diagnosis - a broken function shows all failures at once, not just the first.
 
 ReviewResult: TypeAlias = dict[str, float | int]
 
@@ -14,9 +17,12 @@ FLOAT_TOLERANCE: float = 0.0001
 failure_count: int = 0
 start_date: int = datetime.date(2025, 1, 1).toordinal()
 
+
 # =============================================================================
 # POINT ASSERTIONS
 # =============================================================================
+# Verify exact output values for each legal grade against manually derived
+# SM-2 spec values. Ground truth: if these fail the algorithm is wrong.
 
 # --- grade 2 from SM-2 defaults ---
 # inputs:   grade=2, ef=2.5, interval=0.0, rep=0, lapse=0
@@ -91,6 +97,9 @@ if result_grade0["lapse_count"] != 1:
 # =============================================================================
 # EF CLAMP ASSERTIONS
 # =============================================================================
+# Verify that compounded extreme grades cannot push EF outside [1.3, 3.0].
+# The clamp is one expression in sm2_update; these tests confirm it holds
+# across repeated calls, not just in a single isolated invocation.
 
 # --- EF floor: 10 consecutive grade-0, advancing current_date to due_date each step ---
 # after 10 fails ef must be exactly 1.3 (clamped), never go below during loop
@@ -159,6 +168,9 @@ if abs(current_easiness_factor - 3.0) > FLOAT_TOLERANCE:
 # =============================================================================
 # INTERVAL PROGRESSION ASSERTIONS
 # =============================================================================
+# Verify the three hard-coded interval stages from the spec: rep 0->1 always
+# yields 1.0, rep 1->2 always yields 6.0, rep 2+ multiplies by new ef.
+# These must hold regardless of ef value entering the call.
 
 # --- first pass (rep=0 -> 1): interval must be 1.0 regardless of ef ---
 # inputs: grade=2, interval=0.0, rep=0; vary ef across legal range
@@ -192,7 +204,9 @@ if abs(third_pass_result["interval_days"] - expected_third_interval) > FLOAT_TOL
 # =============================================================================
 # SEQUENCE: GRADE-2 PROGRESSION (10 STEPS)
 # =============================================================================
-# interval must be non-decreasing each step; ef must reach 3.0 by end
+# Verify the feedback loop works correctly across multiple calls: successive
+# grade-2 reviews must produce non-decreasing intervals and ef must climb to
+# its ceiling. Isolation tests above cannot catch compounding errors.
 
 current_easiness_factor = 2.5
 current_interval_days = 0.0
@@ -230,7 +244,9 @@ if abs(current_easiness_factor - 3.0) > FLOAT_TOLERANCE:
 # =============================================================================
 # SEQUENCE: GRADE-0 PROGRESSION (10 STEPS)
 # =============================================================================
-# rep stays 0, lapse increments each step, interval stays 1.0, ef floors at 1.3
+# Verify the stuck-item scenario: rep stays 0, lapse increments each step,
+# interval holds at 1.0, and ef never drops below its floor. The system must
+# not spiral or degrade state beyond the defined minimum.
 
 current_easiness_factor = 2.5
 current_interval_days = 0.0
@@ -277,11 +293,10 @@ if abs(current_easiness_factor - 1.3) > FLOAT_TOLERANCE:
 # =============================================================================
 # SEQUENCE: RECOVERY PATH (3 FAILS THEN 3 PASSES)
 # =============================================================================
+# Verify the most important behavioral invariant in the spec: ef is not reset
+# on failure, so a recovering item retains its lowered ef and receives shorter
+# intervals during recovery. This tests the full fail-then-pass state trajectory.
 # after 3 grade-0: ef=1.3, rep=0, lapse=3
-# pass 1 (grade=1): interval=1.0, rep=1
-# pass 2 (grade=1): interval=6.0, rep=2
-# pass 3 (grade=1): interval=6.0*1.3=7.8, rep=3
-# note: grade-1 from ef=1.3 yields new_ef=1.16, clamped to 1.3 throughout
 
 current_easiness_factor = 2.5
 current_interval_days = 0.0
@@ -391,6 +406,7 @@ if recovery_pass3_result["repetition_count"] != 3:
 # =============================================================================
 # RESULT
 # =============================================================================
+# Non-zero exit on any failure so this integrates with shell scripts or CI.
 
 if failure_count > 0:
     print(f"{failure_count} assertion(s) failed")
