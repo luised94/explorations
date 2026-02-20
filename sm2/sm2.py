@@ -13,6 +13,8 @@ from typing import TypeAlias
 ParsedItem: TypeAlias = tuple[str, str, str, list[str], list[str]]
 # positions:                  id   content  criteria  tags     prerequisites
 
+ContentMap: TypeAlias = dict[str, tuple[str, str, list[str], list[str]]]
+# positions:                                   content  criteria  tags     prerequisites
 
 DATABASE_PATH: str = "data/sm2.db"
 
@@ -204,4 +206,31 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
 # =============================================================================
 
 if __name__ == "__main__":
-    pass
+    today: int = datetime.date.today().toordinal()
+
+    database_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
+
+    # --- parse
+    parsed_items: list[ParsedItem] = parse_exercises("exercises/")
+
+    parsed_ids: set[str] = set()
+    content_map: ContentMap = {}
+    for item_id, content, criteria, tags, prerequisites in parsed_items:
+        parsed_ids.add(item_id)
+        content_map[item_id] = (content, criteria, tags, prerequisites)
+
+    # --- reconcile
+    existing_rows: list[tuple] = database_connection.execute(
+        "SELECT item_id FROM items"
+    ).fetchall()
+    database_ids: set[str] = set()
+    for row in existing_rows:
+        database_ids.add(row[0])
+
+    new_item_ids: set[str] = parsed_ids - database_ids
+    for new_item_id in new_item_ids:
+        database_connection.execute(
+            "INSERT INTO items (item_id, due_date) VALUES (?, ?)",
+            (new_item_id, today),
+        )
+    database_connection.commit()

@@ -2,3 +2,4 @@ data/sm2.db
 __pycache__/
 *.pyc
 .venv/
+scratch/*
