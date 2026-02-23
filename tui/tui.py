@@ -517,18 +517,33 @@ import select
 
 
 def write_events_to_ring(raw_bytes: bytes, app_state: dict) -> None:
+    if RAW_LOG_PATH:
+        log_file = open(RAW_LOG_PATH, 'ab')
+        log_file.write(raw_bytes)
+        log_file.close()
+
     ring:        list = app_state['event_ring']
     write_index: int  = app_state['ring_write_index']
 
     byte_index: int = 0
     while byte_index < len(raw_bytes):
         byte_value: int = raw_bytes[byte_index]
-        byte_index += 1
 
+        if byte_value == 0x1B:
+            # parse_escape_sequence controls how many bytes it consumes
+            result_event: dict | None
+            result_event, byte_index = parse_escape_sequence(raw_bytes, byte_index)
+            if result_event is not None:
+                ring[write_index] = result_event
+                write_index = (write_index + 1) % RING_BUFFER_CAPACITY
+            continue
+
+        # for all non-escape bytes: advance past the current byte before classifying
+        byte_index += 1
         event: dict | None = None
 
         if byte_value == 0x0D:
-            # must be checked before the ctrl range: 0x0D is inside 0x01-0x1A
+            # checked before ctrl range: 0x0D is inside 0x01-0x1A
             event = {
                 'kind':      'enter',
                 'char':      '',
@@ -557,18 +572,15 @@ def write_events_to_ring(raw_bytes: bytes, app_state: dict) -> None:
                 'kind':      'char',
                 'char':      chr(byte_value + 0x60),
                 'raw':       bytes([byte_value]),
-                'modifiers': 0,
                 'modifiers': MOD_KEY_CTRL,
             }
-        # 0x1B and unrecognised bytes: skipped here; commit 7 handles escape sequences
+        # other bytes: unrecognised, skip
 
         if event is not None:
-            # on overflow write_index wraps and overwrites the oldest unread event
             ring[write_index] = event
             write_index = (write_index + 1) % RING_BUFFER_CAPACITY
 
     app_state['ring_write_index'] = write_index
-
 
 def read_event_from_ring(app_state: dict) -> dict | None:
     read_index:  int = app_state['ring_read_index']
@@ -580,6 +592,122 @@ def read_event_from_ring(app_state: dict) -> dict | None:
     event: dict = app_state['event_ring'][read_index]
     app_state['ring_read_index'] = (read_index + 1) % RING_BUFFER_CAPACITY
     return event
+
+
+def parse_escape_sequence(
+    raw_bytes:   bytes,
+    start_index: int,
+) -> tuple[dict | None, int]:
+    # start_index points to 0x1B.
+    # returns (event_or_None, next_unprocessed_index).
+    # caller must use the returned index, not advance independently.
+
+    index: int = start_index + 1   # advance past 0x1B
+
+    if index >= len(raw_bytes):
+        # bare escape: nothing follows in this read
+        event: dict = {
+            'kind':      'escape',
+            'char':      '',
+            'raw':       b'\033',
+            'modifiers': 0,
+        }
+        return event, index
+
+    next_byte: int = raw_bytes[index]
+
+    if next_byte != ord('['):
+        # not a CSI sequence; emit escape, leave next_byte for next iteration
+        event = {
+            'kind':      'escape',
+            'char':      '',
+            'raw':       b'\033',
+            'modifiers': 0,
+        }
+        return event, index   # do not consume next_byte
+
+    index += 1   # consume '['
+
+    # collect parameter bytes: digits and semicolons
+    param_chars: list = []
+    while index < len(raw_bytes):
+        current_byte: int = raw_bytes[index]
+        is_digit:     bool = ord('0') <= current_byte <= ord('9')
+        is_semicolon: bool = current_byte == ord(';')
+        if is_digit or is_semicolon:
+            param_chars.append(chr(current_byte))
+            index += 1
+        else:
+            break
+
+    if index >= len(raw_bytes):
+        # incomplete CSI sequence; skip consumed bytes
+        return None, index
+
+    final_byte: int = raw_bytes[index]
+    index += 1
+
+    param_string: str = ''.join(param_chars)
+    params: list = param_string.split(';') if param_string else []
+
+    # decode XTerm modifier parameter from second field if present.
+    # XTerm encodes: modifier_value = (shift<<0)|(alt<<1)|(ctrl<<2)|(super<<3), then +1.
+    # our MOD_KEY_* bits differ from XTerm bit positions so we map explicitly.
+    modifiers: int = 0
+    if len(params) >= 2:
+        modifier_param: int = 0
+        try:
+            modifier_param = int(params[1])
+        except ValueError:
+            pass
+        xterm_bits: int = modifier_param - 1
+        if xterm_bits & 1:
+            modifiers = modifiers | MOD_KEY_SHIFT
+        if xterm_bits & 2:
+            modifiers = modifiers | MOD_KEY_ALT
+        if xterm_bits & 4:
+            modifiers = modifiers | MOD_KEY_CTRL
+        if xterm_bits & 8:
+            modifiers = modifiers | MOD_KEY_SUPER
+
+    first_param: str = params[0] if params else ''
+    raw_slice:   bytes = raw_bytes[start_index:index]
+
+    kind: str = ''
+
+    if final_byte == ord('A'):
+        kind = 'arrow_up'
+    elif final_byte == ord('B'):
+        kind = 'arrow_down'
+    elif final_byte == ord('C'):
+        kind = 'arrow_right'
+    elif final_byte == ord('D'):
+        kind = 'arrow_left'
+    elif final_byte == ord('H'):
+        kind = 'home'
+    elif final_byte == ord('F'):
+        kind = 'end'
+    elif final_byte == ord('~'):
+        if first_param == '1' or first_param == '7':
+            kind = 'home'
+        elif first_param == '4' or first_param == '8':
+            kind = 'end'
+        elif first_param == '5':
+            kind = 'page_up'
+        elif first_param == '6':
+            kind = 'page_down'
+
+    if not kind:
+        # unrecognised CSI sequence; skip
+        return None, index
+
+    event = {
+        'kind':      kind,
+        'char':      '',
+        'raw':       raw_slice,
+        'modifiers': modifiers,
+    }
+    return event, index
 
 
 # ==============================================================================
@@ -663,7 +791,7 @@ def main() -> None:
         'left':      0,
         'width':     grid_width,
         'height':    1,
-        'lines':     ['[ INPUT TEST ] press keys - q to quit'],
+        'lines':     ['[ INPUT TEST ] arrows/pgup/pgdn/home/end/ctrl+key/q to quit'],
     }
 
     event_log: list = ['waiting for input...']
@@ -704,9 +832,10 @@ def main() -> None:
 
             event_log.append(description)
 
-            if kind == 'char' and char == 'q' and modifiers == 0:
+            is_q:      bool = kind == 'char' and char == 'q' and modifiers == 0
+            is_ctrl_c: bool = kind == 'char' and char == 'c' and modifiers == MOD_KEY_CTRL
+            if is_q or is_ctrl_c:
                 running = False
-
             event = read_event_from_ring(app_state)
 
         # scroll content to bottom so newest events are always visible
