@@ -104,7 +104,7 @@ def enter_raw_mode(terminal: dict) -> None:
 
     new_width: int
     new_height: int
-    new_height, new_width = os.get_terminal_size()
+    new_width, new_height = os.get_terminal_size()
     terminal['width'] = new_width
     terminal['height'] = new_height
 
@@ -843,6 +843,7 @@ def main() -> None:
         'lines':      content_lines,
         'is_focused': True,
     }
+
     app_state: dict = {
         'mode':              MODE_NORMAL,
         'focused_region_id': content_region_id,
@@ -858,6 +859,9 @@ def main() -> None:
         'event_ring':        [None] * RING_BUFFER_CAPACITY,
         'ring_write_index':  0,
         'ring_read_index':   0,
+        'last_event_kind':   'none',
+        'last_event_mods':   0,
+        'last_event_char':   '',
     }
     stdin_fd: int = sys.stdin.fileno()
     while True:
@@ -873,6 +877,10 @@ def main() -> None:
             event_char:   str = event['char']
             event_mods:   int = event['modifiers']
             focused_id:   int = app_state['focused_region_id']
+            app_state['last_event_kind'] = event_kind
+            app_state['last_event_mods'] = event_mods
+            app_state['last_event_char'] = event_char
+
             if current_mode == MODE_NORMAL:
                 is_q:      bool = event_kind == 'char' and event_char == 'q' and event_mods == 0
                 is_ctrl_c: bool = event_kind == 'char' and event_char == 'c' and event_mods == MOD_KEY_CTRL
@@ -907,15 +915,20 @@ def main() -> None:
             event = read_event_from_ring(app_state)
         if app_state['mode'] == MODE_QUITTING:
             break
+
         # update header diagnostic before render
         focused_region_id_now: int = app_state['focused_region_id']
         scroll_offset_now: int = 0
         if focused_region_id_now != NO_REGION:
             scroll_offset_now = app_state['regions'][focused_region_id_now]['scroll_offset']
+        last_kind: str = app_state['last_event_kind']
+        last_mods: int = app_state['last_event_mods']
+        last_char: str = app_state['last_event_char']
         header_lines[0] = (
-            f'[ TUI ] arrows scroll  /=command  q=quit'
-            f'  scroll={scroll_offset_now}  focused={focused_region_id_now}'
+            f'[ TUI ] q=quit  scroll={scroll_offset_now}'
+            f'  evt={last_kind} ch={last_char!r} mod={last_mods}'
         )
+
         # render pass: clear grid, render each region, flush diff
         for cell_index in range(cell_count):
             grid['current'][cell_index] = BLANK_CELL
