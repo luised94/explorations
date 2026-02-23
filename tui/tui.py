@@ -102,11 +102,9 @@ def enter_raw_mode(terminal: dict) -> None:
     original_termios: list = termios.tcgetattr(file_descriptor)
     terminal['original_termios'] = original_termios
 
-    new_width: int
-    new_height: int
-    new_width, new_height = os.get_terminal_size()
-    terminal['width'] = new_width
-    terminal['height'] = new_height
+    terminal_size: os.terminal_size = os.get_terminal_size()
+    terminal['width']  = terminal_size.columns
+    terminal['height'] = terminal_size.lines
 
     # Enter alternate screen buffer, then hide cursor.
     os.write(1, b'\033[?1049h')
