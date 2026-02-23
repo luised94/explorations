@@ -874,14 +874,31 @@ def main() -> None:
         'is_focused': True,
     }
 
+    debug_lines: list = ['tab debug: waiting...']
+    debug_region_height: int = 4
+    debug_region: dict = {
+        **DEFAULT_REGION,
+        'region_id':  2,
+        'name':       'tab_debug',
+        'top':        grid_height - debug_region_height,
+        'left':       0,
+        'width':      grid_width,
+        'height':     debug_region_height,
+        'lines':      debug_lines,
+        'is_focused': False,
+    }
+    # shrink content region to leave room for debug region
+    content_region['height'] = grid_height - 1 - debug_region_height
+
     app_state: dict = {
         'mode':              MODE_NORMAL,
         'focused_region_id': content_region_id,
         'regions':           {
             header_region_id:  header_region,
             content_region_id: content_region,
+            2:                 debug_region,
         },
-        'region_order':      [header_region_id, content_region_id],
+        'region_order':      [header_region_id, content_region_id, 2],
         'input_buffer':      '',
         'command_buffer':    '',
         'pending_action':    '',
@@ -892,7 +909,9 @@ def main() -> None:
         'last_event_kind':   'none',
         'last_event_mods':   0,
         'last_event_char':   '',
+        'tab_debug_log':     debug_lines,
     }
+
     stdin_fd: int = sys.stdin.fileno()
     while True:
         ready_fds: list
@@ -936,7 +955,19 @@ def main() -> None:
                         scroll_region(app_state['regions'][focused_id], 50000)
                 elif event_kind == 'char' and event_char == 'i' and event_mods == MOD_KEY_CTRL:
                     # Tab arrives as ctrl+i (0x09) through the ctrl range classifier
+                    before_id: int = app_state['focused_region_id']
                     cycle_focus(app_state)
+                    after_id: int = app_state['focused_region_id']
+                    tab_entry: str = (
+                        f'tab: before={before_id} after={after_id}'
+                        f'  order={app_state["region_order"]}'
+                        f'  is_focused='
+                        + str({
+                            rid: app_state['regions'][rid]['is_focused']
+                            for rid in app_state['region_order']
+                        })
+                    )
+                    app_state['tab_debug_log'].append(tab_entry)
                 elif event_kind == 'char' and event_char == '/' and event_mods == 0:
                     app_state['mode'] = MODE_COMMAND
             elif current_mode == MODE_QUITTING:
