@@ -714,6 +714,27 @@ def parse_escape_sequence(
 # APPLICATION STATE AND EVENT LOOP
 # ==============================================================================
 
+def handle_input_submit(app_state: dict) -> None:
+    # stub: called when enter is pressed in MODE_INPUT
+    submitted: str = app_state['input_buffer']
+    app_state['input_buffer'] = ''
+    app_state['mode'] = MODE_NORMAL
+    _ = submitted   # placeholder until commit 10 wires this up
+
+def handle_command(command: str, app_state: dict) -> None:
+    # stub: called when enter is pressed in MODE_COMMAND
+    app_state['command_buffer'] = ''
+    app_state['mode'] = MODE_NORMAL
+    _ = command   # placeholder until commit 11 wires this up
+
+def cycle_focus(app_state: dict) -> None:
+    # stub: advances focused_region_id through region_order; full impl in commit 9
+    _ = app_state
+
+ACTION_TABLE: dict[str, callable] = {
+    # populated in commit 12
+}
+
 
 # ==============================================================================
 # ENTRY POINT
@@ -753,102 +774,126 @@ def main() -> None:
         'original_termios': None,
     }
     atexit.register(restore_terminal, terminal)
-
     def _restore_on_signal(signal_number: int, frame: object) -> None:
         restore_terminal(terminal)
         sys.exit(0)
-
     signal.signal(signal.SIGTERM, _restore_on_signal)
     signal.signal(signal.SIGHUP, _restore_on_signal)
     enter_raw_mode(terminal)
-
     grid_width:  int = terminal['width']
     grid_height: int = terminal['height']
     cell_count:  int = grid_width * grid_height
-
     grid: dict = {
         'width':    grid_width,
         'height':   grid_height,
         'current':  [BLANK_CELL] * cell_count,
         'previous': [BLANK_CELL] * cell_count,
     }
-
-    style_cache: dict = build_style_cache()
-
     default_style: tuple[int, int, int] = (COLOR_TAG_IDX | 15, COLOR_DEFAULT, 0)
-
-    app_state: dict = {
-        'event_ring':       [None] * RING_BUFFER_CAPACITY,
-        'ring_write_index': 0,
-        'ring_read_index':  0,
-    }
-
+    header_lines: list = ['[ TUI ] arrows scroll content  /=command  q=quit']
+    content_lines: list = []
+    for line_number in range(1, 51):
+        content_lines.append(f'line {line_number:02d}  ' + ('- ' * 20))
+    header_region_id:  int = 0
+    content_region_id: int = 1
     header_region: dict = {
         **DEFAULT_REGION,
-        'region_id': 0,
-        'name':      'header',
-        'top':       0,
-        'left':      0,
-        'width':     grid_width,
-        'height':    1,
-        'lines':     ['[ INPUT TEST ] arrows/pgup/pgdn/home/end/ctrl+key/q to quit'],
+        'region_id':  header_region_id,
+        'name':       'header',
+        'top':        0,
+        'left':       0,
+        'width':      grid_width,
+        'height':     1,
+        'lines':      header_lines,
+        'is_focused': False,
     }
-
-    event_log: list = ['waiting for input...']
-
     content_region: dict = {
         **DEFAULT_REGION,
-        'region_id': 1,
-        'name':      'content',
-        'top':       1,
-        'left':      0,
-        'width':     grid_width,
-        'height':    grid_height - 1,
-        'lines':     event_log,
+        'region_id':  content_region_id,
+        'name':       'content',
+        'top':        1,
+        'left':       0,
+        'width':      grid_width,
+        'height':     grid_height - 1,
+        'lines':      content_lines,
+        'is_focused': True,
     }
-
+    app_state: dict = {
+        'mode':              MODE_NORMAL,
+        'focused_region_id': content_region_id,
+        'regions':           {
+            header_region_id:  header_region,
+            content_region_id: content_region,
+        },
+        'region_order':      [header_region_id, content_region_id],
+        'input_buffer':      '',
+        'command_buffer':    '',
+        'pending_action':    '',
+        'style_cache':       build_style_cache(),
+        'event_ring':        [None] * RING_BUFFER_CAPACITY,
+        'ring_write_index':  0,
+        'ring_read_index':   0,
+    }
     stdin_fd: int = sys.stdin.fileno()
-    running:  bool = True
-
-    while running:
+    while True:
         ready_fds: list
         ready_fds, _, _ = select.select([sys.stdin], [], [], 0.05)
-
         if ready_fds:
             raw_bytes: bytes = os.read(stdin_fd, 256)
             write_events_to_ring(raw_bytes, app_state)
-
         event: dict | None = read_event_from_ring(app_state)
         while event is not None:
-            kind:      str = event['kind']
-            char:      str = event['char']
-            modifiers: int = event['modifiers']
-
-            description: str = f'kind={kind}'
-            if char:
-                description = description + f'  char={char!r}'
-            if modifiers & MOD_KEY_CTRL:
-                description = description + '  CTRL'
-
-            event_log.append(description)
-
-            is_q:      bool = kind == 'char' and char == 'q' and modifiers == 0
-            is_ctrl_c: bool = kind == 'char' and char == 'c' and modifiers == MOD_KEY_CTRL
-            if is_q or is_ctrl_c:
-                running = False
+            current_mode: str = app_state['mode']
+            event_kind:   str = event['kind']
+            event_char:   str = event['char']
+            event_mods:   int = event['modifiers']
+            focused_id:   int = app_state['focused_region_id']
+            if current_mode == MODE_NORMAL:
+                is_q:      bool = event_kind == 'char' and event_char == 'q' and event_mods == 0
+                is_ctrl_c: bool = event_kind == 'char' and event_char == 'c' and event_mods == MOD_KEY_CTRL
+                if is_q or is_ctrl_c:
+                    app_state['mode'] = MODE_QUITTING
+                elif event_kind == 'arrow_up':
+                    if focused_id != NO_REGION:
+                        focused_region: dict = app_state['regions'][focused_id]
+                        current_offset: int = focused_region['scroll_offset']
+                        if current_offset > 0:
+                            focused_region['scroll_offset'] = current_offset - 1
+                elif event_kind == 'arrow_down':
+                    if focused_id != NO_REGION:
+                        focused_region = app_state['regions'][focused_id]
+                        current_offset = focused_region['scroll_offset']
+                        max_offset: int = max(0, len(focused_region['lines']) - focused_region['height'])
+                        if current_offset < max_offset:
+                            focused_region['scroll_offset'] = current_offset + 1
+                elif event_kind == 'char' and event_char == '\t' and event_mods == 0:
+                    cycle_focus(app_state)
+                elif event_kind == 'char' and event_char == '/' and event_mods == 0:
+                    app_state['mode'] = MODE_COMMAND
+            elif current_mode == MODE_QUITTING:
+                break
+            elif current_mode == MODE_INPUT:
+                pass   # stub; wired in commit 10
+            elif current_mode == MODE_COMMAND:
+                pass   # stub; wired in commit 11
+            elif current_mode == MODE_CONFIRM:
+                pass   # stub; wired in commit 12
             event = read_event_from_ring(app_state)
-
-        # scroll content to bottom so newest events are always visible
-        visible_height: int = content_region['height']
-        if len(event_log) > visible_height:
-            content_region['scroll_offset'] = len(event_log) - visible_height
-
-        for index in range(cell_count):
-            grid['current'][index] = BLANK_CELL
-        render_region(header_region,  grid['current'], grid_width, default_style)
-        render_region(content_region, grid['current'], grid_width, default_style)
-        flush_diff(grid['current'], grid['previous'], grid_width, grid_height, style_cache)
-
+        if app_state['mode'] == MODE_QUITTING:
+            break
+        # render pass: clear grid, render each region, flush diff
+        for cell_index in range(cell_count):
+            grid['current'][cell_index] = BLANK_CELL
+        for region_id in app_state['region_order']:
+            region: dict = app_state['regions'][region_id]
+            render_region(region, grid['current'], grid_width, default_style)
+        flush_diff(
+            grid['current'],
+            grid['previous'],
+            grid_width,
+            grid_height,
+            app_state['style_cache'],
+        )
     restore_terminal(terminal)
     print("ok")
 
