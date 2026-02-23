@@ -757,9 +757,17 @@ def handle_input_submit(app_state: dict) -> None:
     app_state['mode'] = MODE_NORMAL
     if not submitted:
         return
-    # append submitted line to content region for visibility until commit 11
+    # diagnostic: append to tab_debug_log so we can see what happened
+    debug_log: list = app_state['tab_debug_log']
+    debug_log.append('submit: got=' + repr(submitted))
+    debug_log.append('submit: regions keys=' + str(list(app_state['regions'].keys())))
     content_region: dict = app_state['regions'][1]
     content_region['lines'].append('input: ' + submitted)
+    new_line_count: int = len(content_region['lines'])
+    visible_height: int = content_region['height']
+    new_max_offset: int = max(0, new_line_count - visible_height)
+    content_region['scroll_offset'] = new_max_offset
+    debug_log.append('submit: appended, scrolled to offset=' + str(new_max_offset))
 
 def handle_command(command: str, app_state: dict) -> None:
     # stub: called when enter is pressed in MODE_COMMAND
