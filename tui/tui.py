@@ -457,6 +457,20 @@ def test_diff() -> None:
 # ==============================================================================
 # REGIONS
 # ==============================================================================
+def scroll_region(region: dict, delta: int) -> None:
+    max_offset: int = max(0, len(region['lines']) - region['height'])
+    new_offset: int = region['scroll_offset'] + delta
+    if new_offset < 0:
+        new_offset = 0
+    if new_offset > max_offset:
+        new_offset = max_offset
+    region['scroll_offset'] = new_offset
+
+def page_region(region: dict, direction: int) -> None:
+    # direction: +1 = page down, -1 = page up
+    delta: int = (region['height'] - 1) * direction
+    scroll_region(region, delta)
+
 def render_region(
     region:        dict,
     current_cells: list,
@@ -751,8 +765,26 @@ def handle_command(command: str, app_state: dict) -> None:
     _ = command   # placeholder until commit 11 wires this up
 
 def cycle_focus(app_state: dict) -> None:
-    # stub: advances focused_region_id through region_order; full impl in commit 9
-    _ = app_state
+    region_order: list = app_state['region_order']
+    if not region_order:
+        return
+    current_id: int = app_state['focused_region_id']
+    # clear is_focused on the previously focused region
+    if current_id != NO_REGION:
+        if current_id in app_state['regions']:
+            app_state['regions'][current_id]['is_focused'] = False
+    # find current position and advance
+    next_id: int = region_order[0]
+    found_index: int = -1
+    for list_index in range(len(region_order)):
+        if region_order[list_index] == current_id:
+            found_index = list_index
+            break
+    if found_index != -1:
+        next_index: int = (found_index + 1) % len(region_order)
+        next_id = region_order[next_index]
+    app_state['focused_region_id'] = next_id
+    app_state['regions'][next_id]['is_focused'] = True
 
 ACTION_TABLE: dict[str, callable] = {
     # populated in commit 12
@@ -886,17 +918,22 @@ def main() -> None:
                     app_state['mode'] = MODE_QUITTING
                 elif event_kind == 'arrow_up' and event_mods == 0:
                     if focused_id != NO_REGION:
-                        focused_region: dict = app_state['regions'][focused_id]
-                        current_offset: int = focused_region['scroll_offset']
-                        if current_offset > 0:
-                            focused_region['scroll_offset'] = current_offset - 1
+                        scroll_region(app_state['regions'][focused_id], -1)
                 elif event_kind == 'arrow_down' and event_mods == 0:
                     if focused_id != NO_REGION:
-                        focused_region = app_state['regions'][focused_id]
-                        current_offset = focused_region['scroll_offset']
-                        max_offset: int = max(0, len(focused_region['lines']) - focused_region['height'])
-                        if current_offset < max_offset:
-                            focused_region['scroll_offset'] = current_offset + 1
+                        scroll_region(app_state['regions'][focused_id], 1)
+                elif event_kind == 'page_up' and event_mods == 0:
+                    if focused_id != NO_REGION:
+                        page_region(app_state['regions'][focused_id], -1)
+                elif event_kind == 'page_down' and event_mods == 0:
+                    if focused_id != NO_REGION:
+                        page_region(app_state['regions'][focused_id], 1)
+                elif event_kind == 'home' and event_mods == 0:
+                    if focused_id != NO_REGION:
+                        scroll_region(app_state['regions'][focused_id], -50000)
+                elif event_kind == 'end' and event_mods == 0:
+                    if focused_id != NO_REGION:
+                        scroll_region(app_state['regions'][focused_id], 50000)
                 elif event_kind == 'char' and event_char == 'i' and event_mods == MOD_KEY_CTRL:
                     # Tab arrives as ctrl+i (0x09) through the ctrl range classifier
                     cycle_focus(app_state)
