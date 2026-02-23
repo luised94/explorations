@@ -853,25 +853,26 @@ def main() -> None:
                 is_ctrl_c: bool = event_kind == 'char' and event_char == 'c' and event_mods == MOD_KEY_CTRL
                 if is_q or is_ctrl_c:
                     app_state['mode'] = MODE_QUITTING
-                elif event_kind == 'arrow_up':
+                elif event_kind == 'arrow_up' and event_mods == 0:
                     if focused_id != NO_REGION:
                         focused_region: dict = app_state['regions'][focused_id]
                         current_offset: int = focused_region['scroll_offset']
                         if current_offset > 0:
                             focused_region['scroll_offset'] = current_offset - 1
-                elif event_kind == 'arrow_down':
+                elif event_kind == 'arrow_down' and event_mods == 0:
                     if focused_id != NO_REGION:
                         focused_region = app_state['regions'][focused_id]
                         current_offset = focused_region['scroll_offset']
                         max_offset: int = max(0, len(focused_region['lines']) - focused_region['height'])
                         if current_offset < max_offset:
                             focused_region['scroll_offset'] = current_offset + 1
-                elif event_kind == 'char' and event_char == '\t' and event_mods == 0:
+                elif event_kind == 'char' and event_char == 'i' and event_mods == MOD_KEY_CTRL:
+                    # Tab arrives as ctrl+i (0x09) through the ctrl range classifier
                     cycle_focus(app_state)
                 elif event_kind == 'char' and event_char == '/' and event_mods == 0:
                     app_state['mode'] = MODE_COMMAND
             elif current_mode == MODE_QUITTING:
-                break
+                pass   # drain remaining events; outer check breaks the main loop
             elif current_mode == MODE_INPUT:
                 pass   # stub; wired in commit 10
             elif current_mode == MODE_COMMAND:
