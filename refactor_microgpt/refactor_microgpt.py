@@ -442,6 +442,21 @@ for step in range(num_steps):
         adam_elapsed: float = adam_end_time - adam_start_time
         print(f"  timing | fwd: {forward_elapsed:.4f}s  bwd: {backward_elapsed:.4f}s  adam: {adam_elapsed:.4f}s")
 
+    if INSTRUMENT:
+        tape_node_count: int = len(tape_data)
+        grad_norm_parts: list[str] = []
+        for param_name, param_offset_entry in parameter_offset_table.items():
+            param_start: int = param_offset_entry[0]
+            param_rows: int = param_offset_entry[1]
+            param_cols: int = param_offset_entry[2]
+            param_size: int = param_rows * param_cols
+            sum_of_squares: float = 0.0
+            for grad_index in range(param_start, param_start + param_size):
+                sum_of_squares += tape_grad[grad_index] ** 2
+            grad_norm: float = sum_of_squares ** 0.5
+            grad_norm_parts.append(f"{param_name}:{grad_norm:.4f}")
+        print(f"  tape nodes: {tape_node_count} | grad norms: {' '.join(grad_norm_parts)}")
+
 # Inference: may the model babble back to us
 temperature: float = 0.5
 print("\n--- inference ---")
