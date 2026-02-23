@@ -527,7 +527,22 @@ def write_events_to_ring(raw_bytes: bytes, app_state: dict) -> None:
 
         event: dict | None = None
 
-        if 0x20 <= byte_value <= 0x7E:
+        if byte_value == 0x0D:
+            # must be checked before the ctrl range: 0x0D is inside 0x01-0x1A
+            event = {
+                'kind':      'enter',
+                'char':      '',
+                'raw':       bytes([byte_value]),
+                'modifiers': 0,
+            }
+        elif byte_value == 0x7F:
+            event = {
+                'kind':      'backspace',
+                'char':      '',
+                'raw':       bytes([byte_value]),
+                'modifiers': 0,
+            }
+        elif 0x20 <= byte_value <= 0x7E:
             # printable ASCII fast path
             event = {
                 'kind':      'char',
@@ -542,21 +557,8 @@ def write_events_to_ring(raw_bytes: bytes, app_state: dict) -> None:
                 'kind':      'char',
                 'char':      chr(byte_value + 0x60),
                 'raw':       bytes([byte_value]),
+                'modifiers': 0,
                 'modifiers': MOD_KEY_CTRL,
-            }
-        elif byte_value == 0x7F:
-            event = {
-                'kind':      'backspace',
-                'char':      '',
-                'raw':       bytes([byte_value]),
-                'modifiers': 0,
-            }
-        elif byte_value == 0x0D:
-            event = {
-                'kind':      'enter',
-                'char':      '',
-                'raw':       bytes([byte_value]),
-                'modifiers': 0,
             }
         # 0x1B and unrecognised bytes: skipped here; commit 7 handles escape sequences
 
