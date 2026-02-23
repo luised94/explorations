@@ -513,6 +513,71 @@ def render_region(
 # ==============================================================================
 # INPUT / KEY PARSING
 # ==============================================================================
+import select
+
+
+def write_events_to_ring(raw_bytes: bytes, app_state: dict) -> None:
+    ring:        list = app_state['event_ring']
+    write_index: int  = app_state['ring_write_index']
+
+    byte_index: int = 0
+    while byte_index < len(raw_bytes):
+        byte_value: int = raw_bytes[byte_index]
+        byte_index += 1
+
+        event: dict | None = None
+
+        if 0x20 <= byte_value <= 0x7E:
+            # printable ASCII fast path
+            event = {
+                'kind':      'char',
+                'char':      chr(byte_value),
+                'raw':       bytes([byte_value]),
+                'modifiers': 0,
+            }
+        elif 0x01 <= byte_value <= 0x1A:
+            # ctrl+key: 0x01=ctrl+a ... 0x1A=ctrl+z
+            # adding 0x60 maps to the lowercase letter: 0x01+0x60=0x61='a'
+            event = {
+                'kind':      'char',
+                'char':      chr(byte_value + 0x60),
+                'raw':       bytes([byte_value]),
+                'modifiers': MOD_KEY_CTRL,
+            }
+        elif byte_value == 0x7F:
+            event = {
+                'kind':      'backspace',
+                'char':      '',
+                'raw':       bytes([byte_value]),
+                'modifiers': 0,
+            }
+        elif byte_value == 0x0D:
+            event = {
+                'kind':      'enter',
+                'char':      '',
+                'raw':       bytes([byte_value]),
+                'modifiers': 0,
+            }
+        # 0x1B and unrecognised bytes: skipped here; commit 7 handles escape sequences
+
+        if event is not None:
+            # on overflow write_index wraps and overwrites the oldest unread event
+            ring[write_index] = event
+            write_index = (write_index + 1) % RING_BUFFER_CAPACITY
+
+    app_state['ring_write_index'] = write_index
+
+
+def read_event_from_ring(app_state: dict) -> dict | None:
+    read_index:  int = app_state['ring_read_index']
+    write_index: int = app_state['ring_write_index']
+
+    if read_index == write_index:
+        return None
+
+    event: dict = app_state['event_ring'][read_index]
+    app_state['ring_read_index'] = (read_index + 1) % RING_BUFFER_CAPACITY
+    return event
 
 
 # ==============================================================================
@@ -552,7 +617,6 @@ DEFAULT_REGION: dict = {
 }
 
 def main() -> None:
-    import time
     terminal: dict = {
         'width':            0,
         'height':           0,
@@ -581,8 +645,13 @@ def main() -> None:
 
     style_cache: dict = build_style_cache()
 
-    # white text on default background, no modifiers
     default_style: tuple[int, int, int] = (COLOR_TAG_IDX | 15, COLOR_DEFAULT, 0)
+
+    app_state: dict = {
+        'event_ring':       [None] * RING_BUFFER_CAPACITY,
+        'ring_write_index': 0,
+        'ring_read_index':  0,
+    }
 
     header_region: dict = {
         **DEFAULT_REGION,
@@ -592,12 +661,10 @@ def main() -> None:
         'left':      0,
         'width':     grid_width,
         'height':    1,
-        'lines':     ['[ HEADER ]'],
+        'lines':     ['[ INPUT TEST ] press keys - q to quit'],
     }
 
-    content_lines: list = []
-    for line_index in range(10):
-        content_lines.append(f'line {line_index}')
+    event_log: list = ['waiting for input...']
 
     content_region: dict = {
         **DEFAULT_REGION,
@@ -607,25 +674,49 @@ def main() -> None:
         'left':      0,
         'width':     grid_width,
         'height':    grid_height - 1,
-        'lines':     content_lines,
+        'lines':     event_log,
     }
 
-    # frame 1: fill blank, render both regions, flush
-    for index in range(cell_count):
-        grid['current'][index] = BLANK_CELL
-    render_region(header_region,  grid['current'], grid_width, default_style)
-    render_region(content_region, grid['current'], grid_width, default_style)
-    flush_diff(grid['current'], grid['previous'], grid_width, grid_height, style_cache)
-    time.sleep(1)
+    stdin_fd: int = sys.stdin.fileno()
+    running:  bool = True
 
-    # frame 2: change one content line; blank fill prevents stale cell bleed
-    content_region['lines'][3] = 'line 3 -- CHANGED'
-    for index in range(cell_count):
-        grid['current'][index] = BLANK_CELL
-    render_region(header_region,  grid['current'], grid_width, default_style)
-    render_region(content_region, grid['current'], grid_width, default_style)
-    flush_diff(grid['current'], grid['previous'], grid_width, grid_height, style_cache)
-    time.sleep(1)
+    while running:
+        ready_fds: list
+        ready_fds, _, _ = select.select([sys.stdin], [], [], 0.05)
+
+        if ready_fds:
+            raw_bytes: bytes = os.read(stdin_fd, 256)
+            write_events_to_ring(raw_bytes, app_state)
+
+        event: dict | None = read_event_from_ring(app_state)
+        while event is not None:
+            kind:      str = event['kind']
+            char:      str = event['char']
+            modifiers: int = event['modifiers']
+
+            description: str = f'kind={kind}'
+            if char:
+                description = description + f'  char={char!r}'
+            if modifiers & MOD_KEY_CTRL:
+                description = description + '  CTRL'
+
+            event_log.append(description)
+
+            if kind == 'char' and char == 'q' and modifiers == 0:
+                running = False
+
+            event = read_event_from_ring(app_state)
+
+        # scroll content to bottom so newest events are always visible
+        visible_height: int = content_region['height']
+        if len(event_log) > visible_height:
+            content_region['scroll_offset'] = len(event_log) - visible_height
+
+        for index in range(cell_count):
+            grid['current'][index] = BLANK_CELL
+        render_region(header_region,  grid['current'], grid_width, default_style)
+        render_region(content_region, grid['current'], grid_width, default_style)
+        flush_diff(grid['current'], grid['previous'], grid_width, grid_height, style_cache)
 
     restore_terminal(terminal)
     print("ok")
