@@ -1,24 +1,22 @@
-
 """
 The most atomic way to train and inference a GPT in pure, dependency-free Python.
 This file is the complete algorithm.
 Everything else is just efficiency.
-
 @karpathy
 """
-
 import os       # os.path.exists
 import math     # math.log, math.exp
+import time     # time.perf_counter (instrumentation)
 import random   # random.seed, random.choices, random.gauss, random.shuffle
-
 random.seed(42) # Let there be order among chaos
+
+INSTRUMENT: bool = False  # When True, prints phase timing after each step loss line
 
 # Let there be an input dataset `docs`: list[str] of documents (e.g. a dataset of names)
 if not os.path.exists('input.txt'):
     import urllib.request
     names_url: str = 'https://raw.githubusercontent.com/karpathy/makemore/refs/heads/master/names.txt'
     urllib.request.urlretrieve(names_url, 'input.txt')
-
 file_content: str = open('input.txt').read().strip()
 document_lines: list[str] = file_content.split('\n')
 docs: list[str] = []
@@ -129,7 +127,6 @@ print(f"num params: {len(parameter_data)}")
 
 # Define the model architecture: a stateless function mapping token sequence and parameters to logits over what comes next.
 # Follow GPT-2, blessed among the GPTs, with minor differences: layernorm -> rmsnorm, no biases, GeLU -> ReLU^2
-
 def get_weight_matrix_tape(name: str) -> list[list[int]]:
     start_index: int
     number_of_rows: int
@@ -257,38 +254,30 @@ def forward_training(token_id: int, position_index: int, keys: list[list[list[in
     wte_start, wte_rows, wte_cols = parameter_offset_table['wte']
     tok_emb_start: int = wte_start + token_id * wte_cols
     token_embedding: list[int] = list(range(tok_emb_start, tok_emb_start + wte_cols))
-    
     wpe_start: int
     wpe_rows: int
     wpe_cols: int
     wpe_start, wpe_rows, wpe_cols = parameter_offset_table['wpe']
     pos_emb_start: int = wpe_start + position_index * wpe_cols
     position_embedding: list[int] = list(range(pos_emb_start, pos_emb_start + wpe_cols))
-    
     hidden: list[int] = []
     for tok_index, pos_index in zip(token_embedding, position_embedding):
         hidden.append(tape_add(tok_index, pos_index))
-    
     hidden = rmsnorm_tape(hidden)
-    
     for layer_index in range(number_of_layers):
         residual: list[int] = hidden
         hidden = rmsnorm_tape(hidden)
-        
         query: list[int] = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.attn_wq'))
         key: list[int] = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.attn_wk'))
         value: list[int] = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.attn_wv'))
-        
         keys[layer_index].append(key)
         values[layer_index].append(value)
-        
         attention_output: list[int] = []
         for head_index in range(number_of_heads):
             head_start: int = head_index * head_dimension
             query_head: list[int] = query[head_start:head_start+head_dimension]
             key_head: list[list[int]] = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
             value_head: list[list[int]] = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
-            
             attn_logits: list[int] = []
             for time_step in range(len(key_head)):
                 dot_product: int | None = None
@@ -302,9 +291,7 @@ def forward_training(token_id: int, position_index: int, keys: list[list[list[in
                 inv_scale: int = tape_power(scale, -1.0)
                 scaled_logit: int = tape_multiply(dot_product, inv_scale)
                 attn_logits.append(scaled_logit)
-            
             attn_weights: list[int] = softmax_tape(attn_logits)
-            
             for dimension_index in range(head_dimension):
                 head_out_j: int | None = None
                 for time_step in range(len(value_head)):
@@ -314,17 +301,14 @@ def forward_training(token_id: int, position_index: int, keys: list[list[list[in
                     else:
                         head_out_j = tape_add(head_out_j, product)
                 attention_output.append(head_out_j)
-        
         hidden = linear_tape(attention_output, get_weight_matrix_tape(f'layer{layer_index}.attn_wo'))
         hidden = [tape_add(a, b) for a, b in zip(hidden, residual)]
-        
         residual = hidden
         hidden = rmsnorm_tape(hidden)
         hidden = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc1'))
         hidden = [tape_power(tape_relu(xi), 2.0) for xi in hidden]
         hidden = linear_tape(hidden, get_weight_matrix_tape(f'layer{layer_index}.mlp_fc2'))
         hidden = [tape_add(a, b) for a, b in zip(hidden, residual)]
-    
     logits: list[int] = linear_tape(hidden, get_weight_matrix_tape('lm_head'))
     return logits
 
@@ -337,7 +321,6 @@ def forward_inference(token_id: int, position_index: int, keys: list[list[list[f
     token_embedding: list[float] = []
     for column_index in range(wte_cols):
         token_embedding.append(parameter_data[tok_emb_start + column_index])
-    
     wpe_start: int
     wpe_rows: int
     wpe_cols: int
@@ -346,31 +329,24 @@ def forward_inference(token_id: int, position_index: int, keys: list[list[list[f
     position_embedding: list[float] = []
     for column_index in range(wpe_cols):
         position_embedding.append(parameter_data[pos_emb_start + column_index])
-    
     hidden: list[float] = []
     for tok_value, pos_value in zip(token_embedding, position_embedding):
         hidden.append(tok_value + pos_value)
-    
     hidden = rmsnorm_float(hidden)
-    
     for layer_index in range(number_of_layers):
         residual: list[float] = hidden
         hidden = rmsnorm_float(hidden)
-        
         query: list[float] = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.attn_wq'))
         key: list[float] = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.attn_wk'))
         value: list[float] = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.attn_wv'))
-        
         keys[layer_index].append(key)
         values[layer_index].append(value)
-        
         attention_output: list[float] = []
         for head_index in range(number_of_heads):
             head_start: int = head_index * head_dimension
             query_head: list[float] = query[head_start:head_start+head_dimension]
             key_head: list[list[float]] = [ki[head_start:head_start+head_dimension] for ki in keys[layer_index]]
             value_head: list[list[float]] = [vi[head_start:head_start+head_dimension] for vi in values[layer_index]]
-            
             attn_logits: list[float] = []
             for time_step in range(len(key_head)):
                 dot_product: float = 0.0
@@ -378,25 +354,20 @@ def forward_inference(token_id: int, position_index: int, keys: list[list[list[f
                     dot_product += query_head[dimension_index] * key_head[time_step][dimension_index]
                 scaled_logit: float = dot_product / (head_dimension ** 0.5)
                 attn_logits.append(scaled_logit)
-            
             attn_weights: list[float] = softmax_float(attn_logits)
-            
             for dimension_index in range(head_dimension):
                 head_out_j: float = 0.0
                 for time_step in range(len(value_head)):
                     head_out_j += attn_weights[time_step] * value_head[time_step][dimension_index]
                 attention_output.append(head_out_j)
-        
         hidden = linear_float(attention_output, get_weight_matrix_float(f'layer{layer_index}.attn_wo'))
         hidden = [a + b for a, b in zip(hidden, residual)]
-        
         residual = hidden
         hidden = rmsnorm_float(hidden)
         hidden = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.mlp_fc1'))
         hidden = [max(0.0, xi) ** 2.0 for xi in hidden]
         hidden = linear_float(hidden, get_weight_matrix_float(f'layer{layer_index}.mlp_fc2'))
         hidden = [a + b for a, b in zip(hidden, residual)]
-    
     logits: list[float] = linear_float(hidden, get_weight_matrix_float('lm_head'))
     return logits
 
@@ -406,7 +377,7 @@ beta1: float
 beta2: float
 epsilon_adam: float
 learning_rate, beta1, beta2, epsilon_adam = 1e-2, 0.9, 0.95, 1e-8
-first_moment: list[float] = [0.0] * len(parameter_data) # first moment buffer
+first_moment: list[float] = [0.0] * len(parameter_data)  # first moment buffer
 second_moment: list[float] = [0.0] * len(parameter_data) # second moment buffer
 
 # Repeat in sequence
@@ -416,15 +387,17 @@ for step in range(num_steps):
     tape_grad = [0.0] * len(parameter_data)
     tape_children = [() for _ in range(len(parameter_data))]
     tape_local_grads = [() for _ in range(len(parameter_data))]
-    
+
     doc: str = docs[step % len(docs)]
     tokens: list[int] = [BOS] + [character_to_token[character] for character in doc] + [BOS]
     sequence_length: int = min(block_size, len(tokens) - 1)
-    
     keys: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
     values: list[list[list[int]]] = [[] for _ in range(number_of_layers)]
-    
     losses: list[int] = []
+
+    if INSTRUMENT:
+        forward_start_time: float = time.perf_counter()
+
     for position_index in range(sequence_length):
         token_id: int
         target_id: int
@@ -434,16 +407,22 @@ for step in range(num_steps):
         neg_one: int = tape_append_node(-1.0, (), ())
         position_loss: int = tape_multiply(neg_one, tape_log(probs[target_id]))
         losses.append(position_loss)
-    
     total_loss_sum: int = losses[0]
     for position_loss in losses[1:]:
         total_loss_sum = tape_add(total_loss_sum, position_loss)
-    
     loss_scale: int = tape_append_node(1.0 / sequence_length, (), ())
     loss: int = tape_multiply(loss_scale, total_loss_sum)
-    
+
+    if INSTRUMENT:
+        forward_end_time: float = time.perf_counter()
+        backward_start_time: float = forward_end_time
+
     tape_backward(loss)
-    
+
+    if INSTRUMENT:
+        backward_end_time: float = time.perf_counter()
+        adam_start_time: float = backward_end_time
+
     adjusted_learning_rate: float = learning_rate * 0.5 * (1 + math.cos(math.pi * step / num_steps))
     for parameter_index in range(len(parameter_data)):
         first_moment[parameter_index] = beta1 * first_moment[parameter_index] + (1 - beta1) * tape_grad[parameter_index]
@@ -451,8 +430,17 @@ for step in range(num_steps):
         first_moment_corrected: float = first_moment[parameter_index] / (1 - beta1 ** (step + 1))
         second_moment_corrected: float = second_moment[parameter_index] / (1 - beta2 ** (step + 1))
         parameter_data[parameter_index] -= adjusted_learning_rate * first_moment_corrected / (second_moment_corrected ** 0.5 + epsilon_adam)
-    
+
+    if INSTRUMENT:
+        adam_end_time: float = time.perf_counter()
+
     print(f"step {step+1:4d} / {num_steps:4d} | loss {tape_data[loss]:.4f}")
+
+    if INSTRUMENT:
+        forward_elapsed: float = forward_end_time - forward_start_time
+        backward_elapsed: float = backward_end_time - backward_start_time
+        adam_elapsed: float = adam_end_time - adam_start_time
+        print(f"  timing | fwd: {forward_elapsed:.4f}s  bwd: {backward_elapsed:.4f}s  adam: {adam_elapsed:.4f}s")
 
 # Inference: may the model babble back to us
 temperature: float = 0.5
