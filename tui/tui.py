@@ -459,6 +459,55 @@ def test_diff() -> None:
 # ==============================================================================
 # REGIONS
 # ==============================================================================
+def render_region(
+    region:        dict,
+    current_cells: list,
+    grid_width:    int,
+    default_style: tuple[int, int, int],
+) -> None:
+    grid_height: int = len(current_cells) // grid_width
+
+    region_top:    int  = region['top']
+    region_left:   int  = region['left']
+    region_width:  int  = region['width']
+    region_height: int  = region['height']
+    scroll_offset: int  = region['scroll_offset']
+    lines:         list = region['lines']
+
+    fg_color:  int = default_style[0]
+    bg_color:  int = default_style[1]
+    modifiers: int = default_style[2]
+
+    for display_row in range(region_height):
+        grid_row: int = region_top + display_row
+        if grid_row < 0:
+            continue
+        if grid_row >= grid_height:
+            break   # rows only increase; no further row can be in bounds
+
+        source_line_index: int = display_row + scroll_offset
+
+        line: str = ''
+        if source_line_index >= 0:
+            if source_line_index < len(lines):
+                line = lines[source_line_index]
+
+        for column in range(region_width):
+            grid_col: int = region_left + column
+            if grid_col < 0:
+                continue
+            if grid_col >= grid_width:
+                break   # columns only increase; no further column can be in bounds
+
+            cell_index: int = grid_row * grid_width + grid_col
+
+            symbol: str
+            if column < len(line):
+                symbol = line[column]
+            else:
+                symbol = ' '
+
+            current_cells[cell_index] = (symbol, fg_color, bg_color, modifiers)
 
 
 # ==============================================================================
@@ -532,40 +581,50 @@ def main() -> None:
 
     style_cache: dict = build_style_cache()
 
-    color_a: int = COLOR_TAG_IDX | 196   # palette red
-    color_b: int = COLOR_TAG_IDX | 12    # ANSI blue, index 12
+    # white text on default background, no modifiers
+    default_style: tuple[int, int, int] = (COLOR_TAG_IDX | 15, COLOR_DEFAULT, 0)
 
-    # build checkerboard into current
-    for row in range(grid_height):
-        for column in range(grid_width):
-            cell_index: int = row * grid_width + column
-            is_even: bool = (row + column) % 2 == 0
-            if is_even:
-                grid['current'][cell_index] = ('A', color_a, COLOR_DEFAULT, MOD_BOLD)
-            else:
-                grid['current'][cell_index] = ('B', color_b, COLOR_DEFAULT, 0)
+    header_region: dict = {
+        **DEFAULT_REGION,
+        'region_id': 0,
+        'name':      'header',
+        'top':       0,
+        'left':      0,
+        'width':     grid_width,
+        'height':    1,
+        'lines':     ['[ HEADER ]'],
+    }
 
-    # frame 1: previous is all BLANK_CELL so every cell is "changed" -- full draw
-    flush_diff(
-        grid['current'],
-        grid['previous'],
-        grid_width,
-        grid_height,
-        style_cache,
-    )
+    content_lines: list = []
+    for line_index in range(10):
+        content_lines.append(f'line {line_index}')
+
+    content_region: dict = {
+        **DEFAULT_REGION,
+        'region_id': 1,
+        'name':      'content',
+        'top':       1,
+        'left':      0,
+        'width':     grid_width,
+        'height':    grid_height - 1,
+        'lines':     content_lines,
+    }
+
+    # frame 1: fill blank, render both regions, flush
+    for index in range(cell_count):
+        grid['current'][index] = BLANK_CELL
+    render_region(header_region,  grid['current'], grid_width, default_style)
+    render_region(content_region, grid['current'], grid_width, default_style)
+    flush_diff(grid['current'], grid['previous'], grid_width, grid_height, style_cache)
     time.sleep(1)
 
-    # change exactly two cells; frame 2 should emit only those two
-    grid['current'][0] = ('X', COLOR_TAG_IDX | 226, COLOR_DEFAULT, MOD_UNDERLINE)
-    grid['current'][1] = ('Y', COLOR_TAG_IDX | 46,  COLOR_DEFAULT, 0)
-
-    flush_diff(
-        grid['current'],
-        grid['previous'],
-        grid_width,
-        grid_height,
-        style_cache,
-    )
+    # frame 2: change one content line; blank fill prevents stale cell bleed
+    content_region['lines'][3] = 'line 3 -- CHANGED'
+    for index in range(cell_count):
+        grid['current'][index] = BLANK_CELL
+    render_region(header_region,  grid['current'], grid_width, default_style)
+    render_region(content_region, grid['current'], grid_width, default_style)
+    flush_diff(grid['current'], grid['previous'], grid_width, grid_height, style_cache)
     time.sleep(1)
 
     restore_terminal(terminal)
