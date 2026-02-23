@@ -270,6 +270,191 @@ def flush_full(
     output.write(b'\033[0m')
     os.write(1, output.getvalue())
 
+def row_has_changed(
+    current_cells:  list,
+    previous_cells: list,
+    row_start:      int,
+    row_end:        int,
+) -> bool:
+    for index in range(row_start, row_end):
+        if current_cells[index] != previous_cells[index]:
+            return True
+    return False
+
+
+def flush_diff(
+    current_cells:  list,
+    previous_cells: list,
+    width:          int,
+    height:         int,
+    style_cache:    dict,
+) -> None:
+    # style delta register: tracks what the terminal currently has applied.
+    # sentinel -1 forces a style emit on the very first changed cell.
+    register_fg:   int = -1
+    register_bg:   int = -1
+    register_mods: int = -1
+
+    output: io.BytesIO = io.BytesIO()
+
+    for row in range(height):
+        row_start: int = row * width
+        row_end:   int = row_start + width
+
+        if not row_has_changed(current_cells, previous_cells, row_start, row_end):
+            # nothing written to terminal; style register remains accurate.
+            continue
+
+        cursor_at_column: int = -1   # unknown until first emit in this row
+
+        for column in range(width):
+            cell_index:    int  = row_start + column
+            current_cell:  Cell = current_cells[cell_index]
+            previous_cell: Cell = previous_cells[cell_index]
+
+            if current_cell == previous_cell:
+                cursor_at_column = -1   # gap: cursor position now unknown
+                continue
+
+            symbol:    str = current_cell[0]
+            fg_color:  int = current_cell[1]
+            bg_color:  int = current_cell[2]
+            modifiers: int = current_cell[3]
+
+            if cursor_at_column != column:
+                # rows and columns are 1-based in ANSI escape sequences
+                output.write(f'\033[{row + 1};{column + 1}H'.encode('ascii'))
+
+            style_changed: bool = (
+                fg_color  != register_fg   or
+                bg_color  != register_bg   or
+                modifiers != register_mods
+            )
+            if style_changed:
+                output.write(get_style_bytes(fg_color, bg_color, modifiers, style_cache))
+                register_fg   = fg_color
+                register_bg   = bg_color
+                register_mods = modifiers
+
+            output.write(symbol.encode('utf-8'))
+            cursor_at_column = column + 1   # terminal cursor auto-advances after emit
+
+    # reset SGR at end of frame
+    output.write(b'\033[0m')
+    os.write(1, output.getvalue())
+
+    # swap: previous now matches what was written to the terminal
+    previous_cells[:] = current_cells[:]
+
+
+def test_diff() -> None:
+    import sys as _sys
+
+    width:  int = 4
+    height: int = 3
+    count:  int = width * height
+
+    color_a: int = COLOR_TAG_IDX | 196
+    color_b: int = COLOR_TAG_IDX | 12
+
+    cell_a: Cell = ('A', color_a, COLOR_DEFAULT, MOD_BOLD)
+    cell_b: Cell = ('B', color_b, COLOR_DEFAULT, 0)
+
+    pass_count: int = 0
+    fail_count: int = 0
+
+    def report(label: str, passed: bool) -> None:
+        nonlocal pass_count, fail_count
+        status: str = 'PASS' if passed else 'FAIL'
+        _sys.stderr.write(f'test_diff: {status}: {label}\n')
+        if passed:
+            pass_count += 1
+        else:
+            fail_count += 1
+
+    # --- row_has_changed tests -----------------------------------------------
+
+    all_a: list = [cell_a] * count
+    all_b: list = [cell_b] * count
+
+    report(
+        'row_has_changed: identical rows returns False',
+        row_has_changed(all_a, all_a, 0, width) is False,
+    )
+    report(
+        'row_has_changed: all-different row returns True',
+        row_has_changed(all_a, all_b, 0, width) is True,
+    )
+
+    mixed_current:  list = list(all_a)
+    mixed_previous: list = list(all_a)
+    mixed_current[width + 2] = cell_b   # only one cell in row 1 differs
+
+    report(
+        'row_has_changed: unchanged row 0 returns False',
+        row_has_changed(mixed_current, mixed_previous, 0, width) is False,
+    )
+    report(
+        'row_has_changed: changed row 1 returns True',
+        row_has_changed(mixed_current, mixed_previous, width, width * 2) is True,
+    )
+    report(
+        'row_has_changed: unchanged row 2 returns False',
+        row_has_changed(mixed_current, mixed_previous, width * 2, count) is False,
+    )
+
+    # --- flush_diff swap postcondition ---------------------------------------
+
+    current_cells:  list = [cell_a if (i % 2 == 0) else cell_b for i in range(count)]
+    previous_cells: list = [BLANK_CELL] * count
+    style_cache:    dict = build_style_cache()
+
+    # redirect fd 1 to a pipe so the escape output does not disturb the screen
+    read_fd: int
+    write_fd: int
+    read_fd, write_fd = os.pipe()
+    saved_fd: int = os.dup(1)
+    os.dup2(write_fd, 1)
+    os.close(write_fd)
+
+    flush_diff(current_cells, previous_cells, width, height, style_cache)
+
+    os.dup2(saved_fd, 1)
+    os.close(saved_fd)
+    captured_bytes: bytes = os.read(read_fd, 65536)
+    os.close(read_fd)
+
+    report(
+        'flush_diff: previous_cells == current_cells after swap',
+        previous_cells == current_cells,
+    )
+
+    # --- no-op frame: identical current and previous -------------------------
+
+    read_fd, write_fd = os.pipe()
+    saved_fd = os.dup(1)
+    os.dup2(write_fd, 1)
+    os.close(write_fd)
+
+    flush_diff(current_cells, previous_cells, width, height, style_cache)
+
+    os.dup2(saved_fd, 1)
+    os.close(saved_fd)
+    noop_bytes: bytes = os.read(read_fd, 65536)
+    os.close(read_fd)
+
+    report(
+        'flush_diff: identical grid emits only SGR reset',
+        noop_bytes == b'\033[0m',
+    )
+
+    # --- summary -------------------------------------------------------------
+    _sys.stderr.write(
+        f'test_diff: {pass_count} passed, {fail_count} failed\n'
+    )
+    if fail_count > 0:
+        _sys.exit(1)
+
 
 # ==============================================================================
 # REGIONS
@@ -319,13 +504,11 @@ DEFAULT_REGION: dict = {
 
 def main() -> None:
     import time
-
     terminal: dict = {
         'width':            0,
         'height':           0,
         'original_termios': None,
     }
-
     atexit.register(restore_terminal, terminal)
 
     def _restore_on_signal(signal_number: int, frame: object) -> None:
@@ -334,7 +517,6 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, _restore_on_signal)
     signal.signal(signal.SIGHUP, _restore_on_signal)
-
     enter_raw_mode(terminal)
 
     grid_width:  int = terminal['width']
@@ -350,10 +532,10 @@ def main() -> None:
 
     style_cache: dict = build_style_cache()
 
-    # checkerboard: two chars, two fg colors (one indexed, one RGB), one modifier
-    color_a: int = COLOR_TAG_IDX | 196        # palette red
-    color_b: int = COLOR_TAG_IDX | 12   # ANSI blue, index 12
+    color_a: int = COLOR_TAG_IDX | 196   # palette red
+    color_b: int = COLOR_TAG_IDX | 12    # ANSI blue, index 12
 
+    # build checkerboard into current
     for row in range(grid_height):
         for column in range(grid_width):
             cell_index: int = row * grid_width + column
@@ -363,11 +545,32 @@ def main() -> None:
             else:
                 grid['current'][cell_index] = ('B', color_b, COLOR_DEFAULT, 0)
 
-    flush_full(grid['current'], grid_width, grid_height, style_cache)
-    time.sleep(2)
+    # frame 1: previous is all BLANK_CELL so every cell is "changed" -- full draw
+    flush_diff(
+        grid['current'],
+        grid['previous'],
+        grid_width,
+        grid_height,
+        style_cache,
+    )
+    time.sleep(1)
+
+    # change exactly two cells; frame 2 should emit only those two
+    grid['current'][0] = ('X', COLOR_TAG_IDX | 226, COLOR_DEFAULT, MOD_UNDERLINE)
+    grid['current'][1] = ('Y', COLOR_TAG_IDX | 46,  COLOR_DEFAULT, 0)
+
+    flush_diff(
+        grid['current'],
+        grid['previous'],
+        grid_width,
+        grid_height,
+        style_cache,
+    )
+    time.sleep(1)
 
     restore_terminal(terminal)
     print("ok")
 
 if __name__ == '__main__':
+    test_diff()
     main()
