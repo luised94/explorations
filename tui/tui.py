@@ -752,11 +752,14 @@ def parse_escape_sequence(
 # ==============================================================================
 
 def handle_input_submit(app_state: dict) -> None:
-    # stub: called when enter is pressed in MODE_INPUT
     submitted: str = app_state['input_buffer']
     app_state['input_buffer'] = ''
     app_state['mode'] = MODE_NORMAL
-    _ = submitted   # placeholder until commit 10 wires this up
+    if not submitted:
+        return
+    # append submitted line to content region for visibility until commit 11
+    content_region: dict = app_state['regions'][1]
+    content_region['lines'].append('input: ' + submitted)
 
 def handle_command(command: str, app_state: dict) -> None:
     # stub: called when enter is pressed in MODE_COMMAND
@@ -968,12 +971,24 @@ def main() -> None:
                         })
                     )
                     app_state['tab_debug_log'].append(tab_entry)
+                elif event_kind == 'char' and event_char == 'i' and event_mods == 0:
+                    app_state['mode'] = MODE_INPUT
                 elif event_kind == 'char' and event_char == '/' and event_mods == 0:
                     app_state['mode'] = MODE_COMMAND
             elif current_mode == MODE_QUITTING:
                 pass   # drain remaining events; outer check breaks the main loop
             elif current_mode == MODE_INPUT:
-                pass   # stub; wired in commit 10
+                if event_kind == 'enter':
+                    handle_input_submit(app_state)
+                elif event_kind == 'escape':
+                    app_state['input_buffer'] = ''
+                    app_state['mode'] = MODE_NORMAL
+                elif event_kind == 'backspace':
+                    current_buffer: str = app_state['input_buffer']
+                    if len(current_buffer) > 0:
+                        app_state['input_buffer'] = current_buffer[:-1]
+                elif event_kind == 'char' and event_mods == 0:
+                    app_state['input_buffer'] = app_state['input_buffer'] + event_char
             elif current_mode == MODE_COMMAND:
                 pass   # stub; wired in commit 11
             elif current_mode == MODE_CONFIRM:
@@ -990,9 +1005,16 @@ def main() -> None:
         last_kind: str = app_state['last_event_kind']
         last_mods: int = app_state['last_event_mods']
         last_char: str = app_state['last_event_char']
+
+        current_mode_now: str = app_state['mode']
+        input_buffer_now: str = app_state['input_buffer']
+        if current_mode_now == MODE_INPUT:
+            mode_display: str = f'INPUT> {input_buffer_now}_'
+        else:
+            mode_display = f'[ TUI ] q=quit  scroll={scroll_offset_now}'
         header_lines[0] = (
-            f'[ TUI ] q=quit  scroll={scroll_offset_now}'
-            f'  evt={last_kind} ch={last_char!r} mod={last_mods}'
+            mode_display
+            + f'  evt={last_kind} ch={last_char!r} mod={last_mods}'
         )
 
         # render pass: clear grid, render each region, flush diff
