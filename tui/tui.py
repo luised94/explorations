@@ -352,7 +352,7 @@ def main() -> None:
 
     # checkerboard: two chars, two fg colors (one indexed, one RGB), one modifier
     color_a: int = COLOR_TAG_IDX | 196        # palette red
-    color_b: int = COLOR_TAG_RGB | 0x00_00AF  # RGB blue
+    color_b: int = COLOR_TAG_IDX | 12   # ANSI blue, index 12
 
     for row in range(grid_height):
         for column in range(grid_width):
