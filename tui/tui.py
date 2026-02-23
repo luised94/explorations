@@ -60,6 +60,45 @@ RAW_LOG_PATH: str = ''
 # TERMINAL SETUP / TEARDOWN
 # ==============================================================================
 
+import atexit
+import os
+import signal
+import sys
+import termios
+import tty
+
+
+def enter_raw_mode(terminal: dict) -> None:
+    file_descriptor: int = sys.stdin.fileno()
+    original_termios: list = termios.tcgetattr(file_descriptor)
+    terminal['original_termios'] = original_termios
+
+    new_width: int
+    new_height: int
+    new_height, new_width = os.get_terminal_size()
+    terminal['width'] = new_width
+    terminal['height'] = new_height
+
+    # enter alternate screen buffer, then hide cursor
+    sys.stdout.write('\033[?1049h')
+    sys.stdout.write('\033[?25l')
+    sys.stdout.flush()
+
+    tty.setraw(file_descriptor)
+
+
+def restore_terminal(terminal: dict) -> None:
+    file_descriptor: int = sys.stdin.fileno()
+
+    saved_termios: list | None = terminal['original_termios']
+    if saved_termios is not None:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, saved_termios)
+
+    # show cursor, then exit alternate screen buffer
+    sys.stdout.write('\033[?25h')
+    sys.stdout.write('\033[?1049l')
+    sys.stdout.flush()
+
 # ==============================================================================
 # HOT PATH: 2D CELL GRID
 # ==============================================================================
@@ -112,8 +151,40 @@ DEFAULT_REGION: dict = {
 
 
 def main() -> None:
-    print("ok")
+    print("STEP 1: main() entered", flush=True)
 
+    terminal: dict = {
+        'width':            0,
+        'height':           0,
+        'original_termios': None,
+    }
+
+    print("STEP 2: terminal dict created", flush=True)
+
+    file_descriptor: int = sys.stdin.fileno()
+    print(f"STEP 3: stdin fd = {file_descriptor}", flush=True)
+
+    is_a_tty: bool = os.isatty(file_descriptor)
+    print(f"STEP 4: stdin is a tty = {is_a_tty}", flush=True)
+
+    print("STEP 5: calling enter_raw_mode", flush=True)
+    enter_raw_mode(terminal)
+    print("STEP 6: enter_raw_mode returned", flush=True)
+
+    def _restore_on_signal(signal_number: int, frame: object) -> None:
+        restore_terminal(terminal)
+        sys.exit(0)
+
+    atexit.register(restore_terminal, terminal)
+    signal.signal(signal.SIGTERM, _restore_on_signal)
+    signal.signal(signal.SIGHUP, _restore_on_signal)
+
+    sys.stdout.write("STEP 7: in raw mode, writing ok\r\n")
+    sys.stdout.flush()
+
+    restore_terminal(terminal)
+    print("STEP 8: restore_terminal returned", flush=True)
+    print("ok", flush=True)
 
 if __name__ == '__main__':
     main()
