@@ -615,6 +615,31 @@ def parse_escape_sequence(
         return event, index
 
     next_byte: int = raw_bytes[index]
+    if next_byte == ord('O'):
+        # SS3 sequence: \033 O <final>  (application cursor key mode)
+        index += 1
+        if index >= len(raw_bytes):
+            return None, index
+        ss3_final: int = raw_bytes[index]
+        index += 1
+        ss3_kind: str = ''
+        if ss3_final == ord('A'):
+            ss3_kind = 'arrow_up'
+        elif ss3_final == ord('B'):
+            ss3_kind = 'arrow_down'
+        elif ss3_final == ord('C'):
+            ss3_kind = 'arrow_right'
+        elif ss3_final == ord('D'):
+            ss3_kind = 'arrow_left'
+        if not ss3_kind:
+            return None, index
+        ss3_event: dict = {
+            'kind':      ss3_kind,
+            'char':      '',
+            'raw':       raw_bytes[start_index:index],
+            'modifiers': 0,
+        }
+        return ss3_event, index
 
     if next_byte != ord('['):
         # not a CSI sequence; emit escape, leave next_byte for next iteration
@@ -790,7 +815,7 @@ def main() -> None:
         'previous': [BLANK_CELL] * cell_count,
     }
     default_style: tuple[int, int, int] = (COLOR_TAG_IDX | 15, COLOR_DEFAULT, 0)
-    header_lines: list = ['[ TUI ] arrows scroll content  /=command  q=quit']
+    header_lines: list = ['[ TUI ] arrows scroll  /=command  q=quit  scroll=0 focused=1']
     content_lines: list = []
     for line_number in range(1, 51):
         content_lines.append(f'line {line_number:02d}  ' + ('- ' * 20))
@@ -882,6 +907,15 @@ def main() -> None:
             event = read_event_from_ring(app_state)
         if app_state['mode'] == MODE_QUITTING:
             break
+        # update header diagnostic before render
+        focused_region_id_now: int = app_state['focused_region_id']
+        scroll_offset_now: int = 0
+        if focused_region_id_now != NO_REGION:
+            scroll_offset_now = app_state['regions'][focused_region_id_now]['scroll_offset']
+        header_lines[0] = (
+            f'[ TUI ] arrows scroll  /=command  q=quit'
+            f'  scroll={scroll_offset_now}  focused={focused_region_id_now}'
+        )
         # render pass: clear grid, render each region, flush diff
         for cell_index in range(cell_count):
             grid['current'][cell_index] = BLANK_CELL
