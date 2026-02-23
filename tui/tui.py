@@ -142,6 +142,134 @@ def restore_terminal(terminal: dict) -> None:
 # HOT PATH: 2D CELL GRID
 # ==============================================================================
 
+import io
+
+
+def build_color_escape_fg(color: int) -> bytes:
+    tag: int = color & 0xFF_000000
+    value: int = color & 0x00_FFFFFF
+    if tag == COLOR_DEFAULT:
+        return b'\033[39m'
+    if tag == COLOR_TAG_IDX:
+        index: int = value & 0xFF
+        return f'\033[38;5;{index}m'.encode('ascii')
+    if tag == COLOR_TAG_RGB:
+        red: int   = (value >> 16) & 0xFF
+        green: int = (value >>  8) & 0xFF
+        blue: int  =  value        & 0xFF
+        return f'\033[38;2;{red};{green};{blue}m'.encode('ascii')
+    return b'\033[39m'
+
+
+def build_color_escape_bg(color: int) -> bytes:
+    tag: int = color & 0xFF_000000
+    value: int = color & 0x00_FFFFFF
+    if tag == COLOR_DEFAULT:
+        return b'\033[49m'
+    if tag == COLOR_TAG_IDX:
+        index: int = value & 0xFF
+        return f'\033[48;5;{index}m'.encode('ascii')
+    if tag == COLOR_TAG_RGB:
+        red: int   = (value >> 16) & 0xFF
+        green: int = (value >>  8) & 0xFF
+        blue: int  =  value        & 0xFF
+        return f'\033[48;2;{red};{green};{blue}m'.encode('ascii')
+    return b'\033[49m'
+
+
+def build_modifier_escape(modifiers: int) -> bytes:
+    # always reset first, then re-apply requested attributes
+    buf: io.BytesIO = io.BytesIO()
+    buf.write(b'\033[0m')
+    if modifiers & MOD_BOLD:
+        buf.write(b'\033[1m')
+    if modifiers & MOD_DIM:
+        buf.write(b'\033[2m')
+    if modifiers & MOD_ITALIC:
+        buf.write(b'\033[3m')
+    if modifiers & MOD_UNDERLINE:
+        buf.write(b'\033[4m')
+    if modifiers & MOD_BLINK:
+        buf.write(b'\033[5m')
+    if modifiers & MOD_REVERSE:
+        buf.write(b'\033[7m')
+    if modifiers & MOD_HIDDEN:
+        buf.write(b'\033[8m')
+    if modifiers & MOD_STRIKETHROUGH:
+        buf.write(b'\033[9m')
+    return buf.getvalue()
+
+
+def build_style_cache() -> dict:
+    # pre-builds nothing at startup; populated on first encounter of each
+    # (fg_color, bg_color, modifiers) triple during flush
+    # returns an empty dict; flush functions populate it lazily
+    return {}
+
+
+def get_style_bytes(
+    fg_color:    int,
+    bg_color:    int,
+    modifiers:   int,
+    style_cache: dict,
+) -> bytes:
+    cache_key: tuple[int, int, int] = (fg_color, bg_color, modifiers)
+    if cache_key in style_cache:
+        return style_cache[cache_key]
+    buf: io.BytesIO = io.BytesIO()
+    buf.write(build_modifier_escape(modifiers))
+    buf.write(build_color_escape_fg(fg_color))
+    buf.write(build_color_escape_bg(bg_color))
+    result: bytes = buf.getvalue()
+    style_cache[cache_key] = result
+    return result
+
+
+def flush_full(
+    current_cells: list,
+    width:         int,
+    height:        int,
+    style_cache:   dict,
+) -> None:
+    # style delta register - tracks what the terminal currently has applied
+    # sentinel: -1 forces a style emit on the very first cell
+    register_fg:   int = -1
+    register_bg:   int = -1
+    register_mods: int = -1
+
+    output: io.BytesIO = io.BytesIO()
+
+    for row in range(height):
+        # move cursor to start of row (1-based)
+        output.write(f'\033[{row + 1};1H'.encode('ascii'))
+
+        for column in range(width):
+            cell_index: int = row * width + column
+            cell: Cell = current_cells[cell_index]
+
+            symbol:    str = cell[0]
+            fg_color:  int = cell[1]
+            bg_color:  int = cell[2]
+            modifiers: int = cell[3]
+
+            style_changed: bool = (
+                fg_color  != register_fg   or
+                bg_color  != register_bg   or
+                modifiers != register_mods
+            )
+
+            if style_changed:
+                output.write(get_style_bytes(fg_color, bg_color, modifiers, style_cache))
+                register_fg   = fg_color
+                register_bg   = bg_color
+                register_mods = modifiers
+
+            output.write(symbol.encode('utf-8'))
+
+    # reset SGR at end of frame
+    output.write(b'\033[0m')
+    os.write(1, output.getvalue())
+
 
 # ==============================================================================
 # REGIONS
@@ -189,16 +317,15 @@ DEFAULT_REGION: dict = {
     'is_focused':    False,
 }
 
-
 def main() -> None:
+    import time
+
     terminal: dict = {
         'width':            0,
         'height':           0,
         'original_termios': None,
     }
 
-    # Register cleanup BEFORE enter_raw_mode so that if the process
-    # is killed during setup, restore_terminal still runs.
     atexit.register(restore_terminal, terminal)
 
     def _restore_on_signal(signal_number: int, frame: object) -> None:
@@ -210,17 +337,37 @@ def main() -> None:
 
     enter_raw_mode(terminal)
 
-    # Prove the round-trip works: write to the alternate screen,
-    # pause so the human can see it, then tear down.
-    os.write(1, b"raw mode active -- you should see this on the alternate screen\r\n")
-    os.write(1, b"restoring in 2 seconds...\r\n")
+    grid_width:  int = terminal['width']
+    grid_height: int = terminal['height']
+    cell_count:  int = grid_width * grid_height
 
-    import time
+    grid: dict = {
+        'width':    grid_width,
+        'height':   grid_height,
+        'current':  [BLANK_CELL] * cell_count,
+        'previous': [BLANK_CELL] * cell_count,
+    }
+
+    style_cache: dict = build_style_cache()
+
+    # checkerboard: two chars, two fg colors (one indexed, one RGB), one modifier
+    color_a: int = COLOR_TAG_IDX | 196        # palette red
+    color_b: int = COLOR_TAG_RGB | 0x00_00AF  # RGB blue
+
+    for row in range(grid_height):
+        for column in range(grid_width):
+            cell_index: int = row * grid_width + column
+            is_even: bool = (row + column) % 2 == 0
+            if is_even:
+                grid['current'][cell_index] = ('A', color_a, COLOR_DEFAULT, MOD_BOLD)
+            else:
+                grid['current'][cell_index] = ('B', color_b, COLOR_DEFAULT, 0)
+
+    flush_full(grid['current'], grid_width, grid_height, style_cache)
     time.sleep(2)
 
     restore_terminal(terminal)
     print("ok")
-
 
 if __name__ == '__main__':
     main()
