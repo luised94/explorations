@@ -102,6 +102,21 @@ local function make_open_fn(path)
 end
 
 ---@return nil
+local function show_digraphs()
+    vim.cmd("help digraph-table")
+end
+
+---@param args table
+---@return nil
+local function set_txt_markdown_filetype(args)
+    local file = api.nvim_buf_get_name(args.buf)
+    if file == "" then return end
+    if vim.startswith(file, kbd_local_dir .. "/") then
+        vim.bo[args.buf].filetype = "markdown"
+    end
+end
+
+---@return nil
 local function prepend_date_header()
     local bufnr = 0
     if not api.nvim_buf_get_option(bufnr, "modifiable") then
@@ -154,12 +169,12 @@ local function prepend_note_section()
         vim.notify(string.format("[kbd] bib not found: %s", bib_path), vim.log.levels.ERROR)
         return
     end
-    local scan_limit  = 500
-    local line_count  = api.nvim_buf_line_count(bufnr)
+    local scan_limit   = 500
+    local line_count   = api.nvim_buf_line_count(bufnr)
     local actual_limit = math.min(scan_limit, line_count)
-    local lines = api.nvim_buf_get_lines(bufnr, 0, actual_limit, false)
+    local lines        = api.nvim_buf_get_lines(bufnr, 0, actual_limit, false)
     local grep_command = string.format("grep -oP '%s' %s", BIB_GREP_PATTERN, bib_path)
-    local raw_output = fn.system(grep_command)
+    local raw_output   = fn.system(grep_command)
     if vim.v.shell_error ~= 0 then
         vim.notify("[kbd] grep failed on bib file", vim.log.levels.ERROR)
         return
@@ -245,7 +260,7 @@ local function insert_citation_from_bib()
         return
     end
     local grep_command = string.format("grep -oP '%s' %s", BIB_GREP_PATTERN, bib_path)
-    local raw_output = fn.system(grep_command)
+    local raw_output   = fn.system(grep_command)
     if vim.v.shell_error ~= 0 then
         vim.notify("[kbd] grep failed on bib file", vim.log.levels.ERROR)
         return
@@ -293,37 +308,52 @@ local function kvim_all_telescope()
         file_ignore_patterns[#file_ignore_patterns + 1] = string.format("^%s/", escaped)
     end
     telescope_builtin.find_files({
-        prompt_title        = string.format("KBD (%s)", kbd_local_dir),
-        cwd                 = kbd_local_dir,
-        hidden              = true,
-        follow              = true,
+        prompt_title         = string.format("KBD (%s)", kbd_local_dir),
+        cwd                  = kbd_local_dir,
+        hidden               = true,
+        follow               = true,
         file_ignore_patterns = file_ignore_patterns,
     })
 end
 
 -- === DECLARATIONS ===
-api.nvim_create_user_command("ShowDigraphs", function()
-    vim.cmd("help digraph-table")
-end, {})
-
+---@type integer
 local txt_markdown_augroup = api.nvim_create_augroup("kbd_txt_markdown", { clear = true })
-api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-    group    = txt_markdown_augroup,
-    pattern  = "*.txt",
-    callback = function(args)
-        local file = api.nvim_buf_get_name(args.buf)
-        if file == "" then return end
-        if vim.startswith(file, kbd_local_dir .. "/") then
-            vim.bo[args.buf].filetype = "markdown"
-        end
-    end,
-})
 
+---@type table[]
+local autocmds = {
+    {
+        event = { "BufRead", "BufNewFile" },
+        opts  = {
+            group    = txt_markdown_augroup,
+            pattern  = "*.txt",
+            callback = set_txt_markdown_filetype,
+        },
+    },
+}
+
+---@type table[]
+local commands = {
+    {
+        name = "ShowDigraphs",
+        fn   = show_digraphs,
+        opts = {},
+    },
+}
+
+---@type table[]
+local keymaps = {}
 for _, f in ipairs(FILES) do
-    keymap.set(MODE_NORMAL, LEADER_K .. f.key, make_open_fn(f.path), { desc = "kbd: " .. f.desc })
+    table.insert(keymaps, { MODE_NORMAL, LEADER_K .. f.key, make_open_fn(f.path), { desc = "kbd: " .. f.desc } })
 end
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "h", prepend_date_header,      { desc = "kbd: insert date header"                    } })
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "c", prepend_note_section,     { desc = "kbd: add citation section to notes"         } })
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "i", insert_citation_from_bib, { desc = "kbd: insert citation at cursor"             } })
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "f", kvim_all_telescope,       { desc = "kbd: find files (telescope, KBD_LOCAL_DIR)" } })
 
-keymap.set(MODE_NORMAL, LEADER_K .. "h", prepend_date_header,     { desc = "kbd: insert date header"              })
-keymap.set(MODE_NORMAL, LEADER_K .. "c", prepend_note_section,    { desc = "kbd: add citation section to notes"   })
-keymap.set(MODE_NORMAL, LEADER_K .. "i", insert_citation_from_bib, { desc = "kbd: insert citation at cursor"      })
-keymap.set(MODE_NORMAL, LEADER_K .. "f", kvim_all_telescope,       { desc = "kbd: find files (telescope, KBD_LOCAL_DIR)" })
+return {
+    keymaps  = keymaps,
+    autocmds = autocmds,
+    commands = commands,
+    setup    = nil,
+}
