@@ -810,8 +810,13 @@ def cycle_focus(app_state: dict) -> None:
     app_state['focused_region_id'] = next_id
     app_state['regions'][next_id]['is_focused'] = True
 
+def action_delete_content(app_state: dict) -> None:
+    content_region: dict = app_state['regions'][1]
+    content_region['lines'] = []
+    content_region['scroll_offset'] = 0
+
 ACTION_TABLE: dict[str, callable] = {
-    # populated in commit 12
+    'delete_content': action_delete_content,
 }
 
 
@@ -994,6 +999,9 @@ def main() -> None:
                     app_state['tab_debug_log'].append(tab_entry)
                 elif event_kind == 'char' and event_char == 'i' and event_mods == 0:
                     app_state['mode'] = MODE_INPUT
+                elif event_kind == 'char' and event_char == 'd' and event_mods == 0:
+                    app_state['pending_action'] = 'delete_content'
+                    app_state['mode'] = MODE_CONFIRM
                 elif event_kind == 'char' and event_char == '/' and event_mods == 0:
                     app_state['mode'] = MODE_COMMAND
             elif current_mode == MODE_QUITTING:
@@ -1023,7 +1031,18 @@ def main() -> None:
                 elif event_kind == 'char' and event_mods == 0:
                     app_state['command_buffer'] = app_state['command_buffer'] + event_char
             elif current_mode == MODE_CONFIRM:
-                pass   # stub; wired in commit 12
+                if event_kind == 'char' and event_char == 'y' and event_mods == 0:
+                    pending: str = app_state['pending_action']
+                    if pending in ACTION_TABLE:
+                        ACTION_TABLE[pending](app_state)
+                    app_state['pending_action'] = ''
+                    app_state['mode'] = MODE_NORMAL
+                elif event_kind == 'char' and event_char == 'n' and event_mods == 0:
+                    app_state['pending_action'] = ''
+                    app_state['mode'] = MODE_NORMAL
+                elif event_kind == 'escape':
+                    app_state['pending_action'] = ''
+                    app_state['mode'] = MODE_NORMAL
             event = read_event_from_ring(app_state)
         if app_state['mode'] == MODE_QUITTING:
             break
@@ -1040,10 +1059,13 @@ def main() -> None:
         current_mode_now: str = app_state['mode']
         input_buffer_now: str = app_state['input_buffer']
         command_buffer_now: str = app_state['command_buffer']
+        pending_action_now: str = app_state['pending_action']
         if current_mode_now == MODE_INPUT:
             mode_display: str = f'INPUT> {input_buffer_now}_'
         elif current_mode_now == MODE_COMMAND:
             mode_display = f'CMD> {command_buffer_now}_'
+        elif current_mode_now == MODE_CONFIRM:
+            mode_display = f'CONFIRM> {pending_action_now} [y/n]_'
         else:
             mode_display = f'[ TUI ] q=quit  scroll={scroll_offset_now}'
         header_lines[0] = (
