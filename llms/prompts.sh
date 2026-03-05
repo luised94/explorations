@@ -4,14 +4,22 @@
 PROMPTS_DIRECTORY="$HOME/personal_repos/explorations-proj-llms/llms/prompts"
 FRICTION_FILEPATH="$HOME/personal_repos/explorations-proj-llms/llms/FRICTION.md"
 
-_pmt_check_dir() {
-    [[ -d "$PROMPTS_DIRECTORY" ]] && return 0
-    echo "pmt: error: PROMPTS_DIRECTORY does not exist: $PROMPTS_DIRECTORY"
-    return 1
+_pmt_check_environment() {
+    local red='\033[0;31m'
+    local reset='\033[0m'
+    [[ ! -d "$PROMPTS_DIRECTORY" ]] && \
+        printf "${red}pmt: warning: PROMPTS_DIRECTORY does not exist: %s${reset}\n" "$PROMPTS_DIRECTORY"
+    [[ ! -f "$FRICTION_FILEPATH" ]] && \
+        printf "${red}pmt: warning: FRICTION_FILEPATH does not exist: %s${reset}\n" "$FRICTION_FILEPATH"
+    ! command -v "${EDITOR:-nvim}" &>/dev/null && \
+        printf "${red}pmt: warning: editor not found: %s${reset}\n" "${EDITOR:-nvim}"
+    ! command -v powershell.exe &>/dev/null && \
+        printf "${red}pmt: warning: powershell.exe not found - pnew clipboard paste will fail${reset}\n"
 }
+_pmt_check_environment
 
 pnew() {
-    _pmt_check_dir || return 1
+    [[ ! -d "$PROMPTS_DIRECTORY" ]] && { echo "pmt: error: PROMPTS_DIRECTORY does not exist: $PROMPTS_DIRECTORY"; return 1; }
     local prompt_file_name="${1}"
     [[ -z "$prompt_file_name" ]] && { echo "pmt: usage: pnew <filename>"; return 1; }
     [[ "$prompt_file_name" != *.md ]] && prompt_file_name="${prompt_file_name}.md"
@@ -23,7 +31,7 @@ pnew() {
 }
 
 plog() {
-    _pmt_check_dir || return 1
+    [[ ! -f "$FRICTION_FILEPATH" ]] && { echo "pmt: error: FRICTION_FILEPATH does not exist: $FRICTION_FILEPATH"; return 1; }
     local friction_entry_stub
     friction_entry_stub="$(printf '\n## %s  [severity]\nWhat I was trying to do.\nWhat actually happened or what annoyed me.\n?: idea or fix if one comes to mind\n' "$(date '+%Y-%m-%d %H:%M')")"
     echo "$friction_entry_stub" >> "$FRICTION_FILEPATH"
