@@ -238,7 +238,7 @@ if __name__ == "__main__":
     # -- INIT ----------------------------------------------------------
 
 
-connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(DATABASE_PATH)
     with connection:
         connection.execute("""
             CREATE TABLE IF NOT EXISTS calls (
