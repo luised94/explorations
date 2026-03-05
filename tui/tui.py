@@ -770,10 +770,23 @@ def handle_input_submit(app_state: dict) -> None:
     debug_log.append('submit: appended, scrolled to offset=' + str(new_max_offset))
 
 def handle_command(command: str, app_state: dict) -> None:
-    # stub: called when enter is pressed in MODE_COMMAND
     app_state['command_buffer'] = ''
     app_state['mode'] = MODE_NORMAL
-    _ = command   # placeholder until commit 11 wires this up
+    if not command:
+        return
+    content_region: dict = app_state['regions'][1]
+    if command == 'clear':
+        content_region['lines'] = []
+        content_region['scroll_offset'] = 0
+    elif command == 'top':
+        content_region['scroll_offset'] = 0
+    elif command == 'bottom':
+        max_offset: int = max(0, len(content_region['lines']) - content_region['height'])
+        content_region['scroll_offset'] = max_offset
+    else:
+        content_region['lines'].append('unknown command: ' + command)
+        max_offset = max(0, len(content_region['lines']) - content_region['height'])
+        content_region['scroll_offset'] = max_offset
 
 def cycle_focus(app_state: dict) -> None:
     region_order: list = app_state['region_order']
@@ -998,7 +1011,17 @@ def main() -> None:
                 elif event_kind == 'char' and event_mods == 0:
                     app_state['input_buffer'] = app_state['input_buffer'] + event_char
             elif current_mode == MODE_COMMAND:
-                pass   # stub; wired in commit 11
+                if event_kind == 'enter':
+                    handle_command(app_state['command_buffer'], app_state)
+                elif event_kind == 'escape':
+                    app_state['command_buffer'] = ''
+                    app_state['mode'] = MODE_NORMAL
+                elif event_kind == 'backspace':
+                    current_command_buffer: str = app_state['command_buffer']
+                    if len(current_command_buffer) > 0:
+                        app_state['command_buffer'] = current_command_buffer[:-1]
+                elif event_kind == 'char' and event_mods == 0:
+                    app_state['command_buffer'] = app_state['command_buffer'] + event_char
             elif current_mode == MODE_CONFIRM:
                 pass   # stub; wired in commit 12
             event = read_event_from_ring(app_state)
@@ -1016,8 +1039,11 @@ def main() -> None:
 
         current_mode_now: str = app_state['mode']
         input_buffer_now: str = app_state['input_buffer']
+        command_buffer_now: str = app_state['command_buffer']
         if current_mode_now == MODE_INPUT:
             mode_display: str = f'INPUT> {input_buffer_now}_'
+        elif current_mode_now == MODE_COMMAND:
+            mode_display = f'CMD> {command_buffer_now}_'
         else:
             mode_display = f'[ TUI ] q=quit  scroll={scroll_offset_now}'
         header_lines[0] = (
