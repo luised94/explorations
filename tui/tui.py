@@ -863,6 +863,10 @@ def main() -> None:
         sys.exit(0)
     signal.signal(signal.SIGTERM, _restore_on_signal)
     signal.signal(signal.SIGHUP, _restore_on_signal)
+    def _handle_sigwinch(signal_number: int, frame: object) -> None:
+        global SIGWINCH_RECEIVED
+        SIGWINCH_RECEIVED = True
+    signal.signal(signal.SIGWINCH, _handle_sigwinch)
     enter_raw_mode(terminal)
     grid_width:  int = terminal['width']
     grid_height: int = terminal['height']
@@ -943,6 +947,29 @@ def main() -> None:
 
     stdin_fd: int = sys.stdin.fileno()
     while True:
+        global SIGWINCH_RECEIVED
+        if SIGWINCH_RECEIVED:
+            SIGWINCH_RECEIVED = False
+            terminal_size: os.terminal_size = os.get_terminal_size()
+            grid_width  = terminal_size.columns
+            grid_height = terminal_size.lines
+            cell_count  = grid_width * grid_height
+            grid['width']    = grid_width
+            grid['height']   = grid_height
+            grid['current']  = [BLANK_CELL] * cell_count
+            grid['previous'] = [BLANK_CELL] * cell_count
+            # update region dimensions to match new terminal size
+            header_region['width']  = grid_width
+            content_region['width'] = grid_width
+            content_region['height'] = grid_height - 1 - debug_region_height
+            debug_region['width']  = grid_width
+            debug_region['top']    = grid_height - debug_region_height
+            # clamp scroll offsets in case content shrank
+            for region_id in app_state['region_order']:
+                resized_region: dict = app_state['regions'][region_id]
+                resized_max: int = max(0, len(resized_region['lines']) - resized_region['height'])
+                if resized_region['scroll_offset'] > resized_max:
+                    resized_region['scroll_offset'] = resized_max
         ready_fds: list
         ready_fds, _, _ = select.select([sys.stdin], [], [], 0.05)
         if ready_fds:
