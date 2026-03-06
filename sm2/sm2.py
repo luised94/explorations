@@ -16,6 +16,9 @@ ParsedItem: TypeAlias = tuple[str, str, str, list[str], list[str]]
 ContentMap: TypeAlias = dict[str, tuple[str, str, list[str], list[str]]]
 # positions:                                   content  criteria  tags     prerequisites
 
+DueItem: TypeAlias = tuple[str, int, int]
+# positions:               item_id  repetition_count  due_date
+
 DATABASE_PATH: str = "data/sm2.db"
 
 # =============================================================================
@@ -211,7 +214,8 @@ if __name__ == "__main__":
     database_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
 
     # --- parse
-    parsed_items: list[ParsedItem] = parse_exercises("exercises/")
+    parsed_items: list[ParsedItem] = parse_exercises("scratch/")
+    #parsed_items: list[ParsedItem] = parse_exercises("exercises/")
 
     parsed_ids: set[str] = set()
     content_map: ContentMap = {}
@@ -234,3 +238,21 @@ if __name__ == "__main__":
             (new_item_id, today),
         )
     database_connection.commit()
+    # --- build due queue
+    due_queue: list[DueItem] = []
+    if len(parsed_ids) > 0:
+        parsed_ids_list: list[str] = list(parsed_ids)
+        in_placeholders: str = ",".join("?" * len(parsed_ids_list))
+        due_queue_query: str = (
+            f"SELECT item_id, repetition_count, due_date FROM items "
+            f"WHERE item_id IN ({in_placeholders}) AND due_date <= ? "
+            f"ORDER BY due_date ASC"
+        )
+        due_queue_parameters: list[str | int] = parsed_ids_list + [today]
+        due_queue_rows: list[tuple] = database_connection.execute(
+            due_queue_query, due_queue_parameters
+        ).fetchall()
+        for row in due_queue_rows:
+            due_item: DueItem = (row[0], row[1], row[2])
+            due_queue.append(due_item)
+    print(due_queue)
