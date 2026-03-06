@@ -20,6 +20,9 @@ DueItem: TypeAlias = tuple[str, int, int]
 # positions:               item_id  repetition_count  due_date
 
 DATABASE_PATH: str = "data/sm2.db"
+TOTAL_NEW_MAX: int = 9
+MIN_PER_DOMAIN: int = 1
+MAX_REVIEWS: int = 100
 
 # =============================================================================
 # PARSER
@@ -197,6 +200,58 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
 # =============================================================================
 # THROTTLE
 # =============================================================================
+def apply_throttle_and_cap(
+    due_queue: list[DueItem],
+    today_new_by_domain: dict[str, int],
+    total_new_max: int,
+    min_per_domain: int,
+    max_reviews: int,
+) -> list[str]:
+    # pass 1: reserve floor items per domain
+    reserved_item_ids: set[str] = set()
+    reserved_count_by_domain: dict[str, int] = {}
+
+    for due_item in due_queue:
+        item_id: str = due_item[0]
+        repetition_count: int = due_item[1]
+
+        if repetition_count == 0:
+            identifier_parts: list[str] = item_id.split("-")
+            domain: str = identifier_parts[0]
+            already_reviewed_in_domain: int = today_new_by_domain.get(domain, 0)
+            already_reserved_in_domain: int = reserved_count_by_domain.get(domain, 0)
+            floor_remaining: int = (
+                min_per_domain - already_reviewed_in_domain - already_reserved_in_domain
+            )
+            if floor_remaining > 0:
+                reserved_item_ids.add(item_id)
+                reserved_count_by_domain[domain] = already_reserved_in_domain + 1
+
+    # pass 2: build result - reviews always pass, new items subject to budget
+    new_items_added_today: int = 0
+    for domain_count in today_new_by_domain.values():
+        new_items_added_today = new_items_added_today + domain_count
+
+    result: list[str] = []
+    for due_item in due_queue:
+        item_id: str = due_item[0]
+        repetition_count: int = due_item[1]
+
+        if repetition_count > 0:
+            result.append(item_id)
+        else:
+            is_reserved: bool = item_id in reserved_item_ids
+            if is_reserved:
+                result.append(item_id)
+                new_items_added_today = new_items_added_today + 1
+            elif new_items_added_today < total_new_max:
+                result.append(item_id)
+                new_items_added_today = new_items_added_today + 1
+
+    if len(result) > max_reviews:
+        result = result[:max_reviews]
+
+    return result
 
 
 # =============================================================================
@@ -255,4 +310,25 @@ if __name__ == "__main__":
         for row in due_queue_rows:
             due_item: DueItem = (row[0], row[1], row[2])
             due_queue.append(due_item)
+
+    # --- query today new counts
+    today_new_rows: list[tuple] = database_connection.execute(
+        "SELECT domain, COUNT(*) FROM review_log "
+        "WHERE review_date = ? AND repetition_count_before = 0 "
+        "GROUP BY domain",
+        (today,),
+    ).fetchall()
+    today_new_by_domain: dict[str, int] = {}
+    for row in today_new_rows:
+        today_new_by_domain[row[0]] = row[1]
+
+    # --- apply throttle and cap
+    review_queue: list[str] = apply_throttle_and_cap(
+        due_queue,
+        today_new_by_domain,
+        TOTAL_NEW_MAX,
+        MIN_PER_DOMAIN,
+        MAX_REVIEWS,
+    )
     print(due_queue)
+    print(review_queue)
