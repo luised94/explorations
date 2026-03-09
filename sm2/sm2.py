@@ -284,8 +284,8 @@ if __name__ == "__main__":
     database_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
 
     # --- parse
-    parsed_items: list[ParsedItem] = parse_exercises("scratch/")
-    #parsed_items: list[ParsedItem] = parse_exercises("exercises/")
+    #parsed_items: list[ParsedItem] = parse_exercises("scratch/")
+    parsed_items: list[ParsedItem] = parse_exercises("exercises/")
 
     parsed_ids: set[str] = set()
     content_map: ContentMap = {}
