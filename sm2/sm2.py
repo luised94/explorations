@@ -350,140 +350,158 @@ if __name__ == "__main__":
     pass_count: int = 0
     fail_count: int = 0
     new_count: int = 0
+    try:
+        for item_id in review_queue:
 
-    for item_id in review_queue:
-        content_entry: tuple[str, str, list[str], list[str]] = content_map[item_id]
-        content: str = content_entry[0]
-        criteria: str = content_entry[1]
+            content_entry: tuple[str, str, list[str], list[str]] = content_map[item_id]
+            content: str = content_entry[0]
+            criteria: str = content_entry[1]
 
-        identifier_parts: list[str] = item_id.split("-")
-        domain: str = identifier_parts[0]
+            identifier_parts: list[str] = item_id.split("-")
+            domain: str = identifier_parts[0]
 
+            print("")
+            print("---")
+            print(f"Item: {item_id}")
+            print("")
+            print(content)
+            if criteria != "":
+                print("")
+                print(f"Criteria: {criteria}")
+            print("")
+
+            input("Press enter when ready to grade...")
+
+            print("")
+            print("  0 = failed")
+            print("  1 = passed with effort")
+            print("  2 = easy, fluent")
+            print("")
+
+            grade: int = -1
+            while grade == -1:
+                raw_grade: str = input("Grade (0/1/2): ").strip()
+                if raw_grade == "0":
+                    grade = 0
+                elif raw_grade == "1":
+                    grade = 1
+                elif raw_grade == "2":
+                    grade = 2
+                else:
+                    print("Invalid grade. Enter 0, 1, or 2.")
+
+            error_note: str | None = None
+            if grade == 0:
+                raw_error_note: str = input("What went wrong? (enter to skip): ").strip()
+                if raw_error_note != "":
+                    error_note = raw_error_note
+
+            state_row: tuple = database_connection.execute(
+                "SELECT easiness_factor, interval_days, repetition_count, "
+                "due_date, last_review, lapse_count "
+                "FROM items WHERE item_id = ?",
+                (item_id,),
+            ).fetchone()
+
+            easiness_factor_before: float = state_row[0]
+            interval_days_before: float = state_row[1]
+            repetition_count_before: int = state_row[2]
+            last_review: int = state_row[4]
+            lapse_count_before: int = state_row[5]
+
+            if last_review > 0:
+                elapsed_days = today - last_review
+            else:
+                elapsed_days = 0
+
+            sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
+
+            update_result: dict[str, float | int] = sm2_update(
+                grade,
+                easiness_factor_before,
+                interval_days_before,
+                repetition_count_before,
+                lapse_count_before,
+                today,
+            )
+
+            new_easiness_factor: float = float(update_result["easiness_factor"])
+            new_repetition_count: int = int(update_result["repetition_count"])
+            new_interval_days: float = float(update_result["interval_days"])
+            new_lapse_count: int = int(update_result["lapse_count"])
+            new_due_date: int = int(update_result["due_date"])
+
+            database_connection.execute(
+                "UPDATE items SET easiness_factor=?, interval_days=?, "
+                "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
+                "WHERE item_id=?",
+                (
+                    new_easiness_factor,
+                    new_interval_days,
+                    new_repetition_count,
+                    new_due_date,
+                    today,
+                    new_lapse_count,
+                    item_id,
+                ),
+            )
+            database_connection.commit()
+
+            database_connection.execute(
+                "INSERT INTO review_log ("
+                "item_id, grade, sm2_grade, review_date, elapsed_days, "
+                "easiness_factor_before, easiness_factor_after, "
+                "interval_days_before, interval_days_after, "
+                "repetition_count_before, domain, error_note"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    item_id,
+                    grade,
+                    sm2_grade,
+                    today,
+                    elapsed_days,
+                    easiness_factor_before,
+                    new_easiness_factor,
+                    interval_days_before,
+                    new_interval_days,
+                    repetition_count_before,
+                    domain,
+                    error_note,
+                ),
+            )
+            database_connection.commit()
+
+            days_until: int = new_due_date - today
+            duration_string: str = format_duration(days_until)
+
+            if grade == 0:
+                print(f"Failed. Returns in {duration_string}.")
+            else:
+                print(f"Passed. Next review in {duration_string}.")
+
+
+            review_count = review_count + 1
+            if grade == 0:
+                fail_count = fail_count + 1
+            else:
+                pass_count = pass_count + 1
+            if repetition_count_before == 0:
+                new_count = new_count + 1
+
+    except KeyboardInterrupt:
+        print("")
+        print("Session interrupted.")
+    finally:
         print("")
         print("---")
-        print(f"Item: {item_id}")
-        print("")
-        print(content)
-        if criteria != "":
-            print("")
-            print(f"Criteria: {criteria}")
-        print("")
-
-        input("Press enter when ready to grade...")
-
-        print("")
-        print("  0 = failed")
-        print("  1 = passed with effort")
-        print("  2 = easy, fluent")
-        print("")
-
-        grade: int = -1
-        while grade == -1:
-            raw_grade: str = input("Grade (0/1/2): ").strip()
-            if raw_grade == "0":
-                grade = 0
-            elif raw_grade == "1":
-                grade = 1
-            elif raw_grade == "2":
-                grade = 2
-            else:
-                print("Invalid grade. Enter 0, 1, or 2.")
-
-        error_note: str | None = None
-        if grade == 0:
-            raw_error_note: str = input("What went wrong? (enter to skip): ").strip()
-            if raw_error_note != "":
-                error_note = raw_error_note
-
-        state_row: tuple = database_connection.execute(
-            "SELECT easiness_factor, interval_days, repetition_count, "
-            "due_date, last_review, lapse_count "
-            "FROM items WHERE item_id = ?",
-            (item_id,),
-        ).fetchone()
-
-        easiness_factor_before: float = state_row[0]
-        interval_days_before: float = state_row[1]
-        repetition_count_before: int = state_row[2]
-        last_review: int = state_row[4]
-        lapse_count_before: int = state_row[5]
-
-        if last_review > 0:
-            elapsed_days = today - last_review
-        else:
-            elapsed_days = 0
-
-        sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
-
-        update_result: dict[str, float | int] = sm2_update(
-            grade,
-            easiness_factor_before,
-            interval_days_before,
-            repetition_count_before,
-            lapse_count_before,
-            today,
+        print(
+            f"Session complete. "
+            f"Reviewed: {review_count}  "
+            f"Passed: {pass_count}  "
+            f"Failed: {fail_count}  "
+            f"New: {new_count}"
         )
-
-        new_easiness_factor: float = float(update_result["easiness_factor"])
-        new_repetition_count: int = int(update_result["repetition_count"])
-        new_interval_days: float = float(update_result["interval_days"])
-        new_lapse_count: int = int(update_result["lapse_count"])
-        new_due_date: int = int(update_result["due_date"])
-
-        database_connection.execute(
-            "UPDATE items SET easiness_factor=?, interval_days=?, "
-            "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
-            "WHERE item_id=?",
-            (
-                new_easiness_factor,
-                new_interval_days,
-                new_repetition_count,
-                new_due_date,
-                today,
-                new_lapse_count,
-                item_id,
-            ),
-        )
-        database_connection.commit()
-
-        database_connection.execute(
-            "INSERT INTO review_log ("
-            "item_id, grade, sm2_grade, review_date, elapsed_days, "
-            "easiness_factor_before, easiness_factor_after, "
-            "interval_days_before, interval_days_after, "
-            "repetition_count_before, domain, error_note"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                item_id,
-                grade,
-                sm2_grade,
-                today,
-                elapsed_days,
-                easiness_factor_before,
-                new_easiness_factor,
-                interval_days_before,
-                new_interval_days,
-                repetition_count_before,
-                domain,
-                error_note,
-            ),
-        )
-        database_connection.commit()
-
-        days_until: int = new_due_date - today
-        duration_string: str = format_duration(days_until)
-
-        if grade == 0:
-            print(f"Failed. Returns in {duration_string}.")
-        else:
-            print(f"Passed. Next review in {duration_string}.")
-
-        review_count = review_count + 1
-        if grade == 0:
-            fail_count = fail_count + 1
-        else:
-            pass_count = pass_count + 1
-        if repetition_count_before == 0:
-            new_count = new_count + 1
+        if fail_count > 0:
+            print(f"{fail_count} items return tomorrow.")
     print(due_queue)
     print(review_queue)
