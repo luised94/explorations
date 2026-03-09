@@ -1,4 +1,3 @@
-
 # sm2
 
 A command-line spaced repetition tool. Parses flashcard items from Markdown

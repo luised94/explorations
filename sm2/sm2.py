@@ -225,11 +225,9 @@ def apply_throttle_and_cap(
     # pass 1: reserve floor items per domain
     reserved_item_ids: set[str] = set()
     reserved_count_by_domain: dict[str, int] = {}
-
     for due_item in due_queue:
         item_id: str = due_item[0]
         repetition_count: int = due_item[1]
-
         if repetition_count == 0:
             identifier_parts: list[str] = item_id.split("-")
             domain: str = identifier_parts[0]
@@ -242,32 +240,30 @@ def apply_throttle_and_cap(
                 reserved_item_ids.add(item_id)
                 reserved_count_by_domain[domain] = already_reserved_in_domain + 1
 
-    # pass 2: build result - reviews always pass, new items subject to budget
-    new_items_added_today: int = 0
+    # pass 2: build result - reserved slots pre-allocated from budget
+    already_new_today: int = 0
     for domain_count in today_new_by_domain.values():
-        new_items_added_today = new_items_added_today + domain_count
+        already_new_today = already_new_today + domain_count
+    total_reserved: int = len(reserved_item_ids)
+    non_reserved_budget: int = max(0, total_new_max - total_reserved - already_new_today)
+    non_reserved_added: int = 0
 
     result: list[str] = []
     for due_item in due_queue:
         item_id: str = due_item[0]
         repetition_count: int = due_item[1]
-
         if repetition_count > 0:
             result.append(item_id)
         else:
-            is_reserved: bool = item_id in reserved_item_ids
-            if is_reserved:
+            if item_id in reserved_item_ids:
                 result.append(item_id)
-                new_items_added_today = new_items_added_today + 1
-            elif new_items_added_today < total_new_max:
+            elif non_reserved_added < non_reserved_budget:
                 result.append(item_id)
-                new_items_added_today = new_items_added_today + 1
+                non_reserved_added = non_reserved_added + 1
 
     if len(result) > max_reviews:
         result = result[:max_reviews]
-
     return result
-
 
 # =============================================================================
 # VALIDATION
