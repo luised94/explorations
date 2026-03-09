@@ -683,14 +683,15 @@ if __name__ == "__main__":
             print(f"Item: {item_id}")
             print("")
             print(content)
-            if criteria != "":
-                print("")
-                print(f"Criteria: {criteria}")
             print("")
 
             input("Press enter when ready to grade...")
 
             print("")
+            print("Consider criteria and assign grade.")
+            if criteria != "":
+                print("")
+                print(f"Criteria: {criteria}")
             print("  0 = failed")
             print("  1 = passed with effort")
             print("  2 = easy, fluent")
@@ -821,5 +822,4 @@ if __name__ == "__main__":
         )
         if fail_count > 0:
             print(f"{fail_count} items return tomorrow.")
-    print(due_queue)
     print(review_queue)
