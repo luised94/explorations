@@ -272,6 +272,282 @@ def apply_throttle_and_cap(
 # =============================================================================
 # VALIDATION
 # =============================================================================
+def run_validation() -> None:
+    failure_count: int = 0
+    FLOAT_TOLERANCE: float = 0.0001
+    validation_today: int = datetime.date.today().toordinal()
+
+    # sanity check: ordinal is a plausible current date
+    if validation_today <= datetime.date(2024, 1, 1).toordinal():
+        print("FAIL: today ordinal is not a plausible current date")
+        failure_count = failure_count + 1
+
+    # build 15 synthetic parsed items: 5 per domain
+    synthetic_items: list[ParsedItem] = []
+    for domain_prefix in ["drive", "c", "bio"]:
+        for index in range(1, 6):
+            synthetic_id: str = f"{domain_prefix}-val-{index}"
+            synthetic_item: ParsedItem = (
+                synthetic_id,
+                f"validation content for {synthetic_id}",
+                "",
+                [],
+                [],
+            )
+            synthetic_items.append(synthetic_item)
+
+    # init in-memory database
+    validation_connection: sqlite3.Connection = initialize_database(":memory:")
+
+    # build parsed_ids and content_map
+    validation_parsed_ids: set[str] = set()
+    validation_content_map: ContentMap = {}
+    for item_id, content, criteria, tags, prerequisites in synthetic_items:
+        validation_parsed_ids.add(item_id)
+        validation_content_map[item_id] = (content, criteria, tags, prerequisites)
+
+    # reconcile
+    existing_rows: list[tuple] = validation_connection.execute(
+        "SELECT item_id FROM items"
+    ).fetchall()
+    validation_database_ids: set[str] = set()
+    for row in existing_rows:
+        validation_database_ids.add(row[0])
+    new_item_ids: set[str] = validation_parsed_ids - validation_database_ids
+    for new_item_id in new_item_ids:
+        validation_connection.execute(
+            "INSERT INTO items (item_id, due_date) VALUES (?, ?)",
+            (new_item_id, validation_today),
+        )
+    validation_connection.commit()
+
+    # assert 15 items in table
+    item_count_row: tuple = validation_connection.execute(
+        "SELECT COUNT(*) FROM items"
+    ).fetchone()
+    item_count: int = item_count_row[0]
+    if item_count != 15:
+        print(f"FAIL: expected 15 items in table, got {item_count}")
+        failure_count = failure_count + 1
+
+    # build due queue
+    validation_due_queue: list[DueItem] = []
+    validation_parsed_ids_list: list[str] = list(validation_parsed_ids)
+    in_placeholders: str = ",".join("?" * len(validation_parsed_ids_list))
+    due_queue_query: str = (
+        f"SELECT item_id, repetition_count, due_date FROM items "
+        f"WHERE item_id IN ({in_placeholders}) AND due_date <= ? "
+        f"ORDER BY due_date ASC"
+    )
+    due_queue_parameters: list[str | int] = validation_parsed_ids_list + [validation_today]
+    due_queue_rows: list[tuple] = validation_connection.execute(
+        due_queue_query, due_queue_parameters
+    ).fetchall()
+    for row in due_queue_rows:
+        validation_due_item: DueItem = (row[0], row[1], row[2])
+        validation_due_queue.append(validation_due_item)
+
+    # query today new by domain (empty on fresh db)
+    validation_today_new_rows: list[tuple] = validation_connection.execute(
+        "SELECT domain, COUNT(*) FROM review_log "
+        "WHERE review_date = ? AND repetition_count_before = 0 "
+        "GROUP BY domain",
+        (validation_today,),
+    ).fetchall()
+    validation_today_new_by_domain: dict[str, int] = {}
+    for row in validation_today_new_rows:
+        validation_today_new_by_domain[row[0]] = row[1]
+
+    # apply throttle
+    validation_review_queue: list[str] = apply_throttle_and_cap(
+        validation_due_queue,
+        validation_today_new_by_domain,
+        TOTAL_NEW_MAX,
+        MIN_PER_DOMAIN,
+        MAX_REVIEWS,
+    )
+
+    # assert 9 items in review queue
+    if len(validation_review_queue) != 9:
+        print(f"FAIL: expected 9 in review queue, got {len(validation_review_queue)}")
+        failure_count = failure_count + 1
+
+    # simulate reviews: grades cycle 0, 1, 2
+    simulated_grades: list[int] = [0, 1, 2, 0, 1, 2, 0, 1, 2]
+
+    for queue_index, item_id in enumerate(validation_review_queue):
+        grade: int = simulated_grades[queue_index]
+        sim_sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
+
+        sim_state_row: tuple = validation_connection.execute(
+            "SELECT easiness_factor, interval_days, repetition_count, "
+            "due_date, last_review, lapse_count "
+            "FROM items WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+
+        sim_easiness_factor_before: float = sim_state_row[0]
+        sim_interval_days_before: float = sim_state_row[1]
+        sim_repetition_count_before: int = sim_state_row[2]
+        sim_last_review: int = sim_state_row[4]
+        sim_lapse_count_before: int = sim_state_row[5]
+
+        if sim_last_review > 0:
+            sim_elapsed_days: int = validation_today - sim_last_review
+        else:
+            sim_elapsed_days = 0
+
+        sim_update_result: dict[str, float | int] = sm2_update(
+            grade,
+            sim_easiness_factor_before,
+            sim_interval_days_before,
+            sim_repetition_count_before,
+            sim_lapse_count_before,
+            validation_today,
+        )
+
+        sim_new_easiness_factor: float = float(sim_update_result["easiness_factor"])
+        sim_new_repetition_count: int = int(sim_update_result["repetition_count"])
+        sim_new_interval_days: float = float(sim_update_result["interval_days"])
+        sim_new_lapse_count: int = int(sim_update_result["lapse_count"])
+        sim_new_due_date: int = int(sim_update_result["due_date"])
+
+        identifier_parts: list[str] = item_id.split("-")
+        domain: str = identifier_parts[0]
+
+        validation_connection.execute(
+            "UPDATE items SET easiness_factor=?, interval_days=?, "
+            "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
+            "WHERE item_id=?",
+            (
+                sim_new_easiness_factor,
+                sim_new_interval_days,
+                sim_new_repetition_count,
+                sim_new_due_date,
+                validation_today,
+                sim_new_lapse_count,
+                item_id,
+            ),
+        )
+        validation_connection.commit()
+
+        validation_connection.execute(
+            "INSERT INTO review_log ("
+            "item_id, grade, sm2_grade, review_date, elapsed_days, "
+            "easiness_factor_before, easiness_factor_after, "
+            "interval_days_before, interval_days_after, "
+            "repetition_count_before, domain, error_note"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                item_id,
+                grade,
+                sim_sm2_grade,
+                validation_today,
+                sim_elapsed_days,
+                sim_easiness_factor_before,
+                sim_new_easiness_factor,
+                sim_interval_days_before,
+                sim_new_interval_days,
+                sim_repetition_count_before,
+                domain,
+                None,
+            ),
+        )
+        validation_connection.commit()
+
+    # assert 9 review_log rows
+    log_count_row: tuple = validation_connection.execute(
+        "SELECT COUNT(*) FROM review_log"
+    ).fetchone()
+    log_count: int = log_count_row[0]
+    if log_count != 9:
+        print(f"FAIL: expected 9 review_log rows, got {log_count}")
+        failure_count = failure_count + 1
+
+    # assert state transitions per grade
+    for queue_index, item_id in enumerate(validation_review_queue):
+        grade = simulated_grades[queue_index]
+
+        post_state_row: tuple = validation_connection.execute(
+            "SELECT easiness_factor, interval_days, repetition_count, "
+            "lapse_count, due_date "
+            "FROM items WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+
+        post_easiness_factor: float = post_state_row[0]
+        post_interval_days: float = post_state_row[1]
+        post_repetition_count: int = post_state_row[2]
+        post_lapse_count: int = post_state_row[3]
+        post_due_date: int = post_state_row[4]
+
+        if grade == 0:
+            if post_repetition_count != 0:
+                print(
+                    f"FAIL: {item_id} grade 0 expected repetition_count 0, "
+                    f"got {post_repetition_count}"
+                )
+                failure_count = failure_count + 1
+            if post_lapse_count != 1:
+                print(
+                    f"FAIL: {item_id} grade 0 expected lapse_count 1, "
+                    f"got {post_lapse_count}"
+                )
+                failure_count = failure_count + 1
+            if abs(post_easiness_factor - 1.96) > FLOAT_TOLERANCE:
+                print(
+                    f"FAIL: {item_id} grade 0 expected easiness_factor 1.96, "
+                    f"got {post_easiness_factor}"
+                )
+                failure_count = failure_count + 1
+        elif grade == 1:
+            if post_repetition_count != 1:
+                print(
+                    f"FAIL: {item_id} grade 1 expected repetition_count 1, "
+                    f"got {post_repetition_count}"
+                )
+                failure_count = failure_count + 1
+            if abs(post_easiness_factor - 2.36) > FLOAT_TOLERANCE:
+                print(
+                    f"FAIL: {item_id} grade 1 expected easiness_factor 2.36, "
+                    f"got {post_easiness_factor}"
+                )
+                failure_count = failure_count + 1
+        elif grade == 2:
+            if post_repetition_count != 1:
+                print(
+                    f"FAIL: {item_id} grade 2 expected repetition_count 1, "
+                    f"got {post_repetition_count}"
+                )
+                failure_count = failure_count + 1
+            if abs(post_easiness_factor - 2.60) > FLOAT_TOLERANCE:
+                print(
+                    f"FAIL: {item_id} grade 2 expected easiness_factor 2.60, "
+                    f"got {post_easiness_factor}"
+                )
+                failure_count = failure_count + 1
+
+        if abs(post_interval_days - 1.0) > FLOAT_TOLERANCE:
+            print(
+                f"FAIL: {item_id} expected interval_days 1.0, "
+                f"got {post_interval_days}"
+            )
+            failure_count = failure_count + 1
+
+        if post_due_date != validation_today + 1:
+            print(
+                f"FAIL: {item_id} expected due_date {validation_today + 1}, "
+                f"got {post_due_date}"
+            )
+            failure_count = failure_count + 1
+
+    validation_connection.close()
+
+    if failure_count == 0:
+        print("validation passed: all checks ok")
+    else:
+        print(f"validation failed: {failure_count} check(s) failed")
+        sys.exit(1)
 
 
 # =============================================================================
@@ -505,3 +781,4 @@ if __name__ == "__main__":
             print(f"{fail_count} items return tomorrow.")
     print(due_queue)
     print(review_queue)
+    run_validation()
