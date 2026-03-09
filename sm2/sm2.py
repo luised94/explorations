@@ -555,6 +555,47 @@ def run_validation() -> None:
 # =============================================================================
 
 if __name__ == "__main__":
+    argument_parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="SM-2 spaced repetition review tool."
+    )
+    argument_parser.add_argument(
+        "--new-max",
+        type=int,
+        default=TOTAL_NEW_MAX,
+        help="maximum new items per session (default: 9)",
+    )
+    argument_parser.add_argument(
+        "--min-per-domain",
+        type=int,
+        default=MIN_PER_DOMAIN,
+        help="minimum new items guaranteed per domain (default: 1)",
+    )
+    argument_parser.add_argument(
+        "--max-reviews",
+        type=int,
+        default=MAX_REVIEWS,
+        help="hard session cap on total items reviewed (default: 100)",
+    )
+    argument_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the review queue and exit without reviewing",
+    )
+    argument_parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="run internal validation suite and exit",
+    )
+    parsed_args: argparse.Namespace = argument_parser.parse_args()
+
+    if parsed_args.validate:
+        run_validation()
+        sys.exit(0)
+
+    TOTAL_NEW_MAX = parsed_args.new_max
+    MIN_PER_DOMAIN = parsed_args.min_per_domain
+    MAX_REVIEWS = parsed_args.max_reviews
+
     today: int = datetime.date.today().toordinal()
 
     database_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
@@ -621,6 +662,11 @@ if __name__ == "__main__":
         MIN_PER_DOMAIN,
         MAX_REVIEWS,
     )
+    if parsed_args.dry_run:
+        print(f"dry run: {len(review_queue)} item(s) in review queue")
+        for queued_item_id in review_queue:
+            print(f"  {queued_item_id}")
+        sys.exit(0)
     # --- review loop
     review_count: int = 0
     pass_count: int = 0
@@ -781,4 +827,3 @@ if __name__ == "__main__":
             print(f"{fail_count} items return tomorrow.")
     print(due_queue)
     print(review_queue)
-    run_validation()
