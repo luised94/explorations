@@ -289,8 +289,17 @@ def run_validation() -> None:
             )
             synthetic_items.append(synthetic_item)
 
-    # init in-memory database
+# init in-memory database
     validation_connection: sqlite3.Connection = initialize_database(":memory:")
+    pragma_rows: list[tuple] = validation_connection.execute(
+        "PRAGMA table_info(review_log)"
+    ).fetchall()
+    pragma_column_names: set[str] = set()
+    for pragma_row in pragma_rows:
+        pragma_column_names.add(pragma_row[1])
+    if "answer_text" not in pragma_column_names:
+        print("FAIL: answer_text column missing from review_log after initialize_database")
+        failure_count = failure_count + 1
 
     # build parsed_ids and content_map
     validation_parsed_ids: set[str] = set()
@@ -429,8 +438,8 @@ def run_validation() -> None:
             "item_id, grade, sm2_grade, review_date, elapsed_days, "
             "easiness_factor_before, easiness_factor_after, "
             "interval_days_before, interval_days_after, "
-            "repetition_count_before, domain, error_note"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "repetition_count_before, domain, error_note, answer_text"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 item_id,
                 grade,
@@ -443,6 +452,7 @@ def run_validation() -> None:
                 sim_new_interval_days,
                 sim_repetition_count_before,
                 domain,
+                None,
                 None,
             ),
         )
