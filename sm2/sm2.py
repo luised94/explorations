@@ -658,10 +658,42 @@ if __name__ == "__main__":
         MIN_PER_DOMAIN,
         MAX_REVIEWS,
     )
+
     if parsed_args.dry_run:
         print(f"dry run: {len(review_queue)} item(s) in review queue")
-        for queued_item_id in review_queue:
-            print(f"  {queued_item_id}")
+        if len(review_queue) > 0:
+            dry_run_placeholders: str = ",".join("?" * len(review_queue))
+            dry_run_rows: list[tuple] = database_connection.execute(
+                f"SELECT item_id, easiness_factor, interval_days, "
+                f"repetition_count, due_date "
+                f"FROM items WHERE item_id IN ({dry_run_placeholders})",
+                review_queue,
+            ).fetchall()
+            dry_run_state: dict[str, tuple] = {}
+            for row in dry_run_rows:
+                dry_run_state[row[0]] = row
+            id_column_width: int = len("item_id")
+            for queued_item_id in review_queue:
+                if len(queued_item_id) > id_column_width:
+                    id_column_width = len(queued_item_id)
+            print(
+                f"{'item_id':<{id_column_width}}  "
+                f"{'domain':<6}  {'rep':>3}  {'EF':>5}  "
+                f"{'interval':>8}  days_overdue"
+            )
+            for queued_item_id in review_queue:
+                dry_run_row: tuple = dry_run_state[queued_item_id]
+                item_domain: str = queued_item_id.split("-")[0]
+                item_ef: float = dry_run_row[1]
+                item_interval: float = dry_run_row[2]
+                item_rep: int = dry_run_row[3]
+                item_due_date: int = dry_run_row[4]
+                item_days_overdue: int = today - item_due_date
+                print(
+                    f"{queued_item_id:<{id_column_width}}  "
+                    f"{item_domain:<6}  {item_rep:>3}  {item_ef:>5.2f}  "
+                    f"{item_interval:>8.1f}  {item_days_overdue}"
+                )
         sys.exit(0)
     terminal_output.set_verbosity(3)
     terminal_output.set_layout(max_width=76, align="center")
