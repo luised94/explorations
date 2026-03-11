@@ -694,23 +694,20 @@ if __name__ == "__main__":
 
             print("")
             print("---")
-            print(f"Item: {item_id}")
+            print(f"[{review_count + 1} / {len(review_queue)}]  {domain}")
             print("")
             print(content)
             print("")
-
-            input("Press enter when ready to grade...")
-
+            raw_answer: str = input("Your answer (enter to skip): ").strip()
+            answer_text: str | None = raw_answer if raw_answer != "" else None
             print("")
-            print("Consider criteria and assign grade.")
             if criteria != "":
-                print("")
                 print(f"Criteria: {criteria}")
+                print("")
             print("  0 = failed")
             print("  1 = passed with effort")
             print("  2 = easy, fluent")
             print("")
-
             grade: int = -1
             while grade == -1:
                 raw_grade: str = input("Grade (0/1/2): ").strip()
@@ -722,7 +719,6 @@ if __name__ == "__main__":
                     grade = 2
                 else:
                     print("Invalid grade. Enter 0, 1, or 2.")
-
             error_note: str | None = None
             if grade == 0:
                 raw_error_note: str = input("What went wrong? (enter to skip): ").strip()
@@ -779,14 +775,13 @@ if __name__ == "__main__":
                 ),
             )
             database_connection.commit()
-
             database_connection.execute(
                 "INSERT INTO review_log ("
                 "item_id, grade, sm2_grade, review_date, elapsed_days, "
                 "easiness_factor_before, easiness_factor_after, "
                 "interval_days_before, interval_days_after, "
-                "repetition_count_before, domain, error_note"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "repetition_count_before, domain, error_note, answer_text"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     item_id,
                     grade,
@@ -800,6 +795,7 @@ if __name__ == "__main__":
                     repetition_count_before,
                     domain,
                     error_note,
+                    answer_text,
                 ),
             )
             database_connection.commit()
