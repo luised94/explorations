@@ -689,11 +689,13 @@ if __name__ == "__main__":
                 body=content,
                 footer=None,
             ))
-            raw_answer: str = input("Your answer (enter to skip): ").strip()
+
+            terminal_output.emit("Your answer (enter to skip):")
+            raw_answer: str = input("").strip()
             answer_text: str | None = raw_answer if raw_answer != "" else None
             if criteria != "":
                 terminal_output.emit(terminal_output.format_separator())
-                terminal_output.emit("Criteria: " + criteria)
+                terminal_output.emit(terminal_output.format_label("criteria", criteria))
             terminal_output.emit(terminal_output.format_choices([
                 ("0", "failed"),
                 ("1", "passed with effort"),
@@ -701,7 +703,8 @@ if __name__ == "__main__":
             ]))
             grade: int = -1
             while grade == -1:
-                raw_grade: str = input("Grade (0/1/2): ").strip()
+                terminal_output.emit("Grade (0/1/2):")
+                raw_grade: str = input("").strip()
                 if raw_grade == "0":
                     grade = 0
                 elif raw_grade == "1":
@@ -709,10 +712,12 @@ if __name__ == "__main__":
                 elif raw_grade == "2":
                     grade = 2
                 else:
-                    print("Invalid grade. Enter 0, 1, or 2.")
+                    terminal_output.emit("Invalid grade. Enter 0, 1, or 2.")
+
             error_note: str | None = None
             if grade == 0:
-                raw_error_note: str = input("What went wrong? (enter to skip): ").strip()
+                terminal_output.emit("What went wrong? (enter to skip):")
+                raw_error_note: str = input("").strip()
                 if raw_error_note != "":
                     error_note = raw_error_note
 
