@@ -42,7 +42,7 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
 
     for filename in sorted(markdown_filenames):
         filepath: str = os.path.join(directory_path, filename)
-        file_handle = open(filepath, "r", encoding="ascii")
+        file_handle = open(filepath, "r", encoding="utf-8")
         raw_text: str = file_handle.read()
         file_handle.close()
 
@@ -593,11 +593,14 @@ if __name__ == "__main__":
     MAX_REVIEWS = parsed_args.max_reviews
 
     today: int = datetime.date.today().toordinal()
-
+    if not os.path.isdir("data"):
+        print("error: data/ directory not found")
+        sys.exit(1)
+    if not os.path.isdir("exercises"):
+        print("error: exercises/ directory not found")
+        sys.exit(1)
     database_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
-
     # --- parse
-    #parsed_items: list[ParsedItem] = parse_exercises("scratch/")
     parsed_items: list[ParsedItem] = parse_exercises("exercises/")
 
     parsed_ids: set[str] = set()
