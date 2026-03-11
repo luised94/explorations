@@ -5,6 +5,10 @@ import re
 import sqlite3
 import sys
 from typing import TypeAlias
+# Workaround for the python file being in another directory. Need to address eventually.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "llms"))
+import terminal_output
+
 
 
 # =============================================================================
@@ -203,24 +207,6 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
     return database_connection
 
 
-# =============================================================================
-# OUTPUT HELPERS
-# =============================================================================
-def format_duration(days: int) -> str:
-    if days == 0:
-        return "today"
-    if days == 1:
-        return "tomorrow"
-    if days < 14:
-        return f"{days} days"
-    if days < 60:
-        weeks: int = days // 7
-        return f"{weeks} weeks"
-    if days < 730:
-        months: int = days // 30
-        return f"{months} months"
-    years: int = days // 365
-    return f"{years} years"
 
 
 # =============================================================================
@@ -677,6 +663,9 @@ if __name__ == "__main__":
         for queued_item_id in review_queue:
             print(f"  {queued_item_id}")
         sys.exit(0)
+    terminal_output.set_verbosity(3)
+    terminal_output.set_layout(max_width=76, align="center")
+
     # --- review loop
     review_count: int = 0
     pass_count: int = 0
@@ -692,22 +681,24 @@ if __name__ == "__main__":
             identifier_parts: list[str] = item_id.split("-")
             domain: str = identifier_parts[0]
 
-            print("")
-            print("---")
-            print(f"[{review_count + 1} / {len(review_queue)}]  {domain}")
-            print("")
-            print(content)
-            print("")
+            progress_string: str = f"{review_count + 1} / {len(review_queue)}"
+            terminal_output.clear_screen()
+            terminal_output.emit(terminal_output.format_card(
+                header_left=progress_string,
+                header_right=domain,
+                body=content,
+                footer=None,
+            ))
             raw_answer: str = input("Your answer (enter to skip): ").strip()
             answer_text: str | None = raw_answer if raw_answer != "" else None
-            print("")
             if criteria != "":
-                print(f"Criteria: {criteria}")
-                print("")
-            print("  0 = failed")
-            print("  1 = passed with effort")
-            print("  2 = easy, fluent")
-            print("")
+                terminal_output.emit(terminal_output.format_separator())
+                terminal_output.emit("Criteria: " + criteria)
+            terminal_output.emit(terminal_output.format_choices([
+                ("0", "failed"),
+                ("1", "passed with effort"),
+                ("2", "easy, fluent"),
+            ]))
             grade: int = -1
             while grade == -1:
                 raw_grade: str = input("Grade (0/1/2): ").strip()
@@ -800,14 +791,13 @@ if __name__ == "__main__":
             )
             database_connection.commit()
 
+
             days_until: int = new_due_date - today
-            duration_string: str = format_duration(days_until)
-
+            duration_string: str = terminal_output.format_duration(days_until)
             if grade == 0:
-                print(f"Failed. Returns in {duration_string}.")
+                terminal_output.emit(f"Failed. Returns in {duration_string}.")
             else:
-                print(f"Passed. Next review in {duration_string}.")
-
+                terminal_output.emit(f"Passed. Next review in {duration_string}.")
 
             review_count = review_count + 1
             if grade == 0:
@@ -821,15 +811,13 @@ if __name__ == "__main__":
         print("")
         print("Session interrupted.")
     finally:
-        print("")
-        print("---")
-        print(
-            f"Session complete. "
+        terminal_output.msg_info(
             f"Reviewed: {review_count}  "
             f"Passed: {pass_count}  "
             f"Failed: {fail_count}  "
             f"New: {new_count}"
         )
+        terminal_output.msg_success("session complete")
         if fail_count > 0:
-            print(f"{fail_count} items return tomorrow.")
+            terminal_output.msg_info(f"{fail_count} item(s) return tomorrow")
     print(review_queue)
