@@ -695,7 +695,8 @@ if __name__ == "__main__":
             answer_text: str | None = raw_answer if raw_answer != "" else None
             if criteria != "":
                 terminal_output.emit(terminal_output.format_separator())
-                terminal_output.emit(terminal_output.format_label("criteria", criteria))
+                terminal_output.emit(terminal_output.format_label("criteria"))
+                terminal_output.emit(terminal_output.wrap_text(criteria))
             terminal_output.emit(terminal_output.format_choices([
                 ("0", "failed"),
                 ("1", "passed with effort"),
