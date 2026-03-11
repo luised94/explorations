@@ -189,6 +189,17 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
         "CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)"
     )
     database_connection.commit()
+    existing_columns: list[tuple] = database_connection.execute(
+        "PRAGMA table_info(review_log)"
+    ).fetchall()
+    column_names: set[str] = set()
+    for column_row in existing_columns:
+        column_names.add(column_row[1])
+    if "answer_text" not in column_names:
+        database_connection.execute(
+            "ALTER TABLE review_log ADD COLUMN answer_text TEXT"
+        )
+        database_connection.commit()
     return database_connection
 
 
