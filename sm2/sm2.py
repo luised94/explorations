@@ -635,11 +635,6 @@ if __name__ == "__main__":
         help="run review session without writing to database",
     )
     argument_parser.add_argument(
-        "--preview",
-        action="store_true",
-        help="show prerequisite-blocked items after session",
-    )
-    argument_parser.add_argument(
         "--failures",
         action="store_true",
         help="show most recent grade-0 rows with error notes and exit",
@@ -803,7 +798,7 @@ if __name__ == "__main__":
         today_new_by_domain[row[0]] = row[1]
 
     # --- build blocked set
-    blocked_set: set[str] = build_blocked_set(content_map, database_connection)
+    blocked_set: set[str] = set()
 
     # --- apply throttle and cap
     review_queue: list[str] = apply_throttle_and_cap(
@@ -815,11 +810,6 @@ if __name__ == "__main__":
         blocked_set,
     )
 
-    preview_queue: list[str] = []
-    if parsed_args.preview:
-        for due_item in due_queue:
-            if due_item[0] in blocked_set:
-                preview_queue.append(due_item[0])
     if parsed_args.dry_run:
         print(f"dry run: {len(review_queue)} item(s) in review queue")
         if len(review_queue) > 0:
@@ -856,7 +846,7 @@ if __name__ == "__main__":
                     f"{item_interval:>8.1f}  {item_days_overdue}"
                 )
         sys.exit(0)
-    if not no_commit_mode and not parsed_args.preview:
+    if not no_commit_mode:
         items_reviewed_today: int = database_connection.execute(
             "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
             (today,),
@@ -1058,67 +1048,3 @@ if __name__ == "__main__":
 
         if fail_count > 0:
             terminal_output.msg_info(f"{fail_count} item(s) return tomorrow")
-    if parsed_args.preview and len(preview_queue) == 0:
-        terminal_output.msg_info("no blocked items to preview")
-    if len(preview_queue) > 0:
-        preview_count: int = 0
-        for preview_index, item_id in enumerate(preview_queue):
-            content_entry: tuple[str, str, list[str], list[str]] = content_map[item_id]
-            content: str = content_entry[0]
-            criteria: str = content_entry[1]
-            identifier_parts: list[str] = item_id.split("-")
-            domain: str = identifier_parts[0]
-            progress_string: str = (
-                f"{preview_index + 1} / {len(preview_queue)}  "
-                + terminal_output.format_label("preview")
-            )
-            terminal_output.clear_screen()
-            terminal_output.emit(terminal_output.format_card(
-                header_left=progress_string,
-                header_right=domain,
-                body=content,
-                footer=None,
-            ))
-            response_start: float = time.monotonic()
-            terminal_output.emit("Your answer (enter to skip):")
-            raw_answer: str = input("").strip()
-            answer_text: str | None = raw_answer if raw_answer != "" else None
-            if criteria != "":
-                terminal_output.emit(terminal_output.format_separator())
-                terminal_output.emit(terminal_output.format_label("criteria"))
-                terminal_output.emit(terminal_output.wrap_text(criteria))
-            terminal_output.emit(terminal_output.format_choices([
-                ("0", "failed"),
-                ("1", "passed with effort"),
-                ("2", "easy, fluent"),
-            ]))
-            grade: int = -1
-            while grade == -1:
-                terminal_output.emit("Grade (0/1/2):")
-                raw_grade: str = input("").strip()
-                if raw_grade == "0":
-                    grade = 0
-                elif raw_grade == "1":
-                    grade = 1
-                elif raw_grade == "2":
-                    grade = 2
-                else:
-                    terminal_output.emit("Invalid grade. Enter 0, 1, or 2.")
-            response_seconds: float = round(time.monotonic() - response_start, 2)
-            error_note: str | None = None
-            if grade == 0:
-                terminal_output.emit("What went wrong? (enter to skip):")
-                raw_error_note: str = input("").strip()
-                if raw_error_note != "":
-                    error_note = raw_error_note
-            state_row: tuple = database_connection.execute(
-                "SELECT due_date FROM items WHERE item_id = ?",
-                (item_id,),
-            ).fetchone()
-            days_until: int = state_row[0] - today
-            duration_string: str = terminal_output.format_duration(days_until)
-            terminal_output.emit(f"Preview only. Currently due in {duration_string}.")
-            preview_count = preview_count + 1
-        terminal_output.msg_info(
-            f"preview complete: {preview_count} item(s)"
-        )
