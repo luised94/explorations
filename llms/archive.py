@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 # --- constants ---
 
-DATABASE_PATH = Path(__file__).parent / "llm.db"
+DATABASE_PATH = Path(__file__).parent / "archive.db"
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 # Terminal formatting - ANSI codes when stdout is a tty, empty strings otherwise
