@@ -222,6 +222,7 @@ def apply_throttle_and_cap(
     total_new_max: int,
     min_per_domain: int,
     max_reviews: int,
+    blocked_set: set[str],
 ) -> list[str]:
     # pass 1: reserve floor items per domain
     reserved_item_ids: set[str] = set()
@@ -229,6 +230,8 @@ def apply_throttle_and_cap(
     for due_item in due_queue:
         item_id: str = due_item[0]
         repetition_count: int = due_item[1]
+        if item_id in blocked_set:
+            continue
         if repetition_count == 0:
             identifier_parts: list[str] = item_id.split("-")
             domain: str = identifier_parts[0]
@@ -240,7 +243,6 @@ def apply_throttle_and_cap(
             if floor_remaining > 0:
                 reserved_item_ids.add(item_id)
                 reserved_count_by_domain[domain] = already_reserved_in_domain + 1
-
     # pass 2: build result - reserved slots pre-allocated from budget
     already_new_today: int = 0
     for domain_count in today_new_by_domain.values():
@@ -248,11 +250,12 @@ def apply_throttle_and_cap(
     total_reserved: int = len(reserved_item_ids)
     non_reserved_budget: int = max(0, total_new_max - total_reserved - already_new_today)
     non_reserved_added: int = 0
-
     result: list[str] = []
     for due_item in due_queue:
         item_id: str = due_item[0]
         repetition_count: int = due_item[1]
+        if item_id in blocked_set:
+            continue
         if repetition_count > 0:
             result.append(item_id)
         else:
@@ -261,11 +264,37 @@ def apply_throttle_and_cap(
             elif non_reserved_added < non_reserved_budget:
                 result.append(item_id)
                 non_reserved_added = non_reserved_added + 1
-
     if len(result) > max_reviews:
         result = result[:max_reviews]
     return result
-
+# =============================================================================
+# PREREQUISITE ENFORCEMENT
+# =============================================================================
+def build_blocked_set(
+    content_map: ContentMap,
+    database_connection: sqlite3.Connection,
+) -> set[str]:
+    # Prerequisite chains are assumed acyclic by authoring convention.
+    # No runtime cycle detection.
+    blocked_item_ids: set[str] = set()
+    for item_id in content_map:
+        prerequisites: list[str] = content_map[item_id][3]
+        for prerequisite_id in prerequisites:
+            prerequisite_in_db: int = database_connection.execute(
+                "SELECT COUNT(*) FROM items WHERE item_id = ?",
+                (prerequisite_id,),
+            ).fetchone()[0]
+            if prerequisite_in_db == 0:
+                continue
+            passing_grades: int = database_connection.execute(
+                "SELECT COUNT(*) FROM review_log "
+                "WHERE item_id = ? AND grade > 0",
+                (prerequisite_id,),
+            ).fetchone()[0]
+            if passing_grades == 0:
+                blocked_item_ids.add(item_id)
+                break
+    return blocked_item_ids
 # =============================================================================
 # VALIDATION
 # =============================================================================
@@ -375,6 +404,7 @@ def run_validation() -> None:
         TOTAL_NEW_MAX,
         MIN_PER_DOMAIN,
         MAX_REVIEWS,
+        set(),
     )
 
     # assert 9 items in review queue
@@ -605,6 +635,11 @@ if __name__ == "__main__":
         help="run review session without writing to database",
     )
     argument_parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="show prerequisite-blocked items after session",
+    )
+    argument_parser.add_argument(
         "--failures",
         action="store_true",
         help="show most recent grade-0 rows with error notes and exit",
@@ -767,6 +802,9 @@ if __name__ == "__main__":
     for row in today_new_rows:
         today_new_by_domain[row[0]] = row[1]
 
+    # --- build blocked set
+    blocked_set: set[str] = build_blocked_set(content_map, database_connection)
+
     # --- apply throttle and cap
     review_queue: list[str] = apply_throttle_and_cap(
         due_queue,
@@ -774,8 +812,14 @@ if __name__ == "__main__":
         TOTAL_NEW_MAX,
         MIN_PER_DOMAIN,
         MAX_REVIEWS,
+        blocked_set,
     )
 
+    preview_queue: list[str] = []
+    if parsed_args.preview:
+        for due_item in due_queue:
+            if due_item[0] in blocked_set:
+                preview_queue.append(due_item[0])
     if parsed_args.dry_run:
         print(f"dry run: {len(review_queue)} item(s) in review queue")
         if len(review_queue) > 0:
@@ -1014,3 +1058,67 @@ if __name__ == "__main__":
 
         if fail_count > 0:
             terminal_output.msg_info(f"{fail_count} item(s) return tomorrow")
+    if parsed_args.preview and len(preview_queue) == 0:
+        terminal_output.msg_info("no blocked items to preview")
+    if len(preview_queue) > 0:
+        preview_count: int = 0
+        for preview_index, item_id in enumerate(preview_queue):
+            content_entry: tuple[str, str, list[str], list[str]] = content_map[item_id]
+            content: str = content_entry[0]
+            criteria: str = content_entry[1]
+            identifier_parts: list[str] = item_id.split("-")
+            domain: str = identifier_parts[0]
+            progress_string: str = (
+                f"{preview_index + 1} / {len(preview_queue)}  "
+                + terminal_output.format_label("preview")
+            )
+            terminal_output.clear_screen()
+            terminal_output.emit(terminal_output.format_card(
+                header_left=progress_string,
+                header_right=domain,
+                body=content,
+                footer=None,
+            ))
+            response_start: float = time.monotonic()
+            terminal_output.emit("Your answer (enter to skip):")
+            raw_answer: str = input("").strip()
+            answer_text: str | None = raw_answer if raw_answer != "" else None
+            if criteria != "":
+                terminal_output.emit(terminal_output.format_separator())
+                terminal_output.emit(terminal_output.format_label("criteria"))
+                terminal_output.emit(terminal_output.wrap_text(criteria))
+            terminal_output.emit(terminal_output.format_choices([
+                ("0", "failed"),
+                ("1", "passed with effort"),
+                ("2", "easy, fluent"),
+            ]))
+            grade: int = -1
+            while grade == -1:
+                terminal_output.emit("Grade (0/1/2):")
+                raw_grade: str = input("").strip()
+                if raw_grade == "0":
+                    grade = 0
+                elif raw_grade == "1":
+                    grade = 1
+                elif raw_grade == "2":
+                    grade = 2
+                else:
+                    terminal_output.emit("Invalid grade. Enter 0, 1, or 2.")
+            response_seconds: float = round(time.monotonic() - response_start, 2)
+            error_note: str | None = None
+            if grade == 0:
+                terminal_output.emit("What went wrong? (enter to skip):")
+                raw_error_note: str = input("").strip()
+                if raw_error_note != "":
+                    error_note = raw_error_note
+            state_row: tuple = database_connection.execute(
+                "SELECT due_date FROM items WHERE item_id = ?",
+                (item_id,),
+            ).fetchone()
+            days_until: int = state_row[0] - today
+            duration_string: str = terminal_output.format_duration(days_until)
+            terminal_output.emit(f"Preview only. Currently due in {duration_string}.")
+            preview_count = preview_count + 1
+        terminal_output.msg_info(
+            f"preview complete: {preview_count} item(s)"
+        )
