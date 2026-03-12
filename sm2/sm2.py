@@ -856,7 +856,7 @@ if __name__ == "__main__":
                     f"{item_interval:>8.1f}  {item_days_overdue}"
                 )
         sys.exit(0)
-    if not no_commit_mode:
+    if not no_commit_mode and not parsed_args.preview:
         items_reviewed_today: int = database_connection.execute(
             "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
             (today,),
