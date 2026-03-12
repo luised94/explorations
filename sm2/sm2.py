@@ -625,6 +625,11 @@ if __name__ == "__main__":
         help="print the review queue and exit without reviewing",
     )
     argument_parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="show upcoming items not yet due and exit",
+    )
+    argument_parser.add_argument(
         "--validate",
         action="store_true",
         help="run internal validation suite and exit",
@@ -768,6 +773,47 @@ if __name__ == "__main__":
             (new_item_id, today),
         )
     database_connection.commit()
+    # --- preview upcoming items
+    if parsed_args.preview:
+        if len(parsed_ids) == 0:
+            print("no upcoming items found.")
+            sys.exit(0)
+        preview_parsed_ids_list: list[str] = list(parsed_ids)
+        preview_placeholders: str = ",".join("?" * len(preview_parsed_ids_list))
+        preview_rows: list[tuple] = database_connection.execute(
+            f"SELECT item_id, easiness_factor, interval_days, "
+            f"repetition_count, due_date "
+            f"FROM items "
+            f"WHERE item_id IN ({preview_placeholders}) "
+            f"  AND due_date > ? "
+            f"ORDER BY due_date ASC "
+            f"LIMIT 20",
+            preview_parsed_ids_list + [today],
+        ).fetchall()
+        if len(preview_rows) == 0:
+            print("no upcoming items found.")
+            sys.exit(0)
+        preview_id_width: int = len("item_id")
+        for preview_row in preview_rows:
+            if len(preview_row[0]) > preview_id_width:
+                preview_id_width = len(preview_row[0])
+        print(
+            f"{'item_id':<{preview_id_width}}  "
+            f"{'domain':<6}  {'due_in':>6}  {'rep':>3}  {'EF':>5}"
+        )
+        for preview_row in preview_rows:
+            preview_item_id: str = preview_row[0]
+            preview_easiness_factor: float = preview_row[1]
+            preview_repetition_count: int = preview_row[3]
+            preview_due_date: int = preview_row[4]
+            preview_domain: str = preview_item_id.split("-")[0]
+            preview_due_in: int = preview_due_date - today
+            print(
+                f"{preview_item_id:<{preview_id_width}}  "
+                f"{preview_domain:<6}  {preview_due_in:>6}  "
+                f"{preview_repetition_count:>3}  {preview_easiness_factor:>5.2f}"
+            )
+        sys.exit(0)
     # --- build due queue
     due_queue: list[DueItem] = []
     if len(parsed_ids) > 0:
