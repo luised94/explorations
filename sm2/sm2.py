@@ -635,12 +635,12 @@ if __name__ == "__main__":
         help="run review session without writing to database",
     )
     argument_parser.add_argument(
-        "--failures",
+        "--show_failures",
         action="store_true",
         help="show most recent grade-0 rows with error notes and exit",
     )
     argument_parser.add_argument(
-        "--leeches",
+        "--show_leeches",
         action="store_true",
         help="show items with lapse_count >= LEECH_THRESHOLD and exit",
     )
@@ -657,12 +657,12 @@ if __name__ == "__main__":
     MAX_REVIEWS = parsed_args.max_reviews
 
     today: int = datetime.date.today().toordinal()
-    if parsed_args.failures or parsed_args.leeches:
+    if parsed_args.show_failures or parsed_args.show_leeches:
         if not os.path.isdir("data"):
             print("error: data/ directory not found")
             sys.exit(1)
         flags_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
-        if parsed_args.failures:
+        if parsed_args.show_failures:
             failures_rows: list[tuple] = flags_connection.execute(
                 "SELECT r.item_id, r.domain, r.review_date, r.error_note, "
                 "       i.lapse_count "
@@ -700,7 +700,7 @@ if __name__ == "__main__":
                         f"{failure_domain:<6}  {failure_date:<10}  "
                         f"{failure_lapse_count:>6}  {failure_error_note}"
                     )
-        if parsed_args.leeches:
+        if parsed_args.show_leeches:
             leeches_rows: list[tuple] = flags_connection.execute(
                 "SELECT item_id, lapse_count, easiness_factor, last_review "
                 "FROM items "
@@ -710,7 +710,7 @@ if __name__ == "__main__":
             ).fetchall()
             if len(leeches_rows) == 0:
                 print(
-                    f"no leeches found (lapse_count < {LEECH_THRESHOLD} for all items)."
+                    f"no show_leeches found (lapse_count < {LEECH_THRESHOLD} for all items)."
                 )
             else:
                 leeches_id_width: int = len("item_id")
