@@ -22,6 +22,7 @@ DueItem: TypeAlias = tuple[str, int, int]
 # positions:               item_id  repetition_count  due_date
 
 DATABASE_PATH: str = "data/sm2.db"
+LEECH_THRESHOLD: int = 3
 TOTAL_NEW_MAX: int = 9
 MIN_PER_DOMAIN: int = 1
 MAX_REVIEWS: int = 100
@@ -598,6 +599,16 @@ if __name__ == "__main__":
         action="store_true",
         help="run internal validation suite and exit",
     )
+    argument_parser.add_argument(
+        "--failures",
+        action="store_true",
+        help="show most recent grade-0 rows with error notes and exit",
+    )
+    argument_parser.add_argument(
+        "--leeches",
+        action="store_true",
+        help="show items with lapse_count >= LEECH_THRESHOLD and exit",
+    )
     parsed_args: argparse.Namespace = argument_parser.parse_args()
     terminal_output.set_verbosity(3)
     terminal_output.set_layout(max_width=76, align="center")
@@ -610,6 +621,86 @@ if __name__ == "__main__":
     MAX_REVIEWS = parsed_args.max_reviews
 
     today: int = datetime.date.today().toordinal()
+    if parsed_args.failures or parsed_args.leeches:
+        if not os.path.isdir("data"):
+            print("error: data/ directory not found")
+            sys.exit(1)
+        flags_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
+        if parsed_args.failures:
+            failures_rows: list[tuple] = flags_connection.execute(
+                "SELECT r.item_id, r.domain, r.review_date, r.error_note, "
+                "       i.lapse_count "
+                "FROM review_log r "
+                "JOIN items i ON r.item_id = i.item_id "
+                "WHERE r.grade = 0 "
+                "  AND r.error_note IS NOT NULL "
+                "  AND r.id = ( "
+                "      SELECT MAX(id) FROM review_log "
+                "      WHERE item_id = r.item_id "
+                "        AND grade = 0 "
+                "        AND error_note IS NOT NULL "
+                "  ) "
+                "ORDER BY r.review_date DESC"
+            ).fetchall()
+            if len(failures_rows) == 0:
+                print("no recorded failures with notes.")
+            else:
+                failures_id_width: int = len("item_id")
+                for failures_row in failures_rows:
+                    if len(failures_row[0]) > failures_id_width:
+                        failures_id_width = len(failures_row[0])
+                print(
+                    f"{'item_id':<{failures_id_width}}  "
+                    f"{'domain':<6}  {'date':<10}  {'lapses':>6}  error_note"
+                )
+                for failures_row in failures_rows:
+                    failure_item_id: str = failures_row[0]
+                    failure_domain: str = failures_row[1]
+                    failure_date: str = datetime.date.fromordinal(failures_row[2]).isoformat()
+                    failure_error_note: str = failures_row[3]
+                    failure_lapse_count: int = failures_row[4]
+                    print(
+                        f"{failure_item_id:<{failures_id_width}}  "
+                        f"{failure_domain:<6}  {failure_date:<10}  "
+                        f"{failure_lapse_count:>6}  {failure_error_note}"
+                    )
+        if parsed_args.leeches:
+            leeches_rows: list[tuple] = flags_connection.execute(
+                "SELECT item_id, lapse_count, easiness_factor, last_review "
+                "FROM items "
+                "WHERE lapse_count >= ? "
+                "ORDER BY lapse_count DESC, easiness_factor ASC",
+                (LEECH_THRESHOLD,),
+            ).fetchall()
+            if len(leeches_rows) == 0:
+                print(
+                    f"no leeches found (lapse_count < {LEECH_THRESHOLD} for all items)."
+                )
+            else:
+                leeches_id_width: int = len("item_id")
+                for leeches_row in leeches_rows:
+                    if len(leeches_row[0]) > leeches_id_width:
+                        leeches_id_width = len(leeches_row[0])
+                print(
+                    f"{'item_id':<{leeches_id_width}}  "
+                    f"{'domain':<6}  {'lapses':>6}  {'EF':>5}  days_since"
+                )
+                for leeches_row in leeches_rows:
+                    leech_item_id: str = leeches_row[0]
+                    leech_lapse_count: int = leeches_row[1]
+                    leech_easiness_factor: float = leeches_row[2]
+                    leech_last_review: int = leeches_row[3]
+                    leech_domain: str = leech_item_id.split("-")[0]
+                    if leech_last_review == 0:
+                        leech_days_since: str = "never"
+                    else:
+                        leech_days_since = str(today - leech_last_review)
+                    print(
+                        f"{leech_item_id:<{leeches_id_width}}  "
+                        f"{leech_domain:<6}  {leech_lapse_count:>6}  "
+                        f"{leech_easiness_factor:>5.2f}  {leech_days_since}"
+                    )
+        sys.exit(0)
     if not os.path.isdir("data"):
         print("error: data/ directory not found")
         sys.exit(1)
