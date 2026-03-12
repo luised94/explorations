@@ -4,11 +4,9 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from typing import TypeAlias
-# Workaround for the python file being in another directory. Need to address eventually.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "llms"))
 import terminal_output
-
 
 
 # =============================================================================
@@ -186,9 +184,12 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
             interval_days_after       REAL,
             repetition_count_before   INTEGER,
             domain                    TEXT,
-            error_note                TEXT
+            error_note                TEXT,
+            answer_text               TEXT,
+            response_seconds          REAL
         )
     """)
+
     database_connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)"
     )
@@ -204,10 +205,12 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
             "ALTER TABLE review_log ADD COLUMN answer_text TEXT"
         )
         database_connection.commit()
+    if "response_seconds" not in column_names:
+        database_connection.execute(
+            "ALTER TABLE review_log ADD COLUMN response_seconds REAL"
+        )
+        database_connection.commit()
     return database_connection
-
-
-
 
 # =============================================================================
 # THROTTLE
@@ -297,8 +300,12 @@ def run_validation() -> None:
     pragma_column_names: set[str] = set()
     for pragma_row in pragma_rows:
         pragma_column_names.add(pragma_row[1])
+
     if "answer_text" not in pragma_column_names:
         print("FAIL: answer_text column missing from review_log after initialize_database")
+        failure_count = failure_count + 1
+    if "response_seconds" not in pragma_column_names:
+        print("FAIL: response_seconds column missing from review_log after initialize_database")
         failure_count = failure_count + 1
 
     # build parsed_ids and content_map
@@ -438,8 +445,9 @@ def run_validation() -> None:
             "item_id, grade, sm2_grade, review_date, elapsed_days, "
             "easiness_factor_before, easiness_factor_after, "
             "interval_days_before, interval_days_after, "
-            "repetition_count_before, domain, error_note, answer_text"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "repetition_count_before, domain, error_note, answer_text, "
+            "response_seconds"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 item_id,
                 grade,
@@ -452,6 +460,7 @@ def run_validation() -> None:
                 sim_new_interval_days,
                 sim_repetition_count_before,
                 domain,
+                None,
                 None,
                 None,
             ),
@@ -590,7 +599,8 @@ if __name__ == "__main__":
         help="run internal validation suite and exit",
     )
     parsed_args: argparse.Namespace = argument_parser.parse_args()
-
+    terminal_output.set_verbosity(3)
+    terminal_output.set_layout(max_width=76, align="center")
     if parsed_args.validate:
         run_validation()
         sys.exit(0)
@@ -705,8 +715,6 @@ if __name__ == "__main__":
                     f"{item_interval:>8.1f}  {item_days_overdue}"
                 )
         sys.exit(0)
-    terminal_output.set_verbosity(3)
-    terminal_output.set_layout(max_width=76, align="center")
 
     # --- review loop
     review_count: int = 0
@@ -732,6 +740,8 @@ if __name__ == "__main__":
                 footer=None,
             ))
 
+
+            response_start: float = time.monotonic()
             terminal_output.emit("Your answer (enter to skip):")
             raw_answer: str = input("").strip()
             answer_text: str | None = raw_answer if raw_answer != "" else None
@@ -757,6 +767,7 @@ if __name__ == "__main__":
                 else:
                     terminal_output.emit("Invalid grade. Enter 0, 1, or 2.")
 
+            response_seconds: float = round(time.monotonic() - response_start, 2)
             error_note: str | None = None
             if grade == 0:
                 terminal_output.emit("What went wrong? (enter to skip):")
@@ -814,13 +825,15 @@ if __name__ == "__main__":
                 ),
             )
             database_connection.commit()
+
             database_connection.execute(
                 "INSERT INTO review_log ("
                 "item_id, grade, sm2_grade, review_date, elapsed_days, "
                 "easiness_factor_before, easiness_factor_after, "
                 "interval_days_before, interval_days_after, "
-                "repetition_count_before, domain, error_note, answer_text"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "repetition_count_before, domain, error_note, answer_text, "
+                "response_seconds"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     item_id,
                     grade,
@@ -835,8 +848,10 @@ if __name__ == "__main__":
                     domain,
                     error_note,
                     answer_text,
+                    response_seconds,
                 ),
             )
+
             database_connection.commit()
 
 
@@ -868,4 +883,3 @@ if __name__ == "__main__":
         terminal_output.msg_success("session complete")
         if fail_count > 0:
             terminal_output.msg_info(f"{fail_count} item(s) return tomorrow")
-    print(review_queue)

@@ -131,6 +131,7 @@ CALLER CONVENTION (COMPLETE)
 Use fully qualified calls throughout: terminal_output.emit(), not
 from terminal_output import emit.
 """
+
 import os
 import re
 import sys
@@ -145,14 +146,14 @@ STDERR_IS_TERMINAL: bool = sys.stderr.isatty()
 VERBOSITY: int = 3  # default: show error, warn, info
 
 # ANSI escape codes (empty strings if stderr is not a terminal)
-STYLE_RESET: str      = "\033[0m"    if STDERR_IS_TERMINAL else ""
-STYLE_BOLD: str       = "\033[1m"    if STDERR_IS_TERMINAL else ""
-STYLE_DIM: str        = "\033[2m"    if STDERR_IS_TERMINAL else ""
-STYLE_RED: str        = "\033[31m"   if STDERR_IS_TERMINAL else ""
-STYLE_YELLOW: str     = "\033[33m"   if STDERR_IS_TERMINAL else ""
-STYLE_CYAN: str       = "\033[36m"   if STDERR_IS_TERMINAL else ""
-STYLE_GRAY: str       = "\033[90m"   if STDERR_IS_TERMINAL else ""
-STYLE_GREEN: str      = "\033[32m"   if STDERR_IS_TERMINAL else ""
+STYLE_RESET: str = "\033[0m" if STDERR_IS_TERMINAL else ""
+STYLE_BOLD: str = "\033[1m" if STDERR_IS_TERMINAL else ""
+STYLE_DIM: str = "\033[2m" if STDERR_IS_TERMINAL else ""
+STYLE_RED: str = "\033[31m" if STDERR_IS_TERMINAL else ""
+STYLE_YELLOW: str = "\033[33m" if STDERR_IS_TERMINAL else ""
+STYLE_CYAN: str = "\033[36m" if STDERR_IS_TERMINAL else ""
+STYLE_GRAY: str = "\033[90m" if STDERR_IS_TERMINAL else ""
+STYLE_GREEN: str = "\033[32m" if STDERR_IS_TERMINAL else ""
 STYLE_BOLD_YELLOW: str = "\033[1;33m" if STDERR_IS_TERMINAL else ""
 
 # ============================================================================
@@ -199,7 +200,6 @@ def _get_align() -> str:
 
 
 def set_verbosity(level: int) -> None:
-
     """Set the module-level verbosity threshold.
 
     This is the only function that mutates module state. Called once at
@@ -219,13 +219,15 @@ def set_verbosity(level: int) -> None:
     global VERBOSITY
     VERBOSITY = level
 
+
 # ============================================================================
 # Section 3: Primitive Layer
 # ============================================================================
 
 _cached_terminal_width: int | None = None
 
-_ANSI_PATTERN: re.Pattern = re.compile(r'\033\[[0-9;]*m')
+_ANSI_PATTERN: re.Pattern = re.compile(r"\033\[[0-9;]*m")
+
 
 def get_terminal_width() -> int:
     """Return terminal column count, cached after first call.
@@ -262,16 +264,17 @@ def measure_width(text: str) -> int:
     Returns:
         Visible character width as integer.
     """
-    stripped: str = _ANSI_PATTERN.sub('', text)
-    if '\n' not in stripped:
+    stripped: str = _ANSI_PATTERN.sub("", text)
+    if "\n" not in stripped:
         return len(stripped)
-    lines: list[str] = stripped.split('\n')
+    lines: list[str] = stripped.split("\n")
     maximum_width: int = 0
     for line in lines:
         line_width: int = len(line)
         if line_width > maximum_width:
             maximum_width = line_width
     return maximum_width
+
 
 def align_text(text: str, align: str = "left", width: int | None = None) -> str:
     """Position a text block within a target width by prepending spaces.
@@ -321,6 +324,7 @@ def align_text(text: str, align: str = "left", width: int | None = None) -> str:
 # ============================================================================
 # Section 4: Styling Functions (pure - no I/O)
 # ============================================================================
+
 
 def apply_style(text: str, style_code: str) -> str:
     """Apply an ANSI style code to text.
@@ -472,7 +476,7 @@ def format_card(
     header_right: str,
     body: str,
     footer: str | None = None,
-    width: int | None = None
+    width: int | None = None,
 ) -> str:
     """Render a bordered multi-region display card.
 
@@ -529,7 +533,9 @@ def format_card(
 
     # --- assembly helpers ---
     border_horizontal: str = apply_style("+" + ("-" * (width - 2)) + "+", STYLE_DIM)
-    empty_row: str = apply_style("|", STYLE_DIM) + (" " * (width - 2)) + apply_style("|", STYLE_DIM)
+    empty_row: str = (
+        apply_style("|", STYLE_DIM) + (" " * (width - 2)) + apply_style("|", STYLE_DIM)
+    )
 
     def content_line(text: str) -> str:
         visible_width: int = measure_width(text)
@@ -696,14 +702,16 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
                 paragraph,
                 width=effective_width,
                 initial_indent=" " * indent,
-                subsequent_indent=" " * indent
+                subsequent_indent=" " * indent,
             )
             wrapped_paragraphs.append(wrapped)
     return "\n".join(wrapped_paragraphs)
 
+
 # ============================================================================
 # Section 5: Output Functions (perform I/O)
 # ============================================================================
+
 
 def clear_screen() -> None:
     """Clear the terminal and move cursor to top-left.
@@ -742,9 +750,11 @@ def emit(text: str) -> None:
     aligned: str = align_text(text, align=_get_align(), width=get_terminal_width())
     print(aligned)
 
+
 # ============================================================================
 # Section 6: Messaging Functions (write to stderr)
 # ============================================================================
+
 
 def _write_message(level: str, priority: int, style_code: str, message: str) -> None:
     """Write a styled, leveled message to stderr.
@@ -775,8 +785,12 @@ def _write_message(level: str, priority: int, style_code: str, message: str) -> 
     if VERBOSITY >= 5:
         caller_name = sys._getframe(2).f_code.co_name
         trace_prefix = f"({caller_name}) "
-    formatted_line: str = f"{style_code}[{level:<5}] {trace_prefix}{message}{STYLE_RESET}"
-    aligned_line: str = align_text(formatted_line, align=_get_align(), width=get_terminal_width())
+    formatted_line: str = (
+        f"{style_code}[{level:<5}] {trace_prefix}{message}{STYLE_RESET}"
+    )
+    aligned_line: str = align_text(
+        formatted_line, align=_get_align(), width=get_terminal_width()
+    )
     sys.stderr.write(aligned_line + "\n")
 
 

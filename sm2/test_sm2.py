@@ -47,7 +47,9 @@ if result_grade2["lapse_count"] != 0:
     failure_count += 1
 
 if result_grade2["due_date"] != start_date + 1:
-    print(f"FAIL [grade2 due_date]: expected {start_date + 1} got {result_grade2['due_date']}")
+    print(
+        f"FAIL [grade2 due_date]: expected {start_date + 1} got {result_grade2['due_date']}"
+    )
     failure_count += 1
 
 # --- grade 1 from SM-2 defaults ---
@@ -126,7 +128,9 @@ for step_index in range(10):
     current_date = floor_result["due_date"]
 
     if current_easiness_factor < 1.3 - FLOAT_TOLERANCE:
-        print(f"FAIL [ef floor step {step_index}]: dropped below 1.3: {current_easiness_factor}")
+        print(
+            f"FAIL [ef floor step {step_index}]: dropped below 1.3: {current_easiness_factor}"
+        )
         failure_count += 1
 
 if abs(current_easiness_factor - 1.3) > FLOAT_TOLERANCE:
@@ -158,7 +162,9 @@ for step_index in range(20):
     current_date = ceil_result["due_date"]
 
     if current_easiness_factor > 3.0 + FLOAT_TOLERANCE:
-        print(f"FAIL [ef ceil step {step_index}]: exceeded 3.0: {current_easiness_factor}")
+        print(
+            f"FAIL [ef ceil step {step_index}]: exceeded 3.0: {current_easiness_factor}"
+        )
         failure_count += 1
 
 if abs(current_easiness_factor - 3.0) > FLOAT_TOLERANCE:
@@ -176,18 +182,26 @@ if abs(current_easiness_factor - 3.0) > FLOAT_TOLERANCE:
 # inputs: grade=2, interval=0.0, rep=0; vary ef across legal range
 
 for test_easiness_factor in [1.3, 2.5, 3.0]:
-    first_pass_result: ReviewResult = sm2_update(2, test_easiness_factor, 0.0, 0, 0, start_date)
+    first_pass_result: ReviewResult = sm2_update(
+        2, test_easiness_factor, 0.0, 0, 0, start_date
+    )
     if first_pass_result["interval_days"] != 1.0:
-        print(f"FAIL [first pass interval ef={test_easiness_factor}]: expected 1.0 got {first_pass_result['interval_days']}")
+        print(
+            f"FAIL [first pass interval ef={test_easiness_factor}]: expected 1.0 got {first_pass_result['interval_days']}"
+        )
         failure_count += 1
 
 # --- second pass (rep=1 -> 2): interval must be 6.0 regardless of ef ---
 # inputs: grade=2, interval=1.0, rep=1; vary ef across legal range
 
 for test_easiness_factor in [1.3, 2.5, 3.0]:
-    second_pass_result: ReviewResult = sm2_update(2, test_easiness_factor, 1.0, 1, 0, start_date)
+    second_pass_result: ReviewResult = sm2_update(
+        2, test_easiness_factor, 1.0, 1, 0, start_date
+    )
     if second_pass_result["interval_days"] != 6.0:
-        print(f"FAIL [second pass interval ef={test_easiness_factor}]: expected 6.0 got {second_pass_result['interval_days']}")
+        print(
+            f"FAIL [second pass interval ef={test_easiness_factor}]: expected 6.0 got {second_pass_result['interval_days']}"
+        )
         failure_count += 1
 
 # --- third pass (rep=2 -> 3): interval = previous_interval * new_ef ---
@@ -198,7 +212,9 @@ third_pass_result: ReviewResult = sm2_update(2, 2.5, 6.0, 2, 0, start_date)
 expected_third_interval: float = 6.0 * 2.6
 
 if abs(third_pass_result["interval_days"] - expected_third_interval) > FLOAT_TOLERANCE:
-    print(f"FAIL [third pass interval]: expected {expected_third_interval} got {third_pass_result['interval_days']}")
+    print(
+        f"FAIL [third pass interval]: expected {expected_third_interval} got {third_pass_result['interval_days']}"
+    )
     failure_count += 1
 
 # =============================================================================
@@ -227,7 +243,9 @@ for step_index in range(10):
     new_interval: float = grade2_seq_result["interval_days"]
 
     if new_interval < previous_interval - FLOAT_TOLERANCE:
-        print(f"FAIL [grade2 seq step {step_index}]: interval decreased {previous_interval} -> {new_interval}")
+        print(
+            f"FAIL [grade2 seq step {step_index}]: interval decreased {previous_interval} -> {new_interval}"
+        )
         failure_count += 1
 
     previous_interval = new_interval
@@ -265,19 +283,27 @@ for step_index in range(10):
     )
 
     if grade0_seq_result["repetition_count"] != 0:
-        print(f"FAIL [grade0 seq step {step_index} rep]: expected 0 got {grade0_seq_result['repetition_count']}")
+        print(
+            f"FAIL [grade0 seq step {step_index} rep]: expected 0 got {grade0_seq_result['repetition_count']}"
+        )
         failure_count += 1
 
     if grade0_seq_result["lapse_count"] != step_index + 1:
-        print(f"FAIL [grade0 seq step {step_index} lapse]: expected {step_index + 1} got {grade0_seq_result['lapse_count']}")
+        print(
+            f"FAIL [grade0 seq step {step_index} lapse]: expected {step_index + 1} got {grade0_seq_result['lapse_count']}"
+        )
         failure_count += 1
 
     if grade0_seq_result["interval_days"] != 1.0:
-        print(f"FAIL [grade0 seq step {step_index} interval]: expected 1.0 got {grade0_seq_result['interval_days']}")
+        print(
+            f"FAIL [grade0 seq step {step_index} interval]: expected 1.0 got {grade0_seq_result['interval_days']}"
+        )
         failure_count += 1
 
     if grade0_seq_result["easiness_factor"] < 1.3 - FLOAT_TOLERANCE:
-        print(f"FAIL [grade0 seq step {step_index} ef floor]: {grade0_seq_result['easiness_factor']} < 1.3")
+        print(
+            f"FAIL [grade0 seq step {step_index} ef floor]: {grade0_seq_result['easiness_factor']} < 1.3"
+        )
         failure_count += 1
 
     current_easiness_factor = grade0_seq_result["easiness_factor"]
@@ -343,11 +369,15 @@ recovery_pass1_result: ReviewResult = sm2_update(
 )
 
 if recovery_pass1_result["interval_days"] != 1.0:
-    print(f"FAIL [recovery pass1 interval]: expected 1.0 got {recovery_pass1_result['interval_days']}")
+    print(
+        f"FAIL [recovery pass1 interval]: expected 1.0 got {recovery_pass1_result['interval_days']}"
+    )
     failure_count += 1
 
 if recovery_pass1_result["repetition_count"] != 1:
-    print(f"FAIL [recovery pass1 rep]: expected 1 got {recovery_pass1_result['repetition_count']}")
+    print(
+        f"FAIL [recovery pass1 rep]: expected 1 got {recovery_pass1_result['repetition_count']}"
+    )
     failure_count += 1
 
 current_easiness_factor = recovery_pass1_result["easiness_factor"]
@@ -368,11 +398,15 @@ recovery_pass2_result: ReviewResult = sm2_update(
 )
 
 if recovery_pass2_result["interval_days"] != 6.0:
-    print(f"FAIL [recovery pass2 interval]: expected 6.0 got {recovery_pass2_result['interval_days']}")
+    print(
+        f"FAIL [recovery pass2 interval]: expected 6.0 got {recovery_pass2_result['interval_days']}"
+    )
     failure_count += 1
 
 if recovery_pass2_result["repetition_count"] != 2:
-    print(f"FAIL [recovery pass2 rep]: expected 2 got {recovery_pass2_result['repetition_count']}")
+    print(
+        f"FAIL [recovery pass2 rep]: expected 2 got {recovery_pass2_result['repetition_count']}"
+    )
     failure_count += 1
 
 current_easiness_factor = recovery_pass2_result["easiness_factor"]
@@ -395,12 +429,19 @@ recovery_pass3_result: ReviewResult = sm2_update(
 
 expected_pass3_interval: float = 6.0 * 1.3
 
-if abs(recovery_pass3_result["interval_days"] - expected_pass3_interval) > FLOAT_TOLERANCE:
-    print(f"FAIL [recovery pass3 interval]: expected {expected_pass3_interval} got {recovery_pass3_result['interval_days']}")
+if (
+    abs(recovery_pass3_result["interval_days"] - expected_pass3_interval)
+    > FLOAT_TOLERANCE
+):
+    print(
+        f"FAIL [recovery pass3 interval]: expected {expected_pass3_interval} got {recovery_pass3_result['interval_days']}"
+    )
     failure_count += 1
 
 if recovery_pass3_result["repetition_count"] != 3:
-    print(f"FAIL [recovery pass3 rep]: expected 3 got {recovery_pass3_result['repetition_count']}")
+    print(
+        f"FAIL [recovery pass3 rep]: expected 3 got {recovery_pass3_result['repetition_count']}"
+    )
     failure_count += 1
 
 # =============================================================================
