@@ -5,7 +5,7 @@
 # EX_EXERCISES_DIR: absolute path to the exercises directory.
 # Update this when the exercises location changes (worktree -> USB, etc.).
 #
-EX_EXERCISES_DIR="$HOME/explorations/sm2/exercises"
+EX_EXERCISES_DIR="$HOME/personal_repos/explorations/sm2/exercises"
 
 # --- internal: verify exercises directory exists -------------------------
 _ex_ensure_dir() {
