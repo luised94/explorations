@@ -1,25 +1,25 @@
-# Prompt library shell functions.
-# Source this file from your bashrc: source /home/luis/personal_repos/explorations-proj-llms/llms/prompts/_pmt.sh
+# =============================================================================
+# PROMPT LIBRARY
+# =============================================================================
+#
+# PMT_PROMPTS_DIR: absolute path to the prompts directory.
+# Update this when the prompts location changes.
+#
+PMT_PROMPTS_DIR="$HOME/personal_repos/explorations-proj-llms/llms/prompts"
 
-PROMPTS_DIRECTORY="$HOME/personal_repos/explorations-proj-llms/llms/prompts"
-FRICTION_FILEPATH="$HOME/personal_repos/explorations-proj-llms/llms/FRICTION.md"
-
-_pmt_warn_if_environment_invalid() {
-    local red='\033[0;31m'
-    local reset='\033[0m'
-    [[ ! -d "$PROMPTS_DIRECTORY" ]] && \
-        printf "${red}pmt: warning: PROMPTS_DIRECTORY does not exist: %s${reset}\n" "$PROMPTS_DIRECTORY"
-    [[ ! -f "$FRICTION_FILEPATH" ]] && \
-        printf "${red}pmt: warning: FRICTION_FILEPATH does not exist: %s${reset}\n" "$FRICTION_FILEPATH"
-    ! command -v "${EDITOR:-nvim}" &>/dev/null && \
-        printf "${red}pmt: warning: editor not found: %s${reset}\n" "${EDITOR:-nvim}"
-    ! command -v powershell.exe &>/dev/null && \
-        printf "${red}pmt: warning: powershell.exe not found - pnew clipboard paste will fail${reset}\n"
+# --- internal: verify prompts directory exists ---------------------------
+_pmt_ensure_dir() {
+    if [ ! -d "$PMT_PROMPTS_DIR" ]; then
+        echo "pmt: error: prompts directory not found: $PMT_PROMPTS_DIR"
+        echo "update PMT_PROMPTS_DIR in .bashrc"
+        return 1
+    fi
+    return 0
 }
-_pmt_warn_if_environment_invalid
 
+# --- pnew: create a new prompt file from clipboard and open it -----------
 pnew() {
-    [[ "$1" == "-h" || "$1" == "--help" ]] && {
+    if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
         cat <<'EOF'
 pnew - create a new prompt file from clipboard contents
 
@@ -27,45 +27,95 @@ Usage:
   pnew <filename>
 
 Arguments:
-  filename    (required) Name of the prompt file. .md appended if missing.
+  filename    Name of the prompt file. .md appended if missing.
 
-Side effects:
-  Writes clipboard contents to PROMPTS_DIRECTORY/<filename>.md
-  Opens the new file in $EDITOR
+Behavior:
+  Writes clipboard contents to PMT_PROMPTS_DIR/<filename>.md
+  Opens the new file in $EDITOR.
+  Errors if the file already exists.
 EOF
         return 0
-    }
-    [[ ! -d "$PROMPTS_DIRECTORY" ]] && { echo "pmt: error: PROMPTS_DIRECTORY does not exist: $PROMPTS_DIRECTORY"; return 1; }
-    local prompt_file_name="${1}"
-    [[ -z "$prompt_file_name" ]] && { echo "pmt: usage: pnew <filename>"; return 1; }
-    [[ "$prompt_file_name" != *.md ]] && prompt_file_name="${prompt_file_name}.md"
-    local prompt_target_path="$PROMPTS_DIRECTORY/$prompt_file_name"
-    [[ -f "$prompt_target_path" ]] && { echo "pmt: error: $prompt_file_name already exists"; return 1; }
-    powershell.exe -NoProfile -Command Get-Clipboard > "$prompt_target_path"
-    echo "pmt: clipboard pasted into $prompt_file_name"
-    "${EDITOR:-nvim}" "$prompt_target_path"
+    fi
+
+    _pmt_ensure_dir || return 1
+
+    if [ -z "$1" ]; then
+        echo "pmt: error: filename required"
+        echo "usage: pnew <filename>"
+        return 1
+    fi
+
+    if ! command -v powershell.exe &>/dev/null; then
+        echo "pmt: error: powershell.exe not found - clipboard paste unavailable"
+        return 1
+    fi
+
+    local filename="$1"
+    if [ "${filename%.md}" = "$filename" ]; then
+        filename="${filename}.md"
+    fi
+
+    local filepath="$PMT_PROMPTS_DIR/$filename"
+
+    if [ -f "$filepath" ]; then
+        echo "pmt: error: file already exists: $filename"
+        return 1
+    fi
+
+    powershell.exe -NoProfile -Command Get-Clipboard > "$filepath"
+    echo "pmt: clipboard pasted into $filename"
+
+    "${EDITOR:-nvim}" "$filepath"
 }
 
-plog() {
-    [[ "$1" == "-h" || "$1" == "--help" ]] && {
+# --- popen: open a prompt file by name -----------------------------------
+popen() {
+    if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
         cat <<'EOF'
-plog - append a friction entry stub to the friction log and open it
+popen - open a prompt file for editing
 
 Usage:
-  plog
+  popen [filename]
 
 Arguments:
-  none
+  filename    Name of the prompt file. .md appended if missing.
+              If omitted, lists available prompt files and exits.
 
-Side effects:
-  Appends a timestamped stub to FRICTION_FILEPATH
-  Opens FRICTION_FILEPATH in $EDITOR at the last line
+Behavior:
+  Opens PMT_PROMPTS_DIR/<filename>.md in $EDITOR.
+  No side effects.
 EOF
         return 0
-    }
-    [[ ! -f "$FRICTION_FILEPATH" ]] && { echo "pmt: error: FRICTION_FILEPATH does not exist: $FRICTION_FILEPATH"; return 1; }
-    local friction_entry_stub
-    friction_entry_stub="$(printf '\n## %s  [severity]\nWhat I was trying to do.\nWhat actually happened or what annoyed me.\n?: idea or fix if one comes to mind\n' "$(date '+%Y-%m-%d %H:%M')")"
-    echo "$friction_entry_stub" >> "$FRICTION_FILEPATH"
-    "${EDITOR:-nvim}" + "$FRICTION_FILEPATH"
+    fi
+
+    _pmt_ensure_dir || return 1
+
+    if [ -z "$1" ]; then
+        local found=0
+        for filepath in "$PMT_PROMPTS_DIR"/*.md; do
+            if [ -f "$filepath" ]; then
+                basename "$filepath" .md
+                found=1
+            fi
+        done
+        if [ "$found" -eq 0 ]; then
+            echo "pmt: no prompt files found in $PMT_PROMPTS_DIR"
+        fi
+        return 0
+    fi
+
+    local filename="$1"
+    if [ "${filename%.md}" = "$filename" ]; then
+        filename="${filename}.md"
+    fi
+
+    local filepath="$PMT_PROMPTS_DIR/$filename"
+
+    if [ ! -f "$filepath" ]; then
+        echo "pmt: error: file not found: $filename"
+        echo "use pnew $1 to create it"
+        return 1
+    fi
+
+    "${EDITOR:-nvim}" "$filepath"
 }
