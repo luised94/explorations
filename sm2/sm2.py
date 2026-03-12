@@ -600,6 +600,11 @@ if __name__ == "__main__":
         help="run internal validation suite and exit",
     )
     argument_parser.add_argument(
+        "--no-commit",
+        action="store_true",
+        help="run review session without writing to database",
+    )
+    argument_parser.add_argument(
         "--failures",
         action="store_true",
         help="show most recent grade-0 rows with error notes and exit",
@@ -610,6 +615,7 @@ if __name__ == "__main__":
         help="show items with lapse_count >= LEECH_THRESHOLD and exit",
     )
     parsed_args: argparse.Namespace = argument_parser.parse_args()
+    no_commit_mode: bool = parsed_args.no_commit
     terminal_output.set_verbosity(3)
     terminal_output.set_layout(max_width=76, align="center")
     if parsed_args.validate:
@@ -806,22 +812,23 @@ if __name__ == "__main__":
                     f"{item_interval:>8.1f}  {item_days_overdue}"
                 )
         sys.exit(0)
-    items_reviewed_today: int = database_connection.execute(
-        "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
-        (today,),
-    ).fetchone()[0]
-    if len(review_queue) == 0 and len(parsed_ids) == 0:
-        terminal_output.msg_warn("no items found in exercises/")
-        sys.exit(0)
-    if len(review_queue) == 0 and items_reviewed_today > 0:
-        terminal_output.msg_info(
-            "all due items reviewed today - "
-            "next session recommended tomorrow"
-        )
-        sys.exit(0)
-    if len(review_queue) == 0 and items_reviewed_today == 0 and len(parsed_ids) > 0:
-        terminal_output.msg_info("no items due today")
-        sys.exit(0)
+    if not no_commit_mode:
+        items_reviewed_today: int = database_connection.execute(
+            "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
+            (today,),
+        ).fetchone()[0]
+        if len(review_queue) == 0 and len(parsed_ids) == 0:
+            terminal_output.msg_warn("no items found in exercises/")
+            sys.exit(0)
+        if len(review_queue) == 0 and items_reviewed_today > 0:
+            terminal_output.msg_info(
+                "all due items reviewed today - "
+                "next session recommended tomorrow"
+            )
+            sys.exit(0)
+        if len(review_queue) == 0 and items_reviewed_today == 0 and len(parsed_ids) > 0:
+            terminal_output.msg_info("no items due today")
+            sys.exit(0)
 
     # --- review loop
     review_count: int = 0
@@ -838,7 +845,14 @@ if __name__ == "__main__":
             identifier_parts: list[str] = item_id.split("-")
             domain: str = identifier_parts[0]
 
-            progress_string: str = f"{review_count + 1} / {len(review_queue)}"
+            if no_commit_mode:
+                progress_string: str = (
+                    f"{review_count + 1} / {len(review_queue)}  "
+                    + terminal_output.format_label("no-commit")
+                )
+            else:
+                progress_string: str = f"{review_count + 1} / {len(review_queue)}"
+
             terminal_output.clear_screen()
             terminal_output.emit(terminal_output.format_card(
                 header_left=progress_string,
@@ -917,57 +931,63 @@ if __name__ == "__main__":
             new_lapse_count: int = int(update_result["lapse_count"])
             new_due_date: int = int(update_result["due_date"])
 
-            database_connection.execute(
-                "UPDATE items SET easiness_factor=?, interval_days=?, "
-                "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
-                "WHERE item_id=?",
-                (
-                    new_easiness_factor,
-                    new_interval_days,
-                    new_repetition_count,
-                    new_due_date,
-                    today,
-                    new_lapse_count,
-                    item_id,
-                ),
-            )
-            database_connection.commit()
 
-            database_connection.execute(
-                "INSERT INTO review_log ("
-                "item_id, grade, sm2_grade, review_date, elapsed_days, "
-                "easiness_factor_before, easiness_factor_after, "
-                "interval_days_before, interval_days_after, "
-                "repetition_count_before, domain, error_note, answer_text, "
-                "response_seconds"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    item_id,
-                    grade,
-                    sm2_grade,
-                    today,
-                    elapsed_days,
-                    easiness_factor_before,
-                    new_easiness_factor,
-                    interval_days_before,
-                    new_interval_days,
-                    repetition_count_before,
-                    domain,
-                    error_note,
-                    answer_text,
-                    response_seconds,
-                ),
-            )
-
-            database_connection.commit()
-
+            if not no_commit_mode:
+                database_connection.execute(
+                    "UPDATE items SET easiness_factor=?, interval_days=?, "
+                    "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
+                    "WHERE item_id=?",
+                    (
+                        new_easiness_factor,
+                        new_interval_days,
+                        new_repetition_count,
+                        new_due_date,
+                        today,
+                        new_lapse_count,
+                        item_id,
+                    ),
+                )
+                database_connection.commit()
+                database_connection.execute(
+                    "INSERT INTO review_log ("
+                    "item_id, grade, sm2_grade, review_date, elapsed_days, "
+                    "easiness_factor_before, easiness_factor_after, "
+                    "interval_days_before, interval_days_after, "
+                    "repetition_count_before, domain, error_note, answer_text, "
+                    "response_seconds"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        item_id,
+                        grade,
+                        sm2_grade,
+                        today,
+                        elapsed_days,
+                        easiness_factor_before,
+                        new_easiness_factor,
+                        interval_days_before,
+                        new_interval_days,
+                        repetition_count_before,
+                        domain,
+                        error_note,
+                        answer_text,
+                        response_seconds,
+                    ),
+                )
+                database_connection.commit()
 
             days_until: int = new_due_date - today
             duration_string: str = terminal_output.format_duration(days_until)
-            if grade == 0:
-                terminal_output.emit(f"Failed. Returns in {duration_string}.")
+
+            if no_commit_mode:
+                if grade == 0:
+                    terminal_output.emit(f"Would fail. Would return in {duration_string}.")
+                else:
+                    terminal_output.emit(f"Would pass. Next review in {duration_string}.")
             else:
-                terminal_output.emit(f"Passed. Next review in {duration_string}.")
+                if grade == 0:
+                    terminal_output.emit(f"Failed. Returns in {duration_string}.")
+                else:
+                    terminal_output.emit(f"Passed. Next review in {duration_string}.")
 
             review_count = review_count + 1
             if grade == 0:
@@ -987,6 +1007,10 @@ if __name__ == "__main__":
             f"Failed: {fail_count}  "
             f"New: {new_count}"
         )
-        terminal_output.msg_success("session complete")
+        if no_commit_mode:
+            terminal_output.msg_success("session complete (no-commit - nothing written)")
+        else:
+            terminal_output.msg_success("session complete")
+
         if fail_count > 0:
             terminal_output.msg_info(f"{fail_count} item(s) return tomorrow")
