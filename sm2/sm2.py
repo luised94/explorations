@@ -715,6 +715,22 @@ if __name__ == "__main__":
                     f"{item_interval:>8.1f}  {item_days_overdue}"
                 )
         sys.exit(0)
+    items_reviewed_today: int = database_connection.execute(
+        "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
+        (today,),
+    ).fetchone()[0]
+    if len(review_queue) == 0 and len(parsed_ids) == 0:
+        terminal_output.msg_warn("no items found in exercises/")
+        sys.exit(0)
+    if len(review_queue) == 0 and items_reviewed_today > 0:
+        terminal_output.msg_info(
+            "all due items reviewed today - "
+            "next session recommended tomorrow"
+        )
+        sys.exit(0)
+    if len(review_queue) == 0 and items_reviewed_today == 0 and len(parsed_ids) > 0:
+        terminal_output.msg_info("no items due today")
+        sys.exit(0)
 
     # --- review loop
     review_count: int = 0
