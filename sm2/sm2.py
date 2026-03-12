@@ -630,7 +630,7 @@ if __name__ == "__main__":
         help="run internal validation suite and exit",
     )
     argument_parser.add_argument(
-        "--no-commit",
+        "--rehearse",
         action="store_true",
         help="run review session without writing to database",
     )
@@ -645,7 +645,7 @@ if __name__ == "__main__":
         help="show items with lapse_count >= LEECH_THRESHOLD and exit",
     )
     parsed_args: argparse.Namespace = argument_parser.parse_args()
-    no_commit_mode: bool = parsed_args.no_commit
+    rehearse_mode: bool = parsed_args.rehearse
     terminal_output.set_verbosity(3)
     terminal_output.set_layout(max_width=76, align="center")
     if parsed_args.validate:
@@ -846,7 +846,7 @@ if __name__ == "__main__":
                     f"{item_interval:>8.1f}  {item_days_overdue}"
                 )
         sys.exit(0)
-    if not no_commit_mode:
+    if not rehearse_mode:
         items_reviewed_today: int = database_connection.execute(
             "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
             (today,),
@@ -879,10 +879,10 @@ if __name__ == "__main__":
             identifier_parts: list[str] = item_id.split("-")
             domain: str = identifier_parts[0]
 
-            if no_commit_mode:
+            if rehearse_mode:
                 progress_string: str = (
                     f"{review_count + 1} / {len(review_queue)}  "
-                    + terminal_output.format_label("no-commit")
+                    + terminal_output.format_label("rehearse")
                 )
             else:
                 progress_string: str = f"{review_count + 1} / {len(review_queue)}"
@@ -966,7 +966,7 @@ if __name__ == "__main__":
             new_due_date: int = int(update_result["due_date"])
 
 
-            if not no_commit_mode:
+            if not rehearse_mode:
                 database_connection.execute(
                     "UPDATE items SET easiness_factor=?, interval_days=?, "
                     "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
@@ -1012,7 +1012,7 @@ if __name__ == "__main__":
             days_until: int = new_due_date - today
             duration_string: str = terminal_output.format_duration(days_until)
 
-            if no_commit_mode:
+            if rehearse_mode:
                 if grade == 0:
                     terminal_output.emit(f"Would fail. Would return in {duration_string}.")
                 else:
@@ -1041,8 +1041,8 @@ if __name__ == "__main__":
             f"Failed: {fail_count}  "
             f"New: {new_count}"
         )
-        if no_commit_mode:
-            terminal_output.msg_success("session complete (no-commit - nothing written)")
+        if rehearse_mode:
+            terminal_output.msg_success("session complete (rehearse - nothing written)")
         else:
             terminal_output.msg_success("session complete")
 
