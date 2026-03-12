@@ -51,6 +51,28 @@ GROUP BY domain, weeks_ago
 ORDER BY domain, weeks_ago;
 
 -- =============================================================================
+-- ZOMBIE ITEMS: passing but EF drifting toward floor
+-- =============================================================================
+-- Items that technically pass (low lapse count) but have EF below 1.6
+-- after 3+ reviews. These consume review time without strong retention.
+-- Rewrite or split the card.
+-- Threshold mirrors LEECH_THRESHOLD in sm2.py (currently 3); update
+-- lapse_count filter if that constant changes.
+WITH today AS (
+    SELECT cast(julianday('now', 'localtime') - 1721424.5 AS INTEGER) AS ordinal
+)
+SELECT item_id,
+       easiness_factor                    AS ef,
+       repetition_count                   AS reps,
+       lapse_count                        AS lapses,
+       today.ordinal - last_review        AS days_since
+FROM items, today
+WHERE easiness_factor < 1.6
+  AND repetition_count >= 3
+  AND lapse_count < 3
+ORDER BY easiness_factor ASC;
+
+-- =============================================================================
 -- 7-DAY RETENTION RATE per domain
 -- =============================================================================
 -- Healthy target: pass rate >= 85% per domain over any rolling 7-day window.
