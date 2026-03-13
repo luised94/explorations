@@ -49,10 +49,12 @@ EOF
     local filepath="$EX_EXERCISES_DIR/${domain}.md"
 
     local stub
-    stub="$(printf '\n@@@ id: %s-\ncriteria:\ntags:\nsource:\n' "$domain")"
+    local stub_marker="!!!"
+    stub="$(printf '\n@@@ id: %s-%s\ncriteria: \ntags: \nsource: \n' "$domain" "$stub_marker")"
     echo "$stub" >> "$filepath"
 
-    "${EDITOR:-nvim}" + "$filepath"
+    # +/pattern: open nvim with cursor on first search match
+    "${EDITOR:-nvim}" "+/${stub_marker}" "$filepath"
 }
 
 # --- exopen: open a domain exercise file without appending ---------------
