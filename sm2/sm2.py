@@ -197,27 +197,6 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
 
     database_connection.execute("CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)")
     database_connection.commit()
-    existing_columns: list[tuple] = database_connection.execute(
-        "PRAGMA table_info(review_log)"
-    ).fetchall()
-    column_names: set[str] = set()
-    for column_row in existing_columns:
-        column_names.add(column_row[1])
-    if "answer_text" not in column_names:
-        database_connection.execute("ALTER TABLE review_log ADD COLUMN answer_text TEXT")
-        database_connection.commit()
-    if "response_seconds" not in column_names:
-        database_connection.execute("ALTER TABLE review_log ADD COLUMN response_seconds REAL")
-        database_connection.commit()
-    existing_items_columns: list[tuple] = database_connection.execute(
-        "PRAGMA table_info(items)"
-    ).fetchall()
-    items_column_names: set[str] = set()
-    for items_column_row in existing_items_columns:
-        items_column_names.add(items_column_row[1])
-    if "source" not in items_column_names:
-        database_connection.execute("ALTER TABLE items ADD COLUMN source TEXT DEFAULT ''")
-        database_connection.commit()
     return database_connection
 
 
@@ -337,29 +316,7 @@ def run_validation() -> None:
 
     # init in-memory database
     validation_connection: sqlite3.Connection = initialize_database(":memory:")
-    pragma_rows: list[tuple] = validation_connection.execute(
-        "PRAGMA table_info(review_log)"
-    ).fetchall()
-    pragma_column_names: set[str] = set()
-    for pragma_row in pragma_rows:
-        pragma_column_names.add(pragma_row[1])
 
-    if "answer_text" not in pragma_column_names:
-        print("FAIL: answer_text column missing from review_log after initialize_database")
-        failure_count = failure_count + 1
-
-    if "response_seconds" not in pragma_column_names:
-        print("FAIL: response_seconds column missing from review_log after initialize_database")
-        failure_count = failure_count + 1
-    items_pragma_rows: list[tuple] = validation_connection.execute(
-        "PRAGMA table_info(items)"
-    ).fetchall()
-    items_column_names: set[str] = set()
-    for items_pragma_row in items_pragma_rows:
-        items_column_names.add(items_pragma_row[1])
-    if "source" not in items_column_names:
-        print("FAIL: source column missing from items after initialize_database")
-        failure_count = failure_count + 1
     # build parsed_ids and content_map
     validation_parsed_ids: set[str] = set()
     validation_content_map: ContentMap = {}
