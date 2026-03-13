@@ -15,8 +15,8 @@ import terminal_output
 ParsedItem: TypeAlias = tuple[str, str, str, list[str], list[str]]
 # positions:                  id   content  criteria  tags     prerequisites
 
-ContentMap: TypeAlias = dict[str, tuple[str, str, list[str], list[str]]]
-# positions:                                   content  criteria  tags     prerequisites
+ContentMap: TypeAlias = dict[str, tuple[str, str, list[str], list[str], str]]
+# positions:                                   content  criteria  tags     prerequisites  source
 
 DueItem: TypeAlias = tuple[str, int, int]
 # positions:               item_id  repetition_count  due_date
@@ -80,6 +80,7 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
             criteria: str = ""
             tags: list[str] = []
             prerequisites: list[str] = []
+            source: str = ""
             content_lines: list[str] = []
 
             for line in block_lines:
@@ -97,11 +98,13 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
                         stripped_prerequisite: str = raw_prerequisite.strip()
                         if stripped_prerequisite != "":
                             prerequisites.append(stripped_prerequisite)
+                elif line.startswith("source:"):
+                    source = line[len("source:"):].strip()
                 else:
                     content_lines.append(line)
 
             content: str = "\n".join(content_lines).strip()
-            parsed_item: ParsedItem = (item_id, content, criteria, tags, prerequisites)
+            parsed_item: ParsedItem = (item_id, content, criteria, tags, prerequisites, source)
             parsed_items.append(parsed_item)
 
     return parsed_items
@@ -111,7 +114,6 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
 # SM-2 ALGORITHM
 # =============================================================================
 USER_GRADE_TO_SM2_GRADE: dict[int, int] = {0: 1, 1: 3, 2: 5}
-
 
 def sm2_update(
     grade: int,
@@ -168,7 +170,8 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
             repetition_count  INTEGER DEFAULT 0,
             due_date          INTEGER,
             last_review       INTEGER DEFAULT 0,
-            lapse_count       INTEGER DEFAULT 0
+            lapse_count       INTEGER DEFAULT 0,
+            source            TEXT DEFAULT ''
         )
     """)
     database_connection.execute("""
@@ -209,6 +212,17 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
     if "response_seconds" not in column_names:
         database_connection.execute(
             "ALTER TABLE review_log ADD COLUMN response_seconds REAL"
+        )
+        database_connection.commit()
+    existing_items_columns: list[tuple] = database_connection.execute(
+        "PRAGMA table_info(items)"
+    ).fetchall()
+    items_column_names: set[str] = set()
+    for items_column_row in existing_items_columns:
+        items_column_names.add(items_column_row[1])
+    if "source" not in items_column_names:
+        database_connection.execute(
+            "ALTER TABLE items ADD COLUMN source TEXT DEFAULT ''"
         )
         database_connection.commit()
     return database_connection
@@ -313,12 +327,14 @@ def run_validation() -> None:
     for domain_prefix in ["drive", "c", "bio"]:
         for index in range(1, 6):
             synthetic_id: str = f"{domain_prefix}-val-{index}"
+            synthetic_source: str = "wozniak1999" if synthetic_id == "drive-val-1" else ""
             synthetic_item: ParsedItem = (
                 synthetic_id,
                 f"validation content for {synthetic_id}",
                 "",
                 [],
                 [],
+                synthetic_source,
             )
             synthetic_items.append(synthetic_item)
 
@@ -334,16 +350,25 @@ def run_validation() -> None:
     if "answer_text" not in pragma_column_names:
         print("FAIL: answer_text column missing from review_log after initialize_database")
         failure_count = failure_count + 1
+
     if "response_seconds" not in pragma_column_names:
         print("FAIL: response_seconds column missing from review_log after initialize_database")
         failure_count = failure_count + 1
-
+    items_pragma_rows: list[tuple] = validation_connection.execute(
+        "PRAGMA table_info(items)"
+    ).fetchall()
+    items_column_names: set[str] = set()
+    for items_pragma_row in items_pragma_rows:
+        items_column_names.add(items_pragma_row[1])
+    if "source" not in items_column_names:
+        print("FAIL: source column missing from items after initialize_database")
+        failure_count = failure_count + 1
     # build parsed_ids and content_map
     validation_parsed_ids: set[str] = set()
     validation_content_map: ContentMap = {}
-    for item_id, content, criteria, tags, prerequisites in synthetic_items:
+    for item_id, content, criteria, tags, prerequisites, source in synthetic_items:
         validation_parsed_ids.add(item_id)
-        validation_content_map[item_id] = (content, criteria, tags, prerequisites)
+        validation_content_map[item_id] = (content, criteria, tags, prerequisites, source)
 
     # reconcile
     existing_rows: list[tuple] = validation_connection.execute(
@@ -353,20 +378,36 @@ def run_validation() -> None:
     for row in existing_rows:
         validation_database_ids.add(row[0])
     new_item_ids: set[str] = validation_parsed_ids - validation_database_ids
+
     for new_item_id in new_item_ids:
+        new_item_source: str = validation_content_map[new_item_id][4]
         validation_connection.execute(
-            "INSERT INTO items (item_id, due_date) VALUES (?, ?)",
-            (new_item_id, validation_today),
+            "INSERT INTO items (item_id, due_date, source) VALUES (?, ?, ?)",
+            (new_item_id, validation_today, new_item_source),
         )
     validation_connection.commit()
-
     # assert 15 items in table
     item_count_row: tuple = validation_connection.execute(
         "SELECT COUNT(*) FROM items"
     ).fetchone()
     item_count: int = item_count_row[0]
+
     if item_count != 15:
         print(f"FAIL: expected 15 items in table, got {item_count}")
+        failure_count = failure_count + 1
+    source_check_row: tuple | None = validation_connection.execute(
+        "SELECT source FROM items WHERE item_id = ?",
+        ("drive-val-1",),
+    ).fetchone()
+    if source_check_row is None or source_check_row[0] != "wozniak1999":
+        print("FAIL: source value did not round-trip through reconcile")
+        failure_count = failure_count + 1
+    empty_source_check_row: tuple | None = validation_connection.execute(
+        "SELECT source FROM items WHERE item_id = ?",
+        ("drive-val-2",),
+    ).fetchone()
+    if empty_source_check_row is None or empty_source_check_row[0] != "":
+        print("FAIL: item without source: field did not get empty string default")
         failure_count = failure_count + 1
 
     # build due queue
@@ -754,9 +795,9 @@ if __name__ == "__main__":
 
     parsed_ids: set[str] = set()
     content_map: ContentMap = {}
-    for item_id, content, criteria, tags, prerequisites in parsed_items:
+    for item_id, content, criteria, tags, prerequisites, source in parsed_items:
         parsed_ids.add(item_id)
-        content_map[item_id] = (content, criteria, tags, prerequisites)
+        content_map[item_id] = (content, criteria, tags, prerequisites, source)
 
     # --- reconcile
     existing_rows: list[tuple] = database_connection.execute(
@@ -767,10 +808,12 @@ if __name__ == "__main__":
         database_ids.add(row[0])
 
     new_item_ids: set[str] = parsed_ids - database_ids
+
     for new_item_id in new_item_ids:
+        new_item_source: str = content_map[new_item_id][4]
         database_connection.execute(
-            "INSERT INTO items (item_id, due_date) VALUES (?, ?)",
-            (new_item_id, today),
+            "INSERT INTO items (item_id, due_date, source) VALUES (?, ?, ?)",
+            (new_item_id, today, new_item_source),
         )
     database_connection.commit()
     # --- preview upcoming items
@@ -918,7 +961,7 @@ if __name__ == "__main__":
     try:
         for item_id in review_queue:
 
-            content_entry: tuple[str, str, list[str], list[str]] = content_map[item_id]
+            content_entry: tuple[str, str, list[str], list[str], str] = content_map[item_id]
             content: str = content_entry[0]
             criteria: str = content_entry[1]
 

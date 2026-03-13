@@ -49,7 +49,7 @@ EOF
     local filepath="$EX_EXERCISES_DIR/${domain}.md"
 
     local stub
-    stub="$(printf '\n@@@ id: %s-\ncriteria:\ntags:\n' "$domain")"
+    stub="$(printf '\n@@@ id: %s-\ncriteria:\ntags:\nsource:\n' "$domain")"
     echo "$stub" >> "$filepath"
 
     "${EDITOR:-nvim}" + "$filepath"
