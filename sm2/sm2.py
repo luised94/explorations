@@ -72,8 +72,7 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
         for item_id, block_lines in blocks:
             if item_id in seen_ids:
                 raise ValueError(
-                    f"duplicate item id '{item_id}' in '{filepath}'"
-                    f" and '{seen_ids[item_id]}'"
+                    f"duplicate item id '{item_id}' in '{filepath}' and '{seen_ids[item_id]}'"
                 )
             seen_ids[item_id] = filepath
 
@@ -85,21 +84,21 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
 
             for line in block_lines:
                 if line.startswith("criteria:"):
-                    criteria = line[len("criteria:"):].strip()
+                    criteria = line[len("criteria:") :].strip()
                 elif line.startswith("tags:"):
-                    raw_tags: str = line[len("tags:"):].strip()
+                    raw_tags: str = line[len("tags:") :].strip()
                     for raw_tag in raw_tags.split(","):
                         stripped_tag: str = raw_tag.strip()
                         if stripped_tag != "":
                             tags.append(stripped_tag)
                 elif line.startswith("after:"):
-                    raw_prerequisites: str = line[len("after:"):].strip()
+                    raw_prerequisites: str = line[len("after:") :].strip()
                     for raw_prerequisite in raw_prerequisites.split(","):
                         stripped_prerequisite: str = raw_prerequisite.strip()
                         if stripped_prerequisite != "":
                             prerequisites.append(stripped_prerequisite)
                 elif line.startswith("source:"):
-                    source = line[len("source:"):].strip()
+                    source = line[len("source:") :].strip()
                 else:
                     content_lines.append(line)
 
@@ -114,6 +113,7 @@ def parse_exercises(directory_path: str) -> list[ParsedItem]:
 # SM-2 ALGORITHM
 # =============================================================================
 USER_GRADE_TO_SM2_GRADE: dict[int, int] = {0: 1, 1: 3, 2: 5}
+
 
 def sm2_update(
     grade: int,
@@ -159,6 +159,7 @@ def sm2_update(
 # DATABASE SCHEMA
 # =============================================================================
 
+
 def initialize_database(database_path: str) -> sqlite3.Connection:
     database_connection: sqlite3.Connection = sqlite3.connect(database_path)
     database_connection.execute("PRAGMA journal_mode=WAL")
@@ -194,9 +195,7 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
         )
     """)
 
-    database_connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)"
-    )
+    database_connection.execute("CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)")
     database_connection.commit()
     existing_columns: list[tuple] = database_connection.execute(
         "PRAGMA table_info(review_log)"
@@ -205,14 +204,10 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
     for column_row in existing_columns:
         column_names.add(column_row[1])
     if "answer_text" not in column_names:
-        database_connection.execute(
-            "ALTER TABLE review_log ADD COLUMN answer_text TEXT"
-        )
+        database_connection.execute("ALTER TABLE review_log ADD COLUMN answer_text TEXT")
         database_connection.commit()
     if "response_seconds" not in column_names:
-        database_connection.execute(
-            "ALTER TABLE review_log ADD COLUMN response_seconds REAL"
-        )
+        database_connection.execute("ALTER TABLE review_log ADD COLUMN response_seconds REAL")
         database_connection.commit()
     existing_items_columns: list[tuple] = database_connection.execute(
         "PRAGMA table_info(items)"
@@ -221,11 +216,10 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
     for items_column_row in existing_items_columns:
         items_column_names.add(items_column_row[1])
     if "source" not in items_column_names:
-        database_connection.execute(
-            "ALTER TABLE items ADD COLUMN source TEXT DEFAULT ''"
-        )
+        database_connection.execute("ALTER TABLE items ADD COLUMN source TEXT DEFAULT ''")
         database_connection.commit()
     return database_connection
+
 
 # =============================================================================
 # THROTTLE
@@ -281,6 +275,8 @@ def apply_throttle_and_cap(
     if len(result) > max_reviews:
         result = result[:max_reviews]
     return result
+
+
 # =============================================================================
 # PREREQUISITE ENFORCEMENT
 # =============================================================================
@@ -301,14 +297,15 @@ def build_blocked_set(
             if prerequisite_in_db == 0:
                 continue
             passing_grades: int = database_connection.execute(
-                "SELECT COUNT(*) FROM review_log "
-                "WHERE item_id = ? AND grade > 0",
+                "SELECT COUNT(*) FROM review_log WHERE item_id = ? AND grade > 0",
                 (prerequisite_id,),
             ).fetchone()[0]
             if passing_grades == 0:
                 blocked_item_ids.add(item_id)
                 break
     return blocked_item_ids
+
+
 # =============================================================================
 # VALIDATION
 # =============================================================================
@@ -338,7 +335,7 @@ def run_validation() -> None:
             )
             synthetic_items.append(synthetic_item)
 
-# init in-memory database
+    # init in-memory database
     validation_connection: sqlite3.Connection = initialize_database(":memory:")
     pragma_rows: list[tuple] = validation_connection.execute(
         "PRAGMA table_info(review_log)"
@@ -387,9 +384,7 @@ def run_validation() -> None:
         )
     validation_connection.commit()
     # assert 15 items in table
-    item_count_row: tuple = validation_connection.execute(
-        "SELECT COUNT(*) FROM items"
-    ).fetchone()
+    item_count_row: tuple = validation_connection.execute("SELECT COUNT(*) FROM items").fetchone()
     item_count: int = item_count_row[0]
 
     if item_count != 15:
@@ -573,10 +568,7 @@ def run_validation() -> None:
                 )
                 failure_count = failure_count + 1
             if post_lapse_count != 1:
-                print(
-                    f"FAIL: {item_id} grade 0 expected lapse_count 1, "
-                    f"got {post_lapse_count}"
-                )
+                print(f"FAIL: {item_id} grade 0 expected lapse_count 1, got {post_lapse_count}")
                 failure_count = failure_count + 1
             if abs(post_easiness_factor - 1.96) > FLOAT_TOLERANCE:
                 print(
@@ -612,17 +604,11 @@ def run_validation() -> None:
                 failure_count = failure_count + 1
 
         if abs(post_interval_days - 1.0) > FLOAT_TOLERANCE:
-            print(
-                f"FAIL: {item_id} expected interval_days 1.0, "
-                f"got {post_interval_days}"
-            )
+            print(f"FAIL: {item_id} expected interval_days 1.0, got {post_interval_days}")
             failure_count = failure_count + 1
 
         if post_due_date != validation_today + 1:
-            print(
-                f"FAIL: {item_id} expected due_date {validation_today + 1}, "
-                f"got {post_due_date}"
-            )
+            print(f"FAIL: {item_id} expected due_date {validation_today + 1}, got {post_due_date}")
             failure_count = failure_count + 1
 
     validation_connection.close()
@@ -755,9 +741,7 @@ if __name__ == "__main__":
                 (LEECH_THRESHOLD,),
             ).fetchall()
             if len(leeches_rows) == 0:
-                print(
-                    f"no show_leeches found (lapse_count < {LEECH_THRESHOLD} for all items)."
-                )
+                print(f"no show_leeches found (lapse_count < {LEECH_THRESHOLD} for all items).")
             else:
                 leeches_id_width: int = len("item_id")
                 for leeches_row in leeches_rows:
@@ -800,9 +784,7 @@ if __name__ == "__main__":
         content_map[item_id] = (content, criteria, tags, prerequisites, source)
 
     # --- reconcile
-    existing_rows: list[tuple] = database_connection.execute(
-        "SELECT item_id FROM items"
-    ).fetchall()
+    existing_rows: list[tuple] = database_connection.execute("SELECT item_id FROM items").fetchall()
     database_ids: set[str] = set()
     for row in existing_rows:
         database_ids.add(row[0])
@@ -841,8 +823,7 @@ if __name__ == "__main__":
             if len(preview_row[0]) > preview_id_width:
                 preview_id_width = len(preview_row[0])
         print(
-            f"{'item_id':<{preview_id_width}}  "
-            f"{'domain':<6}  {'due_in':>6}  {'rep':>3}  {'EF':>5}"
+            f"{'item_id':<{preview_id_width}}  {'domain':<6}  {'due_in':>6}  {'rep':>3}  {'EF':>5}"
         )
         for preview_row in preview_rows:
             preview_item_id: str = preview_row[0]
@@ -945,8 +926,7 @@ if __name__ == "__main__":
             sys.exit(0)
         if len(review_queue) == 0 and items_reviewed_today > 0:
             terminal_output.msg_info(
-                "all due items reviewed today - "
-                "next session recommended tomorrow"
+                "all due items reviewed today - next session recommended tomorrow"
             )
             sys.exit(0)
         if len(review_queue) == 0 and items_reviewed_today == 0 and len(parsed_ids) > 0:
@@ -960,7 +940,6 @@ if __name__ == "__main__":
     new_count: int = 0
     try:
         for item_id in review_queue:
-
             content_entry: tuple[str, str, list[str], list[str], str] = content_map[item_id]
             content: str = content_entry[0]
             criteria: str = content_entry[1]
@@ -977,13 +956,14 @@ if __name__ == "__main__":
                 progress_string: str = f"{review_count + 1} / {len(review_queue)}"
 
             terminal_output.clear_screen()
-            terminal_output.emit(terminal_output.format_card(
-                header_left=progress_string,
-                header_right=domain,
-                body=content,
-                footer=None,
-            ))
-
+            terminal_output.emit(
+                terminal_output.format_card(
+                    header_left=progress_string,
+                    header_right=domain,
+                    body=content,
+                    footer=None,
+                )
+            )
 
             response_start: float = time.monotonic()
             terminal_output.emit("Your answer (enter to skip):")
@@ -993,11 +973,15 @@ if __name__ == "__main__":
                 terminal_output.emit(terminal_output.format_separator())
                 terminal_output.emit(terminal_output.format_label("criteria"))
                 terminal_output.emit(terminal_output.wrap_text(criteria))
-            terminal_output.emit(terminal_output.format_choices([
-                ("0", "failed"),
-                ("1", "passed with effort"),
-                ("2", "easy, fluent"),
-            ]))
+            terminal_output.emit(
+                terminal_output.format_choices(
+                    [
+                        ("0", "failed"),
+                        ("1", "passed with effort"),
+                        ("2", "easy, fluent"),
+                    ]
+                )
+            )
             grade: int = -1
             while grade == -1:
                 terminal_output.emit("Grade (0/1/2):")
@@ -1053,7 +1037,6 @@ if __name__ == "__main__":
             new_interval_days: float = float(update_result["interval_days"])
             new_lapse_count: int = int(update_result["lapse_count"])
             new_due_date: int = int(update_result["due_date"])
-
 
             if not rehearse_mode:
                 database_connection.execute(

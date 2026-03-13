@@ -533,9 +533,7 @@ def format_card(
 
     # --- assembly helpers ---
     border_horizontal: str = apply_style("+" + ("-" * (width - 2)) + "+", STYLE_DIM)
-    empty_row: str = (
-        apply_style("|", STYLE_DIM) + (" " * (width - 2)) + apply_style("|", STYLE_DIM)
-    )
+    empty_row: str = apply_style("|", STYLE_DIM) + (" " * (width - 2)) + apply_style("|", STYLE_DIM)
 
     def content_line(text: str) -> str:
         visible_width: int = measure_width(text)
@@ -785,12 +783,8 @@ def _write_message(level: str, priority: int, style_code: str, message: str) -> 
     if VERBOSITY >= 5:
         caller_name = sys._getframe(2).f_code.co_name
         trace_prefix = f"({caller_name}) "
-    formatted_line: str = (
-        f"{style_code}[{level:<5}] {trace_prefix}{message}{STYLE_RESET}"
-    )
-    aligned_line: str = align_text(
-        formatted_line, align=_get_align(), width=get_terminal_width()
-    )
+    formatted_line: str = f"{style_code}[{level:<5}] {trace_prefix}{message}{STYLE_RESET}"
+    aligned_line: str = align_text(formatted_line, align=_get_align(), width=get_terminal_width())
     sys.stderr.write(aligned_line + "\n")
 
 

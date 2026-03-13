@@ -47,9 +47,7 @@ if result_grade2["lapse_count"] != 0:
     failure_count += 1
 
 if result_grade2["due_date"] != start_date + 1:
-    print(
-        f"FAIL [grade2 due_date]: expected {start_date + 1} got {result_grade2['due_date']}"
-    )
+    print(f"FAIL [grade2 due_date]: expected {start_date + 1} got {result_grade2['due_date']}")
     failure_count += 1
 
 # --- grade 1 from SM-2 defaults ---
@@ -128,9 +126,7 @@ for step_index in range(10):
     current_date = floor_result["due_date"]
 
     if current_easiness_factor < 1.3 - FLOAT_TOLERANCE:
-        print(
-            f"FAIL [ef floor step {step_index}]: dropped below 1.3: {current_easiness_factor}"
-        )
+        print(f"FAIL [ef floor step {step_index}]: dropped below 1.3: {current_easiness_factor}")
         failure_count += 1
 
 if abs(current_easiness_factor - 1.3) > FLOAT_TOLERANCE:
@@ -162,9 +158,7 @@ for step_index in range(20):
     current_date = ceil_result["due_date"]
 
     if current_easiness_factor > 3.0 + FLOAT_TOLERANCE:
-        print(
-            f"FAIL [ef ceil step {step_index}]: exceeded 3.0: {current_easiness_factor}"
-        )
+        print(f"FAIL [ef ceil step {step_index}]: exceeded 3.0: {current_easiness_factor}")
         failure_count += 1
 
 if abs(current_easiness_factor - 3.0) > FLOAT_TOLERANCE:
@@ -182,9 +176,7 @@ if abs(current_easiness_factor - 3.0) > FLOAT_TOLERANCE:
 # inputs: grade=2, interval=0.0, rep=0; vary ef across legal range
 
 for test_easiness_factor in [1.3, 2.5, 3.0]:
-    first_pass_result: ReviewResult = sm2_update(
-        2, test_easiness_factor, 0.0, 0, 0, start_date
-    )
+    first_pass_result: ReviewResult = sm2_update(2, test_easiness_factor, 0.0, 0, 0, start_date)
     if first_pass_result["interval_days"] != 1.0:
         print(
             f"FAIL [first pass interval ef={test_easiness_factor}]: expected 1.0 got {first_pass_result['interval_days']}"
@@ -195,9 +187,7 @@ for test_easiness_factor in [1.3, 2.5, 3.0]:
 # inputs: grade=2, interval=1.0, rep=1; vary ef across legal range
 
 for test_easiness_factor in [1.3, 2.5, 3.0]:
-    second_pass_result: ReviewResult = sm2_update(
-        2, test_easiness_factor, 1.0, 1, 0, start_date
-    )
+    second_pass_result: ReviewResult = sm2_update(2, test_easiness_factor, 1.0, 1, 0, start_date)
     if second_pass_result["interval_days"] != 6.0:
         print(
             f"FAIL [second pass interval ef={test_easiness_factor}]: expected 6.0 got {second_pass_result['interval_days']}"
@@ -375,9 +365,7 @@ if recovery_pass1_result["interval_days"] != 1.0:
     failure_count += 1
 
 if recovery_pass1_result["repetition_count"] != 1:
-    print(
-        f"FAIL [recovery pass1 rep]: expected 1 got {recovery_pass1_result['repetition_count']}"
-    )
+    print(f"FAIL [recovery pass1 rep]: expected 1 got {recovery_pass1_result['repetition_count']}")
     failure_count += 1
 
 current_easiness_factor = recovery_pass1_result["easiness_factor"]
@@ -404,9 +392,7 @@ if recovery_pass2_result["interval_days"] != 6.0:
     failure_count += 1
 
 if recovery_pass2_result["repetition_count"] != 2:
-    print(
-        f"FAIL [recovery pass2 rep]: expected 2 got {recovery_pass2_result['repetition_count']}"
-    )
+    print(f"FAIL [recovery pass2 rep]: expected 2 got {recovery_pass2_result['repetition_count']}")
     failure_count += 1
 
 current_easiness_factor = recovery_pass2_result["easiness_factor"]
@@ -429,19 +415,14 @@ recovery_pass3_result: ReviewResult = sm2_update(
 
 expected_pass3_interval: float = 6.0 * 1.3
 
-if (
-    abs(recovery_pass3_result["interval_days"] - expected_pass3_interval)
-    > FLOAT_TOLERANCE
-):
+if abs(recovery_pass3_result["interval_days"] - expected_pass3_interval) > FLOAT_TOLERANCE:
     print(
         f"FAIL [recovery pass3 interval]: expected {expected_pass3_interval} got {recovery_pass3_result['interval_days']}"
     )
     failure_count += 1
 
 if recovery_pass3_result["repetition_count"] != 3:
-    print(
-        f"FAIL [recovery pass3 rep]: expected 3 got {recovery_pass3_result['repetition_count']}"
-    )
+    print(f"FAIL [recovery pass3 rep]: expected 3 got {recovery_pass3_result['repetition_count']}")
     failure_count += 1
 
 # =============================================================================
