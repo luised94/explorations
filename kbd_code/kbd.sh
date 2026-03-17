@@ -1,8 +1,8 @@
-
 # kbd.sh - shell tooling for kbd (knowledge base desk)
-# Source this file or place in extensions directory
-
+# Source kbd.sh or place in mc_extensions directory
+source "$HOME/.config/mc_extensions/usb.sh"
 # === LOCAL CONFIGURATION (always available) ===
+
 # Local directory
 export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
 export KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
@@ -124,6 +124,8 @@ elif [[ "$1" == "force" ]]; then
     echo "kbd: Local aliases (j, n) work. Sync (kpull, ksync) won't."
     echo ""
 fi
+
+KBD_DIR="${USB_KBD_LOCAL_DIR:-$HOME/personal_repos/kbd}"
 
 # === FUNCTIONS ===
 # --- MULTI-FILE EDITING ---
