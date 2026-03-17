@@ -23,6 +23,7 @@ alias kt='nvim "$KBD_DIR/tasks.txt"'
 alias kn='nvim "$KBD_DIR/notes.txt"'
 alias kva='kvim -a'
 alias kst='cd "$KBD_DIR" && git status && cd - > /dev/null'
+alias kusboff=usb_eject
 
 # === Setup ===
 # Reset vars
@@ -262,77 +263,6 @@ kbib_sync() {
     else
         echo "kbd: zotero_library.bib already current"
     fi
-}
-
-# Unmount USB (run before ejecting)
-kusboff() {
-    # 1. PRE-CHECK
-    if [[ "$KBD_USB_CONNECTED" != true ]]; then
-        echo "kbd: USB is not connected. Nothing to unmount."
-        return 0
-    fi
-
-    # 2. LEAVE DIRECTORY
-    # If the shell is currently sitting inside the drive, unmount will fail.
-    if [[ "$PWD" == "$KBD_MOUNT_POINT"* ]]; then
-        echo "kbd: changing directory to ~"
-        cd ~ || return 1
-    fi
-
-    # 3. UNMOUNT (OS Agnostic)
-    if mountpoint -q "$KBD_MOUNT_POINT" 2>/dev/null; then
-        echo "kbd: unmounting $KBD_MOUNT_POINT..."
-
-        if ! sudo umount "$KBD_MOUNT_POINT"; then
-            echo "kbd[ERROR]: Unmount failed. Files are in use by:"
-            # Show the user exactly what process is blocking the unmount
-            lsof +D "$KBD_MOUNT_POINT" 2>/dev/null || echo "  (Could not list processes)"
-            return 1
-        fi
-    fi
-
-    # 4. CLEANUP & EJECT
-    # Only run Windows/PowerShell logic if we are in WSL
-    if [[ "$KBD_ENV" == "wsl" ]]; then
-
-        # Remove empty mount directory
-        if [[ -d "$KBD_MOUNT_POINT" ]]; then
-            sudo rmdir "$KBD_MOUNT_POINT" 2>/dev/null
-        fi
-
-        # Eject via PowerShell
-        if [[ -n "$KBD_USB_DRIVE" ]]; then
-            echo "kbd: ejecting ${KBD_USB_DRIVE}: from Windows..."
-
-            # Use 'Eject' verb
-            powershell.exe -NoProfile -Command "
-                (New-Object -ComObject Shell.Application).NameSpace(17).ParseName('${KBD_USB_DRIVE}:').InvokeVerb('Eject')
-            " 2>/dev/null
-
-            # Verify Logic
-            # We wait 2 seconds, then check if the path is gone
-            sleep 2
-            local drive_still_there
-            drive_still_there=$(powershell.exe -NoProfile -Command "Test-Path '${KBD_USB_DRIVE}:'" 2>/dev/null | tr -d '\r')
-
-            if [[ "$drive_still_there" == "True" ]]; then
-                echo "kbd[WARN]: Windows did not eject the drive (it may be busy)."
-            else
-                echo "kbd: Drive ejected safely."
-            fi
-        fi
-    else
-        # Native Linux Cleanup
-        echo "kbd: Unmounted. Safe to unplug."
-    fi
-
-    # 5. STATE RESET
-    export KBD_USB_CONNECTED=false
-    unset KBD_MOUNT_POINT
-    unset KBD_USB_DRIVE
-
-    # Delete the cache so next startup doesn't read stale data
-    rm -f "$CACHE_FILE"
 }
 
 # --- Usage metrics ---
