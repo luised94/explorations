@@ -247,20 +247,17 @@ ksync() {
 
 # Sync from Zotero to USB.
 kbib_sync() {
-
-    if [ "$KBD_USB_CONNECTED" != true ]; then
+    if [ "$USB_CONNECTED" != true ]; then
         echo "kbd[ERROR]: USB not connected"
         return 1
     fi
-
     if [ ! -f "$KBD_ZOTERO_SOURCE" ]; then
         echo "kbd[ERROR]: Source bib not found: $KBD_ZOTERO_SOURCE"
         return 1
     fi
-
-    # Only copy if source is newer
-    if [ "$KBD_ZOTERO_SOURCE" -nt "$KBD_USB_ZOTERO_BIB" ]; then
-        cp "$KBD_ZOTERO_SOURCE" "$KBD_USB_ZOTERO_BIB"
+    local kbd_usb_bib_dest_path="$USB_MOUNT_POINT/shared/kbd_zotero_library.bib"
+    if [ "$KBD_ZOTERO_SOURCE" -nt "$kbd_usb_bib_dest_path" ]; then
+        cp "$KBD_ZOTERO_SOURCE" "$kbd_usb_bib_dest_path"
         echo "kbd: zotero_library.bib updated on USB"
     else
         echo "kbd: zotero_library.bib already current"
