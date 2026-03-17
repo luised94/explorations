@@ -274,21 +274,17 @@ kbd_usage_stats() {
 
 # --- Interface ---
 # Modify PS1 with indicator.
-kbd_usb_indicator() {
-  if [ -f "${KBD_MOUNT_POINT}/$KBD_USB_MARKER" ]; then
-    echo "kbd[U]"
-  else
-    echo "kbd[ ]"
-  fi
+kbd_origin_indicator() {
+    if [ "$USB_CONNECTED" == true ]; then
+        echo "kbd[O]"
+    else
+        echo "kbd[ ]"
+    fi
 }
-
 if [ -z "$MC_PS1" ]; then
-  MC_PS1='\u@\h:\w\$ '
+    MC_PS1='\u@\h:\w\$ '
 fi
-
-# Only add if not already present
-if [[ "$MC_PS1" != *'kbd_usb_indicator'* ]]; then
-  MC_PS1='$(kbd_usb_indicator)'"${MC_PS1}"
+if [[ "$MC_PS1" != *'kbd_origin_indicator'* ]]; then
+    MC_PS1='$(kbd_origin_indicator)'"${MC_PS1}"
 fi
-
 export PS1="$MC_PS1"
