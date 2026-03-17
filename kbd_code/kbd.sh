@@ -18,11 +18,11 @@ KBD_SCRIPT_PATH="$HOME/.config/mc_extensions/kbd_setup.sh"
 
 # === ALIASES ===
 # Always defined - they use KBD_LOCAL_DIR, not USB
-alias kj='nvim "$KBD_LOCAL_DIR/journal.txt"'
-alias kt='nvim "$KBD_LOCAL_DIR/tasks.txt"'
-alias kn='nvim "$KBD_LOCAL_DIR/notes.txt"'
+alias kj='nvim "$KBD_DIR/journal.txt"'
+alias kt='nvim "$KBD_DIR/tasks.txt"'
+alias kn='nvim "$KBD_DIR/notes.txt"'
 alias kva='kvim -a'
-alias kst='cd "$KBD_LOCAL_DIR" && git status && cd - > /dev/null'
+alias kst='cd "$KBD_DIR" && git status && cd - > /dev/null'
 
 # === Setup ===
 # Reset vars
