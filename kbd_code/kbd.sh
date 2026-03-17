@@ -225,59 +225,23 @@ kpull() {
 
 # Sync to USB: add all, commit with date, push
 ksync() {
-    if [ "$KBD_USB_CONNECTED" != true ]; then
-        echo "kbd[ERROR]: USB not connected. Plug in and run: kbd_refresh or source ~/.config/mc_extensions/kbd_setup.sh"
+    if [ "$USB_CONNECTED" != true ]; then
+        echo "kbd[ERROR]: USB not connected"
         return 1
     fi
-
-    # Check local repo exists and is a git repo
-    if [ ! -d "$KBD_LOCAL_DIR/.git" ]; then
-        echo "kbd[ERROR]: $KBD_LOCAL_DIR is not a git repository"
+    if [ ! -d "$KBD_DIR/.git" ]; then
+        echo "kbd[ERROR]: $KBD_DIR is not a git repository"
         return 1
     fi
-
-    local remote_unavailable=false
-    local remote="origin"
-    local url
-    url=$(git -C "$KBD_LOCAL_DIR" remote get-url "$remote" 2>/dev/null)
-
-    if [ -z "$url" ]; then
-        echo "kbd[ERROR]: Remote 'origin' not configured"
-        return 1
-    fi
-
-    if [[ "$url" == /* || "$url" == file://* ]]; then
-        [[ ! -d "${url#file://}" ]] && remote_unavailable=true
-    fi
-
-    if [[ "$remote_unavailable" == true ]]; then
-        echo "kbd[ERROR]: Remote unavailable: $url"
-        return 1
-    fi
-
-    cd "$KBD_LOCAL_DIR" || return 1
+    cd "$KBD_DIR" || return 1
     git add -A
-
     if git diff --cached --quiet; then
         echo "kbd: nothing to commit"
     else
         git commit
     fi
-
-    # Check if there are commits to push
-    local unpushed
-    unpushed=$(git rev-list --count origin/master..HEAD 2>/dev/null)
-
-    if [ -z "$unpushed" ]; then
-        echo "kbd: cannot determine push status, pushing anyway"
-        git push origin master
-    elif [ "$unpushed" -gt 0 ]; then
-        echo "kbd: pushing $unpushed commit(s)"
-        git push origin master
-    else
-        echo "kbd: nothing to push"
-    fi
-
+    git push "$USB_MOUNT_POINT/$USB_KBD_REPO_PATH" master
+    usb_sync kbd
     cd - > /dev/null
 }
 
