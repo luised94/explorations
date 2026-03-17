@@ -207,50 +207,19 @@ kbd_refresh() {
 
 # --- Sync functions --- Need USB ---
 # Pull from USB
+
 kpull() {
-    if [ "$KBD_USB_CONNECTED" != true ]; then
-        echo "kbd[ERROR]: USB not connected. Plug in and run: source ~/.config/mc_extensions/kbd_setup.sh"
+    if [ "$USB_CONNECTED" != true ]; then
+        echo "kbd[ERROR]: USB not connected"
         return 1
     fi
-
-    # Check local repo exists and is a git repo
-    if [ ! -d "$KBD_LOCAL_DIR/.git" ]; then
-        echo "kbd[ERROR]: $KBD_LOCAL_DIR is not a git repository"
+    if [ ! -d "$KBD_DIR/.git" ]; then
+        echo "kbd[ERROR]: $KBD_DIR is not a git repository"
         return 1
     fi
-
-    local remote_unavailable=false
-    local remote="origin"
-    local url
-    url=$(git -C "$KBD_LOCAL_DIR" remote get-url "$remote" 2>/dev/null)
-
-    if [ -z "$url" ]; then
-        echo "kbd[ERROR]: Remote 'origin' not configured"
-        return 1
-    fi
-
-    if [[ "$url" == /* || "$url" == file://* ]]; then
-        [[ ! -d "${url#file://}" ]] && remote_unavailable=true
-    fi
-
-    if [[ "$remote_unavailable" == true ]]; then
-        echo "kbd[ERROR]: Remote unavailable: $url"
-        return 1
-    fi
-
-    cd "$KBD_LOCAL_DIR" || return 1
-    git pull origin master
-
-    # Sync bib if USB version is newer
-    if [ ! -f "$KBD_USB_ZOTERO_BIB" ]; then
-      echo "kbd: $KBD_USB_ZOTERO_BIB does not exist."
-    fi
-
-    if [ -f "$KBD_USB_ZOTERO_BIB" ] && [ "$KBD_USB_ZOTERO_BIB" -nt "$KBD_LOCAL_ZOTERO_BIB" ]; then
-        cp "$KBD_USB_ZOTERO_BIB" "$KBD_LOCAL_ZOTERO_BIB"
-        echo "kbd: $KBD_LOCAL_ZOTERO_BIB updated."
-    fi
-
+    cd "$KBD_DIR" || return 1
+    git pull "$USB_MOUNT_POINT/$USB_KBD_REPO_PATH" master
+    usb_sync kbd
     cd - > /dev/null
 }
 
