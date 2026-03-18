@@ -1,3 +1,4 @@
+#!/bin/bash
 # kbd.sh - shell tooling for kbd (knowledge base desk)
 # Source kbd.sh or place in mc_extensions directory
 if [[ -f "$HOME/.config/mc_extensions/usb.sh" ]]; then
@@ -6,17 +7,19 @@ else
     export USB_CONNECTED=false
     echo "kbd[WARN]: usb.sh not found, USB features unavailable"
 fi
-# === LOCAL CONFIGURATION (always available) ===
+# =============================================================================
+# SECTION 1: LOCAL CONFIGURATION (always available, no USB dependency)
+# =============================================================================
+# All aliases and functions in this section use KBD_DIR. They work whether
+# USB is connected or not.
 
-# Local directory
 # Used as fallback source for KBD_DIR. Not referenced directly in functions or aliases.
 export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
 export KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
 KBD_WINDOWS_USER="${MC_WINDOWS_USER:-Luised94}"
 KBD_ZOTERO_SOURCE="/mnt/c/Users/$KBD_WINDOWS_USER/Zotero/zotero_library.bib"
+KBD_DIR="${USB_KBD_LOCAL_DIR:-$HOME/personal_repos/kbd}"
 
-# === ALIASES ===
-# Always defined - they use KBD_LOCAL_DIR, not USB
 alias kj='nvim "$KBD_DIR/journal.txt"'
 alias kt='nvim "$KBD_DIR/tasks.txt"'
 alias kn='nvim "$KBD_DIR/notes.txt"'
@@ -25,16 +28,10 @@ alias kst='cd "$KBD_DIR" && git status && cd - > /dev/null'
 alias kbd_refresh=usb_refresh
 alias kusboff=usb_eject
 
-KBD_DIR="${USB_KBD_LOCAL_DIR:-$HOME/personal_repos/kbd}"
-
-# === FUNCTIONS ===
-# --- MULTI-FILE EDITING ---
 _kvim_usage() {
   cat <<EOF
 Usage: kvim [OPTIONS]
-
 Open kbd files for editing.
-
 Options:
   -a, --all      All files in KBD_DIR (uses vimall if available)
   -c, --core     Core files only: journal, tasks, notes (default)
@@ -42,11 +39,9 @@ Options:
   -h, --help     Show this help
 EOF
 }
-
 kvim() {
   local mode="core"
   local subdir=""
-
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)  _kvim_usage; return 0 ;;
@@ -59,12 +54,10 @@ kvim() {
       *)          echo "kvim: unknown option: $1" >&2; return 1 ;;
     esac
   done
-
   case "$mode" in
     core)
       # Deterministic, no dependency needed
       "${EDITOR:-nvim}" "$KBD_DIR"/{journal,tasks,notes}.txt
-
       ;;
     all)
       if declare -f vimall &>/dev/null; then
@@ -85,9 +78,25 @@ kvim() {
       ;;
   esac
 }
+kbd_usage_stats() {
+  local hist="${HISTFILE:-$HOME/.bash_history}"
+  echo "kbd command usage (from history):"
+  grep -oE '\bk(j|t|n|vim|st|sync|pull)\b' "$hist" 2>/dev/null | sort | uniq -c | sort -rn
+}
+# =============================================================================
+# SECTION 2: USB OPERATIONS (requires USB_CONNECTED=true)
+# =============================================================================
+# Interface with usb.sh:
+#   Reads: USB_CONNECTED, USB_MOUNT_POINT, USB_KBD_REPO_PATH
+#   Calls: usb_sync
+#
+# Bib sync flow:
+#   Zotero (Windows) -> USB shared/ -> local repo
+#        kbib_sync          usb_sync (auto, startup)
+#
+# The two legs are intentionally separate. kbib_sync is manual because
+# the Zotero leg touches Windows filesystem and is slow.
 
-# --- Sync functions --- Need USB ---
-# Pull from USB
 kpull() {
     if [ "$USB_CONNECTED" != true ]; then
         echo "kbd[ERROR]: USB not connected"
@@ -102,8 +111,6 @@ kpull() {
     usb_sync kbd
     cd - > /dev/null
 }
-
-# Sync to USB: add all, commit with date, push
 ksync() {
     if [ "$USB_CONNECTED" != true ]; then
         echo "kbd[ERROR]: USB not connected"
@@ -124,8 +131,8 @@ ksync() {
     usb_sync kbd
     cd - > /dev/null
 }
-
-# Sync from Zotero to USB.
+# This path must match the src in kbd.conf sync_files. kbd.conf is the
+# source of truth.
 kbib_sync() {
     if [ "$USB_CONNECTED" != true ]; then
         echo "kbd[ERROR]: USB not connected"
@@ -143,16 +150,9 @@ kbib_sync() {
         echo "kbd: zotero_library.bib already current"
     fi
 }
-
-# --- Usage metrics ---
-kbd_usage_stats() {
-  local hist="${HISTFILE:-$HOME/.bash_history}"
-  echo "kbd command usage (from history):"
-  grep -oE '\bk(j|t|n|vim|st|sync|pull)\b' "$hist" 2>/dev/null | sort | uniq -c | sort -rn
-}
-
-# --- Interface ---
-# Modify PS1 with indicator.
+# =============================================================================
+# SECTION 3: SHELL INTERFACE (PS1 modification)
+# =============================================================================
 kbd_origin_indicator() {
     if [ "$USB_CONNECTED" == true ]; then
         echo "kbd[O]"
