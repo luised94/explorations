@@ -1,6 +1,11 @@
 # kbd.sh - shell tooling for kbd (knowledge base desk)
 # Source kbd.sh or place in mc_extensions directory
-source "$HOME/.config/mc_extensions/usb.sh"
+if [[ -f "$HOME/.config/mc_extensions/usb.sh" ]]; then
+    source "$HOME/.config/mc_extensions/usb.sh"
+else
+    export USB_CONNECTED=false
+    echo "kbd[WARN]: usb.sh not found, USB features unavailable"
+fi
 # === LOCAL CONFIGURATION (always available) ===
 
 # Local directory
