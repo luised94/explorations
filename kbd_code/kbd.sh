@@ -4,6 +4,7 @@ source "$HOME/.config/mc_extensions/usb.sh"
 # === LOCAL CONFIGURATION (always available) ===
 
 # Local directory
+# Used as fallback source for KBD_DIR. Not referenced directly in functions or aliases.
 export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
 export KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
 KBD_WINDOWS_USER="${MC_WINDOWS_USER:-Luised94}"
@@ -57,7 +58,8 @@ kvim() {
   case "$mode" in
     core)
       # Deterministic, no dependency needed
-      "${EDITOR:-nvim}" "$KBD_LOCAL_DIR"/{journal,tasks,notes}.txt
+      "${EDITOR:-nvim}" "$KBD_DIR"/{journal,tasks,notes}.txt
+
       ;;
     all)
       if declare -f vimall &>/dev/null; then
