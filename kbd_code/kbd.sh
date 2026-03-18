@@ -31,7 +31,7 @@ Usage: kvim [OPTIONS]
 Open kbd files for editing.
 
 Options:
-  -a, --all      All files in KBD_LOCAL_DIR (uses vimall if available)
+  -a, --all      All files in KBD_DIR (uses vimall if available)
   -c, --core     Core files only: journal, tasks, notes (default)
   -d, --dir DIR  Specific subdirectory
   -h, --help     Show this help
@@ -63,14 +63,14 @@ kvim() {
       ;;
     all)
       if declare -f vimall &>/dev/null; then
-        vimall -d "$KBD_LOCAL_DIR"
+        vimall -d "$KBD_DIR"
       else
         echo "Note: vimall unavailable, opening core files only" >&2
-        "${EDITOR:-nvim}" "$KBD_LOCAL_DIR"/{journal,tasks,notes}.txt
+        "${EDITOR:-nvim}" "$KBD_DIR"/{journal,tasks,notes}.txt
       fi
       ;;
     subdir)
-      local target="$KBD_LOCAL_DIR/$subdir"
+      local target="$KBD_DIR/$subdir"
       [[ -d "$target" ]] || { echo "kvim: not a directory: $target" >&2; return 1; }
       if declare -f vimall &>/dev/null; then
         vimall -d "$target"
