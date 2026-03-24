@@ -40,3 +40,28 @@ alias add='hledger add'
 hledit() {
     ${EDITOR:-nvim} "$LEDGER_FILE"
 }
+
+hlmtd() {
+    hledger is -p "$(date +%Y-%m)-01..today"
+}
+
+hllm() {
+    local first_of_current_month
+    local start_of_last_month
+    local end_of_last_month
+    first_of_current_month="$(date +%Y-%m-01)"
+    start_of_last_month="$(date -d "$first_of_current_month -1 month" +%Y-%m-%d)"
+    end_of_last_month="$(date -d "$first_of_current_month -1 day" +%Y-%m-%d)"
+    hledger is -p "$start_of_last_month..$end_of_last_month"
+}
+
+hlytd() {
+    hledger is -p "$(date +%Y)-01-01..today"
+}
+
+hlrecent() {
+    local days="${1:-30}"
+    local start_date
+    start_date="$(date -d "$days days ago" +%Y-%m-%d)"
+    hledger reg -p "$start_date..today"
+}
