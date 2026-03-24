@@ -30,3 +30,13 @@ fi
 
 FINANCES_DIR="${USB_FINANCES_LOCAL_DIR:-$HOME/personal_repos/finances}"
 export LEDGER_FILE="$FINANCES_DIR/2026.journal"
+
+alias bal='hledger bal'
+alias bs='hledger bs'
+alias is='hledger is'
+alias reg='hledger reg'
+alias add='hledger add'
+
+hledit() {
+    ${EDITOR:-nvim} "$LEDGER_FILE"
+}
