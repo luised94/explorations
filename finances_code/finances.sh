@@ -85,3 +85,43 @@ hlyear() {
     export LEDGER_FILE="$FINANCES_DIR/$1.journal"
     echo "finances: LEDGER_FILE set to $LEDGER_FILE"
 }
+
+# =============================================================================
+# SECTION 2: USB OPERATIONS (requires USB_CONNECTED=true)
+# =============================================================================
+
+hlpush() {
+    if [[ "$USB_CONNECTED" != true ]]; then
+        echo "finances[ERROR]: USB not connected"
+        return 1
+    fi
+    if [[ ! -d "$FINANCES_DIR/.git" ]]; then
+        echo "finances[ERROR]: $FINANCES_DIR is not a git repository"
+        return 1
+    fi
+    cd "$FINANCES_DIR" || return 1
+    git add -A
+    if git diff --cached --quiet; then
+        echo "finances: nothing to commit"
+    else
+        git commit
+    fi
+    git push origin main
+    usb_sync finances
+    cd - > /dev/null
+}
+
+hlpull() {
+    if [[ "$USB_CONNECTED" != true ]]; then
+        echo "finances[ERROR]: USB not connected"
+        return 1
+    fi
+    if [[ ! -d "$FINANCES_DIR/.git" ]]; then
+        echo "finances[ERROR]: $FINANCES_DIR is not a git repository"
+        return 1
+    fi
+    cd "$FINANCES_DIR" || return 1
+    git pull origin main
+    usb_sync finances
+    cd - > /dev/null
+}
