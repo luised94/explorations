@@ -65,3 +65,23 @@ hlrecent() {
     start_date="$(date -d "$days days ago" +%Y-%m-%d)"
     hledger reg -p "$start_date..today"
 }
+hlreconcile() {
+    if [[ -z "$1" ]]; then
+        echo "finances[ERROR]: usage: hlreconcile ACCOUNT"
+        return 1
+    fi
+    hledger aregister "$1"
+}
+
+hlyear() {
+    if [[ -z "$1" ]]; then
+        echo "finances[ERROR]: usage: hlyear YEAR"
+        return 1
+    fi
+    if [[ ! "$1" =~ ^[0-9]{4}$ ]]; then
+        echo "finances[ERROR]: year must be four digits (e.g. 2026)"
+        return 1
+    fi
+    export LEDGER_FILE="$FINANCES_DIR/$1.journal"
+    echo "finances: LEDGER_FILE set to $LEDGER_FILE"
+}
