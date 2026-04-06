@@ -82,6 +82,7 @@ Use of genetic and biochemical assays to understand the function of ATP hydrolys
 - Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data.
 - Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
 - Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
+
 \cvsection{Additional Research Experience}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
@@ -112,13 +113,13 @@ Ph.D. in Biology, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge
 
 Advisor: Stephen P. Bell
 
-Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in \textit{Saccharomyces cerevisiae}
+- Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in \textit{Saccharomyces cerevisiae}
 
 B.Sc. in Cellular and Molecular Biology, \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR, 2016
 
 \cvsection{Publications}
 
-\textbf{Martínez-Rodríguez, L.} & Bell, S. P. A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{In preparation.}
+\textbf{Martínez-Rodríguez, L.} & Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{In preparation.}
 
 \textbf{Martínez-Rodríguez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., & Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725. http://doi.org/10.1074/jbc.M115.642876
 
