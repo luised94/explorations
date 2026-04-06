@@ -30,7 +30,7 @@ format:
         \usepackage{setspace}
         \singlespacing
         \usepackage{enumitem}
-        \setlist{itemsep=0pt, parsep=0pt, topsep=0pt, partopsep=0pt}
+        \setlist{itemsep=2pt, parsep=0pt, topsep=0pt, partopsep=0pt}
 ---
 
 ```{=latex}
@@ -83,6 +83,10 @@ Use of genetic and biochemical assays to understand the function of ATP hydrolys
 - Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
 - Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
 
+**Research intern, MIT/Pfizer Internship Program** (Course 7.930[J]) \hfill 2022
+Optimization of cell culture conditions and development of a high-throughput immunofluorescent CRISPR-Cas9 screen against collagen-producing primary cells to identify therapeutic targets for cystic fibrosis using the Beacon Optofluidic System.
+
+
 \cvsection{Additional Research Experience}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
@@ -99,13 +103,9 @@ Undergraduate summer research assistant (2014)
 
 \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR
 
-Undergraduate research assistant (2013--2015)
+Undergraduate research assistant (2012--2015)
 
 - Lipidic sponge phase crystallization of the nicotinic acetylcholine receptor derived from \textit{Torpedo californica}
-
-Undergraduate research assistant (2012--2013)
-
-- Aerogel synthesis derived from ash of native algae around the island of Puerto Rico
 
 \cvsection{Education}
 
@@ -136,16 +136,7 @@ Department of Biology Building 68 Annual Summer Retreat. Oral presentation. Plym
 Cold Spring Harbor Laboratory, Single Biomolecules. Poster presentation. September 2018.
 
 \cvsection{Teaching Experience}
-\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA \hfill 2017, 2020
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA \hfill
 
-Teaching assistant, MIT Department of Biology
-
-- Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing for introductory biology (7.012) and biochemistry (7.05) courses.
-
-\cvsection{Service}
-
-\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA \hfill 2016--2023
-
-- MIT Biology Summer Research Program: Application review committee member (2018--2023); research mentor for one undergraduate student (2019); weekly advising sessions for underrepresented undergraduate researchers (2017--2020)
-- BioRefs Volunteer Group (2017--2020): Conflict-management training, organized monthly community events, served as confidential resource for graduate students
-- Building 68 Data-and-Drinks Seminar Series (2017--2020): Organized biweekly seminars for graduate student and postdoctoral presentations
+Teaching assistant (Introduction to Biology, 7.012, 2017), MIT Department of Biology, Biweekly recitation sessions, graded assignments and exams.  
+Teaching assistant (General Biochemistry, 7.05, 2020), MIT Department of Biology, Biweekly recitation sessions, graded assignments and exams.
