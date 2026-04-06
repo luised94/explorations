@@ -50,16 +50,17 @@ Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, m
 
 \cvsection{Core Skills/Competencies}
 
-Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
-Biochemistry: protein purification from bacteria and fungi, electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays
-Yeast Genetics: genetic screen design and validation, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and CRISPR-based genome editing, drug-sensitivity assays, flow-cytometry analysis
-Bioinformatics: multiple-sequence alignment, PyMOL, analysis of whole-genome sequencing data (alignment, variant calling, ChIP-seq, track visualization, peak calling, motif analysis)
-Programming: R (genomic data visualization and analysis with Gviz, quantitative figure generation), Bash (NGS pipeline development on Linux HPC: Bowtie2, SAMtools, deeptools), Python; additional tools include ImageJ
-Cell Biology: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System
+Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly  
+Biochemistry: protein purification from bacteria and fungi, electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays  
+Yeast Genetics: genetic screen design and validation, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and CRISPR-based genome editing, drug-sensitivity assays, flow-cytometry analysis  
+Bioinformatics: multiple-sequence alignment, PyMOL, analysis of whole-genome sequencing data (alignment, variant calling, ChIP-seq, track visualization, peak calling, motif analysis)  
+Programming: R (genomic data visualization and analysis with Gviz, quantitative figure generation), Bash (NGS pipeline development on Linux HPC: Bowtie2, SAMtools, deeptools), Python; additional tools include ImageJ  
+Cell Biology: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System  
+
 \cvsection{Experience}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)} Cambridge, MA
-\vspace{-1.3em}
+\vspace{-0.1em}
 
 Post-doctoral researcher (2023--present)
 
@@ -78,38 +79,38 @@ Advisor: Stephen P. Bell
 
 Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
 
-Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data.
-Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
-Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
+- Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data.
+- Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
+- Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
 \cvsection{Additional Research Experience}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
 
 Undergraduate summer research assistant (2015)
 
-Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface display using fluorescence polarization
+- Characterizing Bfl1-selective PUMA-like peptides derived from yeast surface display using fluorescence polarization
+
 \uline{UNIVERSITY OF NORTH CAROLINA AT CHAPEL HILL (UNC)}, Chapel Hill, NC
 
 Undergraduate summer research assistant (2014)
 
-Characterizing minimal aa-tRNA synthetase ATPase domains derived from opposite strands of a gene
+- Characterizing minimal aa-tRNA synthetase ATPase domains derived from opposite strands of a gene
 
 \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR
 
 Undergraduate research assistant (2013--2015)
 
-Lipidic sponge phase crystallization of the nicotinic acetylcholine receptor derived from \textit{Torpedo californica}
+- Lipidic sponge phase crystallization of the nicotinic acetylcholine receptor derived from \textit{Torpedo californica}
 
 Undergraduate research assistant (2012--2013)
 
-Aerogel synthesis derived from ash of native algae around the island of Puerto Rico
+- Aerogel synthesis derived from ash of native algae around the island of Puerto Rico
 
 \cvsection{Education}
 
 Ph.D. in Biology, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA, 2023
 
 Advisor: Stephen P. Bell
-\vspace{-0.5em}
 
 Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in \textit{Saccharomyces cerevisiae}
 
@@ -117,9 +118,9 @@ B.Sc. in Cellular and Molecular Biology, \uline{UNIVERSITY OF PUERTO RICO-RIO PI
 
 \cvsection{Publications}
 
-\textbf{Mart'{i}nez-Rodr'{i}guez, L. E.} & Bell, S. P. A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{In preparation.}
+\textbf{Martínez-Rodríguez, L.} & Bell, S. P. A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{In preparation.}
 
-\textbf{Mart'{i}nez-Rodr'{i}guez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., & Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725. http://doi.org/10.1074/jbc.M115.642876
+\textbf{Martínez-Rodríguez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., & Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725. http://doi.org/10.1074/jbc.M115.642876
 
 \cvsection{Presentations}
 
@@ -138,12 +139,12 @@ Cold Spring Harbor Laboratory, Single Biomolecules. Poster presentation. Septemb
 
 Teaching assistant, MIT Department of Biology
 
-Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing for introductory biology (7.012) and biochemistry (7.05) courses.
+- Led biweekly recitation sessions, graded assignments and exams, and contributed to assignment and exam writing for introductory biology (7.012) and biochemistry (7.05) courses.
 
 \cvsection{Service}
 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA \hfill 2016--2023
 
-MIT Biology Summer Research Program: Application review committee member (2018--2023); research mentor for one undergraduate student (2019); weekly advising sessions for underrepresented undergraduate researchers (2017--2020)
-BioRefs Volunteer Group (2017--2020): Conflict-management training, organized monthly community events, served as confidential resource for graduate students
-Building 68 Data-and-Drinks Seminar Series (2017--2020): Organized biweekly seminars for graduate student and postdoctoral presentations
+- MIT Biology Summer Research Program: Application review committee member (2018--2023); research mentor for one undergraduate student (2019); weekly advising sessions for underrepresented undergraduate researchers (2017--2020)
+- BioRefs Volunteer Group (2017--2020): Conflict-management training, organized monthly community events, served as confidential resource for graduate students
+- Building 68 Data-and-Drinks Seminar Series (2017--2020): Organized biweekly seminars for graduate student and postdoctoral presentations
