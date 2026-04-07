@@ -50,12 +50,12 @@ Ph.D. with 9+ years of expertise across protein and nucleic-acid biochemistry, m
 
 \cvsection{Core Skills/Competencies}
 
-Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly  
-Biochemistry: **protein purification from bacteria and fungi**, electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, reconstituted eukaryotic DNA-replication initiation and elongation assays  
-Yeast Genetics: genetic screen design and validation, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and **CRISPR-based genome editing**, drug-sensitivity assays, flow-cytometry analysis, **auxin-inducible degron (AID2)** conditional depletion  
+Biochemistry: **protein purification from bacteria and fungi**, electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, **reconstituted eukaryotic DNA-replication initiation and elongation assays**  
+Yeast Genetics: **genetic screen design and validation**, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and **CRISPR-based genome editing**, drug-sensitivity assays, flow-cytometry analysis, **auxin-inducible degron (AID2)** conditional depletion  
 Bioinformatics: multiple-sequence alignment, PyMOL, analysis of whole-genome sequencing data (alignment, variant calling, ChIP-seq, track visualization, peak calling, motif analysis)  
-Programming: R (genomic data visualization and analysis with Gviz, quantitative figure generation), Bash (NGS pipeline development on Linux HPC: Bowtie2, SAMtools, deeptools), Python; additional tools include ImageJ  
+Programming: **R (genomic data visualization and analysis with Gviz, quantitative figure generation)**, Bash (NGS pipeline development on Linux HPC: Bowtie2, SAMtools, deeptools), Python (variant calling); ImageJ  
 Cell Biology: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA complexes, Beacon Optofluidic System  
+Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly  
 
 \cvsection{Experience}
 
@@ -86,7 +86,6 @@ Use of genetic and biochemical assays to understand the function of ATP hydrolys
 
 **Research intern, MIT/Pfizer Internship Program** (Course 7.930[J]) \hfill 2022
 Optimization of cell culture conditions and development of a high-throughput immunofluorescent CRISPR-Cas9 screen against collagen-producing primary cells to identify therapeutic targets for cystic fibrosis using the Beacon Optofluidic System.
-
 
 \cvsection{Additional Research Experience}
 
@@ -139,5 +138,4 @@ Cold Spring Harbor Laboratory, Single Biomolecules. Poster presentation. Septemb
 \cvsection{Teaching Experience}
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA \hfill
 
-Teaching assistant (Introduction to Biology, 7.012, 2017), MIT Department of Biology, Biweekly recitation sessions, graded assignments and exams.  
-Teaching assistant (General Biochemistry, 7.05, 2020), MIT Department of Biology, Biweekly recitation sessions, graded assignments and exams.
+Teaching assistant - Introduction to Biology (7.012, 2017) and General Biochemistry (7.05, 2020): Biweekly recitation sessions, graded assignments and exams.  
