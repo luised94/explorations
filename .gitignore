@@ -5,3 +5,5 @@
 *.pdf
 *.tex
 llms/raw/*
+master-cv_Martinez-Luis.log
+missfont.log
