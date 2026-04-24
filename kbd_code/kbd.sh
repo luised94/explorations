@@ -28,8 +28,8 @@ fi
 # USB is connected or not.
 
 # Used as fallback source for KBD_DIR. Not referenced directly in functions or aliases.
-export KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
-export KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
+KBD_LOCAL_DIR="$HOME/personal_repos/kbd"
+KBD_STATS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/kbd/stats"
 KBD_WINDOWS_USER="${MC_WINDOWS_USER:-Luised94}"
 KBD_ZOTERO_SOURCE="/mnt/c/Users/$KBD_WINDOWS_USER/Zotero/zotero_library.bib"
 KBD_DIR="${USB_KBD_LOCAL_DIR:-$HOME/personal_repos/kbd}"
@@ -112,52 +112,54 @@ kbd_usage_stats() {
 # the Zotero leg touches Windows filesystem and is slow.
 
 kpull() {
-    if [ "$USB_CONNECTED" != true ]; then
-        echo "kbd[ERROR]: USB not connected"
-        return 1
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        cat <<'EOF'
+kpull - pull from USB and sync files
+Usage:
+  kpull
+EOF
+        return 0
     fi
-    if [ ! -d "$KBD_DIR/.git" ]; then
-        echo "kbd[ERROR]: $KBD_DIR is not a git repository"
-        return 1
-    fi
-    cd "$KBD_DIR" || return 1
-    git pull "$USB_MOUNT_POINT/$USB_KBD_REPO_PATH" master
+    usb_pull kbd
     usb_sync kbd
-    cd - > /dev/null
 }
+
 ksync() {
-    if [ "$USB_CONNECTED" != true ]; then
-        echo "kbd[ERROR]: USB not connected"
+    if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        cat <<'EOF'
+ksync - commit, push to USB, and sync files
+Usage:
+  ksync
+Opens editor for commit message if there are changes.
+Then pushes to USB bare repo and runs file sync.
+EOF
+        return 0
+    fi
+    if [[ ! -d "$KBD_DIR/.git" ]]; then
+        echo "kbd[ERROR]: $KBD_DIR is not a git repo" >&2
         return 1
     fi
-    if [ ! -d "$KBD_DIR/.git" ]; then
-        echo "kbd[ERROR]: $KBD_DIR is not a git repository"
-        return 1
+    if [[ -n "$(git -C "$KBD_DIR" status --porcelain 2>/dev/null)" ]]; then
+        git -C "$KBD_DIR" add -A
+        git -C "$KBD_DIR" commit || return 1
     fi
-    cd "$KBD_DIR" || return 1
-    git add -A
-    if git diff --cached --quiet; then
-        echo "kbd: nothing to commit"
-    else
-        git commit
-    fi
-    git push "$USB_MOUNT_POINT/$USB_KBD_REPO_PATH" master
+    usb_push kbd
     usb_sync kbd
-    cd - > /dev/null
 }
+
 # This path must match the src in kbd.conf sync_files. kbd.conf is the
 # source of truth.
 kbib_sync() {
-    if [ "$USB_CONNECTED" != true ]; then
+    if [[ "$USB_CONNECTED" != true ]]; then
         echo "kbd[ERROR]: USB not connected"
         return 1
     fi
-    if [ ! -f "$KBD_ZOTERO_SOURCE" ]; then
+    if [[ ! -f "$KBD_ZOTERO_SOURCE" ]]; then
         echo "kbd[ERROR]: Source bib not found: $KBD_ZOTERO_SOURCE"
         return 1
     fi
     local kbd_usb_bib_dest_path="$USB_MOUNT_POINT/shared/kbd_zotero_library.bib"
-    if [ "$KBD_ZOTERO_SOURCE" -nt "$kbd_usb_bib_dest_path" ]; then
+    if [[ "$KBD_ZOTERO_SOURCE" -nt "$kbd_usb_bib_dest_path" ]]; then
         cp "$KBD_ZOTERO_SOURCE" "$kbd_usb_bib_dest_path"
         echo "kbd: zotero_library.bib updated on USB"
     else
@@ -168,12 +170,13 @@ kbib_sync() {
 # SECTION 3: SHELL INTERFACE (PS1 modification)
 # =============================================================================
 kbd_origin_indicator() {
-    if [ "$USB_CONNECTED" == true ]; then
+    if [[ "$USB_CONNECTED" == true ]]; then
         echo "kbd[O]"
     else
         echo "kbd[ ]"
     fi
 }
+
 if [ -z "$MC_PS1" ]; then
     MC_PS1='\u@\h:\w\$ '
 fi
