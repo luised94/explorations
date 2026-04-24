@@ -117,6 +117,7 @@ kpull() {
 kpull - pull from USB and sync files
 Usage:
   kpull
+Wraps usb_pull and usb_sync. See usb_pull -h for details.
 EOF
         return 0
     fi
@@ -132,6 +133,7 @@ Usage:
   ksync
 Opens editor for commit message if there are changes.
 Then pushes to USB bare repo and runs file sync.
+Wraps usb_push and usb_sync. See usb_push -h for details.
 EOF
         return 0
     fi
