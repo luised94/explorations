@@ -168,21 +168,3 @@ kbib_sync() {
         echo "kbd: zotero_library.bib already current"
     fi
 }
-# =============================================================================
-# SECTION 3: SHELL INTERFACE (PS1 modification)
-# =============================================================================
-kbd_origin_indicator() {
-    if [[ "$USB_CONNECTED" == true ]]; then
-        echo "kbd[O]"
-    else
-        echo "kbd[ ]"
-    fi
-}
-
-if [ -z "$MC_PS1" ]; then
-    MC_PS1='\u@\h:\w\$ '
-fi
-if [[ "$MC_PS1" != *'kbd_origin_indicator'* ]]; then
-    MC_PS1='$(kbd_origin_indicator)'"${MC_PS1}"
-fi
-export PS1="$MC_PS1"
