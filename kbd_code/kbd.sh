@@ -125,27 +125,21 @@ EOF
     usb_sync kbd
 }
 
+
 ksync() {
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
         cat <<'EOF'
 ksync - commit, push to USB, and sync files
 Usage:
   ksync
-Opens editor for commit message if there are changes.
-Then pushes to USB bare repo and runs file sync.
-Wraps usb_push and usb_sync. See usb_push -h for details.
+Commits with daily sync message (amends if same day),
+pushes to USB bare repo, and runs file sync.
+Wraps usb_commit, usb_push, and usb_sync.
 EOF
         return 0
     fi
-    if [[ ! -d "$KBD_DIR/.git" ]]; then
-        echo "kbd[ERROR]: $KBD_DIR is not a git repo" >&2
-        return 1
-    fi
-    if [[ -n "$(git -C "$KBD_DIR" status --porcelain 2>/dev/null)" ]]; then
-        git -C "$KBD_DIR" add -A
-        git -C "$KBD_DIR" commit || return 1
-    fi
-    usb_push kbd
+    usb_commit kbd || return 1
+    usb_push kbd || return 1
     usb_sync kbd
 }
 
