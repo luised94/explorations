@@ -28,7 +28,10 @@ fi
 # =============================================================================
 export FINANCES_DIR="${USB_FINANCES_LOCAL_DIR:-$HOME/personal_repos/finances}"
 export LEDGER_FILE="$FINANCES_DIR/2026.journal"
-if ! command -v hledger > /dev/null 2>&1; then
+if command -v hledger > /dev/null 2>&1; then
+    FINANCES_HLEDGER_AVAILABLE=true
+else
+    FINANCES_HLEDGER_AVAILABLE=false
     echo "finances[WARN]: hledger not found in PATH"
 fi
 if [[ "$(basename "$LEDGER_FILE" .journal)" != "$(date +%Y)" ]]; then
@@ -44,9 +47,17 @@ finances_edit() {
     ${EDITOR:-nvim} "$LEDGER_FILE"
 }
 finances_month_to_date() {
+    if [[ "$FINANCES_HLEDGER_AVAILABLE" != true ]]; then
+        echo "finances[ERROR]: hledger not found in PATH"
+        return 1
+    fi
     hledger is -p "$(date +%Y-%m)-01..today"
 }
 finances_last_month() {
+    if [[ "$FINANCES_HLEDGER_AVAILABLE" != true ]]; then
+        echo "finances[ERROR]: hledger not found in PATH"
+        return 1
+    fi
     local first_of_current_month
     local start_of_last_month
     local end_of_last_month
@@ -56,15 +67,27 @@ finances_last_month() {
     hledger is -p "$start_of_last_month..$end_of_last_month"
 }
 finances_year_to_date() {
+    if [[ "$FINANCES_HLEDGER_AVAILABLE" != true ]]; then
+        echo "finances[ERROR]: hledger not found in PATH"
+        return 1
+    fi
     hledger is -p "$(date +%Y)-01-01..today"
 }
 finances_recent() {
+    if [[ "$FINANCES_HLEDGER_AVAILABLE" != true ]]; then
+        echo "finances[ERROR]: hledger not found in PATH"
+        return 1
+    fi
     local days="${1:-30}"
     local start_date
     start_date="$(date -d "$days days ago" +%Y-%m-%d)"
     hledger reg -p "$start_date..today"
 }
 finances_reconcile() {
+    if [[ "$FINANCES_HLEDGER_AVAILABLE" != true ]]; then
+        echo "finances[ERROR]: hledger not found in PATH"
+        return 1
+    fi
     if [[ -z "$1" ]]; then
         echo "finances[ERROR]: usage: hlreconcile ACCOUNT"
         return 1
@@ -89,7 +112,11 @@ finances_set_year() {
 finances_status() {
     echo "finances: LEDGER_FILE=$LEDGER_FILE"
     if [[ -f "$LEDGER_FILE" ]]; then
-        echo "finances: file exists, $(hledger stats 2>/dev/null | head -1)"
+        if [[ "$FINANCES_HLEDGER_AVAILABLE" == true ]]; then
+            echo "finances: file exists, $(hledger stats 2>/dev/null | head -1)"
+        else
+            echo "finances: file exists (hledger not available for stats)"
+        fi
     else
         echo "finances: WARNING -- file does not exist"
     fi
@@ -125,50 +152,29 @@ alias hlyear='finances_set_year'
 alias hlstatus='finances_status'
 alias hlnewyear='finances_new_year'
 # =============================================================================
-# SECTION 2: USB OPERATIONS (requires USB_CONNECTED=true)
+# SECTION 2: USB OPERATIONS (delegates to usb_push/usb_pull)
 # =============================================================================
 finances_push() {
-    if [[ "$USB_CONNECTED" != true ]]; then
-        echo "finances[ERROR]: USB not connected"
-        return 1
-    fi
     if [[ ! -d "$FINANCES_DIR/.git" ]]; then
-        echo "finances[ERROR]: $FINANCES_DIR is not a git repository"
+        echo "finances[ERROR]: $FINANCES_DIR is not a git repo"
         return 1
     fi
-    (
-        cd "$FINANCES_DIR" || exit 1
+    if [[ -n "$(git -C "$FINANCES_DIR" status --porcelain 2>/dev/null)" ]]; then
         local untracked_count
-        untracked_count=$(git ls-files --others --exclude-standard | wc -l)
+        untracked_count=$(git -C "$FINANCES_DIR" ls-files --others --exclude-standard | wc -l)
         if [[ "$untracked_count" -gt 0 ]]; then
             echo "finances[WARN]: $untracked_count untracked file(s):"
-            git ls-files --others --exclude-standard
-            echo "finances: proceeding with git add -A"
+            git -C "$FINANCES_DIR" ls-files --others --exclude-standard
         fi
-        git add -A
-        if git diff --cached --quiet; then
-            echo "finances: nothing to commit"
-        else
-            git commit
-        fi
-        git push origin main
-        usb_sync finances
-    )
+        git -C "$FINANCES_DIR" add -A
+        git -C "$FINANCES_DIR" commit || return 1
+    fi
+    usb_push finances
+    usb_sync finances
 }
 finances_pull() {
-    if [[ "$USB_CONNECTED" != true ]]; then
-        echo "finances[ERROR]: USB not connected"
-        return 1
-    fi
-    if [[ ! -d "$FINANCES_DIR/.git" ]]; then
-        echo "finances[ERROR]: $FINANCES_DIR is not a git repository"
-        return 1
-    fi
-    (
-        cd "$FINANCES_DIR" || exit 1
-        git pull origin main
-        usb_sync finances
-    )
+    usb_pull finances
+    usb_sync finances
 }
 # --- Section 2 Aliases ---
 alias hlpush='finances_push'
