@@ -9,7 +9,7 @@
 # This module does not source usb.sh. It reads variables usb.sh set
 # during shell initialization. If usb.sh has not run, USB features
 # degrade gracefully via variable fallbacks below.
-#
+#==================== 
 # This check is a runtime safety net, not dead code. It fires when:
 # - usb-sh repo is not cloned on this machine
 # - bash/ chain load order changed and usb.sh loads after extensions
@@ -23,29 +23,23 @@ if [[ "${USB_INITIALIZED:-}" != true ]]; then
     fi
     export USB_CONNECTED="${USB_CONNECTED:-false}"
 fi
-
 # =============================================================================
 # SECTION 1: LOCAL CONFIGURATION (always available, no USB dependency)
 # =============================================================================
-
 FINANCES_DIR="${USB_FINANCES_LOCAL_DIR:-$HOME/personal_repos/finances}"
 export LEDGER_FILE="$FINANCES_DIR/2026.journal"
-
 alias bal='hledger bal'
 alias bs='hledger bs'
 alias is='hledger is'
 alias reg='hledger reg'
 alias add='hledger add'
-
-hledit() {
+finances_edit() {
     ${EDITOR:-nvim} "$LEDGER_FILE"
 }
-
-hlmtd() {
+finances_month_to_date() {
     hledger is -p "$(date +%Y-%m)-01..today"
 }
-
-hllm() {
+finances_last_month() {
     local first_of_current_month
     local start_of_last_month
     local end_of_last_month
@@ -54,26 +48,23 @@ hllm() {
     end_of_last_month="$(date -d "$first_of_current_month -1 day" +%Y-%m-%d)"
     hledger is -p "$start_of_last_month..$end_of_last_month"
 }
-
-hlytd() {
+finances_year_to_date() {
     hledger is -p "$(date +%Y)-01-01..today"
 }
-
-hlrecent() {
+finances_recent() {
     local days="${1:-30}"
     local start_date
     start_date="$(date -d "$days days ago" +%Y-%m-%d)"
     hledger reg -p "$start_date..today"
 }
-hlreconcile() {
+finances_reconcile() {
     if [[ -z "$1" ]]; then
         echo "finances[ERROR]: usage: hlreconcile ACCOUNT"
         return 1
     fi
     hledger aregister "$1"
 }
-
-hlyear() {
+finances_set_year() {
     if [[ -z "$1" ]]; then
         echo "finances[ERROR]: usage: hlyear YEAR"
         return 1
@@ -85,12 +76,18 @@ hlyear() {
     export LEDGER_FILE="$FINANCES_DIR/$1.journal"
     echo "finances: LEDGER_FILE set to $LEDGER_FILE"
 }
-
+# --- Section 1 Aliases ---
+alias hledit='finances_edit'
+alias hlmtd='finances_month_to_date'
+alias hllm='finances_last_month'
+alias hlytd='finances_year_to_date'
+alias hlrecent='finances_recent'
+alias hlreconcile='finances_reconcile'
+alias hlyear='finances_set_year'
 # =============================================================================
 # SECTION 2: USB OPERATIONS (requires USB_CONNECTED=true)
 # =============================================================================
-
-hlpush() {
+finances_push() {
     if [[ "$USB_CONNECTED" != true ]]; then
         echo "finances[ERROR]: USB not connected"
         return 1
@@ -110,8 +107,7 @@ hlpush() {
     usb_sync finances
     cd - > /dev/null
 }
-
-hlpull() {
+finances_pull() {
     if [[ "$USB_CONNECTED" != true ]]; then
         echo "finances[ERROR]: USB not connected"
         return 1
@@ -125,3 +121,6 @@ hlpull() {
     usb_sync finances
     cd - > /dev/null
 }
+# --- Section 2 Aliases ---
+alias hlpush='finances_push'
+alias hlpull='finances_pull'
