@@ -95,6 +95,25 @@ finances_status() {
     fi
     echo "finances: USB_CONNECTED=$USB_CONNECTED"
 }
+finances_new_year() {
+    local new_year
+    new_year="$(date +%Y)"
+    local new_file="$FINANCES_DIR/$new_year.journal"
+    if [[ -f "$new_file" ]]; then
+        echo "finances[ERROR]: $new_file already exists"
+        return 1
+    fi
+    if [[ ! -f "$LEDGER_FILE" ]]; then
+        echo "finances[ERROR]: current LEDGER_FILE does not exist: $LEDGER_FILE"
+        return 1
+    fi
+    sed -n '1,/^; === End of Declarations ===/p' "$LEDGER_FILE" > "$new_file"
+    echo "finances: created $new_file from directives in $(basename "$LEDGER_FILE")"
+    echo "finances: next steps:"
+    echo "  1. Edit header comment (update year and date)"
+    echo "  2. Add opening balances transaction"
+    echo "  3. Run: hlyear $new_year"
+}
 # --- Section 1 Aliases ---
 alias hledit='finances_edit'
 alias hlmtd='finances_month_to_date'
@@ -104,6 +123,7 @@ alias hlrecent='finances_recent'
 alias hlreconcile='finances_reconcile'
 alias hlyear='finances_set_year'
 alias hlstatus='finances_status'
+alias hlnewyear='finances_new_year'
 # =============================================================================
 # SECTION 2: USB OPERATIONS (requires USB_CONNECTED=true)
 # =============================================================================
