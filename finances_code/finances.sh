@@ -134,6 +134,11 @@ finances_new_year() {
         echo "finances[ERROR]: current LEDGER_FILE does not exist: $LEDGER_FILE"
         return 1
     fi
+    if ! grep -q '^; === End of Declarations ===$' "$LEDGER_FILE"; then
+        echo "finances[ERROR]: sentinel line not found in $(basename "$LEDGER_FILE")"
+        echo "finances[ERROR]: expected: ; === End of Declarations ==="
+        return 1
+    fi
     sed -n '1,/^; === End of Declarations ===/p' "$LEDGER_FILE" > "$new_file"
     echo "finances: created $new_file from directives in $(basename "$LEDGER_FILE")"
     echo "finances: next steps:"
