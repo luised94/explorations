@@ -9,7 +9,7 @@
 # This module does not source usb.sh. It reads variables usb.sh set
 # during shell initialization. If usb.sh has not run, USB features
 # degrade gracefully via variable fallbacks below.
-#==================== 
+#
 # This check is a runtime safety net, not dead code. It fires when:
 # - usb-sh repo is not cloned on this machine
 # - bash/ chain load order changed and usb.sh loads after extensions
@@ -28,6 +28,13 @@ fi
 # =============================================================================
 FINANCES_DIR="${USB_FINANCES_LOCAL_DIR:-$HOME/personal_repos/finances}"
 export LEDGER_FILE="$FINANCES_DIR/2026.journal"
+if ! command -v hledger > /dev/null 2>&1; then
+    echo "finances[WARN]: hledger not found in PATH"
+fi
+if [[ "$(basename "$LEDGER_FILE" .journal)" != "$(date +%Y)" ]]; then
+    echo "finances[WARN]: LEDGER_FILE points at $(basename "$LEDGER_FILE"), current year is $(date +%Y)"
+    echo "finances[WARN]: run 'hlyear $(date +%Y)' to switch"
+fi
 alias bal='hledger bal'
 alias bs='hledger bs'
 alias is='hledger is'
@@ -75,6 +82,18 @@ finances_set_year() {
     fi
     export LEDGER_FILE="$FINANCES_DIR/$1.journal"
     echo "finances: LEDGER_FILE set to $LEDGER_FILE"
+    if [[ ! -f "$LEDGER_FILE" ]]; then
+        echo "finances[WARN]: $LEDGER_FILE does not exist"
+    fi
+}
+finances_status() {
+    echo "finances: LEDGER_FILE=$LEDGER_FILE"
+    if [[ -f "$LEDGER_FILE" ]]; then
+        echo "finances: file exists, $(hledger stats 2>/dev/null | head -1)"
+    else
+        echo "finances: WARNING -- file does not exist"
+    fi
+    echo "finances: USB_CONNECTED=$USB_CONNECTED"
 }
 # --- Section 1 Aliases ---
 alias hledit='finances_edit'
@@ -84,6 +103,7 @@ alias hlytd='finances_year_to_date'
 alias hlrecent='finances_recent'
 alias hlreconcile='finances_reconcile'
 alias hlyear='finances_set_year'
+alias hlstatus='finances_status'
 # =============================================================================
 # SECTION 2: USB OPERATIONS (requires USB_CONNECTED=true)
 # =============================================================================
