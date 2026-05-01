@@ -26,7 +26,7 @@ fi
 # =============================================================================
 # SECTION 1: LOCAL CONFIGURATION (always available, no USB dependency)
 # =============================================================================
-FINANCES_DIR="${USB_FINANCES_LOCAL_DIR:-$HOME/personal_repos/finances}"
+export FINANCES_DIR="${USB_FINANCES_LOCAL_DIR:-$HOME/personal_repos/finances}"
 export LEDGER_FILE="$FINANCES_DIR/2026.journal"
 if ! command -v hledger > /dev/null 2>&1; then
     echo "finances[WARN]: hledger not found in PATH"
