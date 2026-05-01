@@ -116,16 +116,24 @@ finances_push() {
         echo "finances[ERROR]: $FINANCES_DIR is not a git repository"
         return 1
     fi
-    cd "$FINANCES_DIR" || return 1
-    git add -A
-    if git diff --cached --quiet; then
-        echo "finances: nothing to commit"
-    else
-        git commit
-    fi
-    git push origin main
-    usb_sync finances
-    cd - > /dev/null
+    (
+        cd "$FINANCES_DIR" || exit 1
+        local untracked_count
+        untracked_count=$(git ls-files --others --exclude-standard | wc -l)
+        if [[ "$untracked_count" -gt 0 ]]; then
+            echo "finances[WARN]: $untracked_count untracked file(s):"
+            git ls-files --others --exclude-standard
+            echo "finances: proceeding with git add -A"
+        fi
+        git add -A
+        if git diff --cached --quiet; then
+            echo "finances: nothing to commit"
+        else
+            git commit
+        fi
+        git push origin main
+        usb_sync finances
+    )
 }
 finances_pull() {
     if [[ "$USB_CONNECTED" != true ]]; then
@@ -136,10 +144,11 @@ finances_pull() {
         echo "finances[ERROR]: $FINANCES_DIR is not a git repository"
         return 1
     fi
-    cd "$FINANCES_DIR" || return 1
-    git pull origin main
-    usb_sync finances
-    cd - > /dev/null
+    (
+        cd "$FINANCES_DIR" || exit 1
+        git pull origin main
+        usb_sync finances
+    )
 }
 # --- Section 2 Aliases ---
 alias hlpush='finances_push'
