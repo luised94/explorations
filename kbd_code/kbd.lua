@@ -25,9 +25,8 @@ if uv == nil then
     return nil
 end
 -- === CONFIGURATION ===
-local api    = vim.api
-local fn     = vim.fn
-local keymap = vim.keymap
+local api = vim.api
+local fn  = vim.fn
 local kbd_local_dir = fn.fnamemodify(
     os.getenv("KBD_LOCAL_DIR") or string.format("%s/personal_repos/kbd", os.getenv("HOME") or ""),
     ":p"
@@ -63,15 +62,6 @@ local KBD_EXCLUDE_DIRS = {
 }
 ---@type string
 local MANUAL_ENTRY_LABEL = "Manual entry."
----@class FileSpec
----@field key  string
----@field path string
----@field desc string
----@type FileSpec[]
-local FILES = {
-    { key = "j", path = journal_path,      desc = "open journal"      },
-    { key = "n", path = source_notes_path, desc = "open source-notes" },
-}
 ---@type string
 local MODE_NORMAL = "n"
 ---@type string
@@ -338,9 +328,9 @@ local function kbd_isolate()
             break
         end
     end
-    local section_lines   = api.nvim_buf_get_lines(bufnr, section_start - 1, section_end, false)
-    local header_text     = all_lines[section_start]
-    local scratch_bufnr   = api.nvim_create_buf(false, true)
+    local section_lines = api.nvim_buf_get_lines(bufnr, section_start - 1, section_end, false)
+    local header_text   = all_lines[section_start]
+    local scratch_bufnr = api.nvim_create_buf(false, true)
     vim.bo[scratch_bufnr].buftype   = "nofile"
     vim.bo[scratch_bufnr].bufhidden = "wipe"
     vim.bo[scratch_bufnr].filetype  = "markdown"
@@ -429,18 +419,37 @@ local commands = {
         opts = { desc = "kbd: list all ?: questions in quickfix" },
     },
 }
----@type table[]
-local keymaps = {}
-for _, f in ipairs(FILES) do
-    table.insert(keymaps, { MODE_NORMAL, LEADER_K .. f.key, make_open_fn(f.path), { desc = "kbd: " .. f.desc } })
+---@class KbdKeymapSpec
+---@field key  string
+---@field fn   function
+---@field desc string
+---@type KbdKeymapSpec[]
+local KBD_KEYMAP_SPECS = {
+    -- file openers
+    { key = "j", fn = make_open_fn(journal_path),      desc = "open journal"                         },
+    { key = "n", fn = make_open_fn(source_notes_path), desc = "open source-notes"                    },
+    -- actions
+    { key = "h", fn = prepend_date_header,             desc = "insert date header"                   },
+    { key = "c", fn = prepend_note_section,            desc = "add citation section to source-notes" },
+    { key = "i", fn = insert_citation_from_bib,        desc = "insert citation at cursor"            },
+    -- navigation
+    { key = "f", fn = kvim_all_telescope,              desc = "find files (telescope)"               },
+    { key = "s", fn = kbd_sections,                    desc = "jump to section (telescope)"          },
+    { key = "x", fn = kbd_isolate,                     desc = "isolate section to scratch buffer"    },
+    { key = "q", fn = kbd_questions,                   desc = "list open questions in quickfix"      },
+}
+local keymaps     = {}
+local seen_keys   = {}
+for _, spec in ipairs(KBD_KEYMAP_SPECS) do
+    if spec.fn == nil then
+        vim.notify(string.format("[kbd] keymap '%s': nil function, skipping", spec.key), vim.log.levels.WARN)
+    elseif seen_keys[spec.key] then
+        vim.notify(string.format("[kbd] keymap '%s': duplicate key, skipping", spec.key), vim.log.levels.WARN)
+    else
+        seen_keys[spec.key] = true
+        keymaps[#keymaps + 1] = { MODE_NORMAL, LEADER_K .. spec.key, spec.fn, { desc = "kbd: " .. spec.desc } }
+    end
 end
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "h", prepend_date_header,      { desc = "kbd: insert date header"                    } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "c", prepend_note_section,     { desc = "kbd: add citation section to source-notes"  } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "i", insert_citation_from_bib, { desc = "kbd: insert citation at cursor"             } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "f", kvim_all_telescope,       { desc = "kbd: find files (telescope, KBD_LOCAL_DIR)" } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "s", kbd_sections,             { desc = "kbd: jump to section (telescope)"           } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "x", kbd_isolate,              { desc = "kbd: isolate section to scratch buffer"     } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "q", kbd_questions,            { desc = "kbd: list open questions in quickfix"       } })
 return {
     keymaps  = keymaps,
     autocmds = autocmds,
