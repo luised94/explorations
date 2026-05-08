@@ -1,0 +1,172 @@
+# Reusable LLM Interaction Prompts
+
+## 1. Multi-Persona Critique
+
+```
+Review [THING] through [N] lenses. For each, give concrete, 
+opinionated feedback-praise what works, critique what doesn't, 
+suggest changes. Stay in character.
+
+## [PERSONA 1] ([DOMAIN])
+[What they care about, questions they ask, intellectual style]
+
+## [PERSONA 2] ([DOMAIN])
+...
+
+---
+
+[CONTENT TO REVIEW]
+```
+
+**Use when:** You want multi-angle critique of a design, system, or decision.
+
+---
+
+## 2. Context Reframe
+
+```
+Autoprompt to consider the following context:
+[CONTEXT THAT CHANGES INTERPRETATION]
+
+Answer the prompt.
+```
+
+**Use when:** Feedback is correct but misaligned with your situation.
+
+---
+
+## 3. Actionable Expansion
+
+```
+Have the experts consider:
+- Recommended practices, exercises, habits
+- Ways to explore and learn from the current system  
+- What to track and instrument
+- [TOOLING] utilities to support the work
+
+Do not include actual code, just precise specifications.
+```
+
+**Use when:** Converting critique into concrete actions.
+
+---
+
+## 4. Multi-Source Integration
+
+```
+[ATTACHED CONTENT]
+
+Read, comprehend, and reflect. Consolidate recommendations 
+from this thread with the attached content.
+
+Include:
+- Immediate next steps
+- Artifact containing [DELIVERABLE]
+- Remove redundant content
+- Rank-order by priority
+```
+
+**Use when:** Synthesizing material from multiple sources.
+
+---
+
+## 5. Autoprompt Meta-Pattern
+
+```
+Autoprompt to [WHAT THE PROMPT SHOULD ACCOMPLISH].
+Answer the prompt.
+```
+
+**Use when:** You know the shape of what you want but not the exact question.
+
+---
+
+## 6. Thread Extraction
+
+```
+Reflect on this thread. Create a summary. Extract reusable 
+patterns employed by the user and turn into reusable prompts. 
+Suggest next steps.
+```
+
+**Use when:** End of productive thread; converts conversation to artifacts.
+
+---
+
+## 7. Specification Without Implementation
+
+```
+Describe [UTILITY/SYSTEM/PROCESS] precisely enough that a 
+beginner could implement it. Do not include actual code.
+
+Include:
+- Name
+- Behavior (step by step)
+- Inputs and outputs
+- Example invocation
+- Edge cases to handle
+```
+
+**Use when:** You want to understand *what* before committing to *how*.
+
+---
+
+## 8. Incremental Convention Design
+
+```
+I have these conventions for [SYSTEM]:
+[CURRENT CONVENTIONS]
+
+I am wondering if you could recommend conventions for [SPECIFIC GAP].
+```
+
+**Use when:** Extending an existing system incrementally rather than designing from scratch.
+
+---
+
+## 9. Minimal Addition Check
+
+```
+Given [CONTEXT], I would like a way to [SPECIFIC NEED] that 
+does not interfere with [EXISTING PATTERNS].
+Maybe [TENTATIVE IDEA]?
+```
+
+**Use when:** You have an instinct for a solution and want validation/refinement.
+
+---
+
+## 10. Rank-Ordered Consolidation
+
+```
+Integrate the feedback into a coherent rank-ordered narrative 
+comprehensive response.
+
+Include immediate next steps and an artifact for fast reference.
+Remove redundant or less useful content.
+```
+
+**Use when:** Turning sprawling discussion into prioritized action.
+
+---
+
+## Composition Example
+
+These prompts compose. A full workflow might be:
+
+1. **Multi-Persona Critique**  get diverse feedback
+2. **Context Reframe**  recalibrate for your situation
+3. **Actionable Expansion**  convert to practices
+4. **Multi-Source Integration**  combine with other material
+5. **Rank-Ordered Consolidation**  prioritize
+6. **Thread Extraction**  preserve patterns for reuse
+
+---
+
+## Meta-Principles
+
+- **Control the frame, let LLM fill content.** Design the lens; let the model look through it.
+- **Demand integration, not accumulation.** Always end with synthesis.
+- **Specify deliverables explicitly.** "An artifact containing X" beats "help me with X."
+- **Iterate with context, not repetition.** Add information; don't re-explain.
+- **Extract before closing.** Every productive thread has reusable patterns.
