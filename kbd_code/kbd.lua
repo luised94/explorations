@@ -1,7 +1,6 @@
 -- kbd.lua
 -- Neovim keybindings for kbd (knowledge base desk)
 -- Loaded by extension loader after lazy.nvim setup
-
 -- === GUARDS ===
 if vim == nil then
     print("kbd.lua: not running in neovim, exiting")
@@ -25,17 +24,14 @@ if uv == nil then
     vim.notify("[kbd] vim.uv or vim.loop required but unavailable", vim.log.levels.WARN)
     return nil
 end
-
 -- === CONFIGURATION ===
 local api    = vim.api
 local fn     = vim.fn
 local keymap = vim.keymap
-
 local kbd_local_dir = fn.fnamemodify(
     os.getenv("KBD_LOCAL_DIR") or string.format("%s/personal_repos/kbd", os.getenv("HOME") or ""),
     ":p"
 ):gsub("/$", "")
-
 local kbd_mount_point = os.getenv("KBD_MOUNT_POINT")
 local bib_path
 if kbd_mount_point ~= nil then
@@ -43,15 +39,11 @@ if kbd_mount_point ~= nil then
 else
     bib_path = string.format("%s/zotero_library.bib", kbd_local_dir)
 end
-
-local journal_path = string.format("%s/journal.txt", kbd_local_dir)
-local notes_path   = string.format("%s/notes.txt",   kbd_local_dir)
-local tasks_path   = string.format("%s/tasks.txt",   kbd_local_dir)
-
+local journal_path      = string.format("%s/journal.txt",      kbd_local_dir)
+local source_notes_path = string.format("%s/source-notes.txt", kbd_local_dir)
 -- === CONSTANTS ===
 ---@type string
 local BIB_GREP_PATTERN = "@[^{]+\\{\\K[^,]+"
-
 ---@type string[]
 local KBD_EXCLUDE_DIRS = {
     ".git",
@@ -69,30 +61,22 @@ local KBD_EXCLUDE_DIRS = {
     "temp",
     "coverage",
 }
-
 ---@type string
 local MANUAL_ENTRY_LABEL = "Manual entry."
-
 ---@class FileSpec
 ---@field key  string
 ---@field path string
 ---@field desc string
-
 ---@type FileSpec[]
 local FILES = {
-    { key = "j", path = journal_path, desc = "open journal" },
-    { key = "n", path = notes_path,   desc = "open notes"   },
-    { key = "t", path = tasks_path,   desc = "open tasks"   },
+    { key = "j", path = journal_path,      desc = "open journal"      },
+    { key = "n", path = source_notes_path, desc = "open source-notes" },
 }
-
 ---@type string
 local MODE_NORMAL = "n"
-
 ---@type string
 local LEADER_K = "<leader>k"
-
 -- === FUNCTIONS ===
-
 ---@param path string
 ---@return function
 local function make_open_fn(path)
@@ -100,12 +84,10 @@ local function make_open_fn(path)
         vim.cmd(string.format("edit %s", path))
     end
 end
-
 ---@return nil
 local function show_digraphs()
     vim.cmd("help digraph-table")
 end
-
 ---@param args table
 ---@return nil
 local function set_txt_markdown_filetype(args)
@@ -115,7 +97,6 @@ local function set_txt_markdown_filetype(args)
         vim.bo[args.buf].filetype = "markdown"
     end
 end
-
 ---@return nil
 local function prepend_date_header()
     local bufnr = 0
@@ -149,7 +130,6 @@ local function prepend_date_header()
     api.nvim_buf_set_lines(bufnr, 0, 0, false, { date_string, "" })
     api.nvim_win_set_cursor(0, { 2, 0 })
 end
-
 ---@return nil
 local function prepend_note_section()
     local bufnr = 0
@@ -157,8 +137,8 @@ local function prepend_note_section()
         return
     end
     local bufname = api.nvim_buf_get_name(bufnr)
-    if bufname:match("notes%.txt$") == nil then
-        vim.notify("[kbd] note section only in notes.txt", vim.log.levels.WARN)
+    if bufname:match("source%-notes%.txt$") == nil then
+        vim.notify("[kbd] note section only in source-notes.txt", vim.log.levels.WARN)
         return
     end
     if bib_path == nil then
@@ -248,7 +228,6 @@ local function prepend_note_section()
     end
     vim.ui.select(citation_list, select_opts, on_selection)
 end
-
 ---@return nil
 local function insert_citation_from_bib()
     if bib_path == nil then
@@ -290,7 +269,6 @@ local function insert_citation_from_bib()
     end
     vim.ui.select(citation_list, select_opts, on_selection)
 end
-
 ---@return nil
 local function kvim_all_telescope()
     local st = uv.fs_stat(kbd_local_dir)
@@ -315,11 +293,108 @@ local function kvim_all_telescope()
         file_ignore_patterns = file_ignore_patterns,
     })
 end
-
+---@return nil
+local function kbd_sections()
+    if fn.filereadable(source_notes_path) ~= 1 then
+        vim.notify(
+            string.format("[kbd] source-notes not found: %s", source_notes_path),
+            vim.log.levels.ERROR
+        )
+        return
+    end
+    telescope_builtin.grep_string({
+        prompt_title = "KBD Sections (source-notes.txt)",
+        search       = "^## @",
+        use_regex    = true,
+        search_dirs  = { source_notes_path },
+    })
+end
+---@return nil
+local function kbd_isolate()
+    local bufnr   = api.nvim_get_current_buf()
+    local bufname = api.nvim_buf_get_name(bufnr)
+    if bufname:match("source%-notes%.txt$") == nil then
+        vim.notify("[kbd] KbdIsolate only works in source-notes.txt", vim.log.levels.WARN)
+        return
+    end
+    local cursor_row = api.nvim_win_get_cursor(0)[1]
+    local line_count = api.nvim_buf_line_count(bufnr)
+    local all_lines  = api.nvim_buf_get_lines(bufnr, 0, line_count, false)
+    local section_start = nil
+    for search_row = cursor_row, 1, -1 do
+        if all_lines[search_row]:match("^## @") then
+            section_start = search_row
+            break
+        end
+    end
+    if section_start == nil then
+        vim.notify("[kbd] no enclosing ## @ header found above cursor", vim.log.levels.WARN)
+        return
+    end
+    local section_end = line_count
+    for search_row = section_start + 1, line_count do
+        if all_lines[search_row]:match("^## @") then
+            section_end = search_row - 1
+            break
+        end
+    end
+    local section_lines   = api.nvim_buf_get_lines(bufnr, section_start - 1, section_end, false)
+    local header_text     = all_lines[section_start]
+    local scratch_bufnr   = api.nvim_create_buf(false, true)
+    vim.bo[scratch_bufnr].buftype   = "nofile"
+    vim.bo[scratch_bufnr].bufhidden = "wipe"
+    vim.bo[scratch_bufnr].filetype  = "markdown"
+    api.nvim_buf_set_lines(scratch_bufnr, 0, -1, false, section_lines)
+    api.nvim_buf_set_name(scratch_bufnr, string.format("[kbd isolate] %s", header_text))
+    api.nvim_set_current_buf(scratch_bufnr)
+    vim.notify(
+        string.format("[kbd] isolated %s (%d lines)", header_text, #section_lines),
+        vim.log.levels.INFO
+    )
+end
+---@return nil
+local function kbd_questions()
+    local files_to_search  = { journal_path, source_notes_path }
+    local question_entries = {}
+    for _, file_path in ipairs(files_to_search) do
+        if fn.filereadable(file_path) ~= 1 then
+            goto continue_file
+        end
+        do
+            local file_lines     = fn.readfile(file_path)
+            local current_header = "(no section)"
+            for line_number, line_text in ipairs(file_lines) do
+                if line_text:match("^## @") or line_text:match("^## %d%d%d%d%-%d%d%-%d%d") then
+                    current_header = line_text
+                end
+                if line_text:match("%?:") then
+                    table.insert(question_entries, {
+                        filename = file_path,
+                        lnum     = line_number,
+                        text     = string.format("%s | %s", current_header, vim.trim(line_text)),
+                    })
+                end
+            end
+        end
+        ::continue_file::
+    end
+    if #question_entries == 0 then
+        vim.notify("[kbd] no questions (?:) found", vim.log.levels.INFO)
+        return
+    end
+    fn.setqflist({}, " ", {
+        title = "KBD Questions (?:)",
+        items = question_entries,
+    })
+    vim.cmd("copen")
+    vim.notify(
+        string.format("[kbd] %d questions loaded into quickfix", #question_entries),
+        vim.log.levels.INFO
+    )
+end
 -- === DECLARATIONS ===
 ---@type integer
 local txt_markdown_augroup = api.nvim_create_augroup("kbd_txt_markdown", { clear = true })
-
 ---@type table[]
 local autocmds = {
     {
@@ -331,7 +406,6 @@ local autocmds = {
         },
     },
 }
-
 ---@type table[]
 local commands = {
     {
@@ -339,18 +413,34 @@ local commands = {
         fn   = show_digraphs,
         opts = {},
     },
+    {
+        name = "KbdSections",
+        fn   = kbd_sections,
+        opts = { desc = "kbd: jump to source-notes section via telescope" },
+    },
+    {
+        name = "KbdIsolate",
+        fn   = kbd_isolate,
+        opts = { desc = "kbd: isolate current section into scratch buffer" },
+    },
+    {
+        name = "KbdQuestions",
+        fn   = kbd_questions,
+        opts = { desc = "kbd: list all ?: questions in quickfix" },
+    },
 }
-
 ---@type table[]
 local keymaps = {}
 for _, f in ipairs(FILES) do
     table.insert(keymaps, { MODE_NORMAL, LEADER_K .. f.key, make_open_fn(f.path), { desc = "kbd: " .. f.desc } })
 end
 table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "h", prepend_date_header,      { desc = "kbd: insert date header"                    } })
-table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "c", prepend_note_section,     { desc = "kbd: add citation section to notes"         } })
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "c", prepend_note_section,     { desc = "kbd: add citation section to source-notes"  } })
 table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "i", insert_citation_from_bib, { desc = "kbd: insert citation at cursor"             } })
 table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "f", kvim_all_telescope,       { desc = "kbd: find files (telescope, KBD_LOCAL_DIR)" } })
-
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "s", kbd_sections,             { desc = "kbd: jump to section (telescope)"           } })
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "x", kbd_isolate,              { desc = "kbd: isolate section to scratch buffer"     } })
+table.insert(keymaps, { MODE_NORMAL, LEADER_K .. "q", kbd_questions,            { desc = "kbd: list open questions in quickfix"       } })
 return {
     keymaps  = keymaps,
     autocmds = autocmds,
