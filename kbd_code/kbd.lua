@@ -94,8 +94,14 @@ local function prepend_date_header()
         return
     end
     local bufname = api.nvim_buf_get_name(bufnr)
+    -- @TODO: Need to extract these into some sort of configuration. Where functions can work.
+    -- Not a function. This would just be a for loop.
     if bufname:match("journal%.txt$") == nil then
-        vim.notify("[kbd] date header only in journal.txt", vim.log.levels.WARN)
+        vim.notify("[kbd] date header only in journal.txt or projects/*", vim.log.levels.WARN)
+        return
+    end
+    if bufname:match("/projects/[^/]+%.txt$") == nil then
+        vim.notify("[kbd] date header only in journal.txt or projects/*", vim.log.levels.WARN)
         return
     end
     local date_string = os.date("## %Y-%m-%d")
