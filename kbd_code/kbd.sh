@@ -106,10 +106,8 @@ kbd_usage_stats() {
 #
 # Bib sync flow:
 #   Zotero (Windows) -> USB shared/ -> local repo
-#        kbib_sync          usb_sync (auto, startup)
+#   usb.sh executes usb_sync on startup.
 #
-# The two legs are intentionally separate. kbib_sync is manual because
-# the Zotero leg touches Windows filesystem and is slow.
 
 kpull() {
     if [[ "$1" == "-h" || "$1" == "--help" ]]; then
@@ -141,24 +139,4 @@ EOF
     usb_commit kbd || return 1
     usb_push kbd || return 1
     usb_sync kbd
-}
-
-# This path must match the src in kbd.conf sync_files. kbd.conf is the
-# source of truth.
-kbib_sync() {
-    if [[ "$USB_CONNECTED" != true ]]; then
-        echo "kbd[ERROR]: USB not connected"
-        return 1
-    fi
-    if [[ ! -f "$KBD_ZOTERO_SOURCE" ]]; then
-        echo "kbd[ERROR]: Source bib not found: $KBD_ZOTERO_SOURCE"
-        return 1
-    fi
-    local kbd_usb_bib_dest_path="$USB_MOUNT_POINT/shared/kbd_zotero_library.bib"
-    if [[ "$KBD_ZOTERO_SOURCE" -nt "$kbd_usb_bib_dest_path" ]]; then
-        cp "$KBD_ZOTERO_SOURCE" "$kbd_usb_bib_dest_path"
-        echo "kbd: zotero_library.bib updated on USB"
-    else
-        echo "kbd: zotero_library.bib already current"
-    fi
 }
