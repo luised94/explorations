@@ -87,23 +87,32 @@ local function set_txt_markdown_filetype(args)
         vim.bo[args.buf].filetype = "markdown"
     end
 end
+
 ---@return nil
 local function prepend_date_header()
+    local allowed_date_header_file_patterns = {
+        "journal%.txt$",
+        "/projects/[^/]+%.txt$",
+    }
+
     local bufnr = 0
     if not api.nvim_buf_get_option(bufnr, "modifiable") then
         return
     end
     local bufname = api.nvim_buf_get_name(bufnr)
-    -- @TODO: Need to extract these into some sort of configuration. Where functions can work.
-    -- Not a function. This would just be a for loop.
-    if bufname:match("journal%.txt$") == nil then
+
+    local is_valid_file = false
+    for _, pattern in ipairs(allowed_date_header_file_patterns) do
+        if bufname:match(pattern) ~= nil then
+            is_valid_file = true
+            break
+        end
+    end
+    if not is_valid_file then
         vim.notify("[kbd] date header only in journal.txt or projects/*", vim.log.levels.WARN)
         return
     end
-    if bufname:match("/projects/[^/]+%.txt$") == nil then
-        vim.notify("[kbd] date header only in journal.txt or projects/*", vim.log.levels.WARN)
-        return
-    end
+
     local date_string = os.date("## %Y-%m-%d")
     local header_region_limit = 50
     local lines = api.nvim_buf_get_lines(bufnr, 0, header_region_limit, false)
@@ -126,6 +135,7 @@ local function prepend_date_header()
     api.nvim_buf_set_lines(bufnr, 0, 0, false, { date_string, "" })
     api.nvim_win_set_cursor(0, { 2, 0 })
 end
+
 ---@return nil
 local function prepend_note_section()
     local bufnr = 0
