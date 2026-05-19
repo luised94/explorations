@@ -2140,3 +2140,5 @@ Quantum Entangled Knowledge Networks (QEKN)Definition: A dynamic, non-local syst
     
 7. Uncertainty-Driven Exploration: Leveraging the Heisenberg Uncertainty Principle, QEKNs inherently balance precision of known information with the potential for novel connections and ideas.
 ---
+[TASK]. Your task is to consider how to extract the most comprehensive, insightful, grounded response from a large language model and write a prompt to provide feedback for the user's query.
+
