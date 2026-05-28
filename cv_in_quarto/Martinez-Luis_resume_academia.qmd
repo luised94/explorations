@@ -1,0 +1,153 @@
+---
+format:
+  pdf:
+    lang: en
+    toc: false
+    number-sections: false
+    keep-tex: false
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
+    fontsize: 10pt
+    title-block-style: none
+    colorlinks: true
+    urlcolor: blue
+    linkcolor: blue
+    geometry: "top=1.5cm, bottom=2cm, left=2cm, right=2cm"
+    papersize: letter
+    microtype: true
+    linestretch: 1.0
+    include-in-header:
+      text: |
+        \usepackage{xcolor}
+        \usepackage[normalem]{ulem}
+        \newcommand{\cvsection}[1]{%
+          \vspace{-1.5em}
+          \section*{\fontsize{11}{13}\selectfont\underline{\makebox[\linewidth][l]{#1}}}%
+          \vspace{-1.3em}
+        }
+        \usepackage{setspace}
+        \singlespacing
+        \usepackage{enumitem}
+        \setlist{itemsep=2pt, parsep=0pt, topsep=0pt, partopsep=0pt}
+---
+
+```{=latex}
+\begin{center}
+  {\large \textbf{Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.}}\\[0.5ex]
+  \normalsize
+  Curriculum Vitae \\[0.5ex]
+  \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \\
+  luised94@mit.edu \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
+\end{center}
+
+\cvsection{Researcher Profile}
+
+\begin{center}
+Protein Purification | Genetic Engineering | NGS Analysis
+\end{center}
+\vspace{-1.3em}
+
+Postdoctoral researcher combining yeast genetics, multi-protein reconstituted biochemistry, and computational genomics (ChIP-seq, WGS). Specialization in eukaryotic DNA replication initiation mechanisms. Track record of end-to-end projects spanning genetic screen design through biochemical characterization through genome-wide analysis.
+
+\cvsection{Core Skills/Competencies}
+
+Biochemistry: \textbf{protein purification from bacteria and fungi (multi-subunit complexes, 5+ proteins)}, electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, \textbf{reconstituted eukaryotic DNA-replication initiation and elongation assays}
+
+Yeast Genetics: \textbf{genetic screen design and validation}, tetrad dissections, bulk-segregant analysis, transformations and endogenous tagging using PCR- and \textbf{CRISPR-based genome editing}, drug-sensitivity assays, flow-cytometry analysis, \textbf{auxin-inducible degron (AID2) conditional depletion}
+
+Bioinformatics: \textbf{ChIP-seq analysis (sample preparation through peak calling and motif analysis)}, whole-genome sequencing analysis (alignment, variant calling), multiple-sequence alignment, track visualization, PyMOL
+
+Programming: \textbf{R (genomic data visualization and analysis with Gviz, quantitative figure generation)}, \textbf{Bash (NGS pipeline development on Linux HPC: Bowtie2, SAMtools, deeptools)}, Python (variant calling), Git/GitHub, ImageJ
+
+Cell Biology: mammalian cell line culture, electroporation of CRISPR-Cas9-gRNA ribonucleoprotein complexes, \textbf{Beacon Optofluidic System}, high-throughput immunofluorescent screening
+
+Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction for next-generation sequencing, CRISPR-Cas9 guide design, SDS-PAGE and immunoblotting, site-directed mutagenesis, Gibson assembly
+
+\cvsection{Experience}
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)} Cambridge, MA
+\vspace{-0.1em}
+
+Post-doctoral researcher (2023--present)
+Advisor: Stephen P. Bell
+
+\textit{In vivo} characterization of ATPase-deficient origin recognition complex allele and its suppressors using chromatin immunoprecipitation.
+
+- Designed and executed ChIP-seq experiments to characterize genomic occupancy of ATPase-deficient ORC and suppressor mutants
+- Developed computational pipeline for ChIP-seq analysis: read alignment with contamination filtering, signal normalization, peak calling, and motif analysis using Bash on Linux HPC
+- Built genome-wide binding data visualization and statistical analysis workflows using R
+- Cloned and tested a panel of loss-of-function alleles in general transcription factors to evaluate suppression of the \textit{orc4-R267A} lethal phenotype
+- Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors
+
+Graduate student researcher (2016--2023)
+Advisor: Stephen P. Bell
+
+Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
+
+- Designed and validated a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene, including analysis of whole-genome sequencing data
+- Characterized suppressor alleles genetically through CRISPR-Cas9 engineering, allele-specificity tests, and drug-sensitivity experiments
+- Characterized an ATPase-deficient mutant ORC protein biochemically, with and without suppressor mutations, using reconstituted replication assays
+
+\textbf{Research intern, MIT/Pfizer Internship Program} (Course 7.930[J]) \hfill 2022
+
+\textit{Development of a CRISPR-based screening platform to identify therapeutic targets for cystic fibrosis using primary human cells.}
+
+- Optimized primary cell culture conditions for collagen-producing cells relevant to cystic fibrosis therapeutic target identification
+- Developed high-throughput immunofluorescent CRISPR-Cas9 screening assay using the Beacon Optofluidic System
+- Electroporated CRISPR-Cas9-gRNA ribonucleoprotein complexes into primary human cells
+
+\cvsection{Additional Research Experience}
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
+
+Undergraduate summer research assistant (2015)
+
+- Characterized Bfl1-selective PUMA-like peptides derived from yeast surface display using fluorescence polarization
+
+\uline{UNIVERSITY OF NORTH CAROLINA AT CHAPEL HILL (UNC)}, Chapel Hill, NC
+
+Undergraduate summer research assistant (2014)
+
+- Characterized minimal aa-tRNA synthetase ATPase domains derived from opposite strands of a gene
+
+\uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR
+
+Undergraduate research assistant (2012--2015)
+
+- Lipidic sponge phase crystallization of the nicotinic acetylcholine receptor derived from \textit{Torpedo californica}
+
+\cvsection{Education}
+
+Ph.D. in Biology, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA, 2023
+Advisor: Stephen P. Bell
+
+- Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in \textit{Saccharomyces cerevisiae}
+
+B.Sc. in Cellular and Molecular Biology, \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS (UPR-RP)}, San Juan, PR, 2016
+
+\cvsection{Publications}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.} \& Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{Submitted.}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., \& Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725. http://doi.org/10.1074/jbc.M115.642876
+
+\cvsection{Presentations}
+
+New England Biolabs, Unorthodox Genomes Meeting. Poster presentation. March 2026.
+
+Cold Spring Harbor Laboratory, Eukaryotic DNA Replication \& Genome Maintenance. September 2025.
+
+Department of Biology Building 68 Annual Summer Retreat. Oral presentation. Plymouth, MA, June 2021.
+
+Cold Spring Harbor Laboratory, Single Biomolecules. Poster presentation. September 2018.
+
+MIT Cell Biology Supergroup. Oral presentation. Cambridge, MA, March 2018.
+
+\cvsection{Teaching Experience}
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
+
+Teaching assistant -- Introduction to Biology (7.012, 2017) and General Biochemistry (7.05, 2020): Biweekly recitation sessions, graded assignments and exams.
+```

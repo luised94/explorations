@@ -1,0 +1,147 @@
+[1mpandoc [22m
+  to: latex
+  output-file: Martinez-Luis_resume_industry.tex
+  standalone: true
+  pdf-engine: xelatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: false
+  number-sections: false
+  
+[1mmetadata[22m
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  lang: en
+  mainfont: Arial
+  fontenc: T1
+  inputenc: utf8
+  fontsize: 10pt
+  title-block-style: none
+  colorlinks: true
+  urlcolor: blue
+  linkcolor: blue
+  geometry: top=1.5cm, bottom=1.5cm, left=2cm, right=2cm
+  microtype: true
+  linestretch: 1
+  
+[1m[34m
+Rendering PDF[39m[22m
+[1m[34mrunning xelatex - 1[39m[22m
+  This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+   restricted \write18 enabled.
+  entering extended mode
+  
+[1m[34mrunning xelatex - 2[39m[22m
+  This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+   restricted \write18 enabled.
+  entering extended mode
+  
+
+Output created: Martinez-Luis_resume_industry.pdf
+
+[1mpandoc [22m
+  to: latex
+  output-file: Martinez-Luis_resume_academia.tex
+  standalone: true
+  pdf-engine: xelatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: false
+  number-sections: false
+  
+[1mmetadata[22m
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  lang: en
+  mainfont: Arial
+  fontenc: T1
+  inputenc: utf8
+  fontsize: 10pt
+  title-block-style: none
+  colorlinks: true
+  urlcolor: blue
+  linkcolor: blue
+  geometry: top=1.5cm, bottom=2cm, left=2cm, right=2cm
+  microtype: true
+  linestretch: 1
+  
+[1m[34m
+Rendering PDF[39m[22m
+[1m[34mrunning xelatex - 1[39m[22m
+  This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+   restricted \write18 enabled.
+  entering extended mode
+  
+[1m[34mrunning xelatex - 2[39m[22m
+  This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+   restricted \write18 enabled.
+  entering extended mode
+  
+
+Output created: Martinez-Luis_resume_academia.pdf
+
+[1mpandoc [22m
+  to: latex
+  output-file: master-cv_Martinez-Luis.tex
+  standalone: true
+  pdf-engine: xelatex
+  variables:
+    graphics: true
+    tables: true
+  default-image-extension: pdf
+  toc: false
+  number-sections: false
+  
+[1mmetadata[22m
+  documentclass: scrartcl
+  classoption:
+    - DIV=11
+    - numbers=noendperiod
+  papersize: letter
+  header-includes:
+    - \KOMAoption{captions}{tableheading}
+  block-headings: true
+  lang: en
+  mainfont: Arial
+  fontenc: T1
+  inputenc: utf8
+  fontsize: 10pt
+  title-block-style: none
+  colorlinks: true
+  urlcolor: blue
+  linkcolor: blue
+  geometry: top=1.5cm, bottom=2cm, left=2cm, right=2cm
+  microtype: true
+  linestretch: 1
+  
+[1m[34m
+Rendering PDF[39m[22m
+[1m[34mrunning xelatex - 1[39m[22m
+  This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+   restricted \write18 enabled.
+  entering extended mode
+  
+[1m[34mrunning xelatex - 2[39m[22m
+  This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+   restricted \write18 enabled.
+  entering extended mode
+  
+
+Output created: master-cv_Martinez-Luis.pdf
+
