@@ -377,6 +377,27 @@ def validate_date_format(date_string: str) -> bool:
     except ValueError:
         return False
 
+
+def parse_habit_log(filepath: str | Path) -> list[tuple[str, str]]:
+    """Read habit_log.txt and return a list of (date_string, habit_id) tuples.
+
+    Splits each non-empty line on whitespace into a date and a habit ID.
+    Returns empty list if the file is missing or empty. Lines that do not
+    split into at least two whitespace-separated fields are skipped.
+    """
+    file_path = Path(filepath)
+    if not file_path.exists():
+        return []
+    text = file_path.read_text(encoding="utf-8")
+    log_entries = []
+    for raw_line in text.splitlines():
+        line_fields = raw_line.split()
+        if len(line_fields) >= 2:
+            entry_date = line_fields[0]
+            entry_habit_id = line_fields[1]
+            log_entries.append((entry_date, entry_habit_id))
+    return log_entries
+
 # ============================================================================
 # COMMANDS
 # ============================================================================
@@ -693,6 +714,110 @@ def validate_time_of_day(time_string: str) -> bool:
     except ValueError:
         return False
 
+
+def handle_done(arguments: list[str]) -> None:
+    """Complete a task/goal or log a habit completion.
+
+    For T/G IDs: reads active.txt, sets status=done and completed=today,
+    removes the record, appends it to done.txt, rewrites both files.
+    For H IDs: verifies the habit exists in active.txt, checks
+    habit_log.txt for a same-day entry, and appends one log line unless
+    already logged. Prints a confirmation to stdout.
+    """
+    if not arguments:
+        print("error: ID required", file=sys.stderr)
+        print("usage: tsk done <id>", file=sys.stderr)
+        sys.exit(1)
+    search_prefix = arguments[0]
+
+    active_records = parse_file(ACTIVE_FILE)
+    matches = find_records_by_prefix(active_records, search_prefix)
+    if len(matches) == 0:
+        print(f"error: no record found matching: {search_prefix}", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        matching_ids = ", ".join(record["id"] for record in matches)
+        print(f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}", file=sys.stderr)
+        sys.exit(1)
+    target_record = matches[0]
+
+    target_id = target_record["id"]
+    target_summary = target_record.get("summary", "")
+    today_date = date.today().isoformat()
+
+    # habit branch: log a completion, do not move the record
+    if target_id.startswith("H"):
+        habit_log_entries = parse_habit_log(HABIT_LOG_FILE)
+        already_logged_today = False
+        for entry_date, entry_habit_id in habit_log_entries:
+            if entry_date == today_date and entry_habit_id == target_id:
+                already_logged_today = True
+        if already_logged_today:
+            print(f"already logged: {target_id} for {today_date}")
+            sys.exit(0)
+        try:
+            with open(HABIT_LOG_FILE, "a", encoding="utf-8") as habit_log:
+                habit_log.write(f"{today_date} {target_id}\n")
+        except OSError:
+            print("error: could not write habit_log.txt", file=sys.stderr)
+            sys.exit(1)
+        print(f"logged: {target_id} {target_summary} for {today_date}")
+        return
+
+    # task/goal branch: move the record to done.txt
+    target_record["status"] = "done"
+    target_record["completed"] = today_date
+    target_record["updated"] = today_date
+
+    remaining_active_records = [record for record in active_records if record["id"] != target_id]
+    done_records = parse_file(DONE_FILE)
+    done_records.append(target_record)
+
+    write_file(DONE_FILE, done_records)
+    write_file(ACTIVE_FILE, remaining_active_records)
+    print(f"completed: {target_id} {target_summary} -> done.txt")
+
+
+def handle_retire(arguments: list[str]) -> None:
+    """Discontinue a task, goal, or habit by moving it to done.txt.
+
+    Reads active.txt, sets status=retired and completed=today on the
+    matched record, removes it from active.txt, appends it to done.txt,
+    rewrites both files. Prints a confirmation to stdout.
+    """
+    if not arguments:
+        print("error: ID required", file=sys.stderr)
+        print("usage: tsk retire <id>", file=sys.stderr)
+        sys.exit(1)
+    search_prefix = arguments[0]
+
+    active_records = parse_file(ACTIVE_FILE)
+    matches = find_records_by_prefix(active_records, search_prefix)
+    if len(matches) == 0:
+        print(f"error: no record found matching: {search_prefix}", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        matching_ids = ", ".join(record["id"] for record in matches)
+        print(f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}", file=sys.stderr)
+        sys.exit(1)
+    target_record = matches[0]
+
+    target_id = target_record["id"]
+    target_summary = target_record.get("summary", "")
+    today_date = date.today().isoformat()
+
+    target_record["status"] = "retired"
+    target_record["completed"] = today_date
+    target_record["updated"] = today_date
+
+    remaining_active_records = [record for record in active_records if record["id"] != target_id]
+    done_records = parse_file(DONE_FILE)
+    done_records.append(target_record)
+
+    write_file(DONE_FILE, done_records)
+    write_file(ACTIVE_FILE, remaining_active_records)
+    print(f"retired: {target_id} {target_summary} -> done.txt")
+
 # ============================================================================
 # DISPATCH
 # ============================================================================
@@ -703,8 +828,8 @@ COMMANDS = {
     "habit":    handle_habit,
     "event":    handle_event,
     "edit":     lambda args: handle_not_implemented("edit", args),
-    "done":     lambda args: handle_not_implemented("done", args),
-    "retire":   lambda args: handle_not_implemented("retire", args),
+    "done":     handle_done,
+    "retire":   handle_retire,
     "today":    lambda args: handle_not_implemented("today", args),
     "list":     lambda args: handle_not_implemented("list", args),
     "week":     lambda args: handle_not_implemented("week", args),
