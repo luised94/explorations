@@ -352,6 +352,45 @@ def find_records_by_prefix(records: list[dict], search_prefix: str) -> list[dict
     return matching_records
 
 
+def parse_flags(arguments: list[str], flag_definitions: dict[str, str]) -> tuple[list[str], dict[str, str]]:
+    """Split a list of CLI arguments into positional args and flag values.
+
+    flag_definitions maps flag strings (--project, -p) to canonical field
+    names (project). Each flag consumes the next argument as its value.
+    Returns (positional_args, flags_dict).
+    """
+    positional_args = []
+    parsed_flags = {}
+    arg_index = 0
+    while arg_index < len(arguments):
+        arg = arguments[arg_index]
+        if arg in flag_definitions:
+            canonical_name = flag_definitions[arg]
+            if arg_index + 1 >= len(arguments):
+                print(f"error: {arg} requires a value", file=sys.stderr)
+                sys.exit(1)
+            parsed_flags[canonical_name] = arguments[arg_index + 1]
+            arg_index += 2
+        else:
+            positional_args.append(arg)
+            arg_index += 1
+    return positional_args, parsed_flags
+
+
+def validate_priority(priority_value: str) -> bool:
+    """Check that a priority string is 1, 2, or 3."""
+    return priority_value in ("1", "2", "3")
+
+
+def validate_date_format(date_string: str) -> bool:
+    """Check that a date string matches YYYY-MM-DD format and is a real date."""
+    try:
+        datetime.strptime(date_string, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
 # ============================================================================
 # COMMANDS
 # ============================================================================
@@ -386,12 +425,78 @@ def handle_help(arguments: list[str]) -> None:
         print(f"  {command_name:<10}{description}")
 
 
+ADD_FLAGS = {
+    "--project": "project", "-p": "project",
+    "--due": "due", "-d": "due",
+    "--priority": "priority", "-r": "priority",
+    "--tags": "tags", "-t": "tags",
+    "--parent": "parent", "-g": "parent",
+    "--source": "source", "-s": "source",
+}
+
+
+def handle_add(arguments: list[str]) -> None:
+    """Create a new task record in active.txt.
+
+    Reads active.txt for existing IDs, generates next available ID,
+    builds record from summary + flags, appends to active.txt, writes file.
+    Prints confirmation with new ID and summary to stdout.
+    """
+    positional_args, flags = parse_flags(arguments, ADD_FLAGS)
+
+    if not positional_args:
+        print("error: summary required", file=sys.stderr)
+        print("usage: tsk add <summary> [flags]", file=sys.stderr)
+        sys.exit(1)
+
+    task_summary = " ".join(positional_args)
+
+    # validate flag values
+    if "priority" in flags and not validate_priority(flags["priority"]):
+        print("error: priority must be 1, 2, or 3", file=sys.stderr)
+        sys.exit(1)
+
+    if "due" in flags and not validate_date_format(flags["due"]):
+        print("error: due date must be YYYY-MM-DD", file=sys.stderr)
+        sys.exit(1)
+
+    # read existing records and generate ID
+    active_records = parse_file(ACTIVE_FILE)
+    existing_record_ids = [record["id"] for record in active_records if "id" in record]
+    new_task_id = generate_id("T", existing_record_ids)
+
+    if new_task_id is None:
+        print("error: too many records created today", file=sys.stderr)
+        sys.exit(1)
+
+    # build the new record
+    today_date = date.today().isoformat()
+    new_record = {
+        "id": new_task_id,
+        "type": "task",
+        "summary": task_summary,
+        "status": "active",
+        "created": today_date,
+        "updated": today_date,
+    }
+
+    # add optional fields from flags
+    for field_name in ("project", "priority", "due", "tags", "parent", "source"):
+        if field_name in flags:
+            new_record[field_name] = flags[field_name]
+
+    active_records.append(new_record)
+    write_file(ACTIVE_FILE, active_records)
+
+    print(f"added: {new_task_id} {task_summary}")
+
+
 # ============================================================================
 # DISPATCH
 # ============================================================================
 
 COMMANDS = {
-    "add":      lambda args: handle_not_implemented("add", args),
+    "add":      handle_add,
     "goal":     lambda args: handle_not_implemented("goal", args),
     "habit":    lambda args: handle_not_implemented("habit", args),
     "event":    lambda args: handle_not_implemented("event", args),
@@ -429,13 +534,21 @@ if command_name not in COMMANDS:
     sys.exit(1)
 
 dispatch_start_time = time.time()
+dispatch_exit_code = 0
 try:
     COMMANDS[command_name](arguments)
+except SystemExit as exit_error:
+    dispatch_exit_code = exit_error.code
+    raise
+except Exception:
+    dispatch_exit_code = 1
+    raise
 finally:
+    outcome = "ok" if dispatch_exit_code == 0 else "error"
     elapsed_seconds = time.time() - dispatch_start_time
     primary_arg = arguments[0] if arguments else "-"
     log_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    log_line = f"{log_timestamp} {command_name} {primary_arg} {elapsed_seconds:.2f}s\n"
+    log_line = f"{log_timestamp} {command_name} {primary_arg} {elapsed_seconds:.2f}s {outcome}\n"
     try:
         with open(USAGE_LOG_FILE, "a", encoding="utf-8") as usage_log:
             usage_log.write(log_line)
