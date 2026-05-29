@@ -818,6 +818,76 @@ def handle_retire(arguments: list[str]) -> None:
     write_file(ACTIVE_FILE, remaining_active_records)
     print(f"retired: {target_id} {target_summary} -> done.txt")
 
+
+def handle_edit(arguments: list[str]) -> None:
+    """Open a record in $EDITOR and write the edited version back to source.
+
+    Searches active.txt then calendar.txt for a prefix match, tracking the
+    source file. Writes the matched record to a temp file, opens it in
+    $EDITOR, then parses, validates (single record, ID unchanged), refreshes
+    updated=today, and rewrites the source file in place. Removes the temp
+    file on success and failure. Prints status to stdout, discards to stderr.
+    """
+    import tempfile
+
+    if not arguments:
+        print("error: ID required", file=sys.stderr)
+        print("usage: tsk edit <id>", file=sys.stderr)
+        sys.exit(1)
+    search_prefix = arguments[0]
+
+    # search active.txt first, then calendar.txt
+    source_file_path = ACTIVE_FILE
+    source_records = parse_file(ACTIVE_FILE)
+    matches = find_records_by_prefix(source_records, search_prefix)
+    if len(matches) == 0:
+        source_file_path = CALENDAR_FILE
+        source_records = parse_file(CALENDAR_FILE)
+        matches = find_records_by_prefix(source_records, search_prefix)
+
+    if len(matches) == 0:
+        print(f"error: no record found matching: {search_prefix}", file=sys.stderr)
+        sys.exit(1)
+    if len(matches) > 1:
+        matching_ids = ", ".join(record["id"] for record in matches)
+        print(f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}", file=sys.stderr)
+        sys.exit(1)
+    target_record = matches[0]
+
+    original_id = target_record["id"]
+    target_summary = target_record.get("summary", "")
+    record_index = source_records.index(target_record)
+
+    # write the record to a temp file for editing
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp_file:
+        tmp_file.write(format_record(target_record) + "\n")
+        tmp_path = tmp_file.name
+
+    try:
+        editor_command = os.environ.get("EDITOR", "nvim")
+        print(f"editing: {original_id} {target_summary}")
+        editor_exit_status = os.system(f"{editor_command} {tmp_path}")
+        if editor_exit_status != 0:
+            print("edit discarded: editor exited with error", file=sys.stderr)
+            sys.exit(1)
+
+        edited_records = parse_file(tmp_path)
+        if len(edited_records) != 1:
+            print("edit discarded: expected exactly one record", file=sys.stderr)
+            sys.exit(1)
+        edited_record = edited_records[0]
+        if edited_record.get("id") != original_id:
+            print("edit discarded: ID cannot be changed", file=sys.stderr)
+            sys.exit(1)
+
+        edited_record["updated"] = date.today().isoformat()
+        source_records[record_index] = edited_record
+        write_file(source_file_path, source_records)
+        print(f"updated: {original_id}")
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
 # ============================================================================
 # DISPATCH
 # ============================================================================
@@ -827,7 +897,7 @@ COMMANDS = {
     "goal":     handle_goal,
     "habit":    handle_habit,
     "event":    handle_event,
-    "edit":     lambda args: handle_not_implemented("edit", args),
+    "edit":     handle_edit,
     "done":     handle_done,
     "retire":   handle_retire,
     "today":    lambda args: handle_not_implemented("today", args),
