@@ -269,15 +269,25 @@ coding_style.md: [specific rule]. Redo with [explicit correction].
 ### Directory Structure
 ```
 prompts/
+  developer_profile.md  - who I am, tendencies, background
+  interaction_modes.md  - how the LLM should communicate with me
   coding_style.md       - language and structural conventions
   environment.md        - tools, directories, sync, constraints
-  workflow_rhythm.md    - this document (or extracted sections)
+  workflow_rhythm.md    - per-commit process, hardening, verification
   spec_format.md        - how to write specs
   analysis_checklist.md - end-of-phase analysis steps
+  naive_to_veteran.md   - thinking pattern: discard naive, surface veteran
+  latent_knowledge.md   - thinking pattern: surface undiscussed considerations
+  ranking_task.md       - task: rank by usefulness, complexity as note
+  debugger.md           - task: find and fix code bugs
+  mindset_extractor.md  - task: extract thread mindset at end of thread
   thread_templates/
     design_thread.md    - opening prompt for design threads
     impl_thread.md      - opening prompt for implementation threads
     refinement_thread.md - opening prompt for analysis threads
+  mindsets/
+    thread_mindset_tsk.md   - tsk project domain knowledge
+    thread_mindset_*.md     - future project mindsets
 ```
 
 ### Versioning Convention
@@ -288,9 +298,13 @@ prompts/
 
 ### Update Triggers
 - After completing a phase: review all prompt files for drift
-- After a thread where you repeatedly corrected the LLM: update the relevant file with the correction
+- After a thread where you repeatedly corrected the LLM: update
+  the relevant file with the correction
 - After extracting a new shared library: update environment.md
 - After formalizing a new convention: add to coding_style.md
+- After a significant design thread: extract a thread_mindset_*.md
+  using mindset_extractor.md
+- After noticing a new personal tendency: update developer_profile.md
 
 ---
 
@@ -320,9 +334,12 @@ Write at the end of every design thread. Structure:
 
 ### Continuation Thread Checklist
 Before starting a new implementation thread, verify you have:
+- [ ] developer_profile.md and interaction_modes.md (always)
+- [ ] coding_style.md (always)
+- [ ] workflow_rhythm.md (for implementation threads)
 - [ ] Spec document (paste or reference)
 - [ ] Handoff document (paste)
-- [ ] coding_style.md (paste)
+- [ ] Thread mindset file if one exists for this project
 - [ ] Current codebase state (paste files or describe)
 - [ ] Clear scope: which commits this thread covers
 - [ ] Exemplar commit identified (if past commit 01)

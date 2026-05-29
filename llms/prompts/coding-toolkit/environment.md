@@ -34,12 +34,22 @@ lives and how it runs.
 - Aliases and functions defined in files sourced by my_config
 - Convention: short memorable aliases for frequently used tools
 
-### Language
-- Python 3.x as primary scripting language
-- Run via `uv run script.py` (no virtualenv management, no
-  pyproject.toml required for single scripts)
-- bash for thin wrappers, aliases, environment setup
-- Lua only for nvim configuration
+### Platform
+- WSL Ubuntu on Windows
+- Must handle WSL/Windows boundary interactions (file paths,
+  clipboard, interop, occasional PowerShell for Windows-side tasks)
+- Primary work happens in WSL; Windows side for GUI apps, Zotero,
+  browser
+
+### Languages
+- **Python** - primary scripting language, run via `uv run script.py`
+  (no virtualenv management, no pyproject.toml for single scripts)
+- **bash** - thin wrappers, aliases, environment setup, glue scripts
+- **Lua** - nvim configuration and plugin scripting only
+- **R** - data analysis and statistics
+- **JavaScript** - Zotero plugin/automation context only
+- **PowerShell** - Windows-side tasks when WSL interop isn't enough
+- **C** - learning, not yet used in projects (personal interest)
 
 ### Version Control
 - git for all repositories
@@ -96,6 +106,7 @@ lives and how it runs.
 - Each module (kbd, lw, tasks) is a sibling, not nested
 - Modules connect through conventions (tags, references, file
   naming), not code imports or shared dependencies
+- ASCII only
 
 ---
 
@@ -156,10 +167,16 @@ tsk() { uv run "$HOME/personal_repos/explorations/tasks/tasks.py" "$@"; }
 ## Constraints
 
 - Solo developer, personal tooling
+- WSL Ubuntu on Windows - occasional cross-boundary friction
+  (path translation, clipboard, GUI app access)
 - No cloud services, no SSH (for now)
 - No external dependencies unless unavoidable (prefer stdlib)
 - No internet-connected features in tools
-- USB sync is the only data transport between machines
-- Phone capture (Samsung Notes) exists but export/import not yet built
-- Work context: salaried job tasks tracked alongside personal projects,
-  no integration with employer's systems (Jira, etc.)
+- USB sync is the only data transport between machines for
+  private repos; GitHub for public/code repos
+- Phone capture (Samsung Notes) exists but export/import not
+  yet built
+- Work context: salaried job tasks tracked alongside personal
+  projects, no integration with employer's systems (Jira, etc.)
+- Zotero used for reference management (JavaScript plugin
+  automation context)
