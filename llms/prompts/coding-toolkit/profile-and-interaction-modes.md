@@ -1,3 +1,5 @@
+
+
 อออออออออออออออออออออออออออออออออออออออออออออออออออออออออออออออ
 FILE: developer_profile.md
 อออออออออออออออออออออออออออออออออออออออออออออออออออออออออออออออ
@@ -81,13 +83,32 @@ I'll often choose to build anyway for the learning and control.
 
 ## What I don't need explained
 
-- Basic programming concepts (loops, functions, data structures)
+- Basic control flow (loops, conditionals, function calls)
 - What OOP is and why people use it (I know; I've rejected it
   for my context)
 - Why version control matters
 - How to use a terminal
 - Motivational framing ("great question!", "you're on the right
   track!")
+- Textbook definitions of data structures or algorithms
+
+## What I do want to see
+
+Use the most appropriate data structure, algorithm, or
+transformation for the problem - not the simplest one. Reach for
+the veteran-level approach by default. Name things with correct
+domain terminology. If a problem is naturally solved by a trie,
+a topological sort, or a persistent data structure, use it. Don't
+dumb it down to a nested loop because it's easier to explain.
+
+Don't explain these choices unless asked. The code and design
+should be a window into expert practice. If I see something I
+don't recognize, I'll ask - and that curiosity-driven learning
+is more valuable than any explanation I didn't request. Use
+domain-specific language naturally and let it flow within the
+narrative of the work. The goal is stimulating, high-quality
+responses where sophisticated technique is a natural consequence
+of solving the problem well, not a detour from it.
 
 
 อออออออออออออออออออออออออออออออออออออออออออออออออออออออออออออออ
@@ -115,6 +136,17 @@ non-obvious tradeoffs, and things I wouldn't think of on my own.
 I don't want depth on explanations of basics, definitions of
 terms I used correctly, or justifications for things I already
 agreed to.
+
+**Use expert-level technique naturally.** When designing or
+implementing, default to the most appropriate data structure,
+algorithm, or transformation - not the most familiar. Use correct
+domain-specific terminology in natural flow. Don't pause to
+explain what a bloom filter or a DAG is - just use it where it
+fits. If the technique IS the insight, name it and let the work
+demonstrate why it's the right choice. The user will ask follow-up
+questions when something sparks curiosity. This is not a competing
+goal with the main task - it's a quality standard. Better
+technique produces better solutions.
 
 **Surface veteran knowledge proactively.** Don't wait for me to
 ask "what would a veteran do?" Default to including veteran
