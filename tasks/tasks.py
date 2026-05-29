@@ -130,7 +130,6 @@ def parse_file(filepath: str | Path) -> list[dict[str, str | list[str]]]:
         return []
     return parse_records(text)
 
-
 # ============================================================================
 # WRITER
 # ============================================================================
@@ -160,7 +159,6 @@ def format_record(record: dict[str, str | list[str]]) -> str:
     for field_name in all_field_names:
         raw_field = record[field_name]
         values_to_write = raw_field if isinstance(raw_field, list) else [raw_field]
-
         for field_value in values_to_write:
             if "\n" in field_value:
                 content_lines = field_value.split("\n")
@@ -187,15 +185,12 @@ def write_file(filepath: str | Path, records: list[dict[str, str | list[str]]]) 
     if not records:
         file_path.write_text("", encoding="utf-8")
         return
-
     formatted_records = []
     for record in records:
         if not record:
             continue
         formatted_records.append(format_record(record))
-
     file_path.write_text("\n\n".join(formatted_records) + "\n", encoding="utf-8")
-
 
 # ============================================================================
 # VERIFICATION
@@ -215,7 +210,6 @@ def verify_parser() -> None:
          "id = T0522a\n"
          "type = task\n"
          "summary = test task\n"),
-
         ("multi-line values",
          "id = T0522a\n"
          "type = task\n"
@@ -223,21 +217,18 @@ def verify_parser() -> None:
          "notes =\n"
          "  line one of notes\n"
          "  line two of notes\n"),
-
         ("duplicate keys (list)",
          "id = T0522b\n"
          "type = task\n"
          "summary = test\n"
          "tags = #test\n"
          "tags = #example\n"),
-
         ("empty values",
          "id = T0522c\n"
          "type = task\n"
          "summary = test\n"
          "notes =\n"
          "  content after empty first line\n"),
-
         ("all entity types",
          "id = T0522a\n"
          "type = task\n"
@@ -260,7 +251,6 @@ def verify_parser() -> None:
          "frequency = daily\n"
          "created = 2026-05-22\n"
          "updated = 2026-05-22\n"),
-
         ("multiple records",
          "id = T0522a\n"
          "summary = first\n"
@@ -287,11 +277,9 @@ def verify_parser() -> None:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp_file:
                 tmp_file.write(input_text)
                 tmp_path = tmp_file.name
-
             first_parse = parse_file(tmp_path)
             write_file(tmp_path, first_parse)
             second_parse = parse_file(tmp_path)
-
             if first_parse != second_parse:
                 print(f"{label} {'.' * (42 - len(label))} FAIL", file=sys.stderr)
                 print(f"  first parse:  {first_parse}", file=sys.stderr)
@@ -310,7 +298,6 @@ def verify_parser() -> None:
         sys.exit(1)
     else:
         print(f"all {total} tests passed")
-
 
 # ============================================================================
 # DATA UTILITIES
@@ -390,7 +377,6 @@ def validate_date_format(date_string: str) -> bool:
     except ValueError:
         return False
 
-
 # ============================================================================
 # COMMANDS
 # ============================================================================
@@ -448,14 +434,12 @@ def handle_add(arguments: list[str]) -> None:
         print("error: summary required", file=sys.stderr)
         print("usage: tsk add <summary> [flags]", file=sys.stderr)
         sys.exit(1)
-
     task_summary = " ".join(positional_args)
 
     # validate flag values
     if "priority" in flags and not validate_priority(flags["priority"]):
         print("error: priority must be 1, 2, or 3", file=sys.stderr)
         sys.exit(1)
-
     if "due" in flags and not validate_date_format(flags["due"]):
         print("error: due date must be YYYY-MM-DD", file=sys.stderr)
         sys.exit(1)
@@ -464,7 +448,6 @@ def handle_add(arguments: list[str]) -> None:
     active_records = parse_file(ACTIVE_FILE)
     existing_record_ids = [record["id"] for record in active_records if "id" in record]
     new_task_id = generate_id("T", existing_record_ids)
-
     if new_task_id is None:
         print("error: too many records created today", file=sys.stderr)
         sys.exit(1)
@@ -487,9 +470,228 @@ def handle_add(arguments: list[str]) -> None:
 
     active_records.append(new_record)
     write_file(ACTIVE_FILE, active_records)
-
     print(f"added: {new_task_id} {task_summary}")
 
+
+GOAL_FLAGS = {
+    "--project": "project", "-p": "project",
+    "--due": "due", "-d": "due",
+    "--priority": "priority", "-r": "priority",
+    "--tags": "tags", "-t": "tags",
+    "--parent": "parent", "-g": "parent",
+    "--source": "source", "-s": "source",
+    "--review": "review", "-v": "review",
+}
+
+
+def handle_goal(arguments: list[str]) -> None:
+    """Create a new goal record in active.txt.
+
+    Reads active.txt for existing IDs, generates next available G-prefix
+    ID, builds record (type=goal) from summary + flags including --review,
+    appends to active.txt, writes file. Prints confirmation to stdout.
+    """
+    positional_args, flags = parse_flags(arguments, GOAL_FLAGS)
+
+    if not positional_args:
+        print("error: summary required", file=sys.stderr)
+        print("usage: tsk goal <summary> [flags]", file=sys.stderr)
+        sys.exit(1)
+    goal_summary = " ".join(positional_args)
+
+    # validate flag values
+    if "review" in flags and flags["review"] not in ("weekly", "monthly", "quarterly"):
+        print("error: review must be weekly, monthly, or quarterly", file=sys.stderr)
+        sys.exit(1)
+    if "priority" in flags and not validate_priority(flags["priority"]):
+        print("error: priority must be 1, 2, or 3", file=sys.stderr)
+        sys.exit(1)
+    if "due" in flags and not validate_date_format(flags["due"]):
+        print("error: due date must be YYYY-MM-DD", file=sys.stderr)
+        sys.exit(1)
+
+    # read existing records and generate ID
+    active_records = parse_file(ACTIVE_FILE)
+    existing_record_ids = [record["id"] for record in active_records if "id" in record]
+    new_goal_id = generate_id("G", existing_record_ids)
+    if new_goal_id is None:
+        print("error: too many records created today", file=sys.stderr)
+        sys.exit(1)
+
+    # build the new record
+    today_date = date.today().isoformat()
+    new_record = {
+        "id": new_goal_id,
+        "type": "goal",
+        "summary": goal_summary,
+        "status": "active",
+        "created": today_date,
+        "updated": today_date,
+    }
+
+    # add optional fields from flags
+    for field_name in ("project", "priority", "due", "review", "tags", "parent", "source"):
+        if field_name in flags:
+            new_record[field_name] = flags[field_name]
+
+    active_records.append(new_record)
+    write_file(ACTIVE_FILE, active_records)
+    print(f"added goal: {new_goal_id} {goal_summary}")
+
+
+HABIT_FLAGS = {
+    "--frequency": "frequency", "-f": "frequency",
+    "--tags": "tags", "-t": "tags",
+    "--project": "project", "-p": "project",
+}
+
+
+def handle_habit(arguments: list[str]) -> None:
+    """Create a new habit record in active.txt.
+
+    Reads active.txt for existing IDs, generates next available H-prefix
+    ID, builds record (type=habit) from summary + restricted flag set,
+    defaulting frequency to daily, appends to active.txt, writes file.
+    Prints confirmation to stdout.
+    """
+    positional_args, flags = parse_flags(arguments, HABIT_FLAGS)
+
+    if not positional_args:
+        print("error: summary required", file=sys.stderr)
+        print("usage: tsk habit <summary> [flags]", file=sys.stderr)
+        sys.exit(1)
+    habit_summary = " ".join(positional_args)
+
+    # validate flag values
+    if "frequency" in flags and flags["frequency"] not in ("daily", "weekdays", "weekly"):
+        print("error: frequency must be daily, weekdays, or weekly", file=sys.stderr)
+        sys.exit(1)
+
+    # read existing records and generate ID
+    active_records = parse_file(ACTIVE_FILE)
+    existing_record_ids = [record["id"] for record in active_records if "id" in record]
+    new_habit_id = generate_id("H", existing_record_ids)
+    if new_habit_id is None:
+        print("error: too many records created today", file=sys.stderr)
+        sys.exit(1)
+
+    # build the new record
+    today_date = date.today().isoformat()
+    habit_frequency = flags["frequency"] if "frequency" in flags else "daily"
+    new_record = {
+        "id": new_habit_id,
+        "type": "habit",
+        "summary": habit_summary,
+        "status": "active",
+        "frequency": habit_frequency,
+        "created": today_date,
+        "updated": today_date,
+    }
+
+    # add optional fields from flags
+    for field_name in ("tags", "project"):
+        if field_name in flags:
+            new_record[field_name] = flags[field_name]
+
+    active_records.append(new_record)
+    write_file(ACTIVE_FILE, active_records)
+    print(f"added habit: {new_habit_id} {habit_summary}")
+
+
+EVENT_FLAGS = {
+    "--date": "date", "-d": "date",
+    "--time": "time", "-m": "time",
+    "--type": "type", "-y": "type",
+    "--recur": "recur", "-r": "recur",
+    "--location": "location", "-l": "location",
+    "--energy": "energy", "-e": "energy",
+    "--project": "project", "-p": "project",
+    "--linked": "linked", "-k": "linked",
+}
+
+
+def handle_event(arguments: list[str]) -> None:
+    """Create a new event record in calendar.txt.
+
+    Reads calendar.txt for existing IDs, generates next available
+    E-prefix ID, requires --date, parses --time HH:MM-HH:MM into
+    time_start and time_end, defaults type to meeting, appends to
+    calendar.txt, writes file. Prints confirmation to stdout.
+    """
+    positional_args, flags = parse_flags(arguments, EVENT_FLAGS)
+
+    if not positional_args:
+        print("error: summary required", file=sys.stderr)
+        print("usage: tsk event <summary> --date YYYY-MM-DD [flags]", file=sys.stderr)
+        sys.exit(1)
+    event_summary = " ".join(positional_args)
+
+    # --date is required
+    if "date" not in flags:
+        print("error: --date is required for events", file=sys.stderr)
+        sys.exit(1)
+    event_date = flags["date"]
+    if not validate_date_format(event_date):
+        print("error: date must be YYYY-MM-DD", file=sys.stderr)
+        sys.exit(1)
+
+    # parse --time HH:MM-HH:MM into start and end
+    event_time_start = None
+    event_time_end = None
+    if "time" in flags:
+        time_range = flags["time"]
+        if time_range.count("-") != 1:
+            print("error: time must be HH:MM-HH:MM (24hr)", file=sys.stderr)
+            sys.exit(1)
+        start_text, _, end_text = time_range.partition("-")
+        start_valid = validate_time_of_day(start_text)
+        end_valid = validate_time_of_day(end_text)
+        if not (start_valid and end_valid):
+            print("error: time must be HH:MM-HH:MM (24hr)", file=sys.stderr)
+            sys.exit(1)
+        event_time_start = start_text
+        event_time_end = end_text
+
+    # read existing records and generate ID
+    calendar_records = parse_file(CALENDAR_FILE)
+    existing_record_ids = [record["id"] for record in calendar_records if "id" in record]
+    new_event_id = generate_id("E", existing_record_ids)
+    if new_event_id is None:
+        print("error: too many records created today", file=sys.stderr)
+        sys.exit(1)
+
+    # build the new record; type defaults to meeting (open set, no validation)
+    today_date = date.today().isoformat()
+    event_type = flags["type"] if "type" in flags else "meeting"
+    new_record = {
+        "id": new_event_id,
+        "type": event_type,
+        "summary": event_summary,
+        "date": event_date,
+        "created": today_date,
+        "updated": today_date,
+    }
+    if event_time_start is not None:
+        new_record["time_start"] = event_time_start
+        new_record["time_end"] = event_time_end
+
+    # add optional fields from flags
+    for field_name in ("recur", "location", "energy", "project", "linked"):
+        if field_name in flags:
+            new_record[field_name] = flags[field_name]
+
+    calendar_records.append(new_record)
+    write_file(CALENDAR_FILE, calendar_records)
+    print(f"added event: {new_event_id} {event_summary} on {event_date}")
+
+
+def validate_time_of_day(time_string: str) -> bool:
+    """Check that a time string matches HH:MM in 24-hour format."""
+    try:
+        datetime.strptime(time_string, "%H:%M")
+        return True
+    except ValueError:
+        return False
 
 # ============================================================================
 # DISPATCH
@@ -497,9 +699,9 @@ def handle_add(arguments: list[str]) -> None:
 
 COMMANDS = {
     "add":      handle_add,
-    "goal":     lambda args: handle_not_implemented("goal", args),
-    "habit":    lambda args: handle_not_implemented("habit", args),
-    "event":    lambda args: handle_not_implemented("event", args),
+    "goal":     handle_goal,
+    "habit":    handle_habit,
+    "event":    handle_event,
     "edit":     lambda args: handle_not_implemented("edit", args),
     "done":     lambda args: handle_not_implemented("done", args),
     "retire":   lambda args: handle_not_implemented("retire", args),
