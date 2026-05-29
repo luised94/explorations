@@ -1,4 +1,3 @@
-
 # ============================================================================
 # tsk -- task, calendar & habit tracker
 #
@@ -11,6 +10,7 @@
 
 import sys
 import os
+import time
 from pathlib import Path
 from datetime import date, datetime
 
@@ -316,6 +316,41 @@ def verify_parser() -> None:
 # DATA UTILITIES
 # ============================================================================
 
+def generate_id(type_prefix: str, existing_record_ids: list[str]) -> str | None:
+    """Generate the next available ID for a given type prefix and today's date.
+
+    Reads existing_record_ids to find used suffixes for this prefix + date
+    combination. Returns the next available ID in format {prefix}{MMDD}{a-z},
+    or None if all 26 suffix letters are exhausted.
+    """
+    today_mmdd = date.today().strftime("%m%d")
+    id_stem = type_prefix + today_mmdd
+
+    used_suffixes = set()
+    for record_id in existing_record_ids:
+        if record_id.startswith(id_stem) and len(record_id) == len(id_stem) + 1:
+            used_suffixes.add(record_id[-1])
+
+    for suffix_letter in "abcdefghijklmnopqrstuvwxyz":
+        if suffix_letter not in used_suffixes:
+            return id_stem + suffix_letter
+
+    return None
+
+
+def find_records_by_prefix(records: list[dict], search_prefix: str) -> list[dict]:
+    """Find all records whose id field starts with search_prefix.
+
+    Returns list of matching records. Caller interprets length:
+    0 = not found, 1 = unique match, 2+ = ambiguous prefix.
+    """
+    matching_records = []
+    for record in records:
+        record_id = record.get("id", "")
+        if record_id.startswith(search_prefix):
+            matching_records.append(record)
+    return matching_records
+
 
 # ============================================================================
 # COMMANDS
@@ -393,4 +428,16 @@ if command_name not in COMMANDS:
     print("run 'tsk help' for available commands", file=sys.stderr)
     sys.exit(1)
 
-COMMANDS[command_name](arguments)
+dispatch_start_time = time.time()
+try:
+    COMMANDS[command_name](arguments)
+finally:
+    elapsed_seconds = time.time() - dispatch_start_time
+    primary_arg = arguments[0] if arguments else "-"
+    log_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    log_line = f"{log_timestamp} {command_name} {primary_arg} {elapsed_seconds:.2f}s\n"
+    try:
+        with open(USAGE_LOG_FILE, "a", encoding="utf-8") as usage_log:
+            usage_log.write(log_line)
+    except OSError:
+        pass
