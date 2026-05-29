@@ -1,5 +1,6 @@
+
 # ============================================================================
-# tsk - task, calendar & habit tracker
+# tsk -- task, calendar & habit tracker
 #
 # Usage: uv run tasks.py <command> [args]
 # Alias: tsk (defined in tsk.sh)
@@ -17,29 +18,20 @@ from datetime import date, datetime
 # PATHS
 # ============================================================================
 
-def resolve_data_directory() -> Path:
-    """Resolve the data directory from TASKS_LOCAL_DIR or default path.
+env_path = os.environ.get("TASKS_LOCAL_DIR")
+if env_path:
+    DATA_DIR = Path(env_path).expanduser()
+else:
+    DATA_DIR = Path.home() / "personal_repos" / "tasks"
 
-    Returns the Path if it exists, prints error and exits if not.
-    """
-    env_path = os.environ.get("TASKS_LOCAL_DIR")
-    if env_path:
-        data_dir = Path(env_path).expanduser()
-    else:
-        data_dir = Path.home() / "personal_repos" / "tasks"
+if not DATA_DIR.is_dir():
+    print(
+        f"error: data directory not found: {DATA_DIR}\n"
+        f"set TASKS_LOCAL_DIR or create the directory",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
-    if not data_dir.is_dir():
-        print(
-            f"error: data directory not found: {data_dir}\n"
-            f"set TASKS_LOCAL_DIR or create the directory",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    return data_dir
-
-
-DATA_DIR = resolve_data_directory()
 ACTIVE_FILE = DATA_DIR / "active.txt"
 CALENDAR_FILE = DATA_DIR / "calendar.txt"
 DONE_FILE = DATA_DIR / "done.txt"
@@ -58,60 +50,64 @@ for filepath in [ACTIVE_FILE, CALENDAR_FILE, DONE_FILE, HABIT_LOG_FILE, USAGE_LO
 # ============================================================================
 
 def parse_records(text: str) -> list[dict[str, str | list[str]]]:
-    """Parse CCL-style key=value text into a list of record dicts.
+    """Parse CCL-style text into a list of record dicts.
 
-    Handles continuation lines (leading whitespace), blank-line record
-    separation, and duplicate keys (collected into lists).
+    Reads raw text, splits on blank lines into record blocks, handles
+    continuation lines (leading whitespace) and duplicate field names
+    (collected into lists). Returns list of dicts with string field
+    names and string or list-of-string field values.
     """
     records = []
     current_record: dict[str, str | list[str]] = {}
-    current_key = None
+    current_field_name = None
 
     for raw_line in text.splitlines():
-        stripped = raw_line.strip()
+        line_content = raw_line.strip()
 
         # blank line ends the current record
-        if not stripped:
+        if not line_content:
             if current_record:
                 records.append(current_record)
                 current_record = {}
-                current_key = None
+                current_field_name = None
             continue
 
-        # continuation line (leading whitespace, and we have an active key)
-        if raw_line[0] in (" ", "\t") and current_key is not None:
-            continuation = stripped
-            val = current_record[current_key]
-            if isinstance(val, list):
-                val[-1] = val[-1] + "\n" + continuation
+        # continuation line (leading whitespace, and we have an active field)
+        if raw_line[0] in (" ", "\t") and current_field_name is not None:
+            existing_content = current_record[current_field_name]
+            if isinstance(existing_content, list):
+                existing_content[-1] = existing_content[-1] + "\n" + line_content
             else:
-                current_record[current_key] = val + "\n" + continuation if val else continuation
-            continue
-
-        # key = value line
-        if "=" in raw_line:
-            key, _, value = raw_line.partition("=")
-            key = key.strip()
-            value = value.strip()
-            if key in current_record:
-                existing = current_record[key]
-                if isinstance(existing, list):
-                    existing.append(value)
+                if existing_content:
+                    current_record[current_field_name] = existing_content + "\n" + line_content
                 else:
-                    current_record[key] = [existing, value]
-            else:
-                current_record[key] = value
-            current_key = key
+                    current_record[current_field_name] = line_content
             continue
 
-        # line with no = and no leading whitespace - treat as continuation
-        # of previous key if one exists, otherwise skip
-        if current_key is not None:
-            val = current_record[current_key]
-            if isinstance(val, list):
-                val[-1] = val[-1] + "\n" + stripped
+        # field_name = field_value line
+        if "=" in raw_line:
+            field_name, _, field_value = raw_line.partition("=")
+            field_name = field_name.strip()
+            field_value = field_value.strip()
+            if field_name in current_record:
+                prior_content = current_record[field_name]
+                if isinstance(prior_content, list):
+                    prior_content.append(field_value)
+                else:
+                    current_record[field_name] = [prior_content, field_value]
             else:
-                current_record[current_key] = val + "\n" + stripped
+                current_record[field_name] = field_value
+            current_field_name = field_name
+            continue
+
+        # line with no = and no leading whitespace -- treat as continuation
+        # of previous field if one exists, otherwise skip
+        if current_field_name is not None:
+            existing_content = current_record[current_field_name]
+            if isinstance(existing_content, list):
+                existing_content[-1] = existing_content[-1] + "\n" + line_content
+            else:
+                current_record[current_field_name] = existing_content + "\n" + line_content
 
     # finalize last record
     if current_record:
@@ -123,12 +119,13 @@ def parse_records(text: str) -> list[dict[str, str | list[str]]]:
 def parse_file(filepath: str | Path) -> list[dict[str, str | list[str]]]:
     """Read a CCL-style file and return a list of record dicts.
 
+    Reads the file at filepath, passes contents to parse_records.
     Returns empty list if file is missing or empty.
     """
-    path = Path(filepath)
-    if not path.exists():
+    file_path = Path(filepath)
+    if not file_path.exists():
         return []
-    text = path.read_text(encoding="utf-8")
+    text = file_path.read_text(encoding="utf-8")
     if not text.strip():
         return []
     return parse_records(text)
@@ -148,65 +145,56 @@ FIELD_ORDER = [
 ]
 
 
-def _field_sort_key(key: str) -> tuple[int, str]:
-    """Return sort key placing known fields in FIELD_ORDER, unknowns after."""
-    try:
-        return (FIELD_ORDER.index(key), key)
-    except ValueError:
-        return (len(FIELD_ORDER), key)
-
-
 def format_record(record: dict[str, str | list[str]]) -> str:
-    """Serialize a record dict to CCL-style key=value text.
+    """Serialize a record dict to CCL-style field_name = field_value text.
 
-    Multi-line values get 2-space indented continuation lines.
-    List-valued keys are written as repeated key = value lines.
-    Fields are ordered per FIELD_ORDER; unknowns go after, alphabetically.
+    Orders fields per FIELD_ORDER with unknowns appended alphabetically.
+    Writes multi-line field values with 2-space indented continuation.
+    Writes list-valued fields as repeated field_name = field_value lines.
     """
-    lines = []
-    sorted_keys = sorted(record.keys(), key=_field_sort_key)
+    output_lines = []
+    known_field_names = [name for name in FIELD_ORDER if name in record]
+    unknown_field_names = sorted(name for name in record if name not in FIELD_ORDER)
+    all_field_names = known_field_names + unknown_field_names
 
-    for key in sorted_keys:
-        value = record[key]
-        if isinstance(value, list):
-            for item in value:
-                lines.extend(_format_single_value(key, item))
-        else:
-            lines.extend(_format_single_value(key, value))
+    for field_name in all_field_names:
+        raw_field = record[field_name]
+        values_to_write = raw_field if isinstance(raw_field, list) else [raw_field]
 
-    return "\n".join(lines)
+        for field_value in values_to_write:
+            if "\n" in field_value:
+                content_lines = field_value.split("\n")
+                first_line = content_lines[0]
+                if first_line:
+                    output_lines.append(f"{field_name} = {first_line}")
+                else:
+                    output_lines.append(f"{field_name} =")
+                for continuation in content_lines[1:]:
+                    output_lines.append(f"  {continuation}")
+            else:
+                output_lines.append(f"{field_name} = {field_value}")
 
-
-def _format_single_value(key: str, value: str) -> list[str]:
-    """Format one key=value pair, handling multi-line values."""
-    if "\n" in value:
-        parts = value.split("\n")
-        first = parts[0]
-        rest = parts[1:]
-        result = [f"{key} = {first}" if first else f"{key} ="]
-        for continuation in rest:
-            result.append(f"  {continuation}")
-        return result
-    return [f"{key} = {value}"]
+    return "\n".join(output_lines)
 
 
 def write_file(filepath: str | Path, records: list[dict[str, str | list[str]]]) -> None:
     """Write a list of record dicts to a CCL-style file.
 
-    Records are separated by blank lines. File ends with trailing newline.
+    Formats each record via format_record, joins with blank line
+    separators, writes to filepath. Empty records list writes empty file.
     """
-    path = Path(filepath)
+    file_path = Path(filepath)
     if not records:
-        path.write_text("", encoding="utf-8")
+        file_path.write_text("", encoding="utf-8")
         return
 
-    blocks = []
+    formatted_records = []
     for record in records:
         if not record:
             continue
-        blocks.append(format_record(record))
+        formatted_records.append(format_record(record))
 
-    path.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+    file_path.write_text("\n\n".join(formatted_records) + "\n", encoding="utf-8")
 
 
 # ============================================================================
@@ -216,114 +204,105 @@ def write_file(filepath: str | Path, records: list[dict[str, str | list[str]]]) 
 def verify_parser() -> None:
     """Run round-trip tests on the parser and writer.
 
-    Semantic round-trip: parse(write(parse(x))) == parse(x).
-    Exits 1 on any failure.
+    Defines test cases as (name, input_text) pairs, runs each through
+    parse_file -> write_file -> parse_file and checks semantic equality.
+    Prints results to stdout, exits 1 on any failure.
     """
     import tempfile
+
+    test_cases = [
+        ("simple record",
+         "id = T0522a\n"
+         "type = task\n"
+         "summary = test task\n"),
+
+        ("multi-line values",
+         "id = T0522a\n"
+         "type = task\n"
+         "summary = test task\n"
+         "notes =\n"
+         "  line one of notes\n"
+         "  line two of notes\n"),
+
+        ("duplicate keys (list)",
+         "id = T0522b\n"
+         "type = task\n"
+         "summary = test\n"
+         "tags = #test\n"
+         "tags = #example\n"),
+
+        ("empty values",
+         "id = T0522c\n"
+         "type = task\n"
+         "summary = test\n"
+         "notes =\n"
+         "  content after empty first line\n"),
+
+        ("all entity types",
+         "id = T0522a\n"
+         "type = task\n"
+         "summary = a task\n"
+         "status = active\n"
+         "priority = 2\n"
+         "created = 2026-05-22\n"
+         "updated = 2026-05-22\n"
+         "\n"
+         "id = G0501a\n"
+         "type = goal\n"
+         "summary = a goal\n"
+         "review = monthly\n"
+         "created = 2026-05-01\n"
+         "updated = 2026-05-15\n"
+         "\n"
+         "id = H0522a\n"
+         "type = habit\n"
+         "summary = morning exercise\n"
+         "frequency = daily\n"
+         "created = 2026-05-22\n"
+         "updated = 2026-05-22\n"),
+
+        ("multiple records",
+         "id = T0522a\n"
+         "summary = first\n"
+         "\n"
+         "id = T0522b\n"
+         "summary = second\n"
+         "notes =\n"
+         "  multi-line\n"
+         "  value here\n"
+         "\n"
+         "id = T0522c\n"
+         "summary = third\n"
+         "tags = #a\n"
+         "tags = #b\n"),
+    ]
 
     tests_passed = 0
     tests_failed = 0
 
-    def run_test(name: str, input_text: str) -> None:
-        nonlocal tests_passed, tests_failed
-        label = f"parser round-trip: {name}"
+    for test_name, input_text in test_cases:
+        label = f"parser round-trip: {test_name}"
+        tmp_path = None
         try:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
-                f.write(input_text)
-                tmp_path = f.name
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp_file:
+                tmp_file.write(input_text)
+                tmp_path = tmp_file.name
 
-            # first parse
-            records_1 = parse_file(tmp_path)
-            # write back
-            write_file(tmp_path, records_1)
-            # second parse
-            records_2 = parse_file(tmp_path)
+            first_parse = parse_file(tmp_path)
+            write_file(tmp_path, first_parse)
+            second_parse = parse_file(tmp_path)
 
-            if records_1 != records_2:
+            if first_parse != second_parse:
                 print(f"{label} {'.' * (42 - len(label))} FAIL", file=sys.stderr)
-                print(f"  first parse:  {records_1}", file=sys.stderr)
-                print(f"  second parse: {records_2}", file=sys.stderr)
+                print(f"  first parse:  {first_parse}", file=sys.stderr)
+                print(f"  second parse: {second_parse}", file=sys.stderr)
                 tests_failed += 1
             else:
                 print(f"{label} {'.' * (42 - len(label))} ok")
                 tests_passed += 1
         finally:
-            os.unlink(tmp_path)
-
-    # --- test cases ---
-
-    run_test("simple record", (
-        "id = T0522a\n"
-        "type = task\n"
-        "summary = test task\n"
-    ))
-
-    run_test("multi-line values", (
-        "id = T0522a\n"
-        "type = task\n"
-        "summary = test task\n"
-        "notes =\n"
-        "  line one of notes\n"
-        "  line two of notes\n"
-    ))
-
-    run_test("duplicate keys (list)", (
-        "id = T0522b\n"
-        "type = task\n"
-        "summary = test\n"
-        "tags = #test\n"
-        "tags = #example\n"
-    ))
-
-    run_test("empty values", (
-        "id = T0522c\n"
-        "type = task\n"
-        "summary = test\n"
-        "notes =\n"
-        "  content after empty first line\n"
-    ))
-
-    run_test("all entity types", (
-        "id = T0522a\n"
-        "type = task\n"
-        "summary = a task\n"
-        "status = active\n"
-        "priority = 2\n"
-        "created = 2026-05-22\n"
-        "updated = 2026-05-22\n"
-        "\n"
-        "id = G0501a\n"
-        "type = goal\n"
-        "summary = a goal\n"
-        "review = monthly\n"
-        "created = 2026-05-01\n"
-        "updated = 2026-05-15\n"
-        "\n"
-        "id = H0522a\n"
-        "type = habit\n"
-        "summary = morning exercise\n"
-        "frequency = daily\n"
-        "created = 2026-05-22\n"
-        "updated = 2026-05-22\n"
-    ))
-
-    run_test("multiple records", (
-        "id = T0522a\n"
-        "summary = first\n"
-        "\n"
-        "id = T0522b\n"
-        "summary = second\n"
-        "notes =\n"
-        "  multi-line\n"
-        "  value here\n"
-        "\n"
-        "id = T0522c\n"
-        "summary = third\n"
-        "tags = #a\n"
-        "tags = #b\n"
-    ))
-
-    # --- summary ---
+            if tmp_path:
+                os.unlink(tmp_path)
 
     total = tests_passed + tests_failed
     if tests_failed > 0:
@@ -343,12 +322,12 @@ def verify_parser() -> None:
 # ============================================================================
 
 def handle_not_implemented(command_name: str, arguments: list[str]) -> None:
-    """Placeholder handler for commands not yet implemented."""
+    """Print a not-implemented notice for placeholder commands."""
     print(f"not implemented: {command_name}")
 
 
 def handle_help(arguments: list[str]) -> None:
-    """Print available commands with short descriptions."""
+    """Print available commands with short descriptions to stdout."""
     descriptions = {
         "add":      "create a new task",
         "goal":     "create a new goal",
@@ -368,8 +347,8 @@ def handle_help(arguments: list[str]) -> None:
         "help":     "show this help",
     }
     print("available commands:")
-    for name, desc in descriptions.items():
-        print(f"  {name:<10}{desc}")
+    for command_name, description in descriptions.items():
+        print(f"  {command_name:<10}{description}")
 
 
 # ============================================================================
