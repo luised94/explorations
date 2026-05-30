@@ -12,7 +12,7 @@ import sys
 import os
 import time
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 # ============================================================================
 # PATHS
@@ -888,6 +888,185 @@ def handle_edit(arguments: list[str]) -> None:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
+
+def handle_today(arguments: list[str]) -> None:
+    """Print the daily dashboard to stdout.
+
+    Reads active.txt, calendar.txt, and habit_log.txt. Separates active
+    records by type, then prints events for today, habit completion state
+    with streaks, deadlines within three days, active tasks by priority,
+    and goals past their review cadence. Sections with no content are
+    skipped. Malformed dates cause a record to be skipped in that section.
+    """
+    active_records = parse_file(ACTIVE_FILE)
+    calendar_records = parse_file(CALENDAR_FILE)
+    habit_log_entries = parse_habit_log(HABIT_LOG_FILE)
+    today = date.today()
+    today_date = today.isoformat()
+
+    task_records = [record for record in active_records if record.get("type") == "task"]
+    goal_records = [record for record in active_records if record.get("type") == "goal"]
+    habit_records = [record for record in active_records if record.get("type") == "habit"]
+
+    # EVENTS -- today's calendar entries, sorted by start time
+    today_events = [record for record in calendar_records if record.get("date") == today_date]
+    today_events = sorted(today_events, key=lambda r: r.get("time_start", "99:99"))
+    if today_events:
+        print(f"EVENTS -- {today_date}")
+        for event_record in today_events:
+            event_summary = event_record.get("summary", "")
+            event_type = event_record.get("type", "")
+            time_start = event_record.get("time_start")
+            time_end = event_record.get("time_end")
+            if time_start and time_end:
+                time_part = f"{time_start}-{time_end}"
+            elif time_start:
+                time_part = time_start
+            else:
+                time_part = "--"
+            event_line = f"  {time_part}  {event_summary} [{event_type}]"
+            if "location" in event_record:
+                event_line = event_line + f" @ {event_record['location']}"
+            print(event_line)
+
+    # HABITS -- completion state and streak
+    if habit_records:
+        print("HABITS")
+        for habit_record in habit_records:
+            habit_id = habit_record.get("id", "")
+            habit_summary = habit_record.get("summary", "")
+            logged_dates_for_habit = {entry_date for entry_date, entry_habit_id in habit_log_entries if entry_habit_id == habit_id}
+            completed_today = today_date in logged_dates_for_habit
+            # streak: consecutive days backward from today (or yesterday if not yet done)
+            streak_count = 0
+            cursor_date = today
+            if cursor_date.isoformat() not in logged_dates_for_habit:
+                cursor_date = cursor_date - timedelta(days=1)
+            while cursor_date.isoformat() in logged_dates_for_habit:
+                streak_count += 1
+                cursor_date = cursor_date - timedelta(days=1)
+            checkbox = "(x)" if completed_today else "( )"
+            print(f"  {checkbox} {habit_summary} (streak: {streak_count})")
+
+    # DEADLINES -- tasks due today or within three days
+    upcoming_deadlines = []
+    for task_record in task_records:
+        due_value = task_record.get("due")
+        if not due_value:
+            continue
+        try:
+            due_date = datetime.strptime(due_value, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        days_until_due = (due_date - today).days
+        if 0 <= days_until_due <= 3:
+            upcoming_deadlines.append((days_until_due, task_record))
+    upcoming_deadlines = sorted(upcoming_deadlines, key=lambda pair: pair[0])
+    if upcoming_deadlines:
+        print("DEADLINES")
+        for days_until_due, task_record in upcoming_deadlines:
+            task_summary = task_record.get("summary", "")
+            task_project = task_record.get("project", "--")
+            if days_until_due == 0:
+                relative_label = "due today:"
+            else:
+                relative_label = f"due +{days_until_due}d:"
+            print(f"  {relative_label}  {task_summary} [{task_project}]")
+
+    # ACTIVE TASKS -- all tasks, priority then due, missing fields last
+    if task_records:
+        sorted_task_records = sorted(task_records, key=lambda r: (r.get("priority", "4"), r.get("due", "9999-99-99")))
+        print("ACTIVE TASKS")
+        for task_record in sorted_task_records:
+            task_summary = task_record.get("summary", "")
+            task_project = task_record.get("project", "--")
+            priority_value = task_record.get("priority")
+            priority_label = f"P{priority_value}" if priority_value else "--"
+            print(f"  [{priority_label}] {task_summary} [{task_project}]")
+
+    # GOALS -- only those past their review cadence
+    cadence_days = {"weekly": 7, "monthly": 30, "quarterly": 90}
+    goals_to_review = []
+    for goal_record in goal_records:
+        review_cadence = goal_record.get("review")
+        if review_cadence not in cadence_days:
+            continue
+        updated_value = goal_record.get("updated")
+        if not updated_value:
+            continue
+        try:
+            updated_date = datetime.strptime(updated_value, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        days_since_update = (today - updated_date).days
+        if days_since_update > cadence_days[review_cadence]:
+            goals_to_review.append((goal_record, days_since_update, review_cadence))
+    if goals_to_review:
+        print("GOALS -- review due")
+        for goal_record, days_since_update, review_cadence in goals_to_review:
+            goal_id = goal_record.get("id", "")
+            goal_summary = goal_record.get("summary", "")
+            print(f"  {goal_id} {goal_summary} (last reviewed: {days_since_update} days ago, cadence: {review_cadence})")
+
+
+LIST_FLAGS = {
+    "--project": "project", "-p": "project",
+    "--tags": "tags", "-t": "tags",
+    "--priority": "priority", "-r": "priority",
+    "--type": "type", "-y": "type",
+}
+
+
+def handle_list(arguments: list[str]) -> None:
+    """Print a filtered, sorted one-line-per-record list of active records.
+
+    Reads active.txt, applies AND-combined filters from flags (project,
+    priority, type as exact match; tags as substring), sorts by priority
+    then due then created with missing fields sorting last, and prints one
+    line per record. Goals show review cadence instead of due date.
+    """
+    positional_args, flags = parse_flags(arguments, LIST_FLAGS)
+
+    active_records = parse_file(ACTIVE_FILE)
+    if not active_records:
+        print("no active records")
+        return
+
+    matching_records = []
+    for record in active_records:
+        keep_record = True
+        if "project" in flags and record.get("project") != flags["project"]:
+            keep_record = False
+        if "priority" in flags and record.get("priority") != flags["priority"]:
+            keep_record = False
+        if "type" in flags and record.get("type") != flags["type"]:
+            keep_record = False
+        if "tags" in flags and flags["tags"] not in record.get("tags", ""):
+            keep_record = False
+        if keep_record:
+            matching_records.append(record)
+
+    if not matching_records:
+        print("no matching records")
+        return
+
+    sorted_records = sorted(matching_records, key=lambda r: (r.get("priority", "4"), r.get("due", "9999-99-99"), r.get("created", "9999-99-99")))
+    for record in sorted_records:
+        record_id = record.get("id", "")
+        record_summary = record.get("summary", "")
+        priority_value = record.get("priority")
+        priority_label = f"P{priority_value}" if priority_value else "--"
+        record_line = f"{record_id} [{priority_label}] {record_summary}"
+        if "project" in record:
+            record_line = record_line + f" [{record['project']}]"
+        if record.get("type") == "goal":
+            review_cadence = record.get("review", "--")
+            record_line = record_line + f" review:{review_cadence}"
+        else:
+            due_value = record.get("due", "--")
+            record_line = record_line + f" due:{due_value}"
+        print(record_line)
+
 # ============================================================================
 # DISPATCH
 # ============================================================================
@@ -900,8 +1079,8 @@ COMMANDS = {
     "edit":     handle_edit,
     "done":     handle_done,
     "retire":   handle_retire,
-    "today":    lambda args: handle_not_implemented("today", args),
-    "list":     lambda args: handle_not_implemented("list", args),
+    "today":    handle_today,
+    "list":     handle_list,
     "week":     lambda args: handle_not_implemented("week", args),
     "review":   lambda args: handle_not_implemented("review", args),
     "stale":    lambda args: handle_not_implemented("stale", args),
