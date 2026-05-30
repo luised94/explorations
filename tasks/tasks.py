@@ -1321,22 +1321,23 @@ COMMAND_FLAG_SETS = {
     "list": LIST_FLAGS,
 }
 
+
 FIELD_HELP = {
-    "project": "project or life area",
-    "due": "due date (YYYY-MM-DD)",
-    "priority": "priority 1 (highest) to 3",
-    "tags": "space-separated #tags in quotes",
-    "parent": "parent goal id",
-    "source": "origin reference",
-    "review": "review cadence: weekly, monthly, quarterly",
-    "frequency": "daily (default), weekdays, weekly",
-    "date": "event date (YYYY-MM-DD, required)",
-    "time": "time range HH:MM-HH:MM",
-    "type": "entry type (open set)",
-    "recur": "daily, weekly, biweekly, monthly",
-    "location": "location string",
-    "energy": "deep, admin, social, creative",
-    "linked": "related record id",
+    "project":   "project or life area (free-text string, your choice)",
+    "due":       "due date, YYYY-MM-DD",
+    "priority":  "priority 1 (highest) to 3",
+    "tags":      'tags in one quoted string, e.g. "#health #home"',
+    "parent":    "id of a parent goal (G-prefix, from a prior tsk goal)",
+    "source":    "where this came from, e.g. journal:2026-05-21, meeting:standup, lw:exp3",
+    "review":    "review cadence: weekly, monthly, quarterly",
+    "frequency": "how often: daily (default), weekdays, weekly",
+    "date":      "event date, YYYY-MM-DD (required)",
+    "time":      "time range, HH:MM-HH:MM (24hr)",
+    "type":      "entry type, free-text; e.g. meeting, personal, deadline, block",
+    "recur":     "recurrence: daily, weekly, biweekly, monthly (stored, not yet active)",
+    "location":  "where, e.g. an address or meeting link",
+    "energy":    "energy type: deep, admin, social, creative",
+    "linked":    "id of a related record (task <-> event)",
 }
 
 # ============================================================================
@@ -1344,6 +1345,8 @@ FIELD_HELP = {
 # ============================================================================
 
 COMMANDS = {
+    "help": handle_help,
+    "init": handle_init,
     "add": handle_add,
     "goal": handle_goal,
     "habit": handle_habit,
@@ -1359,8 +1362,6 @@ COMMANDS = {
     "search": lambda args: handle_not_implemented("search", args),
     "tomorrow": lambda args: handle_not_implemented("tomorrow", args),
     "goals": lambda args: handle_not_implemented("goals", args),
-    "help": handle_help,
-    "init": handle_init,
 }
 
 DEFAULT_COMMAND = "today"
