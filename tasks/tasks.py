@@ -510,7 +510,13 @@ def handle_not_implemented(command_name: str, arguments: list[str]) -> None:
 
 
 def handle_help(arguments: list[str]) -> None:
-    """Print available commands with short descriptions to stdout."""
+    """Print command help to stdout.
+
+    With no argument, lists every command with a one-line description and a
+    pointer to per-command help. With a command name, prints that command's
+    usage line, description, and flags grouped by field (flag names read from
+    the command's flag dict, descriptions from FIELD_HELP).
+    """
     descriptions = {
         "help": "show this help",
         "init": "create the data directory and files",
@@ -530,9 +536,34 @@ def handle_help(arguments: list[str]) -> None:
         "tomorrow": "(not implemented)",
         "goals": "(not implemented)",
     }
+
+    if arguments:
+        requested_command = arguments[0]
+        if requested_command not in descriptions:
+            print(f"unknown command: {requested_command}", file=sys.stderr)
+            print("run 'tsk help' for available commands", file=sys.stderr)
+            sys.exit(1)
+        usage_line = COMMAND_USAGE.get(requested_command, f"tsk {requested_command}")
+        print(f"usage: {usage_line}")
+        print(f"  {descriptions[requested_command]}")
+        command_flags = COMMAND_FLAG_SETS.get(requested_command)
+        if command_flags:
+            field_to_flags = {}
+            for flag_string, field_name in command_flags.items():
+                if field_name not in field_to_flags:
+                    field_to_flags[field_name] = []
+                field_to_flags[field_name].append(flag_string)
+            print("flags:")
+            for field_name, flag_strings in field_to_flags.items():
+                flag_label = ", ".join(flag_strings)
+                field_description = FIELD_HELP.get(field_name, field_name)
+                print(f"  {flag_label:<22}{field_description}")
+        return
+
     print("available commands:")
     for command_name, description in descriptions.items():
         print(f"  {command_name:<10}{description}")
+    print("run 'tsk help <command>' for usage and flags")
 
 
 def handle_init(arguments: list[str]) -> None:
@@ -1260,6 +1291,53 @@ def handle_list(arguments: list[str]) -> None:
             record_line = record_line + f" due:{due_value}"
         print(record_line)
 
+
+# ============================================================================
+# HELP REGISTRIES
+# ============================================================================
+# Usage strings and field descriptions for per-command help. Flag names are
+# NOT duplicated here -- handle_help reads them from the flag dicts below via
+# COMMAND_FLAG_SETS, so the set of flags has a single source of truth.
+
+COMMAND_USAGE = {
+    "add": "tsk add <summary> [flags]",
+    "goal": "tsk goal <summary> [flags]",
+    "habit": "tsk habit <summary> [flags]",
+    "event": "tsk event <summary> --date YYYY-MM-DD [flags]",
+    "edit": "tsk edit <id>",
+    "done": "tsk done <id>",
+    "retire": "tsk retire <id>",
+    "today": "tsk today",
+    "list": "tsk list [flags]",
+    "init": "tsk init",
+    "help": "tsk help [command]",
+}
+
+COMMAND_FLAG_SETS = {
+    "add": ADD_FLAGS,
+    "goal": GOAL_FLAGS,
+    "habit": HABIT_FLAGS,
+    "event": EVENT_FLAGS,
+    "list": LIST_FLAGS,
+}
+
+FIELD_HELP = {
+    "project": "project or life area",
+    "due": "due date (YYYY-MM-DD)",
+    "priority": "priority 1 (highest) to 3",
+    "tags": "space-separated #tags in quotes",
+    "parent": "parent goal id",
+    "source": "origin reference",
+    "review": "review cadence: weekly, monthly, quarterly",
+    "frequency": "daily (default), weekdays, weekly",
+    "date": "event date (YYYY-MM-DD, required)",
+    "time": "time range HH:MM-HH:MM",
+    "type": "entry type (open set)",
+    "recur": "daily, weekly, biweekly, monthly",
+    "location": "location string",
+    "energy": "deep, admin, social, creative",
+    "linked": "related record id",
+}
 
 # ============================================================================
 # DISPATCH
