@@ -15,8 +15,10 @@ from pathlib import Path
 from datetime import date, datetime, timedelta
 
 # ============================================================================
-# PATHS
+# CONFIGURATION
 # ============================================================================
+
+REQUIRED_PYTHON = (3, 10)
 
 env_path = os.environ.get("TASKS_LOCAL_DIR")
 if env_path:
@@ -24,30 +26,59 @@ if env_path:
 else:
     DATA_DIR = Path.home() / "personal_repos" / "tasks"
 
+ACTIVE_FILE = DATA_DIR / "active.txt"
+CALENDAR_FILE = DATA_DIR / "calendar.txt"
+DONE_FILE = DATA_DIR / "done.txt"
+HABIT_LOG_FILE = DATA_DIR / "habit_log.txt"
+USAGE_LOG_FILE = DATA_DIR / "usage_log.txt"
+DATA_FILES = [ACTIVE_FILE, CALENDAR_FILE, DONE_FILE, HABIT_LOG_FILE, USAGE_LOG_FILE]
+DOCS_DIR = DATA_DIR / "docs"
+
+# ============================================================================
+# PREFLIGHT CHECKS
+# ============================================================================
+# Fail fast with distinct exit codes before any logic or file writes.
+# These run above every def, so the version gate fires before the 3.10+
+# union-type annotations below are ever evaluated.
+#   exit 2 = unsupported Python   exit 3 = data dir missing   exit 4 = not writable
+
+if sys.version_info < REQUIRED_PYTHON:
+    print(
+        f"error: tsk requires Python {REQUIRED_PYTHON[0]}.{REQUIRED_PYTHON[1]}+, "
+        f"found {sys.version_info[0]}.{sys.version_info[1]}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
 if not DATA_DIR.is_dir():
     print(
         f"error: data directory not found: {DATA_DIR}\n"
         f"set TASKS_LOCAL_DIR or create the directory",
         file=sys.stderr,
     )
-    sys.exit(1)
+    sys.exit(3)
 
-ACTIVE_FILE = DATA_DIR / "active.txt"
-CALENDAR_FILE = DATA_DIR / "calendar.txt"
-DONE_FILE = DATA_DIR / "done.txt"
-HABIT_LOG_FILE = DATA_DIR / "habit_log.txt"
-USAGE_LOG_FILE = DATA_DIR / "usage_log.txt"
+if not os.access(DATA_DIR, os.W_OK):
+    print(f"error: data directory not writable: {DATA_DIR}", file=sys.stderr)
+    sys.exit(4)
 
-# Ensure data files exist
-for filepath in [ACTIVE_FILE, CALENDAR_FILE, DONE_FILE, HABIT_LOG_FILE, USAGE_LOG_FILE]:
-    filepath.touch(exist_ok=True)
+# ============================================================================
+# PREPROCESSING / DERIVED VALUES
+# ============================================================================
+# Ensure data files and the docs directory exist before any command runs.
 
-# Ensure docs directory exists
-(DATA_DIR / "docs").mkdir(exist_ok=True)
+for data_file_path in DATA_FILES:
+    data_file_path.touch(exist_ok=True)
+DOCS_DIR.mkdir(exist_ok=True)
+
+# Blueprint sections 5 (main-loop metrics) and 6 (post-run summary report)
+# are N/A for a CLI dispatcher: per-command confirmation prints serve as the
+# summary, and the dispatch-level usage log serves as the metrics layer.
 
 # ============================================================================
 # PARSER
 # ============================================================================
+
 
 def parse_records(text: str) -> list[dict[str, str | list[str]]]:
     """Parse CCL-style text into a list of record dicts.
@@ -79,7 +110,9 @@ def parse_records(text: str) -> list[dict[str, str | list[str]]]:
                 existing_content[-1] = existing_content[-1] + "\n" + line_content
             else:
                 if existing_content:
-                    current_record[current_field_name] = existing_content + "\n" + line_content
+                    current_record[current_field_name] = (
+                        existing_content + "\n" + line_content
+                    )
                 else:
                     current_record[current_field_name] = line_content
             continue
@@ -107,7 +140,9 @@ def parse_records(text: str) -> list[dict[str, str | list[str]]]:
             if isinstance(existing_content, list):
                 existing_content[-1] = existing_content[-1] + "\n" + line_content
             else:
-                current_record[current_field_name] = existing_content + "\n" + line_content
+                current_record[current_field_name] = (
+                    existing_content + "\n" + line_content
+                )
 
     # finalize last record
     if current_record:
@@ -130,17 +165,37 @@ def parse_file(filepath: str | Path) -> list[dict[str, str | list[str]]]:
         return []
     return parse_records(text)
 
+
 # ============================================================================
 # WRITER
 # ============================================================================
 
 FIELD_ORDER = [
-    "id", "type", "summary", "status",
-    "project", "priority", "due", "frequency", "review",
-    "date", "time_start", "time_end", "recur", "end_recur",
-    "tags", "parent", "source", "linked", "location", "energy",
-    "created", "updated", "completed",
-    "prep", "notes",
+    "id",
+    "type",
+    "summary",
+    "status",
+    "project",
+    "priority",
+    "due",
+    "frequency",
+    "review",
+    "date",
+    "time_start",
+    "time_end",
+    "recur",
+    "end_recur",
+    "tags",
+    "parent",
+    "source",
+    "linked",
+    "location",
+    "energy",
+    "created",
+    "updated",
+    "completed",
+    "prep",
+    "notes",
 ]
 
 
@@ -176,25 +231,33 @@ def format_record(record: dict[str, str | list[str]]) -> str:
 
 
 def write_file(filepath: str | Path, records: list[dict[str, str | list[str]]]) -> None:
-    """Write a list of record dicts to a CCL-style file.
+    """Write a list of record dicts to a CCL-style file atomically.
 
-    Formats each record via format_record, joins with blank line
-    separators, writes to filepath. Empty records list writes empty file.
+    Formats each record via format_record, joins with blank line separators,
+    writes the content to a temp sibling file, then atomically replaces the
+    target. A crash or interrupted write cannot truncate the existing file.
+    Empty records list writes an empty file.
     """
     file_path = Path(filepath)
     if not records:
-        file_path.write_text("", encoding="utf-8")
-        return
-    formatted_records = []
-    for record in records:
-        if not record:
-            continue
-        formatted_records.append(format_record(record))
-    file_path.write_text("\n\n".join(formatted_records) + "\n", encoding="utf-8")
+        file_content = ""
+    else:
+        formatted_records = []
+        for record in records:
+            if not record:
+                continue
+            formatted_records.append(format_record(record))
+        file_content = "\n\n".join(formatted_records) + "\n"
+
+    temp_file_path = file_path.with_name(file_path.name + ".tmp")
+    temp_file_path.write_text(file_content, encoding="utf-8")
+    temp_file_path.replace(file_path)
+
 
 # ============================================================================
 # VERIFICATION
 # ============================================================================
+
 
 def verify_parser() -> None:
     """Run round-trip tests on the parser and writer.
@@ -206,65 +269,68 @@ def verify_parser() -> None:
     import tempfile
 
     test_cases = [
-        ("simple record",
-         "id = T0522a\n"
-         "type = task\n"
-         "summary = test task\n"),
-        ("multi-line values",
-         "id = T0522a\n"
-         "type = task\n"
-         "summary = test task\n"
-         "notes =\n"
-         "  line one of notes\n"
-         "  line two of notes\n"),
-        ("duplicate keys (list)",
-         "id = T0522b\n"
-         "type = task\n"
-         "summary = test\n"
-         "tags = #test\n"
-         "tags = #example\n"),
-        ("empty values",
-         "id = T0522c\n"
-         "type = task\n"
-         "summary = test\n"
-         "notes =\n"
-         "  content after empty first line\n"),
-        ("all entity types",
-         "id = T0522a\n"
-         "type = task\n"
-         "summary = a task\n"
-         "status = active\n"
-         "priority = 2\n"
-         "created = 2026-05-22\n"
-         "updated = 2026-05-22\n"
-         "\n"
-         "id = G0501a\n"
-         "type = goal\n"
-         "summary = a goal\n"
-         "review = monthly\n"
-         "created = 2026-05-01\n"
-         "updated = 2026-05-15\n"
-         "\n"
-         "id = H0522a\n"
-         "type = habit\n"
-         "summary = morning exercise\n"
-         "frequency = daily\n"
-         "created = 2026-05-22\n"
-         "updated = 2026-05-22\n"),
-        ("multiple records",
-         "id = T0522a\n"
-         "summary = first\n"
-         "\n"
-         "id = T0522b\n"
-         "summary = second\n"
-         "notes =\n"
-         "  multi-line\n"
-         "  value here\n"
-         "\n"
-         "id = T0522c\n"
-         "summary = third\n"
-         "tags = #a\n"
-         "tags = #b\n"),
+        ("simple record", "id = T0522a\ntype = task\nsummary = test task\n"),
+        (
+            "multi-line values",
+            "id = T0522a\n"
+            "type = task\n"
+            "summary = test task\n"
+            "notes =\n"
+            "  line one of notes\n"
+            "  line two of notes\n",
+        ),
+        (
+            "duplicate keys (list)",
+            "id = T0522b\ntype = task\nsummary = test\ntags = #test\ntags = #example\n",
+        ),
+        (
+            "empty values",
+            "id = T0522c\n"
+            "type = task\n"
+            "summary = test\n"
+            "notes =\n"
+            "  content after empty first line\n",
+        ),
+        (
+            "all entity types",
+            "id = T0522a\n"
+            "type = task\n"
+            "summary = a task\n"
+            "status = active\n"
+            "priority = 2\n"
+            "created = 2026-05-22\n"
+            "updated = 2026-05-22\n"
+            "\n"
+            "id = G0501a\n"
+            "type = goal\n"
+            "summary = a goal\n"
+            "review = monthly\n"
+            "created = 2026-05-01\n"
+            "updated = 2026-05-15\n"
+            "\n"
+            "id = H0522a\n"
+            "type = habit\n"
+            "summary = morning exercise\n"
+            "frequency = daily\n"
+            "created = 2026-05-22\n"
+            "updated = 2026-05-22\n",
+        ),
+        (
+            "multiple records",
+            "id = T0522a\n"
+            "summary = first\n"
+            "\n"
+            "id = T0522b\n"
+            "summary = second\n"
+            "notes =\n"
+            "  multi-line\n"
+            "  value here\n"
+            "\n"
+            "id = T0522c\n"
+            "summary = third\n"
+            "tags = #a\n"
+            "tags = #b\n",
+        ),
     ]
 
     tests_passed = 0
@@ -274,7 +340,9 @@ def verify_parser() -> None:
         label = f"parser round-trip: {test_name}"
         tmp_path = None
         try:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp_file:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            ) as tmp_file:
                 tmp_file.write(input_text)
                 tmp_path = tmp_file.name
             first_parse = parse_file(tmp_path)
@@ -299,9 +367,11 @@ def verify_parser() -> None:
     else:
         print(f"all {total} tests passed")
 
+
 # ============================================================================
 # DATA UTILITIES
 # ============================================================================
+
 
 def generate_id(type_prefix: str, existing_record_ids: list[str]) -> str | None:
     """Generate the next available ID for a given type prefix and today's date.
@@ -339,7 +409,9 @@ def find_records_by_prefix(records: list[dict], search_prefix: str) -> list[dict
     return matching_records
 
 
-def parse_flags(arguments: list[str], flag_definitions: dict[str, str]) -> tuple[list[str], dict[str, str]]:
+def parse_flags(
+    arguments: list[str], flag_definitions: dict[str, str]
+) -> tuple[list[str], dict[str, str]]:
     """Split a list of CLI arguments into positional args and flag values.
 
     flag_definitions maps flag strings (--project, -p) to canonical field
@@ -398,9 +470,11 @@ def parse_habit_log(filepath: str | Path) -> list[tuple[str, str]]:
             log_entries.append((entry_date, entry_habit_id))
     return log_entries
 
+
 # ============================================================================
 # COMMANDS
 # ============================================================================
+
 
 def handle_not_implemented(command_name: str, arguments: list[str]) -> None:
     """Print a not-implemented notice for placeholder commands."""
@@ -410,22 +484,22 @@ def handle_not_implemented(command_name: str, arguments: list[str]) -> None:
 def handle_help(arguments: list[str]) -> None:
     """Print available commands with short descriptions to stdout."""
     descriptions = {
-        "add":      "create a new task",
-        "goal":     "create a new goal",
-        "habit":    "create a new habit",
-        "event":    "create a new calendar event",
-        "edit":     "edit a record in $EDITOR",
-        "done":     "complete a task or log a habit",
-        "retire":   "deactivate a habit or goal",
-        "today":    "daily dashboard (default)",
-        "list":     "list active tasks",
-        "week":     "(not implemented)",
-        "review":   "(not implemented)",
-        "stale":    "(not implemented)",
-        "search":   "(not implemented)",
+        "add": "create a new task",
+        "goal": "create a new goal",
+        "habit": "create a new habit",
+        "event": "create a new calendar event",
+        "edit": "edit a record in $EDITOR",
+        "done": "complete a task or log a habit",
+        "retire": "deactivate a habit or goal",
+        "today": "daily dashboard (default)",
+        "list": "list active tasks",
+        "week": "(not implemented)",
+        "review": "(not implemented)",
+        "stale": "(not implemented)",
+        "search": "(not implemented)",
         "tomorrow": "(not implemented)",
-        "goals":    "(not implemented)",
-        "help":     "show this help",
+        "goals": "(not implemented)",
+        "help": "show this help",
     }
     print("available commands:")
     for command_name, description in descriptions.items():
@@ -433,12 +507,18 @@ def handle_help(arguments: list[str]) -> None:
 
 
 ADD_FLAGS = {
-    "--project": "project", "-p": "project",
-    "--due": "due", "-d": "due",
-    "--priority": "priority", "-r": "priority",
-    "--tags": "tags", "-t": "tags",
-    "--parent": "parent", "-g": "parent",
-    "--source": "source", "-s": "source",
+    "--project": "project",
+    "-p": "project",
+    "--due": "due",
+    "-d": "due",
+    "--priority": "priority",
+    "-r": "priority",
+    "--tags": "tags",
+    "-t": "tags",
+    "--parent": "parent",
+    "-g": "parent",
+    "--source": "source",
+    "-s": "source",
 }
 
 
@@ -495,13 +575,20 @@ def handle_add(arguments: list[str]) -> None:
 
 
 GOAL_FLAGS = {
-    "--project": "project", "-p": "project",
-    "--due": "due", "-d": "due",
-    "--priority": "priority", "-r": "priority",
-    "--tags": "tags", "-t": "tags",
-    "--parent": "parent", "-g": "parent",
-    "--source": "source", "-s": "source",
-    "--review": "review", "-v": "review",
+    "--project": "project",
+    "-p": "project",
+    "--due": "due",
+    "-d": "due",
+    "--priority": "priority",
+    "-r": "priority",
+    "--tags": "tags",
+    "-t": "tags",
+    "--parent": "parent",
+    "-g": "parent",
+    "--source": "source",
+    "-s": "source",
+    "--review": "review",
+    "-v": "review",
 }
 
 
@@ -551,7 +638,15 @@ def handle_goal(arguments: list[str]) -> None:
     }
 
     # add optional fields from flags
-    for field_name in ("project", "priority", "due", "review", "tags", "parent", "source"):
+    for field_name in (
+        "project",
+        "priority",
+        "due",
+        "review",
+        "tags",
+        "parent",
+        "source",
+    ):
         if field_name in flags:
             new_record[field_name] = flags[field_name]
 
@@ -561,9 +656,12 @@ def handle_goal(arguments: list[str]) -> None:
 
 
 HABIT_FLAGS = {
-    "--frequency": "frequency", "-f": "frequency",
-    "--tags": "tags", "-t": "tags",
-    "--project": "project", "-p": "project",
+    "--frequency": "frequency",
+    "-f": "frequency",
+    "--tags": "tags",
+    "-t": "tags",
+    "--project": "project",
+    "-p": "project",
 }
 
 
@@ -584,7 +682,11 @@ def handle_habit(arguments: list[str]) -> None:
     habit_summary = " ".join(positional_args)
 
     # validate flag values
-    if "frequency" in flags and flags["frequency"] not in ("daily", "weekdays", "weekly"):
+    if "frequency" in flags and flags["frequency"] not in (
+        "daily",
+        "weekdays",
+        "weekly",
+    ):
         print("error: frequency must be daily, weekdays, or weekly", file=sys.stderr)
         sys.exit(1)
 
@@ -620,14 +722,22 @@ def handle_habit(arguments: list[str]) -> None:
 
 
 EVENT_FLAGS = {
-    "--date": "date", "-d": "date",
-    "--time": "time", "-m": "time",
-    "--type": "type", "-y": "type",
-    "--recur": "recur", "-r": "recur",
-    "--location": "location", "-l": "location",
-    "--energy": "energy", "-e": "energy",
-    "--project": "project", "-p": "project",
-    "--linked": "linked", "-k": "linked",
+    "--date": "date",
+    "-d": "date",
+    "--time": "time",
+    "-m": "time",
+    "--type": "type",
+    "-y": "type",
+    "--recur": "recur",
+    "-r": "recur",
+    "--location": "location",
+    "-l": "location",
+    "--energy": "energy",
+    "-e": "energy",
+    "--project": "project",
+    "-p": "project",
+    "--linked": "linked",
+    "-k": "linked",
 }
 
 
@@ -675,7 +785,9 @@ def handle_event(arguments: list[str]) -> None:
 
     # read existing records and generate ID
     calendar_records = parse_file(CALENDAR_FILE)
-    existing_record_ids = [record["id"] for record in calendar_records if "id" in record]
+    existing_record_ids = [
+        record["id"] for record in calendar_records if "id" in record
+    ]
     new_event_id = generate_id("E", existing_record_ids)
     if new_event_id is None:
         print("error: too many records created today", file=sys.stderr)
@@ -737,7 +849,10 @@ def handle_done(arguments: list[str]) -> None:
         sys.exit(1)
     if len(matches) > 1:
         matching_ids = ", ".join(record["id"] for record in matches)
-        print(f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}", file=sys.stderr)
+        print(
+            f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     target_record = matches[0]
 
@@ -769,7 +884,9 @@ def handle_done(arguments: list[str]) -> None:
     target_record["completed"] = today_date
     target_record["updated"] = today_date
 
-    remaining_active_records = [record for record in active_records if record["id"] != target_id]
+    remaining_active_records = [
+        record for record in active_records if record["id"] != target_id
+    ]
     done_records = parse_file(DONE_FILE)
     done_records.append(target_record)
 
@@ -798,7 +915,10 @@ def handle_retire(arguments: list[str]) -> None:
         sys.exit(1)
     if len(matches) > 1:
         matching_ids = ", ".join(record["id"] for record in matches)
-        print(f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}", file=sys.stderr)
+        print(
+            f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     target_record = matches[0]
 
@@ -810,7 +930,9 @@ def handle_retire(arguments: list[str]) -> None:
     target_record["completed"] = today_date
     target_record["updated"] = today_date
 
-    remaining_active_records = [record for record in active_records if record["id"] != target_id]
+    remaining_active_records = [
+        record for record in active_records if record["id"] != target_id
+    ]
     done_records = parse_file(DONE_FILE)
     done_records.append(target_record)
 
@@ -850,7 +972,10 @@ def handle_edit(arguments: list[str]) -> None:
         sys.exit(1)
     if len(matches) > 1:
         matching_ids = ", ".join(record["id"] for record in matches)
-        print(f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}", file=sys.stderr)
+        print(
+            f"error: ambiguous prefix '{search_prefix}', matches: {matching_ids}",
+            file=sys.stderr,
+        )
         sys.exit(1)
     target_record = matches[0]
 
@@ -859,7 +984,9 @@ def handle_edit(arguments: list[str]) -> None:
     record_index = source_records.index(target_record)
 
     # write the record to a temp file for editing
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp_file:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as tmp_file:
         tmp_file.write(format_record(target_record) + "\n")
         tmp_path = tmp_file.name
 
@@ -906,10 +1033,14 @@ def handle_today(arguments: list[str]) -> None:
 
     task_records = [record for record in active_records if record.get("type") == "task"]
     goal_records = [record for record in active_records if record.get("type") == "goal"]
-    habit_records = [record for record in active_records if record.get("type") == "habit"]
+    habit_records = [
+        record for record in active_records if record.get("type") == "habit"
+    ]
 
     # EVENTS -- today's calendar entries, sorted by start time
-    today_events = [record for record in calendar_records if record.get("date") == today_date]
+    today_events = [
+        record for record in calendar_records if record.get("date") == today_date
+    ]
     today_events = sorted(today_events, key=lambda r: r.get("time_start", "99:99"))
     if today_events:
         print(f"EVENTS -- {today_date}")
@@ -935,7 +1066,11 @@ def handle_today(arguments: list[str]) -> None:
         for habit_record in habit_records:
             habit_id = habit_record.get("id", "")
             habit_summary = habit_record.get("summary", "")
-            logged_dates_for_habit = {entry_date for entry_date, entry_habit_id in habit_log_entries if entry_habit_id == habit_id}
+            logged_dates_for_habit = {
+                entry_date
+                for entry_date, entry_habit_id in habit_log_entries
+                if entry_habit_id == habit_id
+            }
             completed_today = today_date in logged_dates_for_habit
             # streak: consecutive days backward from today (or yesterday if not yet done)
             streak_count = 0
@@ -975,7 +1110,10 @@ def handle_today(arguments: list[str]) -> None:
 
     # ACTIVE TASKS -- all tasks, priority then due, missing fields last
     if task_records:
-        sorted_task_records = sorted(task_records, key=lambda r: (r.get("priority", "4"), r.get("due", "9999-99-99")))
+        sorted_task_records = sorted(
+            task_records,
+            key=lambda r: (r.get("priority", "4"), r.get("due", "9999-99-99")),
+        )
         print("ACTIVE TASKS")
         for task_record in sorted_task_records:
             task_summary = task_record.get("summary", "")
@@ -1006,14 +1144,20 @@ def handle_today(arguments: list[str]) -> None:
         for goal_record, days_since_update, review_cadence in goals_to_review:
             goal_id = goal_record.get("id", "")
             goal_summary = goal_record.get("summary", "")
-            print(f"  {goal_id} {goal_summary} (last reviewed: {days_since_update} days ago, cadence: {review_cadence})")
+            print(
+                f"  {goal_id} {goal_summary} (last reviewed: {days_since_update} days ago, cadence: {review_cadence})"
+            )
 
 
 LIST_FLAGS = {
-    "--project": "project", "-p": "project",
-    "--tags": "tags", "-t": "tags",
-    "--priority": "priority", "-r": "priority",
-    "--type": "type", "-y": "type",
+    "--project": "project",
+    "-p": "project",
+    "--tags": "tags",
+    "-t": "tags",
+    "--priority": "priority",
+    "-r": "priority",
+    "--type": "type",
+    "-y": "type",
 }
 
 
@@ -1050,7 +1194,14 @@ def handle_list(arguments: list[str]) -> None:
         print("no matching records")
         return
 
-    sorted_records = sorted(matching_records, key=lambda r: (r.get("priority", "4"), r.get("due", "9999-99-99"), r.get("created", "9999-99-99")))
+    sorted_records = sorted(
+        matching_records,
+        key=lambda r: (
+            r.get("priority", "4"),
+            r.get("due", "9999-99-99"),
+            r.get("created", "9999-99-99"),
+        ),
+    )
     for record in sorted_records:
         record_id = record.get("id", "")
         record_summary = record.get("summary", "")
@@ -1067,27 +1218,28 @@ def handle_list(arguments: list[str]) -> None:
             record_line = record_line + f" due:{due_value}"
         print(record_line)
 
+
 # ============================================================================
 # DISPATCH
 # ============================================================================
 
 COMMANDS = {
-    "add":      handle_add,
-    "goal":     handle_goal,
-    "habit":    handle_habit,
-    "event":    handle_event,
-    "edit":     handle_edit,
-    "done":     handle_done,
-    "retire":   handle_retire,
-    "today":    handle_today,
-    "list":     handle_list,
-    "week":     lambda args: handle_not_implemented("week", args),
-    "review":   lambda args: handle_not_implemented("review", args),
-    "stale":    lambda args: handle_not_implemented("stale", args),
-    "search":   lambda args: handle_not_implemented("search", args),
+    "add": handle_add,
+    "goal": handle_goal,
+    "habit": handle_habit,
+    "event": handle_event,
+    "edit": handle_edit,
+    "done": handle_done,
+    "retire": handle_retire,
+    "today": handle_today,
+    "list": handle_list,
+    "week": lambda args: handle_not_implemented("week", args),
+    "review": lambda args: handle_not_implemented("review", args),
+    "stale": lambda args: handle_not_implemented("stale", args),
+    "search": lambda args: handle_not_implemented("search", args),
     "tomorrow": lambda args: handle_not_implemented("tomorrow", args),
-    "goals":    lambda args: handle_not_implemented("goals", args),
-    "help":     handle_help,
+    "goals": lambda args: handle_not_implemented("goals", args),
+    "help": handle_help,
 }
 
 DEFAULT_COMMAND = "today"
