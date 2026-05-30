@@ -23,8 +23,10 @@ REQUIRED_PYTHON = (3, 10)
 env_path = os.environ.get("TASKS_LOCAL_DIR")
 if env_path:
     DATA_DIR = Path(env_path).expanduser()
+    DATA_DIR_FROM_ENV = True
 else:
     DATA_DIR = Path.home() / "personal_repos" / "tasks"
+    DATA_DIR_FROM_ENV = False
 
 ACTIVE_FILE = DATA_DIR / "active.txt"
 CALENDAR_FILE = DATA_DIR / "calendar.txt"
@@ -50,26 +52,52 @@ if sys.version_info < REQUIRED_PYTHON:
     )
     sys.exit(2)
 
-if not DATA_DIR.is_dir():
-    print(
-        f"error: data directory not found: {DATA_DIR}\n"
-        f"set TASKS_LOCAL_DIR or create the directory",
-        file=sys.stderr,
-    )
-    sys.exit(3)
+# Commands that must run even when the data directory is absent, because
+# their job is to create it. These skip the directory gate below.
+BOOTSTRAP_COMMANDS = ("init",)
+peeked_command = sys.argv[1] if len(sys.argv) > 1 else ""
 
-if not os.access(DATA_DIR, os.W_OK):
-    print(f"error: data directory not writable: {DATA_DIR}", file=sys.stderr)
-    sys.exit(4)
+if peeked_command not in BOOTSTRAP_COMMANDS:
+    if not DATA_DIR.is_dir():
+        if DATA_DIR_FROM_ENV:
+            print(
+                f"error: data directory not found: {DATA_DIR}\n"
+                f"TASKS_LOCAL_DIR points here but the directory does not exist\n"
+                f"run 'tsk init' to create it, or fix the path / mount the drive",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"error: data directory not found: {DATA_DIR}\n"
+                f"run 'tsk init' to create it, or set TASKS_LOCAL_DIR to an existing directory",
+                file=sys.stderr,
+            )
+        sys.exit(3)
+
+    if not os.access(DATA_DIR, os.W_OK):
+        print(f"error: data directory not writable: {DATA_DIR}", file=sys.stderr)
+        sys.exit(4)
 
 # ============================================================================
 # PREPROCESSING / DERIVED VALUES
 # ============================================================================
-# Ensure data files and the docs directory exist before any command runs.
 
-for data_file_path in DATA_FILES:
-    data_file_path.touch(exist_ok=True)
-DOCS_DIR.mkdir(exist_ok=True)
+
+def ensure_data_files() -> None:
+    """Create the data files and docs directory inside DATA_DIR.
+
+    Touches each path in DATA_FILES and makes DOCS_DIR. Assumes DATA_DIR
+    already exists; safe to call repeatedly (exist_ok throughout).
+    """
+    for data_file_path in DATA_FILES:
+        data_file_path.touch(exist_ok=True)
+    DOCS_DIR.mkdir(exist_ok=True)
+
+
+# On a normal run the data dir exists (gated above), so ensure its files are
+# present. On a bootstrap command the dir may not exist yet; init creates it.
+if DATA_DIR.is_dir():
+    ensure_data_files()
 
 # Blueprint sections 5 (main-loop metrics) and 6 (post-run summary report)
 # are N/A for a CLI dispatcher: per-command confirmation prints serve as the
@@ -484,6 +512,8 @@ def handle_not_implemented(command_name: str, arguments: list[str]) -> None:
 def handle_help(arguments: list[str]) -> None:
     """Print available commands with short descriptions to stdout."""
     descriptions = {
+        "help": "show this help",
+        "init": "create the data directory and files",
         "add": "create a new task",
         "goal": "create a new goal",
         "habit": "create a new habit",
@@ -499,11 +529,23 @@ def handle_help(arguments: list[str]) -> None:
         "search": "(not implemented)",
         "tomorrow": "(not implemented)",
         "goals": "(not implemented)",
-        "help": "show this help",
     }
     print("available commands:")
     for command_name, description in descriptions.items():
         print(f"  {command_name:<10}{description}")
+
+
+def handle_init(arguments: list[str]) -> None:
+    """Create the data directory, data files, and docs directory.
+
+    Makes DATA_DIR (with parents) then calls ensure_data_files. Idempotent:
+    safe to run on an existing directory. Prints the resolved path so the
+    user can confirm it is the intended target (e.g. a mounted drive, not a
+    local shadow directory). Reads DATA_DIR; creates directories and files.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_data_files()
+    print(f"initialized: {DATA_DIR}")
 
 
 ADD_FLAGS = {
@@ -1240,6 +1282,7 @@ COMMANDS = {
     "tomorrow": lambda args: handle_not_implemented("tomorrow", args),
     "goals": lambda args: handle_not_implemented("goals", args),
     "help": handle_help,
+    "init": handle_init,
 }
 
 DEFAULT_COMMAND = "today"
