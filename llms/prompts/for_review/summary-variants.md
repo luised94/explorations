@@ -56,3 +56,13 @@ Summarize the following technical report, focusing on: 1. Purpose or objective o
 
 "Summarize the data analysis and interpretation in this research paper."
 ---
+Use a prompt template to extract key parameters of papers for summarization. Use a sort of c-like or haskell-like structure to add "type" information.
+
+Extract the following parameters of the article:
+
+Organism: character, null possible.
+
+Methods:
+
+Key Claims:
+---
