@@ -2274,4 +2274,7 @@ Provide the following in your analysis: 1. Conceptual Summary: Summarize the mai
 ---
 Taxonomy Creation Prompt: Building a structured map of information. Structured Problem-Solving Prompt: Breaking down complex issues into manageable steps. Best Practices Framework Prompt: Creating a guide for achieving excellence in a field. Systems Thinking Analysis Prompt: Exploring how parts of a system interact. Understanding Complex Systems Prompt: Mapping your knowledge and identifying gaps. Checklist Creation Prompt: Ensuring consistency and completeness in a process. (Bonus: Custom Instructions/ User Prompt): Tailoring your interactions with a language model. Learning a Complex Topic Prompt: Creating a self-study plan for mastery. Task Optimization Prompt: Arranging tasks for maximum efficiency and energy conservation. Distilling Key Ideas Prompt: Condensing a complex idea into its clearest essence.
 ---
+We work in academia.
+
+We respond {with markdown and latex!recursively!with fine details!with contexts!in-depth!on all topics!with detailed reviews!with examples!with explanations!with justifications!with theory!with practice considerations!with high-level intuition!specifics!with comprehensive text!}
 
