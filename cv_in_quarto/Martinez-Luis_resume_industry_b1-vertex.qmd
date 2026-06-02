@@ -1,0 +1,91 @@
+---
+format:
+  pdf:
+    lang: en
+    toc: false
+    number-sections: false
+    keep-tex: false
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
+    fontsize: 10pt
+    title-block-style: none
+    colorlinks: true
+    urlcolor: blue
+    linkcolor: blue
+    geometry: "top=1.5cm, bottom=1.5cm, left=2cm, right=2cm"
+    papersize: letter
+    microtype: true
+    linestretch: 1.0
+    include-in-header:
+      text: |
+        \usepackage{xcolor}
+        \usepackage[normalem]{ulem}
+        \newcommand{\cvsection}[1]{%
+          \vspace{-1.5em}
+          \section*{\fontsize{11}{13}\selectfont\underline{\makebox[\linewidth][l]{#1}}}%
+          \vspace{-1.3em}
+        }
+        \usepackage{setspace}
+        \singlespacing
+        \usepackage{enumitem}
+        \setlist{itemsep=2pt, parsep=0pt, topsep=0pt, partopsep=0pt}
+---
+
+```{=latex}
+\begin{center}
+  {\large \textbf{Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.}}\\[0.5ex]
+  \normalsize
+  Boston, MA \,\textbar\, US Work Authorized \,\textbar\, luised94@mit.edu \\
+  \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
+\end{center}
+
+\cvsection{Summary}
+
+Postdoctoral researcher with deep expertise in recombinant protein expression, multi-subunit complex reconstitution, and quantitative biochemical characterization. Purified and characterized wild-type and mutant protein complexes from bacterial and yeast systems to dissect mechanisms of eukaryotic DNA replication initiation. Seeking scientist roles applying protein biochemistry expertise to drug discovery.
+
+\cvsection{Skills}
+
+\textbf{Biochemistry:} protein purification (bacterial/yeast, multi-subunit complexes), reconstituted eukaryotic replication assays, EMSA, ATPase assays, fluorescence polarization
+
+\textbf{Genetics:} genetic screen design and validation, CRISPR-Cas9 (yeast + mammalian), AID2 degron, tetrad dissection, bulk-segregant analysis
+
+\textbf{Genomics:} ChIP-seq (sample preparation through peak calling and motif analysis), whole-genome sequencing, variant calling, NGS library preparation
+
+\textbf{Computation:} R (Gviz, genomic visualization), Bash (NGS pipelines on Linux HPC: Bowtie2, SAMtools, deeptools), Python, Git/GitHub
+
+\cvsection{Experience}
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
+\vspace{-0.1em}
+
+\textbf{Post-doctoral Researcher,} Bell Lab, MIT Biology \hfill 2023--present
+
+- Designed and executed ChIP-seq experiments to characterize genomic occupancy of wild-type and mutant origin recognition complex across the yeast genome
+- Built ChIP-seq analysis pipeline from scratch (alignment, contamination filtering, signal normalization, peak calling, motif analysis) on Linux HPC, establishing a new genomic capability in the lab
+- Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors, enabling acute loss-of-function experiments not previously possible in the lab
+
+\textbf{Graduate Researcher,} Bell Lab, MIT Biology \hfill 2016--2023
+
+- Designed and validated a genetic screen for suppressors of a lethal ORC ATPase mutation, then analyzed whole-genome sequencing data to identify causal variants
+- Engineered suppressor alleles using CRISPR-Cas9 and characterized their genetic interactions through allele-specificity and drug-sensitivity assays
+- Reconstituted wild-type and mutant ORC into multi-protein replication complexes to biochemically characterize the effects of suppressor mutations on DNA replication initiation \textit{in vitro}
+
+\textbf{Research Intern,} MIT/Pfizer Internship Program (Course 7.930[J]) \hfill 2022
+
+- Operated the Beacon Optofluidic System for high-throughput single-cell screening of CRISPR-edited primary human cells
+- Developed immunofluorescent screening assay to identify therapeutic targets for cystic fibrosis in collagen-producing primary cells
+- Electroporated CRISPR-Cas9-gRNA ribonucleoprotein complexes into primary human cells and optimized culture conditions for assay compatibility
+
+\cvsection{Education}
+
+Ph.D. in Biology, Massachusetts Institute of Technology, 2023 \\
+B.Sc. in Cellular and Molecular Biology, University of Puerto Rico-R\'{i}o Piedras, 2016
+
+\cvsection{Publications}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.} \& Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{Submitted.}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., \& Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725.
+```
