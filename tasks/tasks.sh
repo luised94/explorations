@@ -18,8 +18,8 @@ export TASKS_LOCAL_DIR
 # Warn once at source time on the abnormal path; silent when healthy so
 # shell startup stays quiet.
 
-if ! command -v uv >/dev/null 2>&1; then
-    echo "tsk: warning: uv not found on PATH; tsk will not run until uv is installed" >&2
+if [ ! -x "$HOME/.local/bin/uv" ]; then
+    echo "lw: warning: uv not found at $HOME/.local/bin/uv. lw alias will not work."
 fi
 
 if [ ! -f "$TSK_SCRIPT" ]; then
