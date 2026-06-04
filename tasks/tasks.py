@@ -633,7 +633,7 @@ ENTITY_CONFIG = {
             "priority": validate_priority,
             "due": validate_date_format,
         },
-        "usage": "tsk add [task] <summary> [flags]",
+        "usage": "tsk add task <summary> [flags]",
     },
     "goal": {
         "prefix": "G",
@@ -691,17 +691,24 @@ def handle_add(arguments: list[str]) -> None:
     """
     positional_args, flags = parse_flags(arguments, CREATION_FLAGS)
 
-    # Determine entity type from positional subcommand or default to task
-    entity_type = "task"
-    if positional_args and positional_args[0] in ENTITY_TYPES:
-        entity_type = positional_args.pop(0)
+    # Entity type is required as first positional argument.
+    # Explicit type eliminates ambiguity when summary starts with a type name
+    # (e.g., "goal setting workshop" no longer silently creates a goal).
+    if not positional_args or positional_args[0] not in ENTITY_TYPES:
+        print(
+            "error: entity type required (task, goal, habit, or event)", file=sys.stderr
+        )
+        print_command_help("add")
+        sys.exit(1)
 
+    entity_type = positional_args.pop(0)
     config = ENTITY_CONFIG[entity_type]
 
     if not positional_args:
         print("error: summary required", file=sys.stderr)
         print_command_help("add")
         sys.exit(1)
+
     record_summary = " ".join(positional_args)
 
     # Whitespace-only summary guard (commit 23 moves this earlier; here for safety)
@@ -758,7 +765,9 @@ def handle_add(arguments: list[str]) -> None:
         print("error: too many records created today", file=sys.stderr)
         sys.exit(1)
 
-    # Build the new record
+    # Build the new record: required fields first, then flags, then defaults
+    # for anything still missing. This ordering ensures flags always override
+    # defaults (e.g., --frequency weekdays overrides the habit default of daily).
     today_date = date.today().isoformat()
     new_record = {
         "id": new_record_id,
@@ -775,26 +784,21 @@ def handle_add(arguments: list[str]) -> None:
     else:
         new_record["type"] = flags.pop("label", "meeting")
 
-    # Apply defaults from config (status, frequency, etc.)
-    for default_field, default_value in config.get("defaults", {}).items():
-        new_record[default_field] = default_value
-
-    # Apply defaults that can be overridden by flags
-    if entity_type == "habit" and "frequency" in flags:
-        new_record["frequency"] = flags["frequency"]
-
     # Add time fields if parsed
     if event_time_start is not None:
         new_record["time_start"] = event_time_start
         new_record["time_end"] = event_time_end
 
-    # Add all remaining flag values as record fields.
-    # Skip fields already handled (label consumed above, time parsed above,
-    # date goes in directly, frequency handled via defaults).
+    # Apply flag values (skip already-handled fields)
     skip_fields = {"label", "time"}
     for field_name, field_value in flags.items():
-        if field_name not in skip_fields and field_name not in new_record:
+        if field_name not in skip_fields:
             new_record[field_name] = field_value
+
+    # Apply defaults for fields not set by flags or required fields
+    for default_field, default_value in config.get("defaults", {}).items():
+        if default_field not in new_record:
+            new_record[default_field] = default_value
 
     # Read target file records and append
     target_file = config["file"]
@@ -1079,8 +1083,7 @@ def handle_edit(arguments: list[str]) -> None:
 def handle_today(arguments: list[str]) -> None:
     """Print the daily dashboard to stdout.
 
-    Reads active.txt, calendar.txt, and habit_log.txt. Separates active
-    records by type, then prints events for today, habit completion state
+    Reads active.txt, calendar.txt, and habit_log.txt. Separates activerds by type, then prints events for today, habit completion state
     with streaks, deadlines within three days, active tasks by priority,
     and goals past their review cadence. Sections with no content are
     skipped. Malformed dates cause a record to be skipped in that section.
@@ -1090,6 +1093,19 @@ def handle_today(arguments: list[str]) -> None:
     habit_log_entries = parse_habit_log(HABIT_LOG_FILE)
     today = date.today()
     today_date = today.isoformat()
+
+    # Count past events for cleanup reminder
+    past_event_count = 0
+    for calendar_record in calendar_records:
+        event_date_value = calendar_record.get("date")
+        if not event_date_value:
+            continue
+        try:
+            event_date = datetime.strptime(event_date_value, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if event_date < today:
+            past_event_count += 1
 
     task_records = [record for record in active_records if record.get("type") == "task"]
     goal_records = [record for record in active_records if record.get("type") == "goal"]
@@ -1207,6 +1223,13 @@ def handle_today(arguments: list[str]) -> None:
             print(
                 f"  {goal_id} {goal_summary} (last reviewed: {days_since_update} days ago, cadence: {review_cadence})"
             )
+
+    # Cleanup reminder for past events in calendar.txt
+    if past_event_count > 0:
+        print(
+            f"\n{past_event_count} past event(s) in calendar -- "
+            f"run 'tsk done --cleanup-events' to archive"
+        )
 
 
 def handle_week(arguments: list[str]) -> None:
@@ -1476,7 +1499,7 @@ def handle_list(arguments: list[str]) -> None:
 
 
 COMMAND_USAGE = {
-    "add": "tsk add [task|goal|habit|event] <summary> [flags]",
+    "add": "tsk add <task|goal|habit|event> <summary> [flags]",
     "edit": "tsk edit <id>",
     "done": "tsk done <id>",
     "retire": "tsk retire <id>",
@@ -1611,6 +1634,7 @@ if command_name not in COMMANDS:
     print("run 'tsk help' for available commands", file=sys.stderr)
     sys.exit(1)
 
+
 dispatch_start_time = time.time()
 dispatch_exit_code = 0
 try:
@@ -1618,14 +1642,21 @@ try:
 except SystemExit as exit_error:
     dispatch_exit_code = exit_error.code
     raise
+except OSError as os_error:
+    dispatch_exit_code = 1
+    print(
+        f"error: {os_error.strerror} -- your data is safe (atomic writes)",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 except Exception:
     dispatch_exit_code = 1
     raise
 finally:
-    outcome = "ok" if dispatch_exit_code == 0 else "error"
     elapsed_seconds = time.time() - dispatch_start_time
     primary_arg = arguments[0] if arguments else "-"
     log_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    outcome = "ok" if dispatch_exit_code == 0 else "error"
     # Peek at entity type for compound logging (add:goal, add:event).
     # Mirrors type detection in handle_add; kept here to maintain
     # dispatch-level logging without handler cooperation.
