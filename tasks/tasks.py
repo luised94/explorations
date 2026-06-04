@@ -936,7 +936,7 @@ def handle_done(arguments: list[str]) -> None:
     target_record["updated"] = today_date
 
     remaining_active_records = [
-        record for record in active_records if record["id"] != target_id
+        record for record in active_records if record.get("id") != target_id
     ]
     done_records = parse_file(DONE_FILE)
     done_records.append(target_record)
@@ -982,7 +982,7 @@ def handle_retire(arguments: list[str]) -> None:
     target_record["updated"] = today_date
 
     remaining_active_records = [
-        record for record in active_records if record["id"] != target_id
+        record for record in active_records if record.get("id") != target_id
     ]
     done_records = parse_file(DONE_FILE)
     done_records.append(target_record)
