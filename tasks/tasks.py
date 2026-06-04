@@ -620,7 +620,12 @@ def handle_add(arguments: list[str]) -> None:
 
     # read existing records and generate ID
     active_records = parse_file(ACTIVE_FILE)
-    existing_record_ids = [record["id"] for record in active_records if "id" in record]
+    # Collect IDs from all files to prevent reuse after done/retire moves records out.
+    existing_record_ids = (
+        [record["id"] for record in active_records if "id" in record]
+        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
+        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
+    )
     new_task_id = generate_id("T", existing_record_ids)
     if new_task_id is None:
         print("error: too many records created today", file=sys.stderr)
@@ -693,7 +698,11 @@ def handle_goal(arguments: list[str]) -> None:
 
     # read existing records and generate ID
     active_records = parse_file(ACTIVE_FILE)
-    existing_record_ids = [record["id"] for record in active_records if "id" in record]
+    existing_record_ids = (
+        [record["id"] for record in active_records if "id" in record]
+        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
+        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
+    )
     new_goal_id = generate_id("G", existing_record_ids)
     if new_goal_id is None:
         print("error: too many records created today", file=sys.stderr)
@@ -765,7 +774,11 @@ def handle_habit(arguments: list[str]) -> None:
 
     # read existing records and generate ID
     active_records = parse_file(ACTIVE_FILE)
-    existing_record_ids = [record["id"] for record in active_records if "id" in record]
+    existing_record_ids = (
+        [record["id"] for record in active_records if "id" in record]
+        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
+        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
+    )
     new_habit_id = generate_id("H", existing_record_ids)
     if new_habit_id is None:
         print("error: too many records created today", file=sys.stderr)
@@ -858,9 +871,11 @@ def handle_event(arguments: list[str]) -> None:
 
     # read existing records and generate ID
     calendar_records = parse_file(CALENDAR_FILE)
-    existing_record_ids = [
-        record["id"] for record in calendar_records if "id" in record
-    ]
+    existing_record_ids = (
+        [record["id"] for record in calendar_records if "id" in record]
+        + [record["id"] for record in parse_file(ACTIVE_FILE) if "id" in record]
+        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
+    )
     new_event_id = generate_id("E", existing_record_ids)
     if new_event_id is None:
         print("error: too many records created today", file=sys.stderr)
