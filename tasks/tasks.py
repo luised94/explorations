@@ -552,7 +552,7 @@ def handle_help(arguments: list[str]) -> None:
         "retire": "deactivate a habit or goal",
         "today": "daily dashboard (default)",
         "list": "list active records",
-        "week": "(not implemented)",
+        "week": "7-day forward view of events and deadlines",
         "review": "(not implemented)",
         "stale": "(not implemented)",
         "search": "(not implemented)",
@@ -1200,6 +1200,86 @@ def handle_today(arguments: list[str]) -> None:
             )
 
 
+def handle_week(arguments: list[str]) -> None:
+    """Print a 7-day forward view of events and task deadlines.
+
+    Reads calendar.txt for events and active.txt for tasks with due dates
+    falling within today through today+6. Groups entries by day. Each day
+    shows its date and weekday name as a header, then events sorted by
+    start time, then tasks due that day sorted by priority. Days with no
+    entries are shown with a blank line to preserve the calendar rhythm.
+    Prints to stdout.
+    """
+    calendar_records = parse_file(CALENDAR_FILE)
+    active_records = parse_file(ACTIVE_FILE)
+
+    today = date.today()
+
+    # Build a dict of day -> (events_list, tasks_list) for 7 days
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    any_content = False
+
+    for day_offset in range(7):
+        current_date = today + timedelta(days=day_offset)
+        current_date_str = current_date.isoformat()
+        day_name = day_names[current_date.weekday()]
+
+        # Events for this day
+        day_events = []
+        for record in calendar_records:
+            if record.get("date") == current_date_str:
+                day_events.append(record)
+        day_events = sorted(day_events, key=lambda r: r.get("time_start", "99:99"))
+
+        # Tasks due this day
+        day_tasks = []
+        for record in active_records:
+            if record.get("due") == current_date_str:
+                day_tasks.append(record)
+        day_tasks = sorted(
+            day_tasks,
+            key=lambda r: (r.get("priority", "4"), r.get("created", "9999-99-99")),
+        )
+
+        has_entries = day_events or day_tasks
+
+        # Day header
+        if day_offset == 0:
+            header_label = f"{day_name} {current_date_str} (today)"
+        else:
+            header_label = f"{day_name} {current_date_str}"
+        print(header_label)
+
+        if not has_entries:
+            print("  --")
+        else:
+            any_content = True
+            for event_record in day_events:
+                event_summary = event_record.get("summary", "")
+                event_type = event_record.get("type", "")
+                time_start = event_record.get("time_start")
+                time_end = event_record.get("time_end")
+                if time_start and time_end:
+                    time_part = f"{time_start}-{time_end}"
+                elif time_start:
+                    time_part = time_start
+                else:
+                    time_part = "     "
+                event_line = f"  {time_part}  {event_summary} [{event_type}]"
+                if "location" in event_record:
+                    event_line = event_line + f" @ {event_record['location']}"
+                print(event_line)
+            for task_record in day_tasks:
+                task_summary = task_record.get("summary", "")
+                priority_value = task_record.get("priority")
+                priority_label = f"P{priority_value}" if priority_value else "--"
+                task_project = task_record.get("project", "")
+                task_line = f"  [due] [{priority_label}] {task_summary}"
+                if task_project:
+                    task_line = task_line + f" [{task_project}]"
+                print(task_line)
+
+
 LIST_FLAGS = {
     "--project": "project",
     "-p": "project",
@@ -1392,6 +1472,7 @@ COMMAND_USAGE = {
     "done": "tsk done <id>",
     "retire": "tsk retire <id>",
     "today": "tsk today",
+    "week": "tsk week",
     "list": "tsk list [flags]",
     "init": "tsk init",
     "help": "tsk help [command]",
@@ -1449,6 +1530,7 @@ def print_command_help(command_name: str) -> None:
         "done": "complete a task or log a habit",
         "retire": "deactivate a habit or goal",
         "today": "daily dashboard (default)",
+        "week": "7-day forward view of events and deadlines",
         "list": "list active records",
         "init": "create the data directory and files",
         "help": "show this help",
@@ -1493,7 +1575,7 @@ COMMANDS = {
     "retire": handle_retire,
     "today": handle_today,
     "list": handle_list,
-    "week": lambda args: handle_not_implemented("week", args),
+    "week": handle_week,
     "review": lambda args: handle_not_implemented("review", args),
     "stale": lambda args: handle_not_implemented("stale", args),
     "search": lambda args: handle_not_implemented("search", args),
