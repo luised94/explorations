@@ -131,6 +131,208 @@ PURPOSE: Context recovery document for future implementation threads.
 - **The positional subcommand pattern is fragile at the shell boundary.** `tsk add "goal setting workshop"` creates a goal, not a task. This is documented but will surprise users. The `tsk add task "goal setting workshop"` workaround is adequate but not discoverable. Consider: if summary's first word matches an entity type AND the user didn't quote the entire summary, print a confirmation: "creating goal: setting workshop. Did you mean task? Use: tsk add task \"goal setting workshop\"". Deferred - no complaints yet.
 - **Usage logging is the most valuable diagnostic tool.** Every design decision in this phase traced back to the usage log. Compound logging (add:goal) will make phase 2 analysis even better. Consider adding a `tsk stats` command that reads usage_log.txt and prints frequency distributions.
 
+# tsk -- Future Steps
+
+DATE: 2026-06-04
+CONTEXT: Post phase-0 retrospective. Assumes phase-1 consolidation,
+event lifecycle, list improvements, and ID-reuse fix are landed.
+
+---
+
+## Adjustments to existing plans
+
+**Refactor default/flag ordering in handle_add.** Agree on the value but
+check whether the consolidation into ENTITY_CONFIG already resolved this.
+If handle_add now follows a required-fields -> flags -> defaults-for-missing
+flow because of the config-driven pattern, this item is already done. Don't
+refactor twice. Verdict: verify before scheduling.
+
+**Module-level descriptions constant.** Low-impact polish. The duplicated
+descriptions dict is small and human-readable inline. Worth doing if you're
+already touching handle_help for another reason; not worth a standalone
+commit. Verdict: opportunistic, not scheduled.
+
+**Event formatting helper.** The "extract at 4th call site" threshold is
+correct discipline. The three current sites (today, week, and list with
+events) are borderline. If tomorrow-view (tsk tomorrow) materializes, that's
+the fourth and the extraction earns itself. Verdict: hold until tomorrow-view.
+
+**--flag=value syntax.** Agree low priority. Implementation note: naive
+splitting on "=" breaks if the value contains "=" (e.g. --source
+"journal:key=value"). If implementing, split on first "=" only, matching how
+the record parser handles key=value lines. Verdict: keep deferred; document
+the edge case if it ships.
+
+**Habit real-use validation.** This is more urgent than its position suggests.
+Zero habit commands in five days means the entire habit subsystem -- streak
+calculation, today's habit section, the "yesterday grace" behavior, habit_log
+append-only semantics -- is designed but unvalidated. The streak logic in
+particular encodes a UX assumption (unlogged-yet-today preserves the streak)
+that needs to be FELT, not just reasoned about. Run habits for a full week
+before building any habit features. Verdict: promote to immediate; do before
+any habit-related phase-2 work.
+
+**nvim integration.** Usage log shows 4 edit calls over 5 days. The value of
+nvim integration depends on which direction: if it's "open tsk edit from
+within nvim" (essentially a keybinding to shell out), that's trivial and
+low-value -- the terminal is right there. If it's "capture a task from the
+current nvim context" (reading the buffer, extracting a source reference,
+creating a task without leaving the editor), that's high-value but high-effort.
+Clarify the use case before scheduling. Verdict: reframe as "what editing
+workflow am I actually doing in nvim that tsk should support?"
+
+---
+
+## Missing from the list
+
+### Data validation / lint (recommend: phase 2)
+
+A `tsk check` command that scans all files and reports: duplicate IDs (the bug
+we fixed, but manual edits or sync errors could reintroduce), orphaned parent
+references (parent field points to a non-existent or retired goal), malformed
+dates (fields that won't parse as YYYY-MM-DD), records missing an id field,
+and records with unknown type values (informational, not an error, given the
+open-set philosophy). Cheap to build (one read pass over all files, no writes),
+high diagnostic value, and a natural companion to the end-of-phase analysis
+(run tsk check before reviewing). Could also validate habit_log entries against
+existing habit IDs. This is the tool equivalent of a linter -- it catches
+structural drift before it causes downstream bugs.
+
+### Recurrence logic (spec phase 1, commit 23 -- conspicuously absent)
+
+Events with recur=weekly store the field but the logic is deferred. A weekly
+standup created once shows up only on its original date, not on subsequent
+weeks. With events now visible and actively used (7 created in one session),
+recurrence becomes a real gap. The implementation is bounded: for today and
+week views, generate virtual event instances by walking the recurrence pattern
+from the original date. Don't create physical records; compute on read. The
+end_recur and cancel deferred fields become relevant here. This is the highest
+complexity item in the pipeline but also the highest leverage for calendar
+utility.
+
+### tsk docs / tsk link (planned this session, not in their list)
+
+We designed this: `tsk link <id> <path>` copies (or --move) a file into
+docs/{id}/, paired with `tsk docs <id>` to list/open the directory. The
+decision was copy-into-repo over symlinks (symlinks dangle after USB sync).
+Spec lists tsk docs as phase 2, commit deferred. Should be scheduled
+alongside nvim integration since both relate to "working with task context
+beyond the summary line."
+
+### tsk stale (spec phase 1, commit 21)
+
+The graveyard detector. With real data accumulating, tasks with updated older
+than 30 days are the signal that the system is collecting intentions rather
+than driving action. The spec already defines it; the usage data should now
+have enough aged records to make it meaningful. Complements tsk check (lint
+finds structural issues; stale finds workflow issues).
+
+### tsk tomorrow (spec phase 1, commit 22)
+
+Tomorrow's events with prep fields. The prep field exists on events but
+nothing reads it. With events now actively used, a "what do I need to prepare
+for tomorrow" view becomes practical. Low implementation cost (filter
+calendar.txt for tomorrow's date, print prep fields). Would be the 4th
+event-formatting call site that justifies extracting the helper.
+
+### tsk stats (their observation, not formalized)
+
+Read usage_log.txt and print: command frequency distribution, peak usage
+times, error rate, add-to-done completion times, most active days. This is
+the spec's "metrics analysis script" (phase 3, commit 30) but could ship
+earlier as a simple read-only command. The usage log already captures
+everything needed. The compound logging they mentioned (add:goal vs bare add)
+would make this richer but isn't required for a first version.
+
+---
+
+## Structural observations to add
+
+### Multi-machine ID safety
+
+The ID-reuse fix (check all files) prevents same-machine reuse. But if two
+machines both create records on the same day before syncing, they'll generate
+the same ID stem (T0604a) independently. The single-writer assumption
+prevents this in theory, but the "task not removed" friction entry shows sync
+discipline lapses happen. The risk is low (requires same-day creation on both
+machines without an intervening sync) but the failure mode is silent (two
+records with the same ID in different copies of active.txt, merged by git
+into a file with duplicate IDs). Options: (a) accept the risk and rely on
+tsk check to detect it post-sync, (b) add a machine identifier to the ID
+suffix (T0604a-m1), (c) use a timestamp or random suffix instead of
+sequential letters. Option (a) is cheapest and fits the "discipline over
+mechanism" philosophy. Option (b) changes the ID format (breaking). Option
+(c) loses the human-readable sequential property. Verdict: accept the risk,
+rely on tsk check, document the constraint.
+
+### Undo / soft-delete
+
+done and retire perform hard moves (record removed from active.txt, appended
+to done.txt). There is no undo. Git history provides recovery, but the tool
+doesn't know about git, and the user must know which commit to recover from.
+A lightweight alternative: before moving, write the original record to a
+.trash file (append-only, like habit_log). Recovery is then `tsk undo <id>`
+which reads .trash and moves back. Cost: one extra file, one extra append per
+done/retire. Value: safety net for accidental completions. The June 1 friction
+entry ("task not removed -- bug or sync error?") shows the user was confused
+about where a record went; undo would have resolved that immediately.
+Verdict: worth considering if accidental done/retire becomes a friction
+pattern. Not urgent yet.
+
+### Cross-tool read layer
+
+The developer has multiple tools in the explorations repo (tsk, friction
+module, lw). tsk's source field supports cross-references (journal:YYYY-MM-DD,
+lw:experiment). The friction log already tags entries with project:tasks.
+There's a latent read-layer opportunity: a command that aggregates context
+across tools for a given date or project. This is explicitly out of scope for
+tsk (the spec says "no cross-project dependencies"), but worth noting the
+seam. If a cross-tool view ever materializes, it should be a separate script
+that reads all tools' data directories, not a feature bolted onto one tool.
+Verdict: note the seam, do not build.
+
+### active.txt as the integration surface
+
+After consolidation, active.txt holds tasks, goals, and habits; calendar.txt
+holds events. If list now reads both files, the file split becomes a
+write-optimization (bounded active vs slow-growth calendar) rather than a
+read boundary. This is healthy. But it means the file-split decision could
+be revisited: would a single file simplify the tool? The counterargument is
+that calendar.txt with recurrence data will grow differently (time-series vs
+bounded active set), and the write patterns genuinely differ (rewrite-compact
+vs append-heavy after recurrence generates instances). Keep the split but
+acknowledge that the read layer now spans both files, and any new view
+command should read both by default.
+
+---
+
+## Suggested phase ordering
+
+Phase 2a (validate + maintain):
+- Habit real-use validation (one week of actual use)
+- tsk check / lint
+- tsk stale
+- tsk stats (simple version)
+
+Phase 2b (extend):
+- Recurrence logic
+- tsk tomorrow (+ event formatting extraction)
+- tsk docs / tsk link
+- tsk search
+
+Phase 2c (polish):
+- --flag=value syntax
+- nvim integration (after clarifying the use case)
+- Module-level descriptions constant
+- Handle_add default/flag ordering (verify if already resolved)
+- Undo / soft-delete (if friction warrants)
+
+Rationale: 2a is about confirming what's built works under real use and
+building diagnostic tools. 2b extends capability into areas where friction
+has been observed or is predictable. 2c is polish that doesn't change
+functionality. This ordering prevents building on unvalidated assumptions
+(habits) and ensures diagnostic tools exist before adding complexity.
+
 ---
 
 ## 7. Veteran Notes
