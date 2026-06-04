@@ -1154,35 +1154,136 @@ LIST_FLAGS = {
     "-r": "priority",
     "--type": "type",
     "-y": "type",
+    "--sort": "sort",
 }
 
 
-def handle_list(arguments: list[str]) -> None:
-    """Print a filtered, sorted one-line-per-record list of active records.
+# --type filter matches entity type by ID prefix (T=task, G=goal, H=habit,
+# E=event), not by the type field value. This aligns with the "entity type =
+# ID prefix" convention used throughout the codebase.
+TYPE_PREFIX_MAP = {
+    "task": "T",
+    "goal": "G",
+    "habit": "H",
+    "event": "E",
+}
 
-    Reads active.txt, applies AND-combined filters from flags (project,
-    priority, type as exact match; tags as substring), sorts by priority
-    then due then created with missing fields sorting last, and prints one
-    line per record. Goals show review cadence instead of due date.
+SORT_FIELDS = {"date", "project", "priority"}
+
+
+def _sort_key_for_record(record: dict, sort_mode: str) -> tuple:
+    """Build a sort key tuple for a record based on the active sort mode.
+
+    Returns a tuple that sorts missing values last within each field.
+    Used only by handle_list; extracted because sorted() requires a key
+    function for genuine comparison-based ordering on runtime data.
+    """
+    if sort_mode == "date":
+        return (
+            record.get("due", record.get("date", "9999-99-99")),
+            record.get("priority", "4"),
+            record.get("created", "9999-99-99"),
+        )
+    elif sort_mode == "project":
+        # Records without project sort after all projects (~ sorts after z)
+        return (
+            record.get("project", "~~~"),
+            record.get("priority", "4"),
+            record.get("due", record.get("date", "9999-99-99")),
+        )
+    else:  # priority (default)
+        return (
+            record.get("priority", "4"),
+            record.get("due", record.get("date", "9999-99-99")),
+            record.get("created", "9999-99-99"),
+        )
+
+
+def _format_list_line(record: dict) -> str:
+    """Format a single record as a one-line string for list output.
+
+    Goals show review cadence instead of due date. Events show event date.
+    All records show ID, priority, summary, and project if present.
+    """
+    record_id = record.get("id", "")
+    record_summary = record.get("summary", "")
+    priority_value = record.get("priority")
+    priority_label = f"P{priority_value}" if priority_value else "--"
+    record_line = f"{record_id} [{priority_label}] {record_summary}"
+
+    if "project" in record:
+        record_line = record_line + f" [{record['project']}]"
+
+    if record_id.startswith("G"):
+        review_cadence = record.get("review", "--")
+        record_line = record_line + f" review:{review_cadence}"
+    elif record_id.startswith("E"):
+        event_date = record.get("date", "--")
+        record_line = record_line + f" date:{event_date}"
+    else:
+        due_value = record.get("due", "--")
+        record_line = record_line + f" due:{due_value}"
+
+    return record_line
+
+
+def handle_list(arguments: list[str]) -> None:
+    """Print a filtered, sorted, type-grouped list of active records and events.
+
+    Reads active.txt and calendar.txt. Applies AND-combined filters from flags
+    (project, priority as exact match; tags as substring; type by ID prefix).
+    Groups output by entity type: GOALS, TASKS, HABITS, EVENTS. Sorts within
+    each group by --sort mode (priority default, date, project). Sections with
+    no matching records are skipped. Prints to stdout.
     """
     positional_args, flags = parse_flags(arguments, LIST_FLAGS)
 
+    # Validate --sort if provided
+    sort_mode = flags.get("sort", "priority")
+    if sort_mode not in SORT_FIELDS:
+        print(
+            f"error: --sort must be one of: {', '.join(sorted(SORT_FIELDS))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Read both data sources
     active_records = parse_file(ACTIVE_FILE)
-    if not active_records:
+    calendar_records = parse_file(CALENDAR_FILE)
+    all_records = active_records + calendar_records
+
+    if not all_records:
         print("no active records")
         return
 
+    # Resolve --type filter to ID prefix
+    type_prefix_filter = None
+    if "type" in flags:
+        type_value = flags["type"]
+        if type_value in TYPE_PREFIX_MAP:
+            type_prefix_filter = TYPE_PREFIX_MAP[type_value]
+        else:
+            print(
+                f"error: --type must be one of: {', '.join(sorted(TYPE_PREFIX_MAP))}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Apply filters (AND-combined)
     matching_records = []
-    for record in active_records:
+    for record in all_records:
         keep_record = True
+        record_id = record.get("id", "")
+
+        if type_prefix_filter and not record_id.startswith(type_prefix_filter):
+            keep_record = False
         if "project" in flags and record.get("project") != flags["project"]:
             keep_record = False
         if "priority" in flags and record.get("priority") != flags["priority"]:
             keep_record = False
-        if "type" in flags and record.get("type") != flags["type"]:
-            keep_record = False
         if "tags" in flags and flags["tags"] not in record.get("tags", ""):
             keep_record = False
+
         if keep_record:
             matching_records.append(record)
 
@@ -1190,29 +1291,36 @@ def handle_list(arguments: list[str]) -> None:
         print("no matching records")
         return
 
-    sorted_records = sorted(
-        matching_records,
-        key=lambda r: (
-            r.get("priority", "4"),
-            r.get("due", "9999-99-99"),
-            r.get("created", "9999-99-99"),
-        ),
-    )
-    for record in sorted_records:
-        record_id = record.get("id", "")
-        record_summary = record.get("summary", "")
-        priority_value = record.get("priority")
-        priority_label = f"P{priority_value}" if priority_value else "--"
-        record_line = f"{record_id} [{priority_label}] {record_summary}"
-        if "project" in record:
-            record_line = record_line + f" [{record['project']}]"
-        if record.get("type") == "goal":
-            review_cadence = record.get("review", "--")
-            record_line = record_line + f" review:{review_cadence}"
-        else:
-            due_value = record.get("due", "--")
-            record_line = record_line + f" due:{due_value}"
-        print(record_line)
+    # Group by entity type using ID prefix, in display order
+    group_order = [
+        ("GOALS", "G"),
+        ("TASKS", "T"),
+        ("HABITS", "H"),
+        ("EVENTS", "E"),
+    ]
+
+    any_printed = False
+    for group_label, prefix in group_order:
+        group_records = [
+            record
+            for record in matching_records
+            if record.get("id", "").startswith(prefix)
+        ]
+        if not group_records:
+            continue
+
+        sorted_group = sorted(
+            group_records,
+            key=lambda record: _sort_key_for_record(record, sort_mode),
+        )
+
+        print(group_label)
+        for record in sorted_group:
+            print(f"  {_format_list_line(record)}")
+        any_printed = True
+
+    if not any_printed:
+        print("no matching records")
 
 
 # ============================================================================
@@ -1240,21 +1348,22 @@ COMMAND_FLAG_SETS = {
 }
 
 FIELD_HELP = {
-    "project": "project or life area (free-text string, your choice)",
-    "due": "due date, YYYY-MM-DD",
-    "priority": "priority 1 (highest) to 3",
-    "tags": 'tags in one quoted string, e.g. "#health #home"',
-    "parent": "id of a parent goal (G-prefix, from a prior tsk goal)",
-    "source": "where this came from, e.g. journal:2026-05-21, meeting:standup, lw:exp3",
-    "review": "review cadence: weekly, monthly, quarterly",
-    "frequency": "how often: daily (default), weekdays, weekly",
     "date": "event date, YYYY-MM-DD (required)",
-    "time": "time range, HH:MM-HH:MM (24hr)",
-    "label": "event subtype: meeting (default), personal, deadline, block (free-text)",
-    "recur": "recurrence: daily, weekly, biweekly, monthly (stored, not yet active)",
-    "location": "where, e.g. an address or meeting link",
+    "due": "due date, YYYY-MM-DD",
     "energy": "energy type: deep, admin, social, creative",
+    "frequency": "how often: daily (default), weekdays, weekly",
+    "label": "event subtype: meeting (default), personal, deadline, block (free-text)",
     "linked": "id of a related record (task <-> event)",
+    "location": "where, e.g. an address or meeting link",
+    "parent": "id of a parent goal (G-prefix, from a prior tsk goal)",
+    "priority": "priority 1 (highest) to 3",
+    "project": "project or life area (free-text string, your choice)",
+    "recur": "recurrence: daily, weekly, biweekly, monthly (stored, not yet active)",
+    "review": "review cadence: weekly, monthly, quarterly",
+    "sort": "sort order: priority (default), date, project",
+    "source": "where this came from, e.g. journal:2026-05-21, meeting:standup, lw:exp3",
+    "tags": 'tags in one quoted string, e.g. "#health #home"',
+    "time": "time range, HH:MM-HH:MM (24hr)",
 }
 
 # ============================================================================
