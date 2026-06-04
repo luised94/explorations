@@ -824,11 +824,16 @@ def validate_time_of_day(time_string: str) -> bool:
 
 
 def handle_done(arguments: list[str]) -> None:
-    """Complete a task/goal or log a habit completion.
+    """Complete a task/goal, log a habit, or batch-archive past events.
 
-    For T/G IDs: reads active.txt, sets status=done and completed=today,
+    With --cleanup-events: reads calendar.txt, moves all events with
+    date < today to done.txt (status=done, completed=today). Events with
+    unparseable dates are skipped with a warning. Prints count and IDs.
+
+    With a T/G ID: reads active.txt, sets status=done and completed=today,
     removes the record, appends it to done.txt, rewrites both files.
-    For H IDs: verifies the habit exists in active.txt, checks
+
+    With an H ID: verifies the habit exists in active.txt, checks
     habit_log.txt for a same-day entry, and appends one log line unless
     already logged. Prints a confirmation to stdout.
     """
@@ -836,6 +841,56 @@ def handle_done(arguments: list[str]) -> None:
         print("error: ID required", file=sys.stderr)
         print("usage: tsk done <id>", file=sys.stderr)
         sys.exit(1)
+
+    # done --cleanup-events: batch-move past events from calendar.txt to done.txt.
+    # done <id> searches active.txt only. Events archived via --cleanup-events,
+    # not per-ID. By design: events are batch-archived, not individually completed.
+    if arguments[0] == "--cleanup-events":
+        today = date.today()
+        today_date = today.isoformat()
+        calendar_records = parse_file(CALENDAR_FILE)
+        done_records = parse_file(DONE_FILE)
+
+        remaining_calendar_records = []
+        archived_event_ids = []
+
+        for event_record in calendar_records:
+            event_date_value = event_record.get("date")
+            if not event_date_value:
+                remaining_calendar_records.append(event_record)
+                continue
+            try:
+                event_date = datetime.strptime(event_date_value, "%Y-%m-%d").date()
+            except ValueError:
+                event_id = event_record.get("id", "???")
+                print(
+                    f"warning: skipping {event_id}, unparseable date: {event_date_value}",
+                    file=sys.stderr,
+                )
+                remaining_calendar_records.append(event_record)
+                continue
+
+            if event_date < today:
+                event_record["status"] = "done"
+                event_record["completed"] = today_date
+                event_record["updated"] = today_date
+                done_records.append(event_record)
+                archived_event_ids.append(event_record.get("id", "???"))
+            else:
+                remaining_calendar_records.append(event_record)
+
+        if not archived_event_ids:
+            print("no past events to archive")
+            return
+
+        write_file(DONE_FILE, done_records)
+        write_file(CALENDAR_FILE, remaining_calendar_records)
+
+        archived_count = len(archived_event_ids)
+        ids_display = ", ".join(archived_event_ids)
+        print(f"archived {archived_count} event(s): {ids_display} -> done.txt")
+        return
+
     search_prefix = arguments[0]
 
     active_records = parse_file(ACTIVE_FILE)
