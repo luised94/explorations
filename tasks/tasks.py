@@ -517,18 +517,16 @@ def handle_help(arguments: list[str]) -> None:
     usage line, description, and flags grouped by field (flag names read from
     the command's flag dict, descriptions from FIELD_HELP).
     """
+
     descriptions = {
         "help": "show this help",
         "init": "create the data directory and files",
-        "add": "create a new task",
-        "goal": "create a new goal",
-        "habit": "create a new habit",
-        "event": "create a new calendar event",
+        "add": "create a new record (task, goal, habit, or event)",
         "edit": "edit a record in $EDITOR",
         "done": "complete a task or log a habit",
         "retire": "deactivate a habit or goal",
         "today": "daily dashboard (default)",
-        "list": "list active tasks",
+        "list": "list active records",
         "week": "(not implemented)",
         "review": "(not implemented)",
         "stale": "(not implemented)",
@@ -579,80 +577,19 @@ def handle_init(arguments: list[str]) -> None:
     print(f"initialized: {DATA_DIR}")
 
 
-ADD_FLAGS = {
-    "--project": "project",
-    "-p": "project",
-    "--due": "due",
-    "-d": "due",
-    "--priority": "priority",
-    "-r": "priority",
-    "--tags": "tags",
-    "-t": "tags",
-    "--parent": "parent",
-    "-g": "parent",
-    "--source": "source",
-    "-s": "source",
-}
+# ============================================================================
+# CREATION (tsk add)
+# ============================================================================
 
+# Entity type is determined by ID prefix (T/G/H/E), not by the type field.
+# For events, the type field holds the event subtype (meeting, personal).
+# For tasks/goals/habits, the type field matches the entity type by convention.
 
-def handle_add(arguments: list[str]) -> None:
-    """Create a new task record in active.txt.
-
-    Reads active.txt for existing IDs, generates next available ID,
-    builds record from summary + flags, appends to active.txt, writes file.
-    Prints confirmation with new ID and summary to stdout.
-    """
-    positional_args, flags = parse_flags(arguments, ADD_FLAGS)
-
-    if not positional_args:
-        print("error: summary required", file=sys.stderr)
-        print("usage: tsk add <summary> [flags]", file=sys.stderr)
-        sys.exit(1)
-    task_summary = " ".join(positional_args)
-
-    # validate flag values
-    if "priority" in flags and not validate_priority(flags["priority"]):
-        print("error: priority must be 1, 2, or 3", file=sys.stderr)
-        sys.exit(1)
-    if "due" in flags and not validate_date_format(flags["due"]):
-        print("error: due date must be YYYY-MM-DD", file=sys.stderr)
-        sys.exit(1)
-
-    # read existing records and generate ID
-    active_records = parse_file(ACTIVE_FILE)
-    # Collect IDs from all files to prevent reuse after done/retire moves records out.
-    existing_record_ids = (
-        [record["id"] for record in active_records if "id" in record]
-        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
-        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
-    )
-    new_task_id = generate_id("T", existing_record_ids)
-    if new_task_id is None:
-        print("error: too many records created today", file=sys.stderr)
-        sys.exit(1)
-
-    # build the new record
-    today_date = date.today().isoformat()
-    new_record = {
-        "id": new_task_id,
-        "type": "task",
-        "summary": task_summary,
-        "status": "active",
-        "created": today_date,
-        "updated": today_date,
-    }
-
-    # add optional fields from flags
-    for field_name in ("project", "priority", "due", "tags", "parent", "source"):
-        if field_name in flags:
-            new_record[field_name] = flags[field_name]
-
-    active_records.append(new_record)
-    write_file(ACTIVE_FILE, active_records)
-    print(f"added: {new_task_id} {task_summary}")
-
-
-GOAL_FLAGS = {
+# All flags accepted for all entity types (field-agnostic philosophy).
+# Exception: --date is required for events. No flags are rejected by type.
+# Event subtype flag is --label/-y (not --type/-y) to avoid collision with
+# entity type selection. --label maps to the type field in the record.
+CREATION_FLAGS = {
     "--project": "project",
     "-p": "project",
     "--due": "due",
@@ -667,192 +604,131 @@ GOAL_FLAGS = {
     "-s": "source",
     "--review": "review",
     "-v": "review",
-}
-
-
-def handle_goal(arguments: list[str]) -> None:
-    """Create a new goal record in active.txt.
-
-    Reads active.txt for existing IDs, generates next available G-prefix
-    ID, builds record (type=goal) from summary + flags including --review,
-    appends to active.txt, writes file. Prints confirmation to stdout.
-    """
-    positional_args, flags = parse_flags(arguments, GOAL_FLAGS)
-
-    if not positional_args:
-        print("error: summary required", file=sys.stderr)
-        print("usage: tsk goal <summary> [flags]", file=sys.stderr)
-        sys.exit(1)
-    goal_summary = " ".join(positional_args)
-
-    # validate flag values
-    if "review" in flags and flags["review"] not in ("weekly", "monthly", "quarterly"):
-        print("error: review must be weekly, monthly, or quarterly", file=sys.stderr)
-        sys.exit(1)
-    if "priority" in flags and not validate_priority(flags["priority"]):
-        print("error: priority must be 1, 2, or 3", file=sys.stderr)
-        sys.exit(1)
-    if "due" in flags and not validate_date_format(flags["due"]):
-        print("error: due date must be YYYY-MM-DD", file=sys.stderr)
-        sys.exit(1)
-
-    # read existing records and generate ID
-    active_records = parse_file(ACTIVE_FILE)
-    existing_record_ids = (
-        [record["id"] for record in active_records if "id" in record]
-        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
-        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
-    )
-    new_goal_id = generate_id("G", existing_record_ids)
-    if new_goal_id is None:
-        print("error: too many records created today", file=sys.stderr)
-        sys.exit(1)
-
-    # build the new record
-    today_date = date.today().isoformat()
-    new_record = {
-        "id": new_goal_id,
-        "type": "goal",
-        "summary": goal_summary,
-        "status": "active",
-        "created": today_date,
-        "updated": today_date,
-    }
-
-    # add optional fields from flags
-    for field_name in (
-        "project",
-        "priority",
-        "due",
-        "review",
-        "tags",
-        "parent",
-        "source",
-    ):
-        if field_name in flags:
-            new_record[field_name] = flags[field_name]
-
-    active_records.append(new_record)
-    write_file(ACTIVE_FILE, active_records)
-    print(f"added goal: {new_goal_id} {goal_summary}")
-
-
-HABIT_FLAGS = {
     "--frequency": "frequency",
     "-f": "frequency",
-    "--tags": "tags",
-    "-t": "tags",
-    "--project": "project",
-    "-p": "project",
-}
-
-
-def handle_habit(arguments: list[str]) -> None:
-    """Create a new habit record in active.txt.
-
-    Reads active.txt for existing IDs, generates next available H-prefix
-    ID, builds record (type=habit) from summary + restricted flag set,
-    defaulting frequency to daily, appends to active.txt, writes file.
-    Prints confirmation to stdout.
-    """
-    positional_args, flags = parse_flags(arguments, HABIT_FLAGS)
-
-    if not positional_args:
-        print("error: summary required", file=sys.stderr)
-        print("usage: tsk habit <summary> [flags]", file=sys.stderr)
-        sys.exit(1)
-    habit_summary = " ".join(positional_args)
-
-    # validate flag values
-    if "frequency" in flags and flags["frequency"] not in (
-        "daily",
-        "weekdays",
-        "weekly",
-    ):
-        print("error: frequency must be daily, weekdays, or weekly", file=sys.stderr)
-        sys.exit(1)
-
-    # read existing records and generate ID
-    active_records = parse_file(ACTIVE_FILE)
-    existing_record_ids = (
-        [record["id"] for record in active_records if "id" in record]
-        + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
-        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
-    )
-    new_habit_id = generate_id("H", existing_record_ids)
-    if new_habit_id is None:
-        print("error: too many records created today", file=sys.stderr)
-        sys.exit(1)
-
-    # build the new record
-    today_date = date.today().isoformat()
-    habit_frequency = flags["frequency"] if "frequency" in flags else "daily"
-    new_record = {
-        "id": new_habit_id,
-        "type": "habit",
-        "summary": habit_summary,
-        "status": "active",
-        "frequency": habit_frequency,
-        "created": today_date,
-        "updated": today_date,
-    }
-
-    # add optional fields from flags
-    for field_name in ("tags", "project"):
-        if field_name in flags:
-            new_record[field_name] = flags[field_name]
-
-    active_records.append(new_record)
-    write_file(ACTIVE_FILE, active_records)
-    print(f"added habit: {new_habit_id} {habit_summary}")
-
-
-EVENT_FLAGS = {
     "--date": "date",
-    "-d": "date",
     "--time": "time",
     "-m": "time",
-    "--type": "type",
-    "-y": "type",
+    "--label": "label",
+    "-y": "label",
     "--recur": "recur",
-    "-r": "recur",
     "--location": "location",
     "-l": "location",
     "--energy": "energy",
     "-e": "energy",
-    "--project": "project",
-    "-p": "project",
     "--linked": "linked",
     "-k": "linked",
 }
 
+ENTITY_TYPES = {"task", "goal", "habit", "event"}
 
-def handle_event(arguments: list[str]) -> None:
-    """Create a new event record in calendar.txt.
+ENTITY_CONFIG = {
+    "task": {
+        "prefix": "T",
+        "file": ACTIVE_FILE,
+        "type_field": "task",
+        "defaults": {"status": "active"},
+        "validations": {
+            "priority": validate_priority,
+            "due": validate_date_format,
+        },
+        "usage": "tsk add [task] <summary> [flags]",
+    },
+    "goal": {
+        "prefix": "G",
+        "file": ACTIVE_FILE,
+        "type_field": "goal",
+        "defaults": {"status": "active"},
+        "validations": {
+            "priority": validate_priority,
+            "due": validate_date_format,
+            "review": lambda v: v in ("weekly", "monthly", "quarterly"),
+        },
+        "usage": "tsk add goal <summary> [flags]",
+    },
+    "habit": {
+        "prefix": "H",
+        "file": ACTIVE_FILE,
+        "type_field": "habit",
+        "defaults": {"status": "active", "frequency": "daily"},
+        "validations": {
+            "frequency": lambda v: v in ("daily", "weekdays", "weekly"),
+        },
+        "usage": "tsk add habit <summary> [flags]",
+    },
+    "event": {
+        "prefix": "E",
+        "file": CALENDAR_FILE,
+        "type_field": None,
+        "defaults": {},
+        "validations": {
+            "date": validate_date_format,
+        },
+        "required": {"date"},
+        "usage": "tsk add event <summary> --date YYYY-MM-DD [flags]",
+    },
+}
 
-    Reads calendar.txt for existing IDs, generates next available
-    E-prefix ID, requires --date, parses --time HH:MM-HH:MM into
-    time_start and time_end, defaults type to meeting, appends to
-    calendar.txt, writes file. Prints confirmation to stdout.
+VALIDATION_ERRORS = {
+    "priority": "error: priority must be 1, 2, or 3",
+    "due": "error: due date must be YYYY-MM-DD",
+    "date": "error: date must be YYYY-MM-DD",
+    "review": "error: review must be weekly, monthly, or quarterly",
+    "frequency": "error: frequency must be daily, weekdays, or weekly",
+}
+
+
+def handle_add(arguments: list[str]) -> None:
+    """Create a new record (task, goal, habit, or event) in the appropriate file.
+
+    Determines entity type from first positional arg if it matches a known type,
+    otherwise defaults to task. Reads all data files for existing IDs to prevent
+    reuse. Builds record from summary + flags using ENTITY_CONFIG for per-type
+    prefix, target file, defaults, and validations. Validates required fields
+    and flag values. Appends to target file, writes file. Prints confirmation
+    with new ID and summary to stdout.
     """
-    positional_args, flags = parse_flags(arguments, EVENT_FLAGS)
+    positional_args, flags = parse_flags(arguments, CREATION_FLAGS)
+
+    # Determine entity type from positional subcommand or default to task
+    entity_type = "task"
+    if positional_args and positional_args[0] in ENTITY_TYPES:
+        entity_type = positional_args.pop(0)
+
+    config = ENTITY_CONFIG[entity_type]
 
     if not positional_args:
         print("error: summary required", file=sys.stderr)
-        print("usage: tsk event <summary> --date YYYY-MM-DD [flags]", file=sys.stderr)
-        sys.exit(1)
-    event_summary = " ".join(positional_args)
-
-    # --date is required
-    if "date" not in flags:
-        print("error: --date is required for events", file=sys.stderr)
-        sys.exit(1)
-    event_date = flags["date"]
-    if not validate_date_format(event_date):
-        print("error: date must be YYYY-MM-DD", file=sys.stderr)
+        print(f"usage: {config['usage']}", file=sys.stderr)
         sys.exit(1)
 
-    # parse --time HH:MM-HH:MM into start and end
+    record_summary = " ".join(positional_args)
+
+    # Whitespace-only summary guard (commit 23 moves this earlier; here for safety)
+    if not record_summary.strip():
+        print("error: summary required", file=sys.stderr)
+        print(f"usage: {config['usage']}", file=sys.stderr)
+        sys.exit(1)
+
+    # Validate flag values per entity config
+    for field_name, validator in config.get("validations", {}).items():
+        if field_name in flags and not validator(flags[field_name]):
+            error_message = VALIDATION_ERRORS.get(
+                field_name, f"error: invalid value for {field_name}"
+            )
+            print(error_message, file=sys.stderr)
+            sys.exit(1)
+
+    # Check required fields
+    for required_field in config.get("required", set()):
+        if required_field not in flags:
+            print(
+                f"error: --{required_field} is required for {entity_type}s",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Parse --time HH:MM-HH:MM into start and end (events)
     event_time_start = None
     event_time_end = None
     if "time" in flags:
@@ -869,41 +745,73 @@ def handle_event(arguments: list[str]) -> None:
         event_time_start = start_text
         event_time_end = end_text
 
-    # read existing records and generate ID
-    calendar_records = parse_file(CALENDAR_FILE)
+    # Collect IDs from all files to prevent reuse after done/retire moves records out.
     existing_record_ids = (
-        [record["id"] for record in calendar_records if "id" in record]
-        + [record["id"] for record in parse_file(ACTIVE_FILE) if "id" in record]
+        [record["id"] for record in parse_file(ACTIVE_FILE) if "id" in record]
         + [record["id"] for record in parse_file(DONE_FILE) if "id" in record]
+        + [record["id"] for record in parse_file(CALENDAR_FILE) if "id" in record]
     )
-    new_event_id = generate_id("E", existing_record_ids)
-    if new_event_id is None:
+
+    type_prefix = config["prefix"]
+    new_record_id = generate_id(type_prefix, existing_record_ids)
+    if new_record_id is None:
         print("error: too many records created today", file=sys.stderr)
         sys.exit(1)
 
-    # build the new record; type defaults to meeting (open set, no validation)
+    # Build the new record
     today_date = date.today().isoformat()
-    event_type = flags["type"] if "type" in flags else "meeting"
     new_record = {
-        "id": new_event_id,
-        "type": event_type,
-        "summary": event_summary,
-        "date": event_date,
+        "id": new_record_id,
+        "summary": record_summary,
         "created": today_date,
         "updated": today_date,
     }
+
+    # type field: for events, --label value or default "meeting";
+    # for others, the entity type name (task, goal, habit).
+    # The type field holds dual semantics: entity type for T/G/H, event subtype for E.
+    if config["type_field"] is not None:
+        new_record["type"] = config["type_field"]
+    else:
+        new_record["type"] = flags.pop("label", "meeting")
+
+    # Apply defaults from config (status, frequency, etc.)
+    for default_field, default_value in config.get("defaults", {}).items():
+        new_record[default_field] = default_value
+
+    # Apply defaults that can be overridden by flags
+    if entity_type == "habit" and "frequency" in flags:
+        new_record["frequency"] = flags["frequency"]
+
+    # Add time fields if parsed
     if event_time_start is not None:
         new_record["time_start"] = event_time_start
         new_record["time_end"] = event_time_end
 
-    # add optional fields from flags
-    for field_name in ("recur", "location", "energy", "project", "linked"):
-        if field_name in flags:
-            new_record[field_name] = flags[field_name]
+    # Add all remaining flag values as record fields.
+    # Skip fields already handled (label consumed above, time parsed above,
+    # date goes in directly, frequency handled via defaults).
+    skip_fields = {"label", "time"}
+    for field_name, field_value in flags.items():
+        if field_name not in skip_fields and field_name not in new_record:
+            new_record[field_name] = field_value
 
-    calendar_records.append(new_record)
-    write_file(CALENDAR_FILE, calendar_records)
-    print(f"added event: {new_event_id} {event_summary} on {event_date}")
+    # Read target file records and append
+    target_file = config["file"]
+    target_records = parse_file(target_file)
+    target_records.append(new_record)
+    write_file(target_file, target_records)
+
+    # Confirmation output
+    if entity_type == "event":
+        event_date = flags.get("date", "")
+        print(f"added event: {new_record_id} {record_summary} on {event_date}")
+    elif entity_type == "goal":
+        print(f"added goal: {new_record_id} {record_summary}")
+    elif entity_type == "habit":
+        print(f"added habit: {new_record_id} {record_summary}")
+    else:
+        print(f"added: {new_record_id} {record_summary}")
 
 
 def validate_time_of_day(time_string: str) -> bool:
@@ -1314,11 +1222,9 @@ def handle_list(arguments: list[str]) -> None:
 # NOT duplicated here -- handle_help reads them from the flag dicts below via
 # COMMAND_FLAG_SETS, so the set of flags has a single source of truth.
 
+
 COMMAND_USAGE = {
-    "add": "tsk add <summary> [flags]",
-    "goal": "tsk goal <summary> [flags]",
-    "habit": "tsk habit <summary> [flags]",
-    "event": "tsk event <summary> --date YYYY-MM-DD [flags]",
+    "add": "tsk add [task|goal|habit|event] <summary> [flags]",
     "edit": "tsk edit <id>",
     "done": "tsk done <id>",
     "retire": "tsk retire <id>",
@@ -1329,43 +1235,37 @@ COMMAND_USAGE = {
 }
 
 COMMAND_FLAG_SETS = {
-    "add": ADD_FLAGS,
-    "goal": GOAL_FLAGS,
-    "habit": HABIT_FLAGS,
-    "event": EVENT_FLAGS,
+    "add": CREATION_FLAGS,
     "list": LIST_FLAGS,
 }
 
-
 FIELD_HELP = {
-    "project":   "project or life area (free-text string, your choice)",
-    "due":       "due date, YYYY-MM-DD",
-    "priority":  "priority 1 (highest) to 3",
-    "tags":      'tags in one quoted string, e.g. "#health #home"',
-    "parent":    "id of a parent goal (G-prefix, from a prior tsk goal)",
-    "source":    "where this came from, e.g. journal:2026-05-21, meeting:standup, lw:exp3",
-    "review":    "review cadence: weekly, monthly, quarterly",
+    "project": "project or life area (free-text string, your choice)",
+    "due": "due date, YYYY-MM-DD",
+    "priority": "priority 1 (highest) to 3",
+    "tags": 'tags in one quoted string, e.g. "#health #home"',
+    "parent": "id of a parent goal (G-prefix, from a prior tsk goal)",
+    "source": "where this came from, e.g. journal:2026-05-21, meeting:standup, lw:exp3",
+    "review": "review cadence: weekly, monthly, quarterly",
     "frequency": "how often: daily (default), weekdays, weekly",
-    "date":      "event date, YYYY-MM-DD (required)",
-    "time":      "time range, HH:MM-HH:MM (24hr)",
-    "type":      "entry type, free-text; e.g. meeting, personal, deadline, block",
-    "recur":     "recurrence: daily, weekly, biweekly, monthly (stored, not yet active)",
-    "location":  "where, e.g. an address or meeting link",
-    "energy":    "energy type: deep, admin, social, creative",
-    "linked":    "id of a related record (task <-> event)",
+    "date": "event date, YYYY-MM-DD (required)",
+    "time": "time range, HH:MM-HH:MM (24hr)",
+    "label": "event subtype: meeting (default), personal, deadline, block (free-text)",
+    "recur": "recurrence: daily, weekly, biweekly, monthly (stored, not yet active)",
+    "location": "where, e.g. an address or meeting link",
+    "energy": "energy type: deep, admin, social, creative",
+    "linked": "id of a related record (task <-> event)",
 }
 
 # ============================================================================
 # DISPATCH
 # ============================================================================
 
+
 COMMANDS = {
     "help": handle_help,
     "init": handle_init,
     "add": handle_add,
-    "goal": handle_goal,
-    "habit": handle_habit,
-    "event": handle_event,
     "edit": handle_edit,
     "done": handle_done,
     "retire": handle_retire,
@@ -1413,7 +1313,15 @@ finally:
     elapsed_seconds = time.time() - dispatch_start_time
     primary_arg = arguments[0] if arguments else "-"
     log_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    log_line = f"{log_timestamp} {command_name} {primary_arg} {elapsed_seconds:.2f}s {outcome}\n"
+    # Peek at entity type for compound logging (add:goal, add:event).
+    # Mirrors type detection in handle_add; kept here to maintain
+    # dispatch-level logging without handler cooperation.
+    logged_command = command_name
+    if command_name == "add" and arguments:
+        first_arg = arguments[0]
+        if first_arg in {"task", "goal", "habit", "event"}:
+            logged_command = f"add:{first_arg}"
+    log_line = f"{log_timestamp} {logged_command} {primary_arg} {elapsed_seconds:.2f}s {outcome}\n"
     try:
         with open(USAGE_LOG_FILE, "a", encoding="utf-8") as usage_log:
             usage_log.write(log_line)
