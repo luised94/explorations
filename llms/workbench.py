@@ -97,8 +97,8 @@ MAX_RESPONSE_TOKENS: int = 4096
 
 MODELS: dict[str, dict] = {
     "sonnet": {"id": "claude-sonnet-4-20250514", "cost_in": 3.00, "cost_out": 15.00},
-    "haiku":  {"id": "claude-haiku-4-5-20251001", "cost_in": 0.80, "cost_out": 4.00},
-    "opus":   {"id": "claude-opus-4-6", "cost_in": 15.00, "cost_out": 75.00},
+    "haiku": {"id": "claude-haiku-4-5-20251001", "cost_in": 0.80, "cost_out": 4.00},
+    "opus": {"id": "claude-opus-4-6", "cost_in": 15.00, "cost_out": 75.00},
 }
 
 DEFAULT_MODEL: str = "haiku"
@@ -108,30 +108,49 @@ DEFAULT_MODEL: str = "haiku"
 
 parser = argparse.ArgumentParser(description="Personal LLM Workbench")
 
-parser.add_argument("text", nargs="?", default=None,
-                    help="Prompt text (reads stdin if omitted)")
-parser.add_argument("--model", "-m", choices=MODELS.keys(), default=DEFAULT_MODEL,
-                    help="Model to use (default: haiku)")
-parser.add_argument("--system", "-s", type=str, default=None,
-                    help="System prompt text")
-parser.add_argument("--interactive", "-i", action="store_true",
-                    help="Start an interactive multi-turn conversation")
-parser.add_argument("--dry-run", action="store_true",
-                    help="Preview context and cost without calling the API")
-parser.add_argument("--notes", "-n", type=str, default=None,
-                    help="Freeform note stored with each turn")
-parser.add_argument("--prompt", type=Path, default=None,
-                    help="Read system prompt from file")
-parser.add_argument("--input", type=Path, default=None,
-                    help="(placeholder -- not yet implemented)")
-parser.add_argument("--verbose", "-v", action="count", default=3,
-                    help="Increase verbosity (-v debug, -vv trace)")
+parser.add_argument(
+    "text", nargs="?", default=None, help="Prompt text (reads stdin if omitted)"
+)
+parser.add_argument(
+    "--model",
+    "-m",
+    choices=MODELS.keys(),
+    default=DEFAULT_MODEL,
+    help="Model to use (default: haiku)",
+)
+parser.add_argument("--system", "-s", type=str, default=None, help="System prompt text")
+parser.add_argument(
+    "--interactive",
+    "-i",
+    action="store_true",
+    help="Start an interactive multi-turn conversation",
+)
+parser.add_argument(
+    "--dry-run",
+    action="store_true",
+    help="Preview context and cost without calling the API",
+)
+parser.add_argument(
+    "--notes", "-n", type=str, default=None, help="Freeform note stored with each turn"
+)
+parser.add_argument(
+    "--prompt", type=Path, default=None, help="Read system prompt from file"
+)
+parser.add_argument(
+    "--input", type=Path, default=None, help="(placeholder -- not yet implemented)"
+)
+parser.add_argument(
+    "--verbose",
+    "-v",
+    action="count",
+    default=3,
+    help="Increase verbosity (-v debug, -vv trace)",
+)
 
 
 # -- Procedural Flow ---------------------------------------------------
 
 if __name__ == "__main__":
-
     # -- PARSE ---------------------------------------------------------
 
     parsed_arguments = parser.parse_args()
@@ -141,9 +160,7 @@ if __name__ == "__main__":
         terminal_output.msg_warn("--input flag is not yet implemented. Ignoring.")
 
     if parsed_arguments.prompt is not None and parsed_arguments.system is not None:
-        terminal_output.msg_error(
-            "Cannot use both --prompt and --system. Choose one."
-        )
+        terminal_output.msg_error("Cannot use both --prompt and --system. Choose one.")
         sys.exit(1)
 
     interactive_mode: bool = parsed_arguments.interactive
@@ -191,9 +208,7 @@ if __name__ == "__main__":
         try:
             system_prompt_text = parsed_arguments.prompt.read_text()
         except (FileNotFoundError, PermissionError, OSError) as file_error:
-            terminal_output.msg_error(
-                "Failed to read prompt file: " + str(file_error)
-            )
+            terminal_output.msg_error("Failed to read prompt file: " + str(file_error))
             sys.exit(1)
     elif parsed_arguments.system is not None:
         system_prompt_text = parsed_arguments.system
@@ -215,8 +230,8 @@ if __name__ == "__main__":
             )
 
         estimated_input_cost: float = (
-            (estimated_input_tokens / 1_000_000) * model_config["cost_in"]
-        )
+            estimated_input_tokens / 1_000_000
+        ) * model_config["cost_in"]
 
         summary_lines: list[str] = [
             "Model: " + model_config["id"],
@@ -236,7 +251,6 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # -- INIT ----------------------------------------------------------
-
 
     connection = sqlite3.connect(DATABASE_PATH)
     with connection:
@@ -258,30 +272,23 @@ if __name__ == "__main__":
     # Migrate: add conversation_id if table predates this column
     try:
         with connection:
-            connection.execute(
-                "ALTER TABLE calls ADD COLUMN conversation_id TEXT"
-            )
+            connection.execute("ALTER TABLE calls ADD COLUMN conversation_id TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
 
     # Migrate: add stop_reason if table predates this column
     try:
         with connection:
-            connection.execute(
-                "ALTER TABLE calls ADD COLUMN stop_reason TEXT"
-            )
+            connection.execute("ALTER TABLE calls ADD COLUMN stop_reason TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
 
     try:
         client = anthropic.Anthropic()
     except anthropic.APIError as api_error:
-        terminal_output.msg_error(
-            "Failed to initialize API client: " + str(api_error)
-        )
+        terminal_output.msg_error("Failed to initialize API client: " + str(api_error))
         connection.close()
         sys.exit(1)
-
 
     conversation_id: str | None = None
     if interactive_mode:
@@ -314,7 +321,6 @@ if __name__ == "__main__":
     total_cost: float = 0.0
 
     while True:
-
         # Display turn separator
         terminal_output.emit(
             terminal_output.format_labeled_separator("turn " + str(turn_count + 1))
@@ -328,7 +334,7 @@ if __name__ == "__main__":
                 if interactive_mode:
                     prompt_text: str = terminal_output.apply_style(
                         "[" + model_short + ":" + str(turn_count + 1) + "] > ",
-                        terminal_output.STYLE_BOLD
+                        terminal_output.STYLE_BOLD,
                     )
                 else:
                     prompt_text: str = "> "
@@ -339,12 +345,18 @@ if __name__ == "__main__":
                     terminal_output.emit(
                         terminal_output.format_labeled_separator("session")
                     )
-                    session_metadata: str = terminal_output.format_metadata_inline([
-                        ("turns", str(turn_count)),
-                        ("tokens", terminal_output.format_token_counts(
-                            total_tokens_in, total_tokens_out)),
-                        ("cost", terminal_output.format_cost(total_cost)),
-                    ])
+                    session_metadata: str = terminal_output.format_metadata_inline(
+                        [
+                            ("turns", str(turn_count)),
+                            (
+                                "tokens",
+                                terminal_output.format_token_counts(
+                                    total_tokens_in, total_tokens_out
+                                ),
+                            ),
+                            ("cost", terminal_output.format_cost(total_cost)),
+                        ]
+                    )
                     terminal_output.msg_info(session_metadata)
                 break
             stripped_input: str = user_input.strip()
@@ -357,12 +369,18 @@ if __name__ == "__main__":
                     terminal_output.emit(
                         terminal_output.format_labeled_separator("session")
                     )
-                    session_metadata: str = terminal_output.format_metadata_inline([
-                        ("turns", str(turn_count)),
-                        ("tokens", terminal_output.format_token_counts(
-                            total_tokens_in, total_tokens_out)),
-                        ("cost", terminal_output.format_cost(total_cost)),
-                    ])
+                    session_metadata: str = terminal_output.format_metadata_inline(
+                        [
+                            ("turns", str(turn_count)),
+                            (
+                                "tokens",
+                                terminal_output.format_token_counts(
+                                    total_tokens_in, total_tokens_out
+                                ),
+                            ),
+                            ("cost", terminal_output.format_cost(total_cost)),
+                        ]
+                    )
                     terminal_output.msg_info(session_metadata)
                 break
 
@@ -433,9 +451,7 @@ if __name__ == "__main__":
                 try:
                     subprocess.run(pager_parts + [pager_file_path])
                 except (FileNotFoundError, OSError):
-                    terminal_output.msg_warn(
-                        "Pager not available, printing directly."
-                    )
+                    terminal_output.msg_warn("Pager not available, printing directly.")
                     print(wrapped_response)
                 finally:
                     os.unlink(pager_file_path)
@@ -443,7 +459,6 @@ if __name__ == "__main__":
                 print(wrapped_response)
         else:
             print(response_data["response_text"])
-
 
         tokens_in: int = response_data["tokens_in"]
         tokens_out: int = response_data["tokens_out"]
@@ -457,15 +472,19 @@ if __name__ == "__main__":
         total_cost = total_cost + turn_cost
 
         # Display turn metadata
-        metadata_line: str = terminal_output.format_metadata_inline([
-            ("tokens", terminal_output.format_token_counts(tokens_in, tokens_out)),
-            ("cost", terminal_output.format_cost(turn_cost)),
-        ])
+        metadata_line: str = terminal_output.format_metadata_inline(
+            [
+                ("tokens", terminal_output.format_token_counts(tokens_in, tokens_out)),
+                ("cost", terminal_output.format_cost(turn_cost)),
+            ]
+        )
         terminal_output.msg_info(metadata_line)
 
         stop_reason: str = response_data["stop_reason"]
         if stop_reason == "max_tokens":
-            terminal_output.msg_warn("Stop reason: " + stop_reason + " (response truncated)")
+            terminal_output.msg_warn(
+                "Stop reason: " + stop_reason + " (response truncated)"
+            )
         else:
             terminal_output.msg_debug("Stop reason: " + stop_reason)
 
@@ -482,14 +501,20 @@ if __name__ == "__main__":
                                        notes, conversation_id, stop_reason)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (timestamp, model_config["id"], messages_json,
-                     response_data["response_text"], tokens_in, tokens_out,
-                     parsed_arguments.notes, conversation_id, stop_reason),
+                    (
+                        timestamp,
+                        model_config["id"],
+                        messages_json,
+                        response_data["response_text"],
+                        tokens_in,
+                        tokens_out,
+                        parsed_arguments.notes,
+                        conversation_id,
+                        stop_reason,
+                    ),
                 )
         except sqlite3.Error as database_error:
-            terminal_output.msg_error(
-                "Database write failed: " + str(database_error)
-            )
+            terminal_output.msg_error("Database write failed: " + str(database_error))
             if not interactive_mode:
                 connection.close()
                 sys.exit(1)
@@ -504,8 +529,6 @@ if __name__ == "__main__":
     connection.close()
 
     if interactive_mode and turn_count > 0:
-        terminal_output.msg_info(
-            "Session ended. " + str(turn_count) + " turns logged."
-        )
+        terminal_output.msg_info("Session ended. " + str(turn_count) + " turns logged.")
     elif not interactive_mode and turn_count > 0:
         terminal_output.msg_success("Logged to " + DATABASE_PATH)

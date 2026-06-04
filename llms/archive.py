@@ -32,34 +32,51 @@ parser = argparse.ArgumentParser(description="LLM thread archive")
 subparsers = parser.add_subparsers(dest="command")
 
 subparsers.add_parser("init", help="Initialize the database")
-import_parser = subparsers.add_parser("import", help="Import conversations from provider export")
+import_parser = subparsers.add_parser(
+    "import", help="Import conversations from provider export"
+)
 import_parser.add_argument("path", type=Path, help="Export file or directory")
-import_parser.add_argument("--provider", required=True,
-                           choices=["claude", "chatgpt", "deepseek", "qwen"],
-                           help="Source provider format")
+import_parser.add_argument(
+    "--provider",
+    required=True,
+    choices=["claude", "chatgpt", "deepseek", "qwen"],
+    help="Source provider format",
+)
 
 search_parser = subparsers.add_parser("search", help="Full-text search across messages")
 search_parser.add_argument("query", type=str, help="FTS5 search query")
-search_parser.add_argument("--limit", type=int, default=20,
-                           help="Maximum number of results (default: 20)")
-search_parser.add_argument("--provider",
-                           choices=["claude", "chatgpt", "deepseek", "qwen"],
-                           help="Filter results to a single provider")
+search_parser.add_argument(
+    "--limit", type=int, default=20, help="Maximum number of results (default: 20)"
+)
+search_parser.add_argument(
+    "--provider",
+    choices=["claude", "chatgpt", "deepseek", "qwen"],
+    help="Filter results to a single provider",
+)
 
 show_parser = subparsers.add_parser("show", help="Display a full conversation thread")
-show_parser.add_argument("conversation", type=str,
-                         help="Conversation ID (integer) or source UUID prefix")
+show_parser.add_argument(
+    "conversation", type=str, help="Conversation ID (integer) or source UUID prefix"
+)
 
 list_parser = subparsers.add_parser("list", help="Browse conversations")
-list_parser.add_argument("--limit", type=int, default=50,
-                         help="Maximum number of conversations (default: 50)")
-list_parser.add_argument("--provider",
-                         choices=["claude", "chatgpt", "deepseek", "qwen"],
-                         help="Filter to a single provider")
-list_parser.add_argument("--sort",
-                         choices=["recent", "oldest", "messages"],
-                         default="recent",
-                         help="Sort order (default: recent)")
+list_parser.add_argument(
+    "--limit",
+    type=int,
+    default=50,
+    help="Maximum number of conversations (default: 50)",
+)
+list_parser.add_argument(
+    "--provider",
+    choices=["claude", "chatgpt", "deepseek", "qwen"],
+    help="Filter to a single provider",
+)
+list_parser.add_argument(
+    "--sort",
+    choices=["recent", "oldest", "messages"],
+    default="recent",
+    help="Sort order (default: recent)",
+)
 
 args = parser.parse_args()
 cmd_start = time.monotonic()
@@ -70,7 +87,9 @@ result_count = 0
 if args.command == "init":
     connection = sqlite3.connect(DATABASE_PATH)
     cursor = connection.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'")
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'"
+    )
 
     if cursor.fetchone() is not None:
         print(f"Database already initialized: {DATABASE_PATH}")
@@ -116,8 +135,15 @@ elif args.command == "import":
                        (provider, source_conversation_id, title, summary,
                         created_at, updated_at, imported_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    ("claude", cid, conv.get("name"), conv.get("summary"),
-                     conv.get("created_at"), conv.get("updated_at"), now),
+                    (
+                        "claude",
+                        cid,
+                        conv.get("name"),
+                        conv.get("summary"),
+                        conv.get("created_at"),
+                        conv.get("updated_at"),
+                        now,
+                    ),
                 )
                 db_cid = conn.execute(
                     "SELECT id FROM conversations WHERE provider=? AND source_conversation_id=?",
@@ -145,8 +171,18 @@ elif args.command == "import":
                             role, content, position, parent_message_id,
                             created_at, imported_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        ("claude", None, cid, db_cid, sender, text,
-                         pos, None, msg.get("created_at"), now),
+                        (
+                            "claude",
+                            None,
+                            cid,
+                            db_cid,
+                            sender,
+                            text,
+                            pos,
+                            None,
+                            msg.get("created_at"),
+                            now,
+                        ),
                     )
                     if r.rowcount:
                         stats["msgs"] += 1
@@ -164,10 +200,19 @@ elif args.command == "import":
     conn.close()
     result_count = stats["msgs"]
     print(f"{args.provider} import complete:", file=sys.stderr)
-    print(f"  conversations: {stats['convs']} processed, {stats['convs_skip']} skipped", file=sys.stderr)
-    print(f"  messages:      {stats['msgs']} imported, {stats['msgs_dupe']} duplicates, {stats['msgs_skip']} skipped", file=sys.stderr)
+    print(
+        f"  conversations: {stats['convs']} processed, {stats['convs_skip']} skipped",
+        file=sys.stderr,
+    )
+    print(
+        f"  messages:      {stats['msgs']} imported, {stats['msgs_dupe']} duplicates, {stats['msgs_skip']} skipped",
+        file=sys.stderr,
+    )
     if stats["msgs_skip"]:
-        print(f"  note: {stats['msgs_skip']} messages skipped (empty text)", file=sys.stderr)
+        print(
+            f"  note: {stats['msgs_skip']} messages skipped (empty text)",
+            file=sys.stderr,
+        )
     if warnings:
         print(f"  warnings ({len(warnings)}):", file=sys.stderr)
         for w in warnings:
@@ -248,7 +293,9 @@ elif args.command == "search":
             # Replace snippet markers with ANSI highlighting or plain-text brackets
             snippet_text = row["matched_snippet"]
             if USE_COLOR:
-                snippet_text = snippet_text.replace(SNIPPET_MARKER_START, COLOR_BOLD_YELLOW)
+                snippet_text = snippet_text.replace(
+                    SNIPPET_MARKER_START, COLOR_BOLD_YELLOW
+                )
                 snippet_text = snippet_text.replace(SNIPPET_MARKER_END, COLOR_RESET)
             else:
                 snippet_text = snippet_text.replace(SNIPPET_MARKER_START, ">>")
@@ -257,8 +304,12 @@ elif args.command == "search":
             # Print result block
             separator = "-" * 60
             print(f"\n{COLOR_DIM}{separator}{COLOR_RESET}")
-            print(f"{COLOR_BOLD}[{index + 1}/{result_count}]{COLOR_RESET} {conversation_title}")
-            print(f"  {COLOR_DIM}{row['provider']} -> {row['source_conversation_id']} | {message_date} -> message #{row['position']} -> conv {row['conversation_id']}{COLOR_RESET}")
+            print(
+                f"{COLOR_BOLD}[{index + 1}/{result_count}]{COLOR_RESET} {conversation_title}"
+            )
+            print(
+                f"  {COLOR_DIM}{row['provider']} -> {row['source_conversation_id']} | {message_date} -> message #{row['position']} -> conv {row['conversation_id']}{COLOR_RESET}"
+            )
 
             if preceding_message:
                 preceding_text = preceding_message["content"]
@@ -272,7 +323,9 @@ elif args.command == "search":
 
         # Summary to stderr so piped output stays clean
         print(f"\n{COLOR_DIM}{'-' * 60}{COLOR_RESET}")
-        print(f"{result_count} result{'s' if result_count != 1 else ''}", file=sys.stderr)
+        print(
+            f"{result_count} result{'s' if result_count != 1 else ''}", file=sys.stderr
+        )
 
     connection.close()
 
@@ -293,7 +346,7 @@ elif args.command == "show":
         conversation_row = connection.execute(
             "SELECT * FROM conversations WHERE id = ?", (int(identifier),)
         ).fetchone()
-    
+
     if conversation_row is None:
         # Prefix match on source_conversation_id (e.g. "301727d0" matches full UUID)
         matching_conversations = connection.execute(
@@ -304,10 +357,16 @@ elif args.command == "show":
         if len(matching_conversations) == 1:
             conversation_row = matching_conversations[0]
         elif len(matching_conversations) > 1:
-            print(f"error: '{identifier}' matches {len(matching_conversations)} conversations:", file=sys.stderr)
+            print(
+                f"error: '{identifier}' matches {len(matching_conversations)} conversations:",
+                file=sys.stderr,
+            )
             for match in matching_conversations:
                 title = match["title"] or "(untitled)"
-                print(f"  {match['id']}: {title} ({match['provider']}, {match['source_conversation_id'][:12]}...)", file=sys.stderr)
+                print(
+                    f"  {match['id']}: {title} ({match['provider']}, {match['source_conversation_id'][:12]}...)",
+                    file=sys.stderr,
+                )
             connection.close()
             sys.exit(1)
 
@@ -328,18 +387,28 @@ elif args.command == "show":
 
     # Print conversation header
     conversation_title = conversation_row["title"] or "(untitled)"
-    conversation_date = conversation_row["created_at"][:10] if conversation_row["created_at"] else "no date"
+    conversation_date = (
+        conversation_row["created_at"][:10]
+        if conversation_row["created_at"]
+        else "no date"
+    )
     separator = "=" * 60
 
     print(f"{COLOR_BOLD}{conversation_title}{COLOR_RESET}")
-    print(f"{COLOR_DIM}{conversation_row['provider']} . {conversation_date} . {result_count} messages . id {conversation_row['id']}{COLOR_RESET}")
+    print(
+        f"{COLOR_DIM}{conversation_row['provider']} . {conversation_date} . {result_count} messages . id {conversation_row['id']}{COLOR_RESET}"
+    )
     print(f"{COLOR_DIM}{conversation_row['source_conversation_id']}{COLOR_RESET}")
     print(separator)
 
     # Print each message
     for message in messages:
         message_role = message["role"]
-        message_time = message["created_at"][11:16] if message["created_at"] and len(message["created_at"]) > 16 else ""
+        message_time = (
+            message["created_at"][11:16]
+            if message["created_at"] and len(message["created_at"]) > 16
+            else ""
+        )
 
         if message_role == "human":
             role_label = f"{COLOR_BOLD}[human]{COLOR_RESET}"
@@ -414,7 +483,9 @@ elif args.command == "list":
     else:
         for row in conversation_rows:
             conversation_title = row["title"] or "(untitled)"
-            conversation_date = row["created_at"][:10] if row["created_at"] else "no date"
+            conversation_date = (
+                row["created_at"][:10] if row["created_at"] else "no date"
+            )
             message_count = row["message_count"]
 
             # Truncate preview: first human message, single line, ~100 chars
@@ -425,11 +496,16 @@ elif args.command == "list":
                     preview = preview[:100] + "..."
 
             print(f"{COLOR_BOLD}{row['id']:>4}{COLOR_RESET}  {conversation_title}")
-            print(f"      {COLOR_DIM}{row['provider']} . {conversation_date} . {message_count} msgs{COLOR_RESET}")
+            print(
+                f"      {COLOR_DIM}{row['provider']} . {conversation_date} . {message_count} msgs{COLOR_RESET}"
+            )
             if preview:
                 print(f"      {COLOR_DIM}{preview}{COLOR_RESET}")
 
-        print(f"\n{result_count} conversation{'s' if result_count != 1 else ''}", file=sys.stderr)
+        print(
+            f"\n{result_count} conversation{'s' if result_count != 1 else ''}",
+            file=sys.stderr,
+        )
 
     connection.close()
 
@@ -443,9 +519,16 @@ if DATABASE_PATH.exists():
     log_conn = sqlite3.connect(DATABASE_PATH)
     log_conn.execute(
         "INSERT INTO access_log (timestamp, command, args, result_count, elapsed_ms) VALUES (?, ?, ?, ?, ?)",
-        (datetime.now(timezone.utc).isoformat(), args.command,
-         json.dumps({k: str(v) for k, v in vars(args).items() if k != "command"}, default=str),
-         result_count, elapsed),
+        (
+            datetime.now(timezone.utc).isoformat(),
+            args.command,
+            json.dumps(
+                {k: str(v) for k, v in vars(args).items() if k != "command"},
+                default=str,
+            ),
+            result_count,
+            elapsed,
+        ),
     )
     log_conn.commit()
     log_conn.close()

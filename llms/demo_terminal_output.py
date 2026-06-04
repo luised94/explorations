@@ -10,6 +10,7 @@ Sections:
     6. Integration scene (mock review session)
     7. Edge cases
 """
+
 import time
 import terminal_output
 
@@ -60,13 +61,27 @@ plain_text = "hello"
 bold_text = terminal_output.apply_style("hello", terminal_output.STYLE_BOLD)
 dim_text = terminal_output.apply_style("hello", terminal_output.STYLE_DIM)
 cyan_text = terminal_output.apply_style("hello", terminal_output.STYLE_CYAN)
-print(f"Plain 'hello':                      {terminal_output.measure_width(plain_text)}  (expect 5)")
-print(f"Bold styled 'hello':                {terminal_output.measure_width(bold_text)}  (expect 5)")
-print(f"Dim styled 'hello':                 {terminal_output.measure_width(dim_text)}  (expect 5)")
-print(f"Cyan styled 'hello':                {terminal_output.measure_width(cyan_text)}  (expect 5)")
-print(f"Multi-line 'short\\nthis is longer': {terminal_output.measure_width('short' + chr(10) + 'this is longer')}  (expect 14)")
-print(f"ANSI-only string:                   {terminal_output.measure_width(terminal_output.STYLE_BOLD + terminal_output.STYLE_RESET)}  (expect 0)")
-print(f"Empty string:                       {terminal_output.measure_width('')}  (expect 0)")
+print(
+    f"Plain 'hello':                      {terminal_output.measure_width(plain_text)}  (expect 5)"
+)
+print(
+    f"Bold styled 'hello':                {terminal_output.measure_width(bold_text)}  (expect 5)"
+)
+print(
+    f"Dim styled 'hello':                 {terminal_output.measure_width(dim_text)}  (expect 5)"
+)
+print(
+    f"Cyan styled 'hello':                {terminal_output.measure_width(cyan_text)}  (expect 5)"
+)
+print(
+    f"Multi-line 'short\\nthis is longer': {terminal_output.measure_width('short' + chr(10) + 'this is longer')}  (expect 14)"
+)
+print(
+    f"ANSI-only string:                   {terminal_output.measure_width(terminal_output.STYLE_BOLD + terminal_output.STYLE_RESET)}  (expect 0)"
+)
+print(
+    f"Empty string:                       {terminal_output.measure_width('')}  (expect 0)"
+)
 print()
 
 print("--- align_text() ---")
@@ -83,13 +98,19 @@ print()
 styled_block = (
     terminal_output.apply_style("bold line", terminal_output.STYLE_BOLD)
     + "\n"
-    + terminal_output.apply_style("dim line, same visible length", terminal_output.STYLE_DIM)
+    + terminal_output.apply_style(
+        "dim line, same visible length", terminal_output.STYLE_DIM
+    )
 )
 print("Styled multi-line centered (ANSI-aware padding):")
 print(terminal_output.align_text(styled_block, "center", 80))
 print()
 print("Block wider than target (returned unchanged):")
-print(terminal_output.align_text("this line is definitely wider than forty chars", "center", 40))
+print(
+    terminal_output.align_text(
+        "this line is definitely wider than forty chars", "center", 40
+    )
+)
 print()
 
 # ============================================================================
@@ -99,14 +120,30 @@ print("=== SECTION 3: Existing Styling Functions ===")
 print()
 
 print("--- apply_style() ---")
-print(f"STYLE_BOLD:        {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}")
-print(f"STYLE_DIM:         {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}")
-print(f"STYLE_RED:         {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}")
-print(f"STYLE_YELLOW:      {terminal_output.apply_style('warning-like', terminal_output.STYLE_YELLOW)}")
-print(f"STYLE_CYAN:        {terminal_output.apply_style('info-like', terminal_output.STYLE_CYAN)}")
-print(f"STYLE_GRAY:        {terminal_output.apply_style('debug-like', terminal_output.STYLE_GRAY)}")
-print(f"STYLE_GREEN:       {terminal_output.apply_style('success-like', terminal_output.STYLE_GREEN)}")
-print(f"STYLE_BOLD_YELLOW: {terminal_output.apply_style('highlighted', terminal_output.STYLE_BOLD_YELLOW)}")
+print(
+    f"STYLE_BOLD:        {terminal_output.apply_style('important text', terminal_output.STYLE_BOLD)}"
+)
+print(
+    f"STYLE_DIM:         {terminal_output.apply_style('secondary info', terminal_output.STYLE_DIM)}"
+)
+print(
+    f"STYLE_RED:         {terminal_output.apply_style('error-like', terminal_output.STYLE_RED)}"
+)
+print(
+    f"STYLE_YELLOW:      {terminal_output.apply_style('warning-like', terminal_output.STYLE_YELLOW)}"
+)
+print(
+    f"STYLE_CYAN:        {terminal_output.apply_style('info-like', terminal_output.STYLE_CYAN)}"
+)
+print(
+    f"STYLE_GRAY:        {terminal_output.apply_style('debug-like', terminal_output.STYLE_GRAY)}"
+)
+print(
+    f"STYLE_GREEN:       {terminal_output.apply_style('success-like', terminal_output.STYLE_GREEN)}"
+)
+print(
+    f"STYLE_BOLD_YELLOW: {terminal_output.apply_style('highlighted', terminal_output.STYLE_BOLD_YELLOW)}"
+)
 print(f"No style:          {terminal_output.apply_style('plain text', '')}")
 print()
 
@@ -161,7 +198,24 @@ print("=== SECTION 4: New Styling Functions ===")
 print()
 
 print("--- format_duration() ---")
-test_values: list[float] = [-3, 0, 1, 3, 6, 7, 10, 14, 21, 30, 45, 60, 90, 180, 365, 730]
+test_values: list[float] = [
+    -3,
+    0,
+    1,
+    3,
+    6,
+    7,
+    10,
+    14,
+    21,
+    30,
+    45,
+    60,
+    90,
+    180,
+    365,
+    730,
+]
 for days in test_values:
     result = terminal_output.format_duration(days)
     print(f"  {days:>6} -> {result}")
@@ -173,7 +227,11 @@ print(f"  13.5 -> {terminal_output.format_duration(13.5)}")
 print()
 
 print("--- format_choices() ---")
-standard_choices: list[tuple[str, str]] = [("0", "failed"), ("1", "passed"), ("2", "easy")]
+standard_choices: list[tuple[str, str]] = [
+    ("0", "failed"),
+    ("1", "passed"),
+    ("2", "easy"),
+]
 print("Horizontal:")
 print(terminal_output.format_choices(standard_choices))
 print()
@@ -195,38 +253,48 @@ print()
 print("--- format_card() ---")
 terminal_output.set_layout(max_width=76, align="center")
 print("Full card via emit():")
-terminal_output.emit(terminal_output.format_card(
-    header_left=terminal_output.apply_style("[3 / 47]", terminal_output.STYLE_BOLD),
-    header_right="geography",
-    body="What is the capital city of Japan?",
-    footer="0 = failed   1 = hard   2 = good   3 = easy",
-))
+terminal_output.emit(
+    terminal_output.format_card(
+        header_left=terminal_output.apply_style("[3 / 47]", terminal_output.STYLE_BOLD),
+        header_right="geography",
+        body="What is the capital city of Japan?",
+        footer="0 = failed   1 = hard   2 = good   3 = easy",
+    )
+)
 print()
 print("No footer:")
-terminal_output.emit(terminal_output.format_card(
-    header_left=terminal_output.apply_style("[1 / 10]", terminal_output.STYLE_BOLD),
-    header_right="vocabulary",
-    body="Define: ephemeral",
-))
+terminal_output.emit(
+    terminal_output.format_card(
+        header_left=terminal_output.apply_style("[1 / 10]", terminal_output.STYLE_BOLD),
+        header_right="vocabulary",
+        body="Define: ephemeral",
+    )
+)
 print()
 print("Long body (wrapping):")
-terminal_output.emit(terminal_output.format_card(
-    header_left=terminal_output.apply_style("[7 / 20]", terminal_output.STYLE_BOLD),
-    header_right="machine learning",
-    body="Explain the difference between supervised and unsupervised learning, including two examples of each and when you would choose one approach over the other.",
-    footer="Answer in your own words before revealing.",
-))
+terminal_output.emit(
+    terminal_output.format_card(
+        header_left=terminal_output.apply_style("[7 / 20]", terminal_output.STYLE_BOLD),
+        header_right="machine learning",
+        body="Explain the difference between supervised and unsupervised learning, including two examples of each and when you would choose one approach over the other.",
+        footer="Answer in your own words before revealing.",
+    )
+)
 print()
 print("Styled body (ANSI codes must not break border alignment):")
 styled_body = (
-    "Capital: " + terminal_output.apply_style("Tokyo", terminal_output.STYLE_BOLD)
-    + "\nPopulation: " + terminal_output.apply_style("13.96 million", terminal_output.STYLE_CYAN)
+    "Capital: "
+    + terminal_output.apply_style("Tokyo", terminal_output.STYLE_BOLD)
+    + "\nPopulation: "
+    + terminal_output.apply_style("13.96 million", terminal_output.STYLE_CYAN)
 )
-terminal_output.emit(terminal_output.format_card(
-    header_left=terminal_output.apply_style("[4 / 47]", terminal_output.STYLE_BOLD),
-    header_right="geography",
-    body=styled_body,
-))
+terminal_output.emit(
+    terminal_output.format_card(
+        header_left=terminal_output.apply_style("[4 / 47]", terminal_output.STYLE_BOLD),
+        header_right="geography",
+        body=styled_body,
+    )
+)
 print()
 terminal_output.set_layout(max_width=80, align="left")
 
@@ -296,27 +364,34 @@ terminal_output.clear_screen()
 
 terminal_output.set_layout(max_width=76, align="center")
 
-terminal_output.emit(terminal_output.format_card(
-    header_left=terminal_output.apply_style("[12 / 47]", terminal_output.STYLE_BOLD),
-    header_right="history",
-    body="In what year did the Berlin Wall fall?",
-    footer="Think before revealing the answer.",
-))
+terminal_output.emit(
+    terminal_output.format_card(
+        header_left=terminal_output.apply_style(
+            "[12 / 47]", terminal_output.STYLE_BOLD
+        ),
+        header_right="history",
+        body="In what year did the Berlin Wall fall?",
+        footer="Think before revealing the answer.",
+    )
+)
 print()
 
-terminal_output.emit(terminal_output.format_choices([
-    ("0", "failed"),
-    ("1", "hard"),
-    ("2", "good"),
-    ("3", "easy"),
-]))
+terminal_output.emit(
+    terminal_output.format_choices(
+        [
+            ("0", "failed"),
+            ("1", "hard"),
+            ("2", "good"),
+            ("3", "easy"),
+        ]
+    )
+)
 print()
 
 terminal_output.msg_success(
     "Passed. Next review in "
     + terminal_output.apply_style(
-        terminal_output.format_duration(6.0),
-        terminal_output.STYLE_BOLD
+        terminal_output.format_duration(6.0), terminal_output.STYLE_BOLD
     )
     + "."
 )
@@ -340,11 +415,13 @@ print("--- Narrow layout (max_width=30) ---")
 terminal_output.set_layout(max_width=30, align="center")
 terminal_output.emit("Short line fits fine.")
 terminal_output.emit(terminal_output.format_separator())
-terminal_output.emit(terminal_output.format_card(
-    header_left=terminal_output.apply_style("[1/5]", terminal_output.STYLE_BOLD),
-    header_right="test",
-    body="Body wraps tightly at narrow width.",
-))
+terminal_output.emit(
+    terminal_output.format_card(
+        header_left=terminal_output.apply_style("[1/5]", terminal_output.STYLE_BOLD),
+        header_right="test",
+        body="Body wraps tightly at narrow width.",
+    )
+)
 print()
 terminal_output.set_layout(max_width=80, align="left")
 
@@ -357,11 +434,15 @@ print()
 terminal_output.set_layout(max_width=80, align="left")
 
 print("--- Multi-line ANSI content through align_text ---")
-multiline_ansi = "\n".join([
-    terminal_output.apply_style("line one bold", terminal_output.STYLE_BOLD),
-    terminal_output.apply_style("line two dim and longer", terminal_output.STYLE_DIM),
-    terminal_output.apply_style("line three cyan", terminal_output.STYLE_CYAN),
-])
+multiline_ansi = "\n".join(
+    [
+        terminal_output.apply_style("line one bold", terminal_output.STYLE_BOLD),
+        terminal_output.apply_style(
+            "line two dim and longer", terminal_output.STYLE_DIM
+        ),
+        terminal_output.apply_style("line three cyan", terminal_output.STYLE_CYAN),
+    ]
+)
 print("Centered (padding computed from widest visible line):")
 print(terminal_output.align_text(multiline_ansi, "center", 80))
 print()

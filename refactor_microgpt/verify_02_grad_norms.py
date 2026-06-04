@@ -23,11 +23,11 @@ import re
 import os
 import math
 
-SOURCE_FILE: str = 'refactor_microgpt.py'
-TEMP_FILE: str = '_verify_temp_02.py'
+SOURCE_FILE: str = "refactor_microgpt.py"
+TEMP_FILE: str = "_verify_temp_02.py"
 STEPS_TO_CHECK: int = 3
 
-REQUIRED_PARAM_NAMES: list[str] = ['wte', 'attn_wq', 'lm_head']
+REQUIRED_PARAM_NAMES: list[str] = ["wte", "attn_wq", "lm_head"]
 
 
 def run_gpt(instrument_enabled: bool, num_steps: int) -> list[str]:
@@ -35,29 +35,27 @@ def run_gpt(instrument_enabled: bool, num_steps: int) -> list[str]:
     patch_instrument: str = "True" if instrument_enabled else "False"
     patch_steps: str = str(num_steps)
 
-    with open(SOURCE_FILE, 'r') as source_file:
+    with open(SOURCE_FILE, "r") as source_file:
         source_text: str = source_file.read()
 
     patched_text: str = re.sub(
-        r'^INSTRUMENT:\s*bool\s*=\s*(True|False)',
-        f'INSTRUMENT: bool = {patch_instrument}',
+        r"^INSTRUMENT:\s*bool\s*=\s*(True|False)",
+        f"INSTRUMENT: bool = {patch_instrument}",
         source_text,
-        flags=re.MULTILINE
+        flags=re.MULTILINE,
     )
     patched_text = re.sub(
-        r'^num_steps:\s*int\s*=\s*\d+',
-        f'num_steps: int = {patch_steps}',
+        r"^num_steps:\s*int\s*=\s*\d+",
+        f"num_steps: int = {patch_steps}",
         patched_text,
-        flags=re.MULTILINE
+        flags=re.MULTILINE,
     )
 
-    with open(TEMP_FILE, 'w') as temp_file:
+    with open(TEMP_FILE, "w") as temp_file:
         temp_file.write(patched_text)
 
     result: subprocess.CompletedProcess = subprocess.run(
-        [sys.executable, TEMP_FILE],
-        capture_output=True,
-        text=True
+        [sys.executable, TEMP_FILE], capture_output=True, text=True
     )
 
     if result.returncode != 0:
@@ -72,7 +70,7 @@ def extract_step_lines(lines: list[str]) -> list[str]:
     """Return only lines matching the training step loss format."""
     step_lines: list[str] = []
     for line in lines:
-        if re.match(r'^\s*step\s+\d+\s*/\s*\d+\s*\|\s*loss\s+[\d.]+', line):
+        if re.match(r"^\s*step\s+\d+\s*/\s*\d+\s*\|\s*loss\s+[\d.]+", line):
             step_lines.append(line)
     return step_lines
 
@@ -81,14 +79,14 @@ def extract_grad_norm_lines(lines: list[str]) -> list[str]:
     """Return only lines that contain grad norm output."""
     grad_norm_lines: list[str] = []
     for line in lines:
-        if 'tape nodes:' in line and 'grad norms:' in line:
+        if "tape nodes:" in line and "grad norms:" in line:
             grad_norm_lines.append(line)
     return grad_norm_lines
 
 
 def parse_norm_values(line: str) -> dict[str, float]:
     """Parse all name:value pairs from a grad norm line into a dict."""
-    norm_pattern: re.Pattern = re.compile(r'([\w.]+):([\d.]+(?:e[+-]?\d+)?)')
+    norm_pattern: re.Pattern = re.compile(r"([\w.]+):([\d.]+(?:e[+-]?\d+)?)")
     parsed: dict[str, float] = {}
     for name, value_str in norm_pattern.findall(line):
         parsed[name] = float(value_str)
@@ -97,21 +95,15 @@ def parse_norm_values(line: str) -> dict[str, float]:
 
 def check_grad_norm_line(line: str) -> dict[str, float]:
     """Assert structure and return the parsed norm dict for further checks."""
-    assert 'tape nodes:' in line, (
-        f"FAIL: 'tape nodes:' not found in line: {line!r}"
-    )
-    assert 'grad norms:' in line, (
-        f"FAIL: 'grad norms:' not found in line: {line!r}"
-    )
+    assert "tape nodes:" in line, f"FAIL: 'tape nodes:' not found in line: {line!r}"
+    assert "grad norms:" in line, f"FAIL: 'grad norms:' not found in line: {line!r}"
 
-    tape_node_match: re.Match = re.search(r'tape nodes:\s*(\d+)', line)
+    tape_node_match: re.Match = re.search(r"tape nodes:\s*(\d+)", line)
     assert tape_node_match is not None, (
         f"FAIL: could not parse tape node count from: {line!r}"
     )
     tape_node_count: int = int(tape_node_match.group(1))
-    assert tape_node_count > 0, (
-        f"FAIL: tape node count is zero in: {line!r}"
-    )
+    assert tape_node_count > 0, f"FAIL: tape node count is zero in: {line!r}"
 
     norm_values: dict[str, float] = parse_norm_values(line)
     return norm_values
@@ -186,5 +178,5 @@ def main() -> None:
         os.remove(TEMP_FILE)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

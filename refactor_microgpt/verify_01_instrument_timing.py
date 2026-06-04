@@ -20,8 +20,8 @@ import sys
 import re
 import os
 
-SOURCE_FILE: str = 'refactor_microgpt.py'
-TEMP_FILE: str = '_verify_temp_01.py'
+SOURCE_FILE: str = "refactor_microgpt.py"
+TEMP_FILE: str = "_verify_temp_01.py"
 STEPS_TO_CHECK: int = 3
 
 
@@ -30,29 +30,27 @@ def run_gpt(instrument_enabled: bool, num_steps: int) -> list[str]:
     patch_instrument: str = "True" if instrument_enabled else "False"
     patch_steps: str = str(num_steps)
 
-    with open(SOURCE_FILE, 'r') as source_file:
+    with open(SOURCE_FILE, "r") as source_file:
         source_text: str = source_file.read()
 
     patched_text: str = re.sub(
-        r'^INSTRUMENT:\s*bool\s*=\s*(True|False)',
-        f'INSTRUMENT: bool = {patch_instrument}',
+        r"^INSTRUMENT:\s*bool\s*=\s*(True|False)",
+        f"INSTRUMENT: bool = {patch_instrument}",
         source_text,
-        flags=re.MULTILINE
+        flags=re.MULTILINE,
     )
     patched_text = re.sub(
-        r'^num_steps:\s*int\s*=\s*\d+',
-        f'num_steps: int = {patch_steps}',
+        r"^num_steps:\s*int\s*=\s*\d+",
+        f"num_steps: int = {patch_steps}",
         patched_text,
-        flags=re.MULTILINE
+        flags=re.MULTILINE,
     )
 
-    with open(TEMP_FILE, 'w') as temp_file:
+    with open(TEMP_FILE, "w") as temp_file:
         temp_file.write(patched_text)
 
     result: subprocess.CompletedProcess = subprocess.run(
-        [sys.executable, TEMP_FILE],
-        capture_output=True,
-        text=True
+        [sys.executable, TEMP_FILE], capture_output=True, text=True
     )
 
     if result.returncode != 0:
@@ -67,7 +65,7 @@ def extract_step_lines(lines: list[str]) -> list[str]:
     """Return only lines matching the training step loss format."""
     step_lines: list[str] = []
     for line in lines:
-        if re.match(r'^\s*step\s+\d+\s*/\s*\d+\s*\|\s*loss\s+[\d.]+', line):
+        if re.match(r"^\s*step\s+\d+\s*/\s*\d+\s*\|\s*loss\s+[\d.]+", line):
             step_lines.append(line)
     return step_lines
 
@@ -76,18 +74,18 @@ def extract_timing_lines(lines: list[str]) -> list[str]:
     """Return only lines that contain timing output."""
     timing_lines: list[str] = []
     for line in lines:
-        if 'fwd:' in line or 'bwd:' in line or 'adam:' in line:
+        if "fwd:" in line or "bwd:" in line or "adam:" in line:
             timing_lines.append(line)
     return timing_lines
 
 
 def check_timing_line(line: str) -> None:
     """Assert a timing line contains fwd/bwd/adam and all values are non-negative floats."""
-    assert 'fwd:' in line, f"FAIL: 'fwd:' not found in timing line: {line!r}"
-    assert 'bwd:' in line, f"FAIL: 'bwd:' not found in timing line: {line!r}"
-    assert 'adam:' in line, f"FAIL: 'adam:' not found in timing line: {line!r}"
+    assert "fwd:" in line, f"FAIL: 'fwd:' not found in timing line: {line!r}"
+    assert "bwd:" in line, f"FAIL: 'bwd:' not found in timing line: {line!r}"
+    assert "adam:" in line, f"FAIL: 'adam:' not found in timing line: {line!r}"
 
-    float_pattern: re.Pattern = re.compile(r'(fwd|bwd|adam):\s*([\d.]+(?:e[+-]?\d+)?)')
+    float_pattern: re.Pattern = re.compile(r"(fwd|bwd|adam):\s*([\d.]+(?:e[+-]?\d+)?)")
     matches: list[tuple[str, str]] = float_pattern.findall(line)
 
     assert len(matches) == 3, (
@@ -158,5 +156,5 @@ def main() -> None:
         os.remove(TEMP_FILE)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
