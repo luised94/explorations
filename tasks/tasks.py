@@ -518,6 +518,31 @@ def handle_help(arguments: list[str]) -> None:
     the command's flag dict, descriptions from FIELD_HELP).
     """
 
+    if arguments:
+        requested_command = arguments[0]
+        known_commands = {
+            "help",
+            "init",
+            "add",
+            "edit",
+            "done",
+            "retire",
+            "today",
+            "list",
+            "week",
+            "review",
+            "stale",
+            "search",
+            "tomorrow",
+            "goals",
+        }
+        if requested_command not in known_commands:
+            print(f"unknown command: {requested_command}", file=sys.stderr)
+            print("run 'tsk help' for available commands", file=sys.stderr)
+            sys.exit(1)
+        print_command_help(requested_command)
+        return
+
     descriptions = {
         "help": "show this help",
         "init": "create the data directory and files",
@@ -534,30 +559,6 @@ def handle_help(arguments: list[str]) -> None:
         "tomorrow": "(not implemented)",
         "goals": "(not implemented)",
     }
-
-    if arguments:
-        requested_command = arguments[0]
-        if requested_command not in descriptions:
-            print(f"unknown command: {requested_command}", file=sys.stderr)
-            print("run 'tsk help' for available commands", file=sys.stderr)
-            sys.exit(1)
-        usage_line = COMMAND_USAGE.get(requested_command, f"tsk {requested_command}")
-        print(f"usage: {usage_line}")
-        print(f"  {descriptions[requested_command]}")
-        command_flags = COMMAND_FLAG_SETS.get(requested_command)
-        if command_flags:
-            field_to_flags = {}
-            for flag_string, field_name in command_flags.items():
-                if field_name not in field_to_flags:
-                    field_to_flags[field_name] = []
-                field_to_flags[field_name].append(flag_string)
-            print("flags:")
-            for field_name, flag_strings in field_to_flags.items():
-                flag_label = ", ".join(flag_strings)
-                field_description = FIELD_HELP.get(field_name, field_name)
-                print(f"  {flag_label:<22}{field_description}")
-        return
-
     print("available commands:")
     for command_name, description in descriptions.items():
         print(f"  {command_name:<10}{description}")
@@ -699,15 +700,14 @@ def handle_add(arguments: list[str]) -> None:
 
     if not positional_args:
         print("error: summary required", file=sys.stderr)
-        print(f"usage: {config['usage']}", file=sys.stderr)
+        print_command_help("add")
         sys.exit(1)
-
     record_summary = " ".join(positional_args)
 
     # Whitespace-only summary guard (commit 23 moves this earlier; here for safety)
     if not record_summary.strip():
         print("error: summary required", file=sys.stderr)
-        print(f"usage: {config['usage']}", file=sys.stderr)
+        print_command_help("add")
         sys.exit(1)
 
     # Validate flag values per entity config
@@ -1420,6 +1420,64 @@ FIELD_HELP = {
     "tags": 'tags in one quoted string, e.g. "#health #home"',
     "time": "time range, HH:MM-HH:MM (24hr)",
 }
+# Annotations for which entity types a flag is most relevant to.
+# Flags not listed here apply to all types. Displayed in help output.
+FLAG_TYPE_ANNOTATIONS = {
+    "review": "goal",
+    "frequency": "habit",
+    "date": "event (required)",
+    "time": "event",
+    "label": "event",
+    "recur": "event",
+    "location": "event",
+    "energy": "event",
+    "linked": "event, task",
+}
+
+
+def print_command_help(command_name: str) -> None:
+    """Print usage, description, and annotated flags for a single command.
+
+    Reads flag names from COMMAND_FLAG_SETS, descriptions from FIELD_HELP,
+    and type annotations from FLAG_TYPE_ANNOTATIONS. Groups flags by field
+    name. Prints to stdout. Called by handle_help for per-command help and
+    by handle_add on missing-summary errors.
+    """
+    descriptions = {
+        "add": "create a new record (task, goal, habit, or event)",
+        "edit": "edit a record in $EDITOR",
+        "done": "complete a task or log a habit",
+        "retire": "deactivate a habit or goal",
+        "today": "daily dashboard (default)",
+        "list": "list active records",
+        "init": "create the data directory and files",
+        "help": "show this help",
+    }
+
+    usage_line = COMMAND_USAGE.get(command_name, f"tsk {command_name}")
+    print(f"usage: {usage_line}")
+    description = descriptions.get(command_name, command_name)
+    print(f"  {description}")
+
+    command_flags = COMMAND_FLAG_SETS.get(command_name)
+    if not command_flags:
+        return
+
+    field_to_flags = {}
+    for flag_string, field_name in command_flags.items():
+        if field_name not in field_to_flags:
+            field_to_flags[field_name] = []
+        field_to_flags[field_name].append(flag_string)
+
+    print("flags:")
+    for field_name, flag_strings in field_to_flags.items():
+        flag_label = ", ".join(flag_strings)
+        field_description = FIELD_HELP.get(field_name, field_name)
+        type_annotation = FLAG_TYPE_ANNOTATIONS.get(field_name)
+        if type_annotation:
+            field_description = f"{field_description} ({type_annotation})"
+        print(f"  {flag_label:<22}{field_description}")
+
 
 # ============================================================================
 # DISPATCH
