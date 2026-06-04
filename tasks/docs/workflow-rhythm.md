@@ -27,6 +27,46 @@ PURPOSE
   One sentence -- what this commit accomplishes and why it matters.
 CONTEXT
   Relevant spec sections, prior commits referenced, current file state.
+INVARIANTS
+  Properties that must hold after this commit. Three categories:
+
+  Postconditions: observable outcomes verified by running the tool.
+  These constrain what the code must produce but do not appear in the
+  code themselves. Covers both success paths and failure modes.
+  Format: post: [condition] -- [what it validates]
+  Examples:
+    post: done moves record from active.txt to done.txt -- lifecycle
+    post: new ID does not collide with any ID in done.txt -- uniqueness
+    post: missing summary exits 1 with error to stderr -- input validation
+    post: ambiguous prefix prints matching IDs to stderr -- disambiguation
+    post: successful add prints "added: {id} {summary}" to stdout -- confirmation
+
+  Runtime assertions: internal state checks implemented in the code as
+  assert statements or explicit guards. Use for data structure integrity
+  after transformations, preconditions at function entry that catch caller
+  bugs, and post-conditions after multi-step operations where silent
+  corruption is worse than a crash.
+  Format: runtime: [condition] -- [location hint]
+  Examples:
+    runtime: parsed record has 'id' key -- after parse_records
+    runtime: len(edited_records) == 1 -- after parsing editor output
+    runtime: new_id not in existing_ids -- after generate_id
+
+  At least two invariants per commit (one success, one failure).
+  Runtime assertions are implemented in the code at the indicated
+  location. Postconditions are verified in VERIFICATION. If a condition
+  could be either, prefer runtime when the check is cheap and failure
+  would silently corrupt data; prefer postcondition when the check
+  requires running the full command.
+
+  Every failure mode introduced by this commit must appear as a
+  postcondition. Format failure postconditions as:
+    post: [bad input or condition] -> [behavior] -- [what it validates]
+  Examples:
+    missing summary argument -> print usage to stderr, exit 1
+    file not found -> create empty file, continue
+    ambiguous ID prefix -> print matches to stderr, exit 1
+  This replaces the former ERROR HANDLING section.
 IMPLEMENTATION
   Precise editing instructions:
   - Which file, which section (by section header name)
@@ -34,35 +74,25 @@ IMPLEMENTATION
   - Substitution instructions: old text -> new text
   - No ambiguous instructions ("add appropriate handling")
   - Every line of code accounted for
-INVARIANTS
-  Testable assertions that must hold after this commit.
-  Format: assert: [condition] -- [what it validates]
-  At least one per commit. Examples:
-    assert: parse_file on empty file returns [] -- empty input
-    assert: every record has 'id' key -- ID generation integrity
-    assert: write then parse round-trips without data loss -- fidelity
-ERROR HANDLING
-  Specific failure modes introduced by THIS commit. Not hypothetical.
-  Format: [condition] -> [behavior]
-  Examples:
-    missing summary argument -> print usage to stderr, exit 1
-    file not found -> create empty file, continue
-    ambiguous ID prefix -> print matches to stderr, exit 1
-STRATEGIC PRINTS
-  Permanent UX confirmation output. Not debug logging.
-  Format: [trigger] -> prints "[message]" to [stdout/stderr]
-  Examples:
-    successful add -> "added: T0527a summary text" to stdout
-    successful done -> "completed: T0527a -> done.txt" to stdout
-    missing argument -> "error: summary required" to stderr
 VERIFICATION
   Exact shell commands with expected output. Developer runs these
   after applying the commit to confirm correctness.
-  
   $ command
   expected output
-  
-  Include at least one positive case and one error case.
+
+  Requirements:
+  - At least one positive case and one error case.
+  - Every user-facing print (confirmations to stdout, errors to stderr)
+    must appear as expected output in at least one verification command.
+    If a print exists in the code but no verification command shows it,
+    either add the command or question the print.
+  - Verification commands collectively cover all postconditions from
+    INVARIANTS. Each postcondition should be traceable to at least one
+    verification command.
+
+  The LLM should produce INVARIANTS before IMPLEMENTATION. Stating what
+  must be true before writing the code that makes it true biases
+  generation toward satisfying the stated constraints.
 COMMIT MESSAGE
   scope(project): imperative description
   - point 1
@@ -101,7 +131,9 @@ Every commit includes:
 ### Hardening Checklist (review before committing)
 Before running git add:
 - [ ] All verification commands produce expected output
-- [ ] Error cases produce correct stderr message and exit code
+- [ ] All runtime assertions from INVARIANTS are implemented in the code
+- [ ] All postconditions from INVARIANTS (success and failure) are covered by VERIFICATION commands
+- [ ] Every user-facing print in the code appears as expected output in at least one VERIFICATION command
 - [ ] No implicit state introduced (module-level mutable variables)
 - [ ] New functions have type hints and docstrings
 - [ ] Section headers present if new section was added

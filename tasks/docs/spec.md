@@ -1,4 +1,3 @@
-
 # tsk -- Task, Calendar & Habit Tracker Spec v3
 
 ## 1. Constraints
