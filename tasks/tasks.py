@@ -957,10 +957,19 @@ def handle_retire(arguments: list[str]) -> None:
         print("error: ID required", file=sys.stderr)
         print("usage: tsk retire <id>", file=sys.stderr)
         sys.exit(1)
+
     search_prefix = arguments[0]
 
-    active_records = parse_file(ACTIVE_FILE)
-    matches = find_records_by_prefix(active_records, search_prefix)
+    # Search active.txt first, then calendar.txt (mirrors edit's search pattern).
+    source_file_path = ACTIVE_FILE
+    source_records = parse_file(ACTIVE_FILE)
+    matches = find_records_by_prefix(source_records, search_prefix)
+
+    if len(matches) == 0:
+        source_file_path = CALENDAR_FILE
+        source_records = parse_file(CALENDAR_FILE)
+        matches = find_records_by_prefix(source_records, search_prefix)
+
     if len(matches) == 0:
         print(f"error: no record found matching: {search_prefix}", file=sys.stderr)
         sys.exit(1)
@@ -981,14 +990,14 @@ def handle_retire(arguments: list[str]) -> None:
     target_record["completed"] = today_date
     target_record["updated"] = today_date
 
-    remaining_active_records = [
-        record for record in active_records if record.get("id") != target_id
+    remaining_records = [
+        record for record in source_records if record.get("id") != target_id
     ]
     done_records = parse_file(DONE_FILE)
     done_records.append(target_record)
 
     write_file(DONE_FILE, done_records)
-    write_file(ACTIVE_FILE, remaining_active_records)
+    write_file(source_file_path, remaining_records)
     print(f"retired: {target_id} {target_summary} -> done.txt")
 
 
