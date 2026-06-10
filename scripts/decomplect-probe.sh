@@ -40,7 +40,7 @@ section() {
 }
 
 separator() {
-    printf '%s\n' "$(printf -- '-%.0s' {1..70})"
+    printf '%s\n' "$(printf '%.0s-' {1..70})"
 }
 
 # -- REPORT ASSEMBLY ----------------------------------------------------------
@@ -103,10 +103,10 @@ separator() {
     printf '(count of impure calls per top-level function, highest first)\n\n'
 
     awk '
-    /^def / { fn = $0; sub(/\(.*/, "", fn); sub(/^def /, "", fn); current_fn = fn }
+    /^def / { fn = $0; sub(/[(].*/, "", fn); sub(/^def /, "", fn); current_fn = fn }
     /^[^ \t]/ && !/^def / { current_fn = "(module-level)" }
     {
-        if (current_fn && match($0, /print\(|sys\.exit|date\.today|datetime\.now|os\.environ|os\.getenv|open\(|random\.|input\(/)) {
+        if (current_fn && match($0, /print[(]|sys[.]exit|date[.]today|datetime[.]now|os[.]environ|os[.]getenv|open[(]|random[.]|input[(]/)) {
             counts[current_fn]++
         }
     }
@@ -119,7 +119,7 @@ separator() {
     section "5. Impurity Detail (per function, with line numbers)"
     printf '(each impure call with its enclosing function)\n\n'
 
-    awk -v pat="print\\(|sys\\.exit|date\\.today|datetime\\.now|os\\.environ|os\\.getenv|open\\(|random\\.|input\\(" '
+    awk -v pat="print[(]|sys[.]exit|date[.]today|datetime[.]now|os[.]environ|os[.]getenv|open[(]|random[.]|input[(]" '
     /^def / {
         fn = $0; sub(/\(.*/, "", fn); sub(/^def /, "", fn)
         current_fn = fn
@@ -137,7 +137,7 @@ separator() {
     section "6. Handler / Dispatch Detection (H1)"
     printf '(functions matching handle_/cmd_/do_ patterns + dispatch structures)\n\n'
 
-    printf '--- Handler-shaped functions ---\n'
+    printf "=== Handler-shaped functions ===\n"
     grep -n "^def handle_\|^def cmd_\|^def do_\|^def run_" "$src" || printf '(none)\n'
 
     printf '\n--- Dispatch structures (if/elif chains, dicts) ---\n'
@@ -173,7 +173,7 @@ separator() {
 
     awk 'length > 35 { gsub(/^[ \t]+/, ""); counts[$0]++; lines[$0] = lines[$0] " " NR }
     END { for (l in counts) if (counts[l] >= 3) printf "%3dx  %s\n      lines:%s\n", counts[l], l, lines[l] }
-    ' "$src" | sort -rn | head -30 || printf '(none)\n'
+    ' "$src" | sort -rn | head -30 || printf '%s\n' '(none)'
 
     # -- 12. CLASS INVENTORY -------------------------------------------------
     section "12. Class Inventory"
