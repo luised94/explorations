@@ -1,0 +1,10 @@
+# code-dojo manifest
+# Format: project_name|git_url|git_ref
+# project_name: directory name under ~/code-dojo/
+# git_url: full HTTPS clone URL
+# git_ref: tag passed to git clone --branch (pins to a specific release)
+
+neovim|https://github.com/neovim/neovim.git|v0.12.2
+tmux|https://github.com/tmux/tmux.git|3.6b
+sqlite|https://github.com/sqlite/sqlite.git|version-3.53.2
+git|https://github.com/git/git.git|v2.54.0

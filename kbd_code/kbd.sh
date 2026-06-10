@@ -113,3 +113,106 @@ alias kj='nvim "$KBD_DIR/journal.txt"'
 alias kn='nvim "$KBD_DIR/source-notes.txt"'
 alias kva='kvim -a'
 alias kst='cd "$KBD_DIR" && git status && cd - > /dev/null'
+
+
+# =============================================================================
+# SECTION 4: Code dojo functions
+# =============================================================================
+# Requires: git, nvim, shuf, find, sort, uniq, head, awk
+
+CODE_DOJO_DIR="${CODE_DOJO_DIR:-$HOME/code-dojo}"
+
+dojo_open_most_edited_files() {
+    local project_name="${1:-}"
+    local file_count="${2:-20}"
+
+    if [[ -z "$project_name" ]]; then
+        echo "usage: dojo_open_most_edited_files <project_name> [file_count]" >&2
+        return 1
+    fi
+
+    local project_directory="$CODE_DOJO_DIR/$project_name"
+
+    if [[ ! -d "$project_directory" ]]; then
+        echo "error: project directory does not exist: $project_directory" >&2
+        return 1
+    fi
+
+    local most_edited_raw
+    most_edited_raw="$(git -C "$project_directory" log --format='' --name-only \
+        | sort \
+        | uniq -c \
+        | sort -rn \
+        | head -n "$file_count" \
+        | awk '{print $2}')"
+
+    local most_edited_existing_paths=""
+    local existing_count=0
+
+    while IFS= read -r candidate_path; do
+        if [[ -z "$candidate_path" ]]; then
+            continue
+        fi
+        if [[ -f "$project_directory/$candidate_path" ]]; then
+            most_edited_existing_paths="$most_edited_existing_paths $candidate_path"
+            existing_count=$((existing_count + 1))
+        fi
+    done <<< "$most_edited_raw"
+
+    if [[ $existing_count -eq 0 ]]; then
+        echo "no existing files found in most-edited results for $project_name" >&2
+        return 1
+    fi
+
+    echo "opening $existing_count most-edited files in $project_name"
+    # word splitting on most_edited_existing_paths is intentional here
+    # shellcheck disable=SC2086
+    nvim -c "cd $project_directory" $most_edited_existing_paths
+}
+
+dojo_open_random_source_file() {
+    local project_name="${1:-}"
+
+    if [[ -z "$project_name" ]]; then
+        echo "usage: dojo_open_random_source_file <project_name>" >&2
+        return 1
+    fi
+
+    local project_directory="$CODE_DOJO_DIR/$project_name"
+
+    if [[ ! -d "$project_directory" ]]; then
+        echo "error: project directory does not exist: $project_directory" >&2
+        return 1
+    fi
+
+    local source_extensions="*.c *.h *.lua *.py *.sh *.md *.rb *.rs *.go"
+
+    local find_expression=""
+    local first_extension=true
+    for extension_pattern in $source_extensions; do
+        if [[ "$first_extension" == true ]]; then
+            find_expression="-name $extension_pattern"
+            first_extension=false
+        else
+            find_expression="$find_expression -o -name $extension_pattern"
+        fi
+    done
+
+    local random_source_file
+    random_source_file="$(find "$project_directory" \
+        -path "$project_directory/.git" -prune \
+        -o -type f \( $find_expression \) -print \
+        | shuf -n 1)"
+
+    if [[ -z "$random_source_file" ]]; then
+        echo "no source files found in $project_name" >&2
+        return 1
+    fi
+
+    echo "opening $random_source_file"
+    nvim -c "cd $project_directory" "$random_source_file"
+}
+
+# Suggested aliases (add to .bashrc or .zshrc):
+alias dme='dojo_open_most_edited_files'
+alias drf='dojo_open_random_source_file'
