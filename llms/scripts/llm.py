@@ -150,6 +150,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to a file containing the system prompt",
     )
+    common.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show message summary and estimated tokens without calling the API",
+    )
     parser = argparse.ArgumentParser(
         description="Send prompts and files to LLM APIs: six interaction patterns."
     )
@@ -297,6 +303,35 @@ def format_conversation(history: list[dict]) -> str:
     return "\n\n".join(sections) + "\n"
 
 
+def estimate_tokens(char_count: int) -> int:
+    """Rough token estimate from a character count (~4 chars per token).
+
+    Undercounts for code and non-English text; the report prefixes it with
+    '~' accordingly. Shared by dry_run_report and (later) the payload guard.
+    """
+    return char_count // 4
+
+
+def dry_run_report(system: str | None, messages: list[dict]) -> str:
+    """Format a dry-run summary: message count, estimated tokens, content preview."""
+    entries = [(m["role"], m["content"]) for m in messages]
+    if system is not None:
+        entries.insert(0, ("system", system))
+    total_chars = sum(len(content) for _, content in entries)
+    lines = [
+        f"Messages: {len(messages)}"
+        + (" (+ system prompt)" if system is not None else ""),
+        f"Estimated tokens: ~{estimate_tokens(total_chars)}",
+        f"Content preview ({total_chars} chars):",
+    ]
+    for role, content in entries:
+        preview = content[:200]
+        if len(content) > 200:
+            preview += "..."
+        lines.append(f"  [{role}] {preview}")
+    return "\n".join(lines)
+
+
 # --- IO ---
 # call_llm, file reading, file writing. Collision avoidance lives in
 # write_response (not TRANSFORM) because checking for an existing file
@@ -427,6 +462,9 @@ def cmd_single(args: argparse.Namespace, system: str | None) -> None:
     except FileReadError:
         sys.exit(1)  # read_file already printed the error to stderr
     messages = [{"role": "user", "content": content}]
+    if args.dry_run:
+        print(dry_run_report(system, messages))
+        return
     try:
         response_text = call_llm(args.provider, args.model, system, messages)
     except httpx.HTTPError:
@@ -452,6 +490,9 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         )  # read_file already printed the error; a partial append would mislead
     content = build_user_content(args.prompt, files)
     messages = [{"role": "user", "content": content}]
+    if args.dry_run:
+        print(dry_run_report(system, messages))
+        return
     try:
         response_text = call_llm(args.provider, args.model, system, messages)
     except httpx.HTTPError:
@@ -480,6 +521,11 @@ def run_entries(
             skipped += 1  # read_file already printed the error to stderr
             continue
         messages = [{"role": "user", "content": content}]
+        if args.dry_run:
+            print(f"[{index}/{total}] {input_path}")
+            print(dry_run_report(system, messages))
+            print()
+            continue
         try:
             response_text = call_llm(args.provider, args.model, system, messages)
         except httpx.HTTPStatusError as exc:
@@ -503,7 +549,8 @@ def run_entries(
         )
         written += 1
         print(f"[{index}/{total}] {input_path} -> {out}")
-    print(f"Processed {total} files, wrote {written} responses to {args.output}")
+    if not args.dry_run:
+        print(f"Processed {total} files, wrote {written} responses to {args.output}")
     if skipped:
         print(f"Skipped {skipped} files due to errors", file=sys.stderr)
         sys.exit(1)
@@ -569,6 +616,16 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
                 refinement,
             )
             messages = [{"role": "user", "content": content}]
+            if args.dry_run:
+                print(f"[iteration {iteration}/{total}]")
+                print(dry_run_report(system, messages))
+                print()
+                # Placeholder keeps the loop's message shape visible for every
+                # iteration; later token estimates understate a real run, where
+                # previous_response would be a full model reply.
+                previous_response = "(dry run -- no response)"
+                responses.append(previous_response)
+                continue
             try:
                 response_text = call_llm(args.provider, args.model, system, messages)
             except httpx.HTTPError:
@@ -602,7 +659,7 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
         # C9: Ctrl-C stops iterating but still writes the combined file below,
         # matching cmd_interactive's transcript-on-interrupt behavior.
         print()
-    if responses:
+    if responses and not args.dry_run:
         out = write_response(
             args.output,
             f"{name_prefix}_combined_{timestamp}.md",
@@ -636,6 +693,11 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
                 print(f"(retrying: {text})")
             content = build_user_content(text, files) if not history else text
             attempt = history + [{"role": "user", "content": content}]
+            if args.dry_run:
+                print(dry_run_report(system, attempt))
+                print()
+                history = attempt + [{"role": "assistant", "content": "(dry run)"}]
+                continue
             try:
                 response_text = call_llm(args.provider, args.model, system, attempt)
             except httpx.HTTPError:
