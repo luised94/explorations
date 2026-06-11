@@ -168,7 +168,7 @@ dojo_open_most_edited_files() {
     echo "opening $existing_count most-edited files in $project_name"
     # word splitting on most_edited_existing_paths is intentional here
     # shellcheck disable=SC2086
-    nvim -c "cd $project_directory" $most_edited_existing_paths
+    nvim $most_edited_existing_paths
 }
 
 dojo_open_random_source_file() {
