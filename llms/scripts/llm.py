@@ -23,6 +23,7 @@ except ImportError:
 # Constants, provider dict, argparse.
 MAX_TOKENS = 4096
 TIMEOUT_SECONDS = 120.0
+PAYLOAD_WARN_TOKENS = 100_000  # C20: warn (not refuse) above this estimated input size
 DEFAULT_MANIFEST_PROMPT = "Analyze this file."
 
 
@@ -256,7 +257,13 @@ def parse_args() -> argparse.Namespace:
 # All pure functions: message builders, delimiter wrapping, manifest parsing,
 # conversation formatting. No open(), no print(), no httpx.
 def file_block(filename: str, text: str) -> str:
-    """Wrap text in the toolkit's BEGIN/END delimiter convention."""
+    """Wrap text in the toolkit's BEGIN/END delimiter convention.
+
+    Known limitation: content that itself contains '--- BEGIN ' / '--- END '
+    lines (e.g. transcripts produced by this tool, or this tool's own source)
+    can mislead the model about where the file ends. Callers warn via
+    warn_if_delimiter_collision; the delimiters are not escaped.
+    """
     return f"--- BEGIN {filename} ---\n{text}\n--- END {filename} ---"
 
 
@@ -328,6 +335,40 @@ def format_conversation(history: list[dict]) -> str:
     return "\n\n".join(sections) + "\n"
 
 
+def metadata_header(
+    args: argparse.Namespace, system: str | None, prompt: str | None, generated: str
+) -> str:
+    """HTML-comment block recording what produced an output file.
+
+    Without this, a directory of *_response_*.md files gives no way to
+    reconstruct which prompt/model/provider made each one. Pure: the caller
+    supplies the timestamp string. Prompt/system are collapsed to one line
+    and truncated so they can't break the comment block.
+    """
+    model = args.model or PROVIDERS[args.provider]["default_model"]
+    lines = [
+        "<!--",
+        f"  generated: {generated}",
+        f"  command: {args.command}",
+        f"  provider: {args.provider}",
+        f"  model: {model}",
+        f"  max_tokens: {args.max_tokens}",
+    ]
+    if prompt is not None:
+        lines.append(f"  prompt: {' '.join(prompt.split())[:200]}")
+    if system is not None:
+        lines.append(f"  system: {' '.join(system.split())[:200]}")
+    lines.append("-->")
+    return "\n".join(lines) + "\n\n"
+
+
+def contains_delimiter(text: str) -> bool:
+    """True if any line in text collides with the file-block delimiters."""
+    return any(
+        line.startswith(("--- BEGIN ", "--- END ")) for line in text.splitlines()
+    )
+
+
 def estimate_tokens(char_count: int) -> int:
     """Rough token estimate from a character count (~4 chars per token).
 
@@ -396,6 +437,18 @@ def call_llm(
         **provider["auth_header"](api_key),
         **provider["extra_headers"],
     }
+    payload_tokens = estimate_tokens(
+        sum(len(m["content"]) for m in messages) + len(system or "")
+    )
+    if payload_tokens > PAYLOAD_WARN_TOKENS:
+        # C20: oversized payloads otherwise fail server-side with an opaque
+        # provider error (or quietly cost a lot). Warn, but let it through --
+        # large-context models may handle it.
+        print(
+            f"Warning: payload is ~{payload_tokens} estimated tokens; "
+            f"the provider may reject or truncate it.",
+            file=sys.stderr,
+        )
     try:
         response = httpx.post(
             url,
@@ -446,6 +499,16 @@ def call_llm(
         )
         text += f"\n\n> [warning: response truncated at max_tokens={max_tokens}]"
     return text
+
+
+def warn_if_delimiter_collision(filename: str, text: str) -> None:
+    """Print a stderr warning when file content collides with the block delimiters."""
+    if contains_delimiter(text):
+        print(
+            f"Warning: {filename} contains '--- BEGIN/END' delimiter lines; "
+            f"the model may mis-read where the file ends.",
+            file=sys.stderr,
+        )
 
 
 class FileReadError(Exception):
@@ -522,11 +585,11 @@ def cmd_single(args: argparse.Namespace, system: str | None) -> None:
     """One prompt, one file, one call, one response file."""
     input_path = Path(args.filepath)
     try:
-        content = build_user_content(
-            args.prompt, [(input_path.name, read_file(input_path))]
-        )
+        file_text = read_file(input_path)
     except FileReadError:
         sys.exit(1)  # read_file already printed the error to stderr
+    warn_if_delimiter_collision(input_path.name, file_text)
+    content = build_user_content(args.prompt, [(input_path.name, file_text)])
     messages = [{"role": "user", "content": content}]
     if args.dry_run:
         print(dry_run_report(system, messages))
@@ -539,7 +602,9 @@ def cmd_single(args: argparse.Namespace, system: str | None) -> None:
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
-        args.output, f"{input_path.stem}_response_{timestamp}.md", response_text
+        args.output,
+        f"{input_path.stem}_response_{timestamp}.md",
+        metadata_header(args, system, args.prompt, timestamp) + response_text,
     )
     print(f"Wrote {out}")
 
@@ -556,6 +621,8 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         sys.exit(
             1
         )  # read_file already printed the error; a partial append would mislead
+    for name, text in files:
+        warn_if_delimiter_collision(name, text)
     content = build_user_content(args.prompt, files)
     messages = [{"role": "user", "content": content}]
     if args.dry_run:
@@ -569,7 +636,9 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
-        args.output, f"appended_response_{timestamp}.md", response_text
+        args.output,
+        f"appended_response_{timestamp}.md",
+        metadata_header(args, system, args.prompt, timestamp) + response_text,
     )
     print(f"Wrote {out}")
 
@@ -584,12 +653,12 @@ def run_entries(
     skipped = 0
     for index, (input_path, prompt) in enumerate(entries, start=1):
         try:
-            content = build_user_content(
-                prompt, [(input_path.name, read_file(input_path))]
-            )
+            file_text = read_file(input_path)
         except FileReadError:
             skipped += 1  # read_file already printed the error to stderr
             continue
+        warn_if_delimiter_collision(input_path.name, file_text)
+        content = build_user_content(prompt, [(input_path.name, file_text)])
         messages = [{"role": "user", "content": content}]
         if args.dry_run:
             print(f"[{index}/{total}] {input_path}")
@@ -617,7 +686,9 @@ def run_entries(
             continue
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out = write_response(
-            args.output, f"{input_path.stem}_response_{timestamp}.md", response_text
+            args.output,
+            f"{input_path.stem}_response_{timestamp}.md",
+            metadata_header(args, system, prompt, timestamp) + response_text,
         )
         written += 1
         print(f"[{index}/{total}] {input_path} -> {out}")
@@ -670,6 +741,7 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
             files = [(input_path.name, read_file(input_path))]
         except FileReadError:
             sys.exit(1)  # read_file already printed the error to stderr
+        warn_if_delimiter_collision(input_path.name, files[0][1])
         name_prefix = f"loop_{input_path.stem}"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     total = args.iterations
@@ -711,7 +783,8 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
             out = write_response(
                 args.output,
                 f"{name_prefix}_iter{iteration}_{timestamp}.md",
-                response_text,
+                metadata_header(args, system, args.initial_prompt, timestamp)
+                + response_text,
             )
             print(f"Wrote {out}")
             if args.interactive:
@@ -737,7 +810,8 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
         out = write_response(
             args.output,
             f"{name_prefix}_combined_{timestamp}.md",
-            combine_responses(responses),
+            metadata_header(args, system, args.initial_prompt, timestamp)
+            + combine_responses(responses),
         )
         print(f"Wrote {out}")
     if failed:
@@ -753,6 +827,7 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
             files = [(input_path.name, read_file(input_path))]
         except FileReadError:
             sys.exit(1)  # read_file already printed the error to stderr
+        warn_if_delimiter_collision(input_path.name, files[0][1])
     history: list[dict] = []
     last_failed: str | None = None  # C23: failed prompt, resendable via empty Enter
     try:
@@ -789,7 +864,10 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
     if history:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out = write_response(
-            args.output, f"interactive_{timestamp}.md", format_conversation(history)
+            args.output,
+            f"interactive_{timestamp}.md",
+            metadata_header(args, system, None, timestamp)
+            + format_conversation(history),
         )
         print(f"Wrote {out}")
 
