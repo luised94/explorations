@@ -1,0 +1,50 @@
+---
+format:
+  pdf:
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontsize: 10pt
+    geometry: "top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm"
+    papersize: letter
+    linestretch: 1.15
+    colorlinks: true
+    urlcolor: blue
+    title-block-style: none
+    include-in-header:
+      text: |
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+---
+
+```{=latex}
+\begin{flushright}
+Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.\\
+Boston, MA\\
+luised94@mit.edu\\
+\href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a}\\[1em]
+\today
+\end{flushright}
+
+\vspace{1em}
+
+\noindent Dear Hiring Committee,
+
+\vspace{0.5em}
+
+\noindent [OPENING PARAGRAPH]
+
+\noindent [BODY PARAGRAPH 1]
+
+\noindent [BODY PARAGRAPH 2]
+
+\noindent [BODY PARAGRAPH 3 - GAPS/FIT]
+
+\noindent [CLOSING PARAGRAPH]
+
+\vspace{1.5em}
+
+\noindent Sincerely,\\[0.5em]
+\noindent Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.
