@@ -29,12 +29,10 @@ DEFAULT_MANIFEST_PROMPT = "Analyze this file."
 # references them, because the dict is built at import time and needs them
 # defined first. They are pure (data in, data out) like everything in
 # TRANSFORM, but they are part of the provider table, not toolkit logic.
-def anthropic_transform_messages(messages: list[dict]) -> dict:
-    """Split system messages into Anthropic's top-level system field, return body fragment."""
-    system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-    chat = [m for m in messages if m["role"] != "system"]
-    body: dict = {"messages": chat}
-    if system:
+def anthropic_transform_messages(system: str | None, messages: list[dict]) -> dict:
+    """Return Anthropic's body fragment: chat messages plus a top-level system field."""
+    body: dict = {"messages": messages}
+    if system is not None:
         body["system"] = system
     return body
 
@@ -46,8 +44,10 @@ def anthropic_extract_response(data: dict) -> str:
     )
 
 
-def openai_transform_messages(messages: list[dict]) -> dict:
-    """Wrap the generic messages list unchanged; OpenAI keeps system in the array."""
+def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
+    """Return OpenAI's body fragment: system rides in the messages array."""
+    if system is not None:
+        messages = [{"role": "system", "content": system}, *messages]
     return {"messages": messages}
 
 
@@ -56,17 +56,14 @@ def openai_extract_response(data: dict) -> str:
     return data["choices"][0]["message"]["content"]
 
 
-def gemini_transform_messages(messages: list[dict]) -> dict:
-    """Reshape generic messages into Gemini's contents/parts format with role mapping."""
+def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
+    """Reshape messages into Gemini's contents/parts format with role mapping."""
     contents = []
+    if system is not None:
+        contents.append({"role": "user", "parts": [{"text": f"[System] {system}"}]})
     for m in messages:
-        if m["role"] == "system":
-            contents.append(
-                {"role": "user", "parts": [{"text": f"[System] {m['content']}"}]}
-            )
-        else:
-            role = "model" if m["role"] == "assistant" else m["role"]
-            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+        role = "model" if m["role"] == "assistant" else m["role"]
+        contents.append({"role": role, "parts": [{"text": m["content"]}]})
     return {"contents": contents}
 
 
@@ -85,7 +82,7 @@ def gemini_extract_response(data: dict) -> str:
 #   extra_headers      static provider-required headers ({} if none)
 #   body_extras        function: model -> dict merged into the body (model name,
 #                      token limits -- whatever the provider wants top-level)
-#   transform_messages function: generic messages list -> provider body fragment
+#   transform_messages function: (system or None, messages list) -> provider body fragment
 #   extract_response   function: response JSON -> response text
 #   default_model      model string used when --model is not given
 PROVIDERS: dict = {
@@ -237,13 +234,6 @@ def build_user_content(prompt: str, files: list[tuple[str, str]]) -> str:
     return "\n\n".join([prompt, *(file_block(name, text) for name, text in files)])
 
 
-def prepend_system(messages: list[dict], system: str | None) -> list[dict]:
-    """Return messages with a system message prepended, or unchanged if system is None."""
-    if system is None:
-        return messages
-    return [{"role": "system", "content": system}, *messages]
-
-
 def build_iteration_content(
     prompt: str,
     iteration: int,
@@ -311,8 +301,10 @@ def format_conversation(history: list[dict]) -> str:
 # call_llm, file reading, file writing. Collision avoidance lives in
 # write_response (not TRANSFORM) because checking for an existing file
 # is a filesystem read.
-def call_llm(provider_name: str, model: str | None, messages: list[dict]) -> str:
-    """POST messages to the named provider and return the response text."""
+def call_llm(
+    provider_name: str, model: str | None, system: str | None, messages: list[dict]
+) -> str:
+    """POST system + messages to the named provider and return the response text."""
     provider = PROVIDERS[provider_name]
     api_key = os.environ.get(provider["env_key"])
     if api_key is None:
@@ -324,7 +316,7 @@ def call_llm(provider_name: str, model: str | None, messages: list[dict]) -> str
     model = model or provider["default_model"]
     url = provider["url_template"].format(model=model)
     body = {
-        **provider["transform_messages"](messages),
+        **provider["transform_messages"](system, messages),
         **provider["body_extras"](model),
     }
     headers = {
@@ -434,9 +426,9 @@ def cmd_single(args: argparse.Namespace, system: str | None) -> None:
         )
     except FileReadError:
         sys.exit(1)  # read_file already printed the error to stderr
-    messages = prepend_system([{"role": "user", "content": content}], system)
+    messages = [{"role": "user", "content": content}]
     try:
-        response_text = call_llm(args.provider, args.model, messages)
+        response_text = call_llm(args.provider, args.model, system, messages)
     except httpx.HTTPError:
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -459,9 +451,9 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
             1
         )  # read_file already printed the error; a partial append would mislead
     content = build_user_content(args.prompt, files)
-    messages = prepend_system([{"role": "user", "content": content}], system)
+    messages = [{"role": "user", "content": content}]
     try:
-        response_text = call_llm(args.provider, args.model, messages)
+        response_text = call_llm(args.provider, args.model, system, messages)
     except httpx.HTTPError:
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -487,9 +479,9 @@ def run_entries(
         except FileReadError:
             skipped += 1  # read_file already printed the error to stderr
             continue
-        messages = prepend_system([{"role": "user", "content": content}], system)
+        messages = [{"role": "user", "content": content}]
         try:
-            response_text = call_llm(args.provider, args.model, messages)
+            response_text = call_llm(args.provider, args.model, system, messages)
         except httpx.HTTPStatusError as exc:
             # call_llm already printed the error to stderr.
             if exc.response.status_code in (401, 403):
@@ -576,9 +568,9 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
                 files,
                 refinement,
             )
-            messages = prepend_system([{"role": "user", "content": content}], system)
+            messages = [{"role": "user", "content": content}]
             try:
-                response_text = call_llm(args.provider, args.model, messages)
+                response_text = call_llm(args.provider, args.model, system, messages)
             except httpx.HTTPError:
                 failed = True  # call_llm already printed the error to stderr
                 break
@@ -645,9 +637,7 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
             content = build_user_content(text, files) if not history else text
             attempt = history + [{"role": "user", "content": content}]
             try:
-                response_text = call_llm(
-                    args.provider, args.model, prepend_system(attempt, system)
-                )
+                response_text = call_llm(args.provider, args.model, system, attempt)
             except httpx.HTTPError:
                 # call_llm already printed the error to stderr.
                 last_failed = text
