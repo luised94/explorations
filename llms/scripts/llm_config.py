@@ -19,6 +19,7 @@ TIMEOUT_SECONDS = 120.0
 # Pure functions referenced by name in the provider table below.
 # They take data, return data. No IO.
 
+
 def anthropic_transform_messages(messages: list[dict]) -> dict:
     """Split system messages into Anthropic's top-level system field, return body fragment."""
     system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
@@ -31,7 +32,9 @@ def anthropic_transform_messages(messages: list[dict]) -> dict:
 
 def anthropic_extract_response(data: dict) -> str:
     """Concatenate the text blocks from an Anthropic messages-API response."""
-    return "".join(block["text"] for block in data["content"] if block["type"] == "text")
+    return "".join(
+        block["text"] for block in data["content"] if block["type"] == "text"
+    )
 
 
 def openai_transform_messages(messages: list[dict]) -> dict:
@@ -49,8 +52,9 @@ def gemini_transform_messages(messages: list[dict]) -> dict:
     contents = []
     for m in messages:
         if m["role"] == "system":
-            contents.append({"role": "user",
-                             "parts": [{"text": f"[System] {m['content']}"}]})
+            contents.append(
+                {"role": "user", "parts": [{"text": f"[System] {m['content']}"}]}
+            )
         else:
             role = "model" if m["role"] == "assistant" else m["role"]
             contents.append({"role": role, "parts": [{"text": m["content"]}]})
@@ -99,13 +103,17 @@ PROVIDERS: dict = {
         "default_model": "gpt-4o",
     },
     "gemini": {
-        "url_template": ("https://generativelanguage.googleapis.com/v1beta/"
-                         "models/{model}:generateContent"),
+        "url_template": (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            "models/{model}:generateContent"
+        ),
         "env_key": "GEMINI_API_KEY",
         "auth_header": lambda api_key: {},
         "auth_params": lambda api_key: {"key": api_key},
         "extra_headers": {},
-        "body_extras": lambda model: {"generationConfig": {"maxOutputTokens": MAX_TOKENS}},
+        "body_extras": lambda model: {
+            "generationConfig": {"maxOutputTokens": MAX_TOKENS}
+        },
         "transform_messages": gemini_transform_messages,
         "extract_response": gemini_extract_response,
         "default_model": "gemini-2.0-flash",
@@ -115,27 +123,38 @@ PROVIDERS: dict = {
 
 # --- IO ---
 
+
 def call_llm(provider_name: str, model: str | None, messages: list[dict]) -> str:
     """POST messages to the named provider and return the response text."""
     provider = PROVIDERS[provider_name]
 
     api_key = os.environ.get(provider["env_key"])
     if api_key is None:
-        print(f"Missing API key: set the {provider['env_key']} environment variable.",
-              file=sys.stderr)
+        print(
+            f"Missing API key: set the {provider['env_key']} environment variable.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     model = model or provider["default_model"]
     url = provider["url_template"].format(model=model)
-    body = {**provider["transform_messages"](messages), **provider["body_extras"](model)}
+    body = {
+        **provider["transform_messages"](messages),
+        **provider["body_extras"](model),
+    }
     headers = {
         "content-type": "application/json",
         **provider["auth_header"](api_key),
         **provider["extra_headers"],
     }
 
-    response = httpx.post(url, params=provider["auth_params"](api_key),
-                          json=body, headers=headers, timeout=TIMEOUT_SECONDS)
+    response = httpx.post(
+        url,
+        params=provider["auth_params"](api_key),
+        json=body,
+        headers=headers,
+        timeout=TIMEOUT_SECONDS,
+    )
     if response.status_code >= 400:
         # Print here so error formatting lives in one place; raise so the
         # caller decides whether to exit (single-call scripts) or skip and

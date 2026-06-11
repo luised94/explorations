@@ -17,29 +17,45 @@ from llm_config import PROVIDERS, call_llm
 
 # --- CONFIG ---
 
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the append pattern."""
     parser = argparse.ArgumentParser(
-        description="Send one prompt and many files to an LLM in a single message.")
+        description="Send one prompt and many files to an LLM in a single message."
+    )
     parser.add_argument("prompt", help="Prompt text, sent before the file blocks")
-    parser.add_argument("filepath", nargs="*",
-                        help="Paths to files to attach (zero or more)")
-    parser.add_argument("--dir", default=None,
-                        help="Directory to glob for additional input files")
-    parser.add_argument("--ext", default=None,
-                        help="Filter --dir files by extension, e.g. .py")
-    parser.add_argument("--provider", default="anthropic", choices=sorted(PROVIDERS),
-                        help="Provider name from llm_config.PROVIDERS")
-    parser.add_argument("--model", default=None,
-                        help="Model string (default: provider's default_model)")
-    parser.add_argument("--output", default=".",
-                        help="Directory for the response file (default: current directory)")
+    parser.add_argument(
+        "filepath", nargs="*", help="Paths to files to attach (zero or more)"
+    )
+    parser.add_argument(
+        "--dir", default=None, help="Directory to glob for additional input files"
+    )
+    parser.add_argument(
+        "--ext", default=None, help="Filter --dir files by extension, e.g. .py"
+    )
+    parser.add_argument(
+        "--provider",
+        default="anthropic",
+        choices=sorted(PROVIDERS),
+        help="Provider name from llm_config.PROVIDERS",
+    )
+    parser.add_argument(
+        "--model", default=None, help="Model string (default: provider's default_model)"
+    )
+    parser.add_argument(
+        "--output",
+        default=".",
+        help="Directory for the response file (default: current directory)",
+    )
     return parser.parse_args()
 
 
 # --- DATA ---
 
-def collect_paths(positional: list[str], dir_arg: str | None, ext: str | None) -> list[Path]:
+
+def collect_paths(
+    positional: list[str], dir_arg: str | None, ext: str | None
+) -> list[Path]:
     """Combine positional paths with a directory glob, deduplicate, sort alphabetically."""
     paths = [Path(p) for p in positional]
     if dir_arg is not None:
@@ -50,6 +66,7 @@ def collect_paths(positional: list[str], dir_arg: str | None, ext: str | None) -
 
 # --- TRANSFORM ---
 # No open(), no print(), no httpx. Strings/dicts in, strings/dicts out.
+
 
 def build_messages_multi(prompt: str, files: list[tuple[str, str]]) -> list[dict]:
     """Assemble one user message: prompt text, then each (filename, text) as a delimited block."""
@@ -62,6 +79,7 @@ def build_messages_multi(prompt: str, files: list[tuple[str, str]]) -> list[dict
 
 
 # --- MAIN ---
+
 
 def main() -> None:
     """Collect -> read -> transform -> call -> write."""

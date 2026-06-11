@@ -16,35 +16,45 @@ from llm_config import PROVIDERS, call_llm
 
 # --- CONFIG ---
 
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the single-file pattern."""
-    parser = argparse.ArgumentParser(description="Send one prompt and one file to an LLM.")
+    parser = argparse.ArgumentParser(
+        description="Send one prompt and one file to an LLM."
+    )
     parser.add_argument("prompt", help="Prompt text, sent before the file content")
     parser.add_argument("filepath", help="Path to the file to attach")
-    parser.add_argument("--provider", default="anthropic", choices=sorted(PROVIDERS),
-                        help="Provider name from llm_config.PROVIDERS")
-    parser.add_argument("--model", default=None,
-                        help="Model string (default: provider's default_model)")
-    parser.add_argument("--output", default=".",
-                        help="Directory for the response file (default: current directory)")
+    parser.add_argument(
+        "--provider",
+        default="anthropic",
+        choices=sorted(PROVIDERS),
+        help="Provider name from llm_config.PROVIDERS",
+    )
+    parser.add_argument(
+        "--model", default=None, help="Model string (default: provider's default_model)"
+    )
+    parser.add_argument(
+        "--output",
+        default=".",
+        help="Directory for the response file (default: current directory)",
+    )
     return parser.parse_args()
 
 
 # --- TRANSFORM ---
 # No open(), no print(), no httpx. Strings/dicts in, strings/dicts out.
 
+
 def build_messages(prompt: str, filename: str, file_text: str) -> list[dict]:
     """Assemble the single user message: prompt text followed by the delimited file block."""
     content = (
-        f"{prompt}\n\n"
-        f"--- BEGIN {filename} ---\n"
-        f"{file_text}\n"
-        f"--- END {filename} ---"
+        f"{prompt}\n\n--- BEGIN {filename} ---\n{file_text}\n--- END {filename} ---"
     )
     return [{"role": "user", "content": content}]
 
 
 # --- MAIN ---
+
 
 def main() -> None:
     """Read -> transform -> call -> write."""

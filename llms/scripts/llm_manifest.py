@@ -19,23 +19,35 @@ DEFAULT_PROMPT = "Analyze this file."
 
 # --- CONFIG ---
 
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the manifest pattern."""
     parser = argparse.ArgumentParser(
-        description="Send per-file prompts to an LLM as listed in a TSV manifest.")
-    parser.add_argument("manifest_path",
-                        help="Path to a TSV manifest: filepath<TAB>prompt per line")
-    parser.add_argument("--provider", default="anthropic", choices=sorted(PROVIDERS),
-                        help="Provider name from llm_config.PROVIDERS")
-    parser.add_argument("--model", default=None,
-                        help="Model string (default: provider's default_model)")
-    parser.add_argument("--output", default=".",
-                        help="Directory for the response files (default: current directory)")
+        description="Send per-file prompts to an LLM as listed in a TSV manifest."
+    )
+    parser.add_argument(
+        "manifest_path", help="Path to a TSV manifest: filepath<TAB>prompt per line"
+    )
+    parser.add_argument(
+        "--provider",
+        default="anthropic",
+        choices=sorted(PROVIDERS),
+        help="Provider name from llm_config.PROVIDERS",
+    )
+    parser.add_argument(
+        "--model", default=None, help="Model string (default: provider's default_model)"
+    )
+    parser.add_argument(
+        "--output",
+        default=".",
+        help="Directory for the response files (default: current directory)",
+    )
     return parser.parse_args()
 
 
 # --- TRANSFORM ---
 # No open(), no print(), no httpx. Strings/dicts in, strings/dicts out.
+
 
 def parse_manifest(manifest_text: str) -> list[dict]:
     """Parse TSV manifest text into a list of {"filepath": str, "prompt": str} dicts."""
@@ -46,8 +58,12 @@ def parse_manifest(manifest_text: str) -> list[dict]:
             continue
         if "\t" in stripped:
             filepath, prompt = stripped.split("\t", 1)
-            entries.append({"filepath": filepath.strip(),
-                            "prompt": prompt.strip() or DEFAULT_PROMPT})
+            entries.append(
+                {
+                    "filepath": filepath.strip(),
+                    "prompt": prompt.strip() or DEFAULT_PROMPT,
+                }
+            )
         else:
             entries.append({"filepath": stripped, "prompt": DEFAULT_PROMPT})
     return entries
@@ -56,15 +72,13 @@ def parse_manifest(manifest_text: str) -> list[dict]:
 def build_messages(prompt: str, filename: str, file_text: str) -> list[dict]:
     """Assemble the single user message: prompt text followed by the delimited file block."""
     content = (
-        f"{prompt}\n\n"
-        f"--- BEGIN {filename} ---\n"
-        f"{file_text}\n"
-        f"--- END {filename} ---"
+        f"{prompt}\n\n--- BEGIN {filename} ---\n{file_text}\n--- END {filename} ---"
     )
     return [{"role": "user", "content": content}]
 
 
 # --- MAIN ---
+
 
 def main() -> None:
     """Read manifest -> parse -> for each entry: read -> transform -> call -> write."""
