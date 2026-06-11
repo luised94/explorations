@@ -262,10 +262,16 @@ def build_iteration_content(
     return "\n\n".join(parts)
 
 
-def parse_manifest(manifest_text: str) -> list[tuple[str, str]]:
-    """Parse TSV manifest text into (filepath, prompt) tuples."""
+def parse_manifest(manifest_text: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """Parse TSV manifest text into ((filepath, prompt) tuples, warning strings).
+
+    Warnings flag lines that contain spaces but no tab: almost certainly a
+    manifest authored with spaces (or tab-converted by an editor), which would
+    silently become a bogus filepath with the default prompt.
+    """
     entries = []
-    for line in manifest_text.splitlines():
+    warnings = []
+    for lineno, line in enumerate(manifest_text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -275,8 +281,14 @@ def parse_manifest(manifest_text: str) -> list[tuple[str, str]]:
                 (filepath.strip(), prompt.strip() or DEFAULT_MANIFEST_PROMPT)
             )
         else:
+            if " " in stripped:
+                warnings.append(
+                    f"line {lineno}: no tab but contains spaces -- treating the whole "
+                    f"line as a filepath ({stripped!r}); use a TAB between filepath "
+                    f"and prompt"
+                )
             entries.append((stripped, DEFAULT_MANIFEST_PROMPT))
-    return entries
+    return entries, warnings
 
 
 def combine_responses(responses: list[str]) -> str:
@@ -320,13 +332,20 @@ def call_llm(provider_name: str, model: str | None, messages: list[dict]) -> str
         **provider["auth_header"](api_key),
         **provider["extra_headers"],
     }
-    response = httpx.post(
-        url,
-        params=provider["auth_params"](api_key),
-        json=body,
-        headers=headers,
-        timeout=TIMEOUT_SECONDS,
-    )
+    try:
+        response = httpx.post(
+            url,
+            params=provider["auth_params"](api_key),
+            json=body,
+            headers=headers,
+            timeout=TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        # Transport-level failure: no network, DNS, timeout, broken connection.
+        # Same contract as the status-error path below: print here, raise so
+        # the caller decides exit vs skip.
+        print(f"Request failed ({type(exc).__name__}): {exc}", file=sys.stderr)
+        raise
     if response.status_code >= 400:
         # Print here so error formatting lives in one place; raise so the
         # caller decides whether to exit (single-call commands) or skip and
@@ -336,13 +355,36 @@ def call_llm(provider_name: str, model: str | None, messages: list[dict]) -> str
     return provider["extract_response"](response.json())
 
 
+class FileReadError(Exception):
+    """Raised by read_file after the error is printed to stderr.
+
+    Mirrors call_llm's contract: formatting lives in one place here; the
+    caller decides whether to exit (single-call commands) or skip and
+    continue (batch-style commands).
+    """
+
+
 def read_file(path: Path, encoding: str | None = None) -> str:
-    """Read a text file; print an error and exit if it doesn't exist."""
+    """Read a text file; print an error to stderr and raise FileReadError on failure."""
     try:
-        return path.read_text(encoding=encoding)
-    except FileNotFoundError:
+        text = path.read_text(encoding=encoding)
+    except FileNotFoundError as exc:
         print(f"File not found: {path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileReadError(str(path)) from exc
+    except IsADirectoryError as exc:
+        print(f"Is a directory, not a file: {path}", file=sys.stderr)
+        raise FileReadError(str(path)) from exc
+    except UnicodeDecodeError as exc:
+        print(f"Not readable as text (binary file?): {path}", file=sys.stderr)
+        raise FileReadError(str(path)) from exc
+    except OSError as exc:
+        print(f"Cannot read {path}: {exc}", file=sys.stderr)
+        raise FileReadError(str(path)) from exc
+    if not text:
+        # C11: an empty block still gets sent and billed; the model will
+        # gamely analyze nothing. Warn but proceed.
+        print(f"Warning: {path} is empty", file=sys.stderr)
+    return text
 
 
 def collect_paths(
@@ -386,14 +428,17 @@ def write_response(output_dir: str, filename: str, text: str) -> Path:
 def cmd_single(args: argparse.Namespace, system: str | None) -> None:
     """One prompt, one file, one call, one response file."""
     input_path = Path(args.filepath)
-    content = build_user_content(
-        args.prompt, [(input_path.name, read_file(input_path))]
-    )
+    try:
+        content = build_user_content(
+            args.prompt, [(input_path.name, read_file(input_path))]
+        )
+    except FileReadError:
+        sys.exit(1)  # read_file already printed the error to stderr
     messages = prepend_system([{"role": "user", "content": content}], system)
     try:
         response_text = call_llm(args.provider, args.model, messages)
-    except httpx.HTTPStatusError:
-        sys.exit(1)  # call_llm already printed the HTTP error to stderr
+    except httpx.HTTPError:
+        sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
         args.output, f"{input_path.stem}_response_{timestamp}.md", response_text
@@ -407,13 +452,18 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
     if not input_paths:
         print("No input files: pass file paths and/or --dir.", file=sys.stderr)
         sys.exit(1)
-    files = [(p.name, read_file(p)) for p in input_paths]
+    try:
+        files = [(p.name, read_file(p)) for p in input_paths]
+    except FileReadError:
+        sys.exit(
+            1
+        )  # read_file already printed the error; a partial append would mislead
     content = build_user_content(args.prompt, files)
     messages = prepend_system([{"role": "user", "content": content}], system)
     try:
         response_text = call_llm(args.provider, args.model, messages)
-    except httpx.HTTPStatusError:
-        sys.exit(1)  # call_llm already printed the HTTP error to stderr
+    except httpx.HTTPError:
+        sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
         args.output, f"appended_response_{timestamp}.md", response_text
@@ -424,17 +474,36 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
 def run_entries(
     entries: list[tuple[Path, str]], args: argparse.Namespace, system: str | None
 ) -> None:
-    """Sequentially call the LLM once per (path, prompt) entry; skip HTTP failures."""
+    """Call the LLM once per (path, prompt) entry; skip unreadable files and
+    failed calls, but abort immediately on auth errors (401/403)."""
     total = len(entries)
     written = 0
     skipped = 0
     for index, (input_path, prompt) in enumerate(entries, start=1):
-        content = build_user_content(prompt, [(input_path.name, read_file(input_path))])
+        try:
+            content = build_user_content(
+                prompt, [(input_path.name, read_file(input_path))]
+            )
+        except FileReadError:
+            skipped += 1  # read_file already printed the error to stderr
+            continue
         messages = prepend_system([{"role": "user", "content": content}], system)
         try:
             response_text = call_llm(args.provider, args.model, messages)
-        except httpx.HTTPStatusError:
-            skipped += 1  # call_llm already printed the HTTP error to stderr
+        except httpx.HTTPStatusError as exc:
+            # call_llm already printed the error to stderr.
+            if exc.response.status_code in (401, 403):
+                # C14c: auth failure is not per-entry -- every remaining call
+                # would fail identically, one wasted round trip each. Abort.
+                print(
+                    "Auth error: aborting batch (remaining entries would all fail).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            skipped += 1
+            continue
+        except httpx.HTTPError:
+            skipped += 1  # call_llm already printed the error to stderr
             continue
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out = write_response(
@@ -460,7 +529,13 @@ def cmd_batch(args: argparse.Namespace, system: str | None) -> None:
 def cmd_manifest(args: argparse.Namespace, system: str | None) -> None:
     """TSV manifest drives per-file prompts; one call and one response file per entry."""
     manifest_path = Path(args.manifest_path)
-    entries = parse_manifest(read_file(manifest_path, encoding="utf-8-sig"))
+    try:
+        manifest_text = read_file(manifest_path, encoding="utf-8-sig")
+    except FileReadError:
+        sys.exit(1)  # read_file already printed the error to stderr
+    entries, warnings = parse_manifest(manifest_text)
+    for warning in warnings:
+        print(f"Manifest warning, {warning}", file=sys.stderr)
     if not entries:
         print(f"No entries in manifest: {manifest_path}", file=sys.stderr)
         sys.exit(1)
@@ -480,7 +555,10 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
     name_prefix = "loop"  # C8: distinguish runs over different inputs
     if args.filepath is not None:
         input_path = Path(args.filepath)
-        files = [(input_path.name, read_file(input_path))]
+        try:
+            files = [(input_path.name, read_file(input_path))]
+        except FileReadError:
+            sys.exit(1)  # read_file already printed the error to stderr
         name_prefix = f"loop_{input_path.stem}"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     total = args.iterations
@@ -501,8 +579,8 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
             messages = prepend_system([{"role": "user", "content": content}], system)
             try:
                 response_text = call_llm(args.provider, args.model, messages)
-            except httpx.HTTPStatusError:
-                failed = True  # call_llm already printed the HTTP error to stderr
+            except httpx.HTTPError:
+                failed = True  # call_llm already printed the error to stderr
                 break
             responses.append(response_text)
             previous_response = response_text
@@ -548,7 +626,10 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
     files = []
     if args.filepath is not None:
         input_path = Path(args.filepath)
-        files = [(input_path.name, read_file(input_path))]
+        try:
+            files = [(input_path.name, read_file(input_path))]
+        except FileReadError:
+            sys.exit(1)  # read_file already printed the error to stderr
     history: list[dict] = []
     last_failed: str | None = None  # C23: failed prompt, resendable via empty Enter
     try:
@@ -567,8 +648,8 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
                 response_text = call_llm(
                     args.provider, args.model, prepend_system(attempt, system)
                 )
-            except httpx.HTTPStatusError:
-                # call_llm already printed the HTTP error to stderr.
+            except httpx.HTTPError:
+                # call_llm already printed the error to stderr.
                 last_failed = text
                 print("(LLM call failed -- press Enter to retry, or type a new prompt)")
                 continue
@@ -594,7 +675,10 @@ def main() -> None:
         sys.exit(1)
     system = args.system
     if args.system_file:
-        system = read_file(Path(args.system_file))
+        try:
+            system = read_file(Path(args.system_file))
+        except FileReadError:
+            sys.exit(1)  # read_file already printed the error to stderr
     # C7: create the output directory up front -- discovering it's missing
     # after a successful (paid) API call would lose the response.
     Path(args.output).mkdir(parents=True, exist_ok=True)
