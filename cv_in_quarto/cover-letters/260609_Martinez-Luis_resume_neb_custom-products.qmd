@@ -1,0 +1,53 @@
+---
+format:
+  pdf:
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontsize: 10pt
+    geometry: "top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm"
+    papersize: letter
+    linestretch: 1.15
+    colorlinks: true
+    urlcolor: blue
+    title-block-style: none
+    include-in-header:
+      text: |
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+---
+
+```{=latex}
+\begin{flushright}
+Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.\\
+Boston, MA\\
+luised94@mit.edu\\
+\href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a}\\[1em]
+\today
+\end{flushright}
+
+\vspace{1em}
+
+\noindent Dear Hiring Manager,
+
+\vspace{0.5em}
+
+\noindent Custom product development is designing something that works robustly in someone else's hands, making an experiment transferable, reproducible, and independent of personal intuition. That challenge is what has driven my approach to assay development throughout my doctoral and postdoctoral work. I am writing to apply for the Development Scientist I position on the Custom Product Development Team at New England Biolabs, where I would bring this mindset to developing innovative custom solutions for your customers.
+
+\noindent My research in the Bell Lab at MIT has repeatedly required me to build assays and experimental systems from scratch, then validate them to a standard where results are reproducible and interpretable. During my Ph.D., I reconstituted eukaryotic DNA replication initiation using purified components from bacterial and yeast systems. I had to develop the ATPase, DNA-binding, and fluorescence polarization assays to quantitatively measure the activity of the Origin Recognition Complex. As a postdoc, I built a complete ChIP-seq pipeline from sample preparation through computational analysis, establishing a new capability in the lab and beginning to train a colleague on its use. In each case, the trajectory was the same: evaluate feasibility, prototype, optimize, validate, and document. These same steps underlie custom product development.
+
+\noindent This pattern extends beyond my own lab. During an internship with Pfizer through MIT's Course 7.930[J] program, I operated the Beacon Optofluidic System, a platform which I had never used before, to screen CRISPR-edited primary human cells and tested key assay parameters, including conditioned versus non-conditioned media, to optimize an immunofluorescent screening approach for therapeutic target identification. I worked within the internship timeline on an unfamiliar platform and delivered a final presentation to the team summarizing results and recommendations. That experience confirmed that I thrive when the goal is concrete, the timeline is real, and the end user is someone other than myself.
+
+\noindent I recognize that I have not worked in a formal product development pipeline or in a direct customer-facing capacity. However, the intellectual structure is familiar: understand requirements from a stakeholder, translate those into experimental design, execute with rigor, and iterate based on feedback. I am a clear communicator comfortable presenting technical information to diverse audiences, and I am genuinely motivated by seeing my work become useful to others.
+
+\noindent A recent conversation with members of the Custom Solutions team, such as Brian and Sarah, at NEB's Tech Day at LabCentral reinforced my interest in this role and in NEB's collaborative approach to customer-driven development. NEB's products have been a constant in my research for over a decade.  I understand the quality from the user side and would love to contribute to that standard from within. I am available to begin within three to five weeks of an offer and welcome the opportunity to discuss how my background in assay development and cross-disciplinary problem-solving can serve your Custom Product Development Team. Thank you for your consideration.
+
+\vspace{1.5em}
+
+\noindent Sincerely,
+
+\vspace{0.5em}
+
+\noindent Luis E. Martínez-Rodríguez, Ph.D.

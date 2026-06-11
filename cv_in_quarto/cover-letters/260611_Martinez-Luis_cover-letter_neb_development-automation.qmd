@@ -1,0 +1,53 @@
+---
+format:
+  pdf:
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontsize: 10pt
+    geometry: "top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm"
+    papersize: letter
+    linestretch: 1.15
+    colorlinks: true
+    urlcolor: blue
+    title-block-style: none
+    include-in-header:
+      text: |
+        \usepackage{fancyhdr}
+        \pagestyle{fancy}
+        \fancyhf{}
+        \renewcommand{\headrulewidth}{0pt}
+        \renewcommand{\footrulewidth}{0pt}
+---
+
+```{=latex}
+\begin{flushright}
+Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.\\
+Boston, MA\\
+luised94@mit.edu\\
+\href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a}\\[1em]
+\today
+\end{flushright}
+
+\vspace{1em}
+
+\noindent Dear Hiring Manager,
+
+\vspace{0.5em}
+
+\noindent I am writing to apply for the Automation Development Scientist position in the Applications and Product Development Department at New England Biolabs. My background combines hands-on NGS workflow experience, systematic assay development, and a computational approach to building reproducible pipelines. I am motivated by the challenge of translating manual protocols into robust, automated systems that others can rely on.
+
+\noindent Throughout my doctoral and postdoctoral work in the Bell Lab at MIT, I have designed workflows that prioritize reproducibility and systematic optimization. I built a complete ChIP-seq pipeline, from Covaris shearing and library preparation through sequencing and computational analysis, establishing each step with defined parameters, quality checkpoints, and documentation. On the computational side, I developed automated analysis workflows on Linux HPC that process sequencing data through alignment, filtering, normalization, and peak calling with minimal manual intervention. The logic in both cases is the same logic that underlies laboratory automation: break a complex process into discrete steps, define success criteria for each, optimize parameters systematically, and document thoroughly so others can execute reliably.
+
+\noindent My bench experience is broad and directly relevant to the molecular biology workflows this role supports. I have performed NGS library preparation, developed quantitative enzyme assays (ATPase, EMSA, fluorescence polarization), and purified multi-subunit protein complexes using programmed FPLC methods on ÄKTAs, including gradient optimization, conditional fraction collection, and troubleshooting hardware performance. Programming and operating these systems to automate multi-step protein purification follows the same logic as plate-based liquid handling: translate a manual process into instrument protocols, define parameters, and troubleshoot when hardware, software, or assay performance diverges from expectation. During an internship with Pfizer, I operated the Beacon Optofluidic System for high-throughput single-cell screening, giving me direct experience working with integrated instrumentation, automated protocols, and the troubleshooting that comes with complex platforms.
+
+\noindent I have not programmed plate-based liquid handling robots such as Hamilton or Bravo systems specifically. However, my combination of strong bench skills, computational fluency (R, Python, Bash), instrument automation experience on FPLC and optofluidic platforms, and a systematic approach to workflow development positions me to learn these systems rapidly. I understand the experimental logic that needs to be automated, and I have the programming foundation to implement it.
+
+\noindent A recent conversation with members of the NEB team at Tech Day at LabCentral reinforced my interest in NEB's collaborative, problem-solving culture. I am available to begin within three to five weeks of an offer and welcome the opportunity to discuss how my workflow development experience and bench expertise can contribute to the automation team. Thank you for your consideration.
+
+\vspace{1.5em}
+
+\noindent Sincerely,
+
+\vspace{0.5em}
+
+\noindent Luis E. Martínez-Rodríguez, Ph.D.

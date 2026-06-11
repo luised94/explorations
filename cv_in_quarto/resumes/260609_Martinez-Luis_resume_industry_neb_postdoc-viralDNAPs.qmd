@@ -72,7 +72,7 @@ Advisor: Stephen P. Bell
 
 - Reconstituted the complete eukaryotic DNA replication pathway \textit{in vitro}, from origin licensing (ORC, Cdc6, MCM) through replisome assembly and elongation (DDK, S-CDK, Cdc45, GINS, Pol $\varepsilon$, Mrc1, Csm3/Tof1), requiring the purification and coordinated assembly of over 15 distinct proteins
 - Expressed and purified multi-subunit ORC (6 subunits) and MCM-Cdt1 complexes from yeast and bacterial expression systems
-- Developed and applied quantitative enzyme assays (ATPase, EMSA, fluorescence polarization) to measure the activity of wild-type and mutant complexes at each step of pre-RC assembly
+- Developed and applied quantitative enzyme assays (ATPase, EMSA, fluorescence polarization) to measure the activity of wild-type and mutant ORC complexes
 - Designed and validated a genetic screen for suppressors of a lethal ORC ATPase mutation, then analyzed whole-genome sequencing data to identify causal variants
 - Engineered suppressor alleles using CRISPR-Cas9 and characterized genetic interactions through allele-specificity and drug-sensitivity assays
 
