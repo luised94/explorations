@@ -8,6 +8,7 @@ Run with: uv run llm.py <subcommand> ...
 """
 
 import argparse
+import json
 import os
 import sys
 from datetime import datetime
@@ -37,11 +38,12 @@ def anthropic_transform_messages(system: str | None, messages: list[dict]) -> di
     return body
 
 
-def anthropic_extract_response(data: dict) -> str:
-    """Concatenate the text blocks from an Anthropic messages-API response."""
-    return "".join(
+def anthropic_extract_response(data: dict) -> tuple[str, bool]:
+    """Return (text, truncated) from an Anthropic messages-API response."""
+    text = "".join(
         block["text"] for block in data["content"] if block["type"] == "text"
     )
+    return text, data.get("stop_reason") == "max_tokens"
 
 
 def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
@@ -51,9 +53,13 @@ def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
     return {"messages": messages}
 
 
-def openai_extract_response(data: dict) -> str:
-    """Pull the response text from an OpenAI chat-completions response."""
-    return data["choices"][0]["message"]["content"]
+def openai_extract_response(data: dict) -> tuple[str, bool]:
+    """Return (text, truncated) from an OpenAI chat-completions response."""
+    choice = data["choices"][0]
+    text = choice["message"]["content"]
+    if text is None:
+        raise KeyError("message.content is null")  # caught by call_llm's shape guard
+    return text, choice.get("finish_reason") == "length"
 
 
 def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
@@ -67,9 +73,16 @@ def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
     return {"contents": contents}
 
 
-def gemini_extract_response(data: dict) -> str:
-    """Pull the response text from a Gemini generateContent response."""
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+def gemini_extract_response(data: dict) -> tuple[str, bool]:
+    """Return (text, truncated) from a Gemini generateContent response.
+
+    Safety-blocked responses arrive with no parts; the resulting KeyError is
+    caught by call_llm's shape guard, which prints the raw JSON (including
+    the block reason) instead of tracebacking.
+    """
+    candidate = data["candidates"][0]
+    text = candidate["content"]["parts"][0]["text"]
+    return text, candidate.get("finishReason") == "MAX_TOKENS"
 
 
 # To add a new provider: add an entry here following the pattern below.
@@ -80,10 +93,10 @@ def gemini_extract_response(data: dict) -> str:
 #   auth_header        function: api_key -> header dict ({} if auth is not header-based)
 #   auth_params        function: api_key -> query-param dict ({} if auth is not query-based)
 #   extra_headers      static provider-required headers ({} if none)
-#   body_extras        function: model -> dict merged into the body (model name,
-#                      token limits -- whatever the provider wants top-level)
+#   body_extras        function: (model, max_tokens) -> dict merged into the body
+#                      (model name, token limits -- whatever the provider wants top-level)
 #   transform_messages function: (system or None, messages list) -> provider body fragment
-#   extract_response   function: response JSON -> response text
+#   extract_response   function: response JSON -> (response text, truncated bool)
 #   default_model      model string used when --model is not given
 PROVIDERS: dict = {
     "anthropic": {
@@ -92,7 +105,10 @@ PROVIDERS: dict = {
         "auth_header": lambda api_key: {"x-api-key": api_key},
         "auth_params": lambda api_key: {},
         "extra_headers": {"anthropic-version": "2023-06-01"},
-        "body_extras": lambda model: {"model": model, "max_tokens": MAX_TOKENS},
+        "body_extras": lambda model, max_tokens: {
+            "model": model,
+            "max_tokens": max_tokens,
+        },
         "transform_messages": anthropic_transform_messages,
         "extract_response": anthropic_extract_response,
         "default_model": "claude-sonnet-4-20250514",
@@ -103,7 +119,10 @@ PROVIDERS: dict = {
         "auth_header": lambda api_key: {"Authorization": f"Bearer {api_key}"},
         "auth_params": lambda api_key: {},
         "extra_headers": {},
-        "body_extras": lambda model: {"model": model, "max_tokens": MAX_TOKENS},
+        "body_extras": lambda model, max_tokens: {
+            "model": model,
+            "max_tokens": max_tokens,
+        },
         "transform_messages": openai_transform_messages,
         "extract_response": openai_extract_response,
         "default_model": "gpt-4o",
@@ -117,8 +136,8 @@ PROVIDERS: dict = {
         "auth_header": lambda api_key: {"x-goog-api-key": api_key},
         "auth_params": lambda api_key: {},
         "extra_headers": {},
-        "body_extras": lambda model: {
-            "generationConfig": {"maxOutputTokens": MAX_TOKENS}
+        "body_extras": lambda model, max_tokens: {
+            "generationConfig": {"maxOutputTokens": max_tokens}
         },
         "transform_messages": gemini_transform_messages,
         "extract_response": gemini_extract_response,
@@ -155,6 +174,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="Show message summary and estimated tokens without calling the API",
+    )
+    common.add_argument(
+        "--max-tokens",
+        type=int,
+        default=MAX_TOKENS,
+        help=f"Response token limit (default: {MAX_TOKENS})",
     )
     parser = argparse.ArgumentParser(
         description="Send prompts and files to LLM APIs: six interaction patterns."
@@ -336,8 +361,20 @@ def dry_run_report(system: str | None, messages: list[dict]) -> str:
 # call_llm, file reading, file writing. Collision avoidance lives in
 # write_response (not TRANSFORM) because checking for an existing file
 # is a filesystem read.
+class ResponseError(Exception):
+    """Raised by call_llm when a 2xx response can't be parsed or extracted.
+
+    Same contract as FileReadError: the error (with raw payload) is already
+    printed to stderr; the caller decides exit vs skip.
+    """
+
+
 def call_llm(
-    provider_name: str, model: str | None, system: str | None, messages: list[dict]
+    provider_name: str,
+    model: str | None,
+    system: str | None,
+    messages: list[dict],
+    max_tokens: int = MAX_TOKENS,
 ) -> str:
     """POST system + messages to the named provider and return the response text."""
     provider = PROVIDERS[provider_name]
@@ -352,7 +389,7 @@ def call_llm(
     url = provider["url_template"].format(model=model)
     body = {
         **provider["transform_messages"](system, messages),
-        **provider["body_extras"](model),
+        **provider["body_extras"](model, max_tokens),
     }
     headers = {
         "content-type": "application/json",
@@ -379,7 +416,36 @@ def call_llm(
         # continue (batch-style commands).
         print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
         response.raise_for_status()
-    return provider["extract_response"](response.json())
+    try:
+        data = response.json()
+    except ValueError as exc:
+        print(
+            f"Non-JSON response from {provider_name}: {response.text[:2000]}",
+            file=sys.stderr,
+        )
+        raise ResponseError(provider_name) from exc
+    try:
+        text, truncated = provider["extract_response"](data)
+    except (KeyError, IndexError, TypeError) as exc:
+        # C15: a 2xx with an unexpected shape (safety block, null content,
+        # API drift). Surface the raw payload instead of a traceback.
+        print(
+            f"Unexpected response shape from {provider_name} "
+            f"({type(exc).__name__}: {exc}); raw JSON follows:",
+            file=sys.stderr,
+        )
+        print(json.dumps(data, indent=2)[:5000], file=sys.stderr)
+        raise ResponseError(provider_name) from exc
+    if truncated:
+        # C16b: make truncation loud in both channels -- stderr for the run,
+        # a marker in the text so the written file carries the evidence.
+        print(
+            f"Warning: response truncated at max_tokens={max_tokens}; "
+            f"re-run with a larger --max-tokens.",
+            file=sys.stderr,
+        )
+        text += f"\n\n> [warning: response truncated at max_tokens={max_tokens}]"
+    return text
 
 
 class FileReadError(Exception):
@@ -466,8 +532,10 @@ def cmd_single(args: argparse.Namespace, system: str | None) -> None:
         print(dry_run_report(system, messages))
         return
     try:
-        response_text = call_llm(args.provider, args.model, system, messages)
-    except httpx.HTTPError:
+        response_text = call_llm(
+            args.provider, args.model, system, messages, args.max_tokens
+        )
+    except (httpx.HTTPError, ResponseError):
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
@@ -494,8 +562,10 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         print(dry_run_report(system, messages))
         return
     try:
-        response_text = call_llm(args.provider, args.model, system, messages)
-    except httpx.HTTPError:
+        response_text = call_llm(
+            args.provider, args.model, system, messages, args.max_tokens
+        )
+    except (httpx.HTTPError, ResponseError):
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
@@ -527,7 +597,9 @@ def run_entries(
             print()
             continue
         try:
-            response_text = call_llm(args.provider, args.model, system, messages)
+            response_text = call_llm(
+                args.provider, args.model, system, messages, args.max_tokens
+            )
         except httpx.HTTPStatusError as exc:
             # call_llm already printed the error to stderr.
             if exc.response.status_code in (401, 403):
@@ -540,7 +612,7 @@ def run_entries(
                 sys.exit(1)
             skipped += 1
             continue
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ResponseError):
             skipped += 1  # call_llm already printed the error to stderr
             continue
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -627,8 +699,10 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
                 responses.append(previous_response)
                 continue
             try:
-                response_text = call_llm(args.provider, args.model, system, messages)
-            except httpx.HTTPError:
+                response_text = call_llm(
+                    args.provider, args.model, system, messages, args.max_tokens
+                )
+            except (httpx.HTTPError, ResponseError):
                 failed = True  # call_llm already printed the error to stderr
                 break
             responses.append(response_text)
@@ -699,8 +773,10 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
                 history = attempt + [{"role": "assistant", "content": "(dry run)"}]
                 continue
             try:
-                response_text = call_llm(args.provider, args.model, system, attempt)
-            except httpx.HTTPError:
+                response_text = call_llm(
+                    args.provider, args.model, system, attempt, args.max_tokens
+                )
+            except (httpx.HTTPError, ResponseError):
                 # call_llm already printed the error to stderr.
                 last_failed = text
                 print("(LLM call failed -- press Enter to retry, or type a new prompt)")
