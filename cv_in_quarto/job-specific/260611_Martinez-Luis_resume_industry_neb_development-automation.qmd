@@ -1,0 +1,89 @@
+---
+format:
+  pdf:
+    lang: en
+    toc: false
+    number-sections: false
+    keep-tex: false
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
+    fontsize: 10pt
+    title-block-style: none
+    colorlinks: true
+    urlcolor: blue
+    linkcolor: blue
+    geometry: "top=1.5cm, bottom=1.5cm, left=2cm, right=2cm"
+    papersize: letter
+    microtype: true
+    linestretch: 1.0
+    include-in-header:
+      text: |
+        \usepackage{xcolor}
+        \usepackage[normalem]{ulem}
+        \newcommand{\cvsection}[1]{%
+          \vspace{-1.5em}
+          \section*{\fontsize{11}{13}\selectfont\underline{\makebox[\linewidth][l]{#1}}}%
+          \vspace{-1.3em}
+        }
+        \usepackage{setspace}
+        \singlespacing
+        \usepackage{enumitem}
+        \setlist{itemsep=2pt, parsep=0pt, topsep=0pt, partopsep=0pt}
+---
+
+```{=latex}
+\begin{center}
+  {\large \textbf{Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.}}\\[0.5ex]
+  \normalsize
+  Boston, MA \,\textbar\, US Work Authorized \,\textbar\, luised94@mit.edu \\
+  \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
+\end{center}
+
+\cvsection{Summary}
+
+Postdoctoral researcher with expertise in building reproducible experimental and computational workflows for molecular biology applications. Developed automated NGS analysis pipelines, programmed multi-step FPLC purification methods, and operated high-throughput screening platforms. Seeking to apply systematic workflow development skills and strong bench fundamentals to laboratory automation in biotech.
+
+\cvsection{Skills}
+
+\textbf{Computation:} R, Python, Bash; automated NGS pipelines on Linux HPC (Bowtie2, SAMtools, deeptools); workflow documentation; Git/GitHub version control
+
+\textbf{Genomics:} ChIP-seq (end-to-end workflow: sample preparation, library construction, sequencing, analysis), whole-genome sequencing, variant calling, NGS library preparation and QC
+
+\textbf{Biochemistry:} FPLC and ÄKTA method programming (multi-step purification, gradient optimization, fraction collection), protein purification (bacterial/yeast, multi-subunit complexes), EMSA, ATPase assays, fluorescence polarization
+
+\textbf{Genetics:} genetic screen design and validation, CRISPR-Cas9 (yeast + mammalian), AID2 degron, tetrad dissection, bulk-segregant analysis
+
+\cvsection{Experience}
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
+\vspace{-0.1em}
+
+\textbf{Post-doctoral Researcher,} Bell Lab, MIT Biology \hfill 2023--present
+
+- Built end-to-end ChIP-seq workflow from sample preparation (Covaris shearing, library construction, size selection) through computational analysis (alignment, filtering, normalization, peak calling), with defined QC checkpoints at each step
+- Developed automated computational pipelines on Linux HPC to process NGS data reproducibly, with documentation enabling others to execute workflows independently
+- Systematically troubleshot technical issues across sample preparation, library construction, and sequencing to optimize ChIP-seq signal-to-noise ratio
+
+\textbf{Graduate Researcher,} Bell Lab, MIT Biology \hfill 2016--2023
+
+- Programmed and optimized multi-step FPLC methods (ÄKTA) for purification of multi-subunit protein complexes, including gradient optimization, conditional fraction collection, and hardware troubleshooting
+- Developed and validated multi-step reconstitution protocols for assembling wild-type and mutant replication complexes from individually purified components
+- Designed a genetic screen, analyzed whole-genome sequencing data to identify variants, and engineered alleles using CRISPR-Cas9 to validate hits
+
+\textbf{Research Intern,} MIT/Pfizer Internship Program (Course 7.930[J]) \hfill 2022
+
+- Operated the Beacon Optofluidic System, an integrated high-throughput automation platform, for single-cell screening of CRISPR-edited primary human cells
+- Tested and optimized key assay parameters (conditioned vs. non-conditioned media, culture conditions) for compatibility with automated screening protocols
+
+\cvsection{Education}
+
+Ph.D. in Biology, Massachusetts Institute of Technology, 2023  
+B.Sc. in Cellular and Molecular Biology, University of Puerto Rico-Río Piedras, 2016
+
+\cvsection{Publications}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.} \& Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{Submitted.}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., \& Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725.

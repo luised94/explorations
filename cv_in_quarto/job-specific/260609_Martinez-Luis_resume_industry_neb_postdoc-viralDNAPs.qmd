@@ -1,0 +1,122 @@
+---
+format:
+  pdf:
+    lang: en
+    toc: false
+    number-sections: false
+    keep-tex: false
+    pdf-engine: xelatex
+    mainfont: "Arial"
+    fontenc: "T1"
+    inputenc: "utf8"
+    fontsize: 10pt
+    title-block-style: none
+    colorlinks: true
+    urlcolor: blue
+    linkcolor: blue
+    geometry: "top=1.5cm, bottom=2cm, left=2cm, right=2cm"
+    papersize: letter
+    microtype: true
+    linestretch: 1.0
+    include-in-header:
+      text: |
+        \usepackage{xcolor}
+        \usepackage[normalem]{ulem}
+        \newcommand{\cvsection}[1]{%
+          \vspace{-1.5em}
+          \section*{\fontsize{11}{13}\selectfont\underline{\makebox[\linewidth][l]{#1}}}%
+          \vspace{-1.3em}
+        }
+        \usepackage{setspace}
+        \singlespacing
+        \usepackage{enumitem}
+        \setlist{itemsep=2pt, parsep=0pt, topsep=0pt, partopsep=0pt}
+---
+
+```{=latex}
+\begin{center}
+  {\large \textbf{Luis E. Mart\'{i}nez-Rodr\'{i}guez, Ph.D.}}\\[0.5ex]
+  \normalsize
+  Boston, MA \,\textbar\, US Work Authorized \,\textbar\, luised94@mit.edu \\
+  \href{https://linkedin.com/in/luis-martinez-1394b619a}{linkedin.com/in/luis-martinez-1394b619a} \,\textbar\, \href{https://github.com/luised94}{github.com/luised94}
+\end{center}
+
+\cvsection{Researcher Profile}
+
+\begin{center}
+Protein Biochemistry | Reconstituted Replication Systems | Enzyme Characterization
+\end{center}
+\vspace{-1.3em}
+
+Postdoctoral researcher specializing in the biochemistry of eukaryotic DNA replication initiation and elongation. Reconstituted the complete yeast replication pathway from purified components (15+ proteins) and developed quantitative assays to dissect the mechanistic contributions of individual subunits and mutations to replisome assembly and function.
+
+\cvsection{Core Skills}
+
+Biochemistry: \textbf{protein purification from bacteria and yeast (multi-subunit complexes, 5+ proteins)}, \textbf{reconstituted eukaryotic DNA replication initiation and elongation assays}, electrophoretic-mobility shift assay, radioactivity-based ATPase assay, fluorescence polarization, magnetic-bead based biochemical assays, size-exclusion chromatography, FPLC method development
+
+Molecular Biology: primer design, cloning, site-directed mutagenesis, Gibson assembly, PCR, SDS-PAGE and immunoblotting, DNA and RNA extraction, CRISPR-Cas9 guide design
+
+Genetics: \textbf{genetic screen design and validation}, CRISPR-based genome editing, tetrad dissections, drug-sensitivity assays, \textbf{auxin-inducible degron (AID2) conditional depletion}
+
+Computation: R (quantitative data analysis and figure generation), Bash (Linux HPC), Python, PyMOL, multiple-sequence alignment
+
+\cvsection{Experience}
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)} Cambridge, MA
+\vspace{-0.1em}
+
+\textbf{Graduate Student Researcher} (2016--2023)
+Advisor: Stephen P. Bell
+
+\textit{Genetic and biochemical dissection of ATP hydrolysis by the origin recognition complex during S. cerevisiae DNA replication initiation.}
+
+- Reconstituted the complete eukaryotic DNA replication pathway \textit{in vitro}, from origin licensing (ORC, Cdc6, MCM) through replisome assembly and elongation (DDK, S-CDK, Cdc45, GINS, Pol $\varepsilon$, Mrc1, Csm3/Tof1), requiring the purification and coordinated assembly of over 15 distinct proteins
+- Expressed and purified multi-subunit ORC (6 subunits) and MCM-Cdt1 complexes from yeast and bacterial expression systems
+- Developed and applied quantitative enzyme assays (ATPase, EMSA, fluorescence polarization) to measure the activity of wild-type and mutant complexes at each step of pre-RC assembly
+- Designed and validated a genetic screen for suppressors of a lethal ORC ATPase mutation, then analyzed whole-genome sequencing data to identify causal variants
+- Engineered suppressor alleles using CRISPR-Cas9 and characterized genetic interactions through allele-specificity and drug-sensitivity assays
+
+\textbf{Post-doctoral Researcher} (2023--present)
+Advisor: Stephen P. Bell
+
+\textit{In vivo characterization of ATPase-deficient ORC using chromatin immunoprecipitation and conditional depletion.}
+
+- Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors, enabling acute loss-of-function experiments
+- Designed and executed ChIP-seq experiments to characterize genomic occupancy of wild-type and ATPase-deficient ORC
+- Cloned and tested a panel of CRISPR-engineered loss-of-function alleles in general transcription factors to evaluate allele-specific suppression
+
+\cvsection{Additional Research Experience}
+
+\uline{UNIVERSITY OF NORTH CAROLINA AT CHAPEL HILL}, Chapel Hill, NC
+
+Undergraduate summer research assistant (2014), Carter Lab
+
+- Characterized minimal aminoacyl-tRNA synthetase ATPase domains using enzyme kinetics assays; contributed to first-author publication
+
+\uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)}, Cambridge, MA
+
+Undergraduate summer research assistant (2015), Bhatt Lab
+
+- Characterized Bfl1-selective peptides using fluorescence polarization binding assays
+
+\cvsection{Education}
+
+Ph.D. in Biology, \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY}, Cambridge, MA, 2023
+
+- Thesis: Leveraging Genetic and Biochemical Approaches to Understand the Role of ORC ATP Hydrolysis in \textit{Saccharomyces cerevisiae}
+
+B.Sc. in Cellular and Molecular Biology, \uline{UNIVERSITY OF PUERTO RICO-RIO PIEDRAS}, San Juan, PR, 2016
+
+\cvsection{Publications}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.} \& Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{Submitted.}
+
+\textbf{Mart\'{i}nez-Rodr\'{i}guez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., \& Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725.
+
+\cvsection{Presentations}
+
+New England Biolabs, Unorthodox Genomes Meeting. Poster presentation. March 2026.
+
+Cold Spring Harbor Laboratory, Eukaryotic DNA Replication \& Genome Maintenance. September 2025.
+
+Cold Spring Harbor Laboratory, Single Biomolecules. Poster presentation. September 2018.
