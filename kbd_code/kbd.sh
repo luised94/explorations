@@ -122,6 +122,7 @@ alias kst='cd "$KBD_DIR" && git status && cd - > /dev/null'
 
 CODE_DOJO_DIR="${CODE_DOJO_DIR:-$HOME/code-dojo}"
 
+
 dojo_open_most_edited_files() {
     local project_name="${1:-}"
     local file_count="${2:-20}"
@@ -154,7 +155,7 @@ dojo_open_most_edited_files() {
             continue
         fi
         if [[ -f "$project_directory/$candidate_path" ]]; then
-            most_edited_existing_paths="$most_edited_existing_paths $candidate_path"
+            most_edited_existing_paths="$most_edited_existing_paths $project_directory/$candidate_path"
             existing_count=$((existing_count + 1))
         fi
     done <<< "$most_edited_raw"
