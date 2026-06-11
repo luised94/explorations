@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 import httpx
@@ -24,6 +25,9 @@ except ImportError:
 MAX_TOKENS = 4096
 TIMEOUT_SECONDS = 120.0
 PAYLOAD_WARN_TOKENS = 100_000  # C20: warn (not refuse) above this estimated input size
+# One JSONL line per API call -- metadata only, never message content, so the
+# log is safe to share when analyzing usage. Set LLM_NO_USAGE_LOG=1 to disable.
+USAGE_LOG_PATH = Path.home() / ".llm_usage.jsonl"
 DEFAULT_MANIFEST_PROMPT = "Analyze this file."
 
 
@@ -39,12 +43,20 @@ def anthropic_transform_messages(system: str | None, messages: list[dict]) -> di
     return body
 
 
-def anthropic_extract_response(data: dict) -> tuple[str, bool]:
-    """Return (text, truncated) from an Anthropic messages-API response."""
+def anthropic_extract_response(data: dict) -> tuple[str, bool, dict]:
+    """Return (text, truncated, usage) from an Anthropic messages-API response."""
     text = "".join(
         block["text"] for block in data["content"] if block["type"] == "text"
     )
-    return text, data.get("stop_reason") == "max_tokens"
+    usage = data.get("usage", {})
+    return (
+        text,
+        data.get("stop_reason") == "max_tokens",
+        {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+        },
+    )
 
 
 def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
@@ -55,12 +67,20 @@ def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
 
 
 def openai_extract_response(data: dict) -> tuple[str, bool]:
-    """Return (text, truncated) from an OpenAI chat-completions response."""
+    """Return (text, truncated, usage) from an OpenAI chat-completions response."""
     choice = data["choices"][0]
     text = choice["message"]["content"]
     if text is None:
         raise KeyError("message.content is null")  # caught by call_llm's shape guard
-    return text, choice.get("finish_reason") == "length"
+    usage = data.get("usage", {})
+    return (
+        text,
+        choice.get("finish_reason") == "length",
+        {
+            "input_tokens": usage.get("prompt_tokens"),
+            "output_tokens": usage.get("completion_tokens"),
+        },
+    )
 
 
 def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
@@ -75,7 +95,7 @@ def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
 
 
 def gemini_extract_response(data: dict) -> tuple[str, bool]:
-    """Return (text, truncated) from a Gemini generateContent response.
+    """Return (text, truncated, usage) from a Gemini generateContent response.
 
     Safety-blocked responses arrive with no parts; the resulting KeyError is
     caught by call_llm's shape guard, which prints the raw JSON (including
@@ -83,7 +103,15 @@ def gemini_extract_response(data: dict) -> tuple[str, bool]:
     """
     candidate = data["candidates"][0]
     text = candidate["content"]["parts"][0]["text"]
-    return text, candidate.get("finishReason") == "MAX_TOKENS"
+    usage = data.get("usageMetadata", {})
+    return (
+        text,
+        candidate.get("finishReason") == "MAX_TOKENS",
+        {
+            "input_tokens": usage.get("promptTokenCount"),
+            "output_tokens": usage.get("candidatesTokenCount"),
+        },
+    )
 
 
 # To add a new provider: add an entry here following the pattern below.
@@ -97,7 +125,9 @@ def gemini_extract_response(data: dict) -> tuple[str, bool]:
 #   body_extras        function: (model, max_tokens) -> dict merged into the body
 #                      (model name, token limits -- whatever the provider wants top-level)
 #   transform_messages function: (system or None, messages list) -> provider body fragment
-#   extract_response   function: response JSON -> (response text, truncated bool)
+#   extract_response   function: response JSON -> (response text, truncated bool,
+#                      usage dict with input_tokens/output_tokens, None values if
+#                      the provider omitted them -- usage must never raise)
 #   default_model      model string used when --model is not given
 PROVIDERS: dict = {
     "anthropic": {
@@ -190,13 +220,15 @@ def parse_args() -> argparse.Namespace:
         "single", parents=[common], help="One prompt, one file, one call"
     )
     p.add_argument("prompt", help="Prompt text, sent before the file content")
-    p.add_argument("filepath", help="Path to the file to attach")
+    p.add_argument("filepath", help='Path to the file to attach ("-" reads stdin)')
     p.set_defaults(func=cmd_single)
     p = sub.add_parser(
         "append", parents=[common], help="One prompt, many files appended into one call"
     )
     p.add_argument("prompt", help="Prompt text, sent before the file blocks")
-    p.add_argument("filepath", nargs="*", help="Paths to files to attach")
+    p.add_argument(
+        "filepath", nargs="*", help='Paths to files to attach ("-" reads stdin)'
+    )
     p.add_argument("--dir", default=None, help="Directory to glob for input files")
     p.add_argument(
         "--ext", default=None, help="Filter --dir files by extension, e.g. .py"
@@ -362,6 +394,42 @@ def metadata_header(
     return "\n".join(lines) + "\n\n"
 
 
+def usage_record(
+    generated: str,
+    command: str | None,
+    provider: str,
+    model: str,
+    max_tokens: int,
+    payload_chars: int,
+    latency_ms: int,
+    outcome: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    pid: int,
+) -> dict:
+    """Build one usage-log record. Pure: the caller supplies timestamp,
+    latency, and pid. Metadata only -- no message content ever goes in.
+
+    outcome is one of: ok, truncated, http_<status>, transport, non_json,
+    shape. pid groups calls from one process (e.g. a batch run) without
+    threading a run id through every signature.
+    """
+    return {
+        "generated": generated,
+        "command": command,
+        "provider": provider,
+        "model": model,
+        "max_tokens": max_tokens,
+        "payload_chars": payload_chars,
+        "estimated_input_tokens": estimate_tokens(payload_chars),
+        "latency_ms": latency_ms,
+        "outcome": outcome,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "pid": pid,
+    }
+
+
 def contains_delimiter(text: str) -> bool:
     """True if any line in text collides with the file-block delimiters."""
     return any(
@@ -402,6 +470,53 @@ def dry_run_report(system: str | None, messages: list[dict]) -> str:
 # call_llm, file reading, file writing. Collision avoidance lives in
 # write_response (not TRANSFORM) because checking for an existing file
 # is a filesystem read.
+def append_usage(record: dict) -> None:
+    """Append one JSONL record to the usage log; never interfere with the call.
+
+    Telemetry is strictly sidecar: a full disk or unwritable home directory
+    must not break (or noisily accompany) an otherwise-working API call, so
+    failures are deliberately swallowed -- the one exception to the
+    print-at-detection rule, justified because there is no action the user
+    should take mid-call. LLM_NO_USAGE_LOG=1 disables logging entirely.
+    """
+    if os.environ.get("LLM_NO_USAGE_LOG"):
+        return
+    try:
+        with open(USAGE_LOG_PATH, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
+
+
+def record_call(
+    command: str | None,
+    provider_name: str,
+    model: str,
+    max_tokens: int,
+    payload_chars: int,
+    started: float,
+    outcome: str,
+    usage: dict | None = None,
+) -> None:
+    """Assemble and append a usage record for one call_llm exit path."""
+    usage = usage or {}
+    append_usage(
+        usage_record(
+            datetime.now().isoformat(timespec="seconds"),
+            command,
+            provider_name,
+            model,
+            max_tokens,
+            payload_chars,
+            int((time.monotonic() - started) * 1000),
+            outcome,
+            usage.get("input_tokens"),
+            usage.get("output_tokens"),
+            os.getpid(),
+        )
+    )
+
+
 class ResponseError(Exception):
     """Raised by call_llm when a 2xx response can't be parsed or extracted.
 
@@ -416,8 +531,14 @@ def call_llm(
     system: str | None,
     messages: list[dict],
     max_tokens: int = MAX_TOKENS,
+    command: str | None = None,
 ) -> str:
-    """POST system + messages to the named provider and return the response text."""
+    """POST system + messages to the named provider and return the response text.
+
+    command is only for the usage log (which subcommand made this call); it
+    never affects the request. Every exit path -- success, truncated,
+    transport, HTTP status, non-JSON, bad shape -- appends one usage record.
+    """
     provider = PROVIDERS[provider_name]
     api_key = os.environ.get(provider["env_key"])
     if api_key is None:
@@ -437,9 +558,8 @@ def call_llm(
         **provider["auth_header"](api_key),
         **provider["extra_headers"],
     }
-    payload_tokens = estimate_tokens(
-        sum(len(m["content"]) for m in messages) + len(system or "")
-    )
+    payload_chars = sum(len(m["content"]) for m in messages) + len(system or "")
+    payload_tokens = estimate_tokens(payload_chars)
     if payload_tokens > PAYLOAD_WARN_TOKENS:
         # C20: oversized payloads otherwise fail server-side with an opaque
         # provider error (or quietly cost a lot). Warn, but let it through --
@@ -449,6 +569,7 @@ def call_llm(
             f"the provider may reject or truncate it.",
             file=sys.stderr,
         )
+    started = time.monotonic()
     try:
         response = httpx.post(
             url,
@@ -462,12 +583,30 @@ def call_llm(
         # Same contract as the status-error path below: print here, raise so
         # the caller decides exit vs skip.
         print(f"Request failed ({type(exc).__name__}): {exc}", file=sys.stderr)
+        record_call(
+            command,
+            provider_name,
+            model,
+            max_tokens,
+            payload_chars,
+            started,
+            "transport",
+        )
         raise
     if response.status_code >= 400:
         # Print here so error formatting lives in one place; raise so the
         # caller decides whether to exit (single-call commands) or skip and
         # continue (batch-style commands).
         print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
+        record_call(
+            command,
+            provider_name,
+            model,
+            max_tokens,
+            payload_chars,
+            started,
+            f"http_{response.status_code}",
+        )
         response.raise_for_status()
     try:
         data = response.json()
@@ -476,9 +615,18 @@ def call_llm(
             f"Non-JSON response from {provider_name}: {response.text[:2000]}",
             file=sys.stderr,
         )
+        record_call(
+            command,
+            provider_name,
+            model,
+            max_tokens,
+            payload_chars,
+            started,
+            "non_json",
+        )
         raise ResponseError(provider_name) from exc
     try:
-        text, truncated = provider["extract_response"](data)
+        text, truncated, usage = provider["extract_response"](data)
     except (KeyError, IndexError, TypeError) as exc:
         # C15: a 2xx with an unexpected shape (safety block, null content,
         # API drift). Surface the raw payload instead of a traceback.
@@ -488,6 +636,9 @@ def call_llm(
             file=sys.stderr,
         )
         print(json.dumps(data, indent=2)[:5000], file=sys.stderr)
+        record_call(
+            command, provider_name, model, max_tokens, payload_chars, started, "shape"
+        )
         raise ResponseError(provider_name) from exc
     if truncated:
         # C16b: make truncation loud in both channels -- stderr for the run,
@@ -498,6 +649,16 @@ def call_llm(
             file=sys.stderr,
         )
         text += f"\n\n> [warning: response truncated at max_tokens={max_tokens}]"
+    record_call(
+        command,
+        provider_name,
+        model,
+        max_tokens,
+        payload_chars,
+        started,
+        "truncated" if truncated else "ok",
+        usage,
+    )
     return text
 
 
@@ -521,9 +682,16 @@ class FileReadError(Exception):
 
 
 def read_file(path: Path, encoding: str | None = None) -> str:
-    """Read a text file; print an error to stderr and raise FileReadError on failure."""
+    """Read a text file; print an error to stderr and raise FileReadError on failure.
+
+    The conventional "-" reads stdin instead, making the tool pipeable:
+    git diff | llm.py single "review this" -
+    """
     try:
-        text = path.read_text(encoding=encoding)
+        if str(path) == "-":
+            text = sys.stdin.read()
+        else:
+            text = path.read_text(encoding=encoding)
     except FileNotFoundError as exc:
         print(f"File not found: {path}", file=sys.stderr)
         raise FileReadError(str(path)) from exc
@@ -584,26 +752,33 @@ def write_response(output_dir: str, filename: str, text: str) -> Path:
 def cmd_single(args: argparse.Namespace, system: str | None) -> None:
     """One prompt, one file, one call, one response file."""
     input_path = Path(args.filepath)
+    input_name = "stdin" if args.filepath == "-" else input_path.name
     try:
         file_text = read_file(input_path)
     except FileReadError:
         sys.exit(1)  # read_file already printed the error to stderr
-    warn_if_delimiter_collision(input_path.name, file_text)
-    content = build_user_content(args.prompt, [(input_path.name, file_text)])
+    warn_if_delimiter_collision(input_name, file_text)
+    content = build_user_content(args.prompt, [(input_name, file_text)])
     messages = [{"role": "user", "content": content}]
     if args.dry_run:
         print(dry_run_report(system, messages))
         return
     try:
         response_text = call_llm(
-            args.provider, args.model, system, messages, args.max_tokens
+            args.provider,
+            args.model,
+            system,
+            messages,
+            args.max_tokens,
+            command=args.command,
         )
     except (httpx.HTTPError, ResponseError):
         sys.exit(1)  # call_llm already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_stem = "stdin" if args.filepath == "-" else input_path.stem
     out = write_response(
         args.output,
-        f"{input_path.stem}_response_{timestamp}.md",
+        f"{out_stem}_response_{timestamp}.md",
         metadata_header(args, system, args.prompt, timestamp) + response_text,
     )
     print(f"Wrote {out}")
@@ -616,7 +791,9 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         print("No input files: pass file paths and/or --dir.", file=sys.stderr)
         sys.exit(1)
     try:
-        files = [(p.name, read_file(p)) for p in input_paths]
+        files = [
+            ("stdin" if str(p) == "-" else p.name, read_file(p)) for p in input_paths
+        ]
     except FileReadError:
         sys.exit(
             1
@@ -630,7 +807,12 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         return
     try:
         response_text = call_llm(
-            args.provider, args.model, system, messages, args.max_tokens
+            args.provider,
+            args.model,
+            system,
+            messages,
+            args.max_tokens,
+            command=args.command,
         )
     except (httpx.HTTPError, ResponseError):
         sys.exit(1)  # call_llm already printed the error to stderr
@@ -667,7 +849,12 @@ def run_entries(
             continue
         try:
             response_text = call_llm(
-                args.provider, args.model, system, messages, args.max_tokens
+                args.provider,
+                args.model,
+                system,
+                messages,
+                args.max_tokens,
+                command=args.command,
             )
         except httpx.HTTPStatusError as exc:
             # call_llm already printed the error to stderr.
@@ -772,7 +959,12 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
                 continue
             try:
                 response_text = call_llm(
-                    args.provider, args.model, system, messages, args.max_tokens
+                    args.provider,
+                    args.model,
+                    system,
+                    messages,
+                    args.max_tokens,
+                    command=args.command,
                 )
             except (httpx.HTTPError, ResponseError):
                 failed = True  # call_llm already printed the error to stderr
@@ -849,7 +1041,12 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
                 continue
             try:
                 response_text = call_llm(
-                    args.provider, args.model, system, attempt, args.max_tokens
+                    args.provider,
+                    args.model,
+                    system,
+                    attempt,
+                    args.max_tokens,
+                    command=args.command,
                 )
             except (httpx.HTTPError, ResponseError):
                 # call_llm already printed the error to stderr.
