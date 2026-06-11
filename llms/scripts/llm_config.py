@@ -85,7 +85,7 @@ PROVIDERS: dict = {
         "body_extras": lambda model: {"model": model, "max_tokens": MAX_TOKENS},
         "transform_messages": anthropic_transform_messages,
         "extract_response": anthropic_extract_response,
-        "default_model": "claude-sonnet-4-20250514",
+        "default_model": "claude-haiku-4-5",
     },
     "openai": {
         "url_template": "https://api.openai.com/v1/chat/completions",

@@ -1,0 +1,519 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["httpx"]
+# ///
+"""One CLI, six interaction patterns for sending prompts and files to LLM APIs.
+
+Subcommands: single, append, batch, manifest, loop, interactive.
+Run with: uv run llm.py <subcommand> ...
+"""
+
+import argparse
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import httpx
+
+# --- CONFIG ---
+# Constants, provider dict, argparse.
+
+MAX_TOKENS = 4096
+TIMEOUT_SECONDS = 120.0
+DEFAULT_MANIFEST_PROMPT = "Analyze this file."
+
+
+# Provider transform/extract functions live here, next to the dict that
+# references them, because the dict is built at import time and needs them
+# defined first. They are pure (data in, data out) like everything in
+# TRANSFORM, but they are part of the provider table, not toolkit logic.
+
+def anthropic_transform_messages(messages: list[dict]) -> dict:
+    """Split system messages into Anthropic's top-level system field, return body fragment."""
+    system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+    chat = [m for m in messages if m["role"] != "system"]
+    body: dict = {"messages": chat}
+    if system:
+        body["system"] = system
+    return body
+
+
+def anthropic_extract_response(data: dict) -> str:
+    """Concatenate the text blocks from an Anthropic messages-API response."""
+    return "".join(block["text"] for block in data["content"] if block["type"] == "text")
+
+
+def openai_transform_messages(messages: list[dict]) -> dict:
+    """Wrap the generic messages list unchanged; OpenAI keeps system in the array."""
+    return {"messages": messages}
+
+
+def openai_extract_response(data: dict) -> str:
+    """Pull the response text from an OpenAI chat-completions response."""
+    return data["choices"][0]["message"]["content"]
+
+
+def gemini_transform_messages(messages: list[dict]) -> dict:
+    """Reshape generic messages into Gemini's contents/parts format with role mapping."""
+    contents = []
+    for m in messages:
+        if m["role"] == "system":
+            contents.append({"role": "user",
+                             "parts": [{"text": f"[System] {m['content']}"}]})
+        else:
+            role = "model" if m["role"] == "assistant" else m["role"]
+            contents.append({"role": role, "parts": [{"text": m["content"]}]})
+    return {"contents": contents}
+
+
+def gemini_extract_response(data: dict) -> str:
+    """Pull the response text from a Gemini generateContent response."""
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+# To add a new provider: add an entry here following the pattern below.
+# Then add its env var name. Each entry needs ALL of these fields (use
+# lambda-returning-{} for auth mechanisms the provider doesn't use):
+#   url_template       POST endpoint; may contain a {model} placeholder
+#   env_key            environment variable holding the API key
+#   auth_header        function: api_key -> header dict ({} if auth is not header-based)
+#   auth_params        function: api_key -> query-param dict ({} if auth is not query-based)
+#   extra_headers      static provider-required headers ({} if none)
+#   body_extras        function: model -> dict merged into the body (model name,
+#                      token limits -- whatever the provider wants top-level)
+#   transform_messages function: generic messages list -> provider body fragment
+#   extract_response   function: response JSON -> response text
+#   default_model      model string used when --model is not given
+PROVIDERS: dict = {
+    "anthropic": {
+        "url_template": "https://api.anthropic.com/v1/messages",
+        "env_key": "ANTHROPIC_API_KEY",
+        "auth_header": lambda api_key: {"x-api-key": api_key},
+        "auth_params": lambda api_key: {},
+        "extra_headers": {"anthropic-version": "2023-06-01"},
+        "body_extras": lambda model: {"model": model, "max_tokens": MAX_TOKENS},
+        "transform_messages": anthropic_transform_messages,
+        "extract_response": anthropic_extract_response,
+        "default_model": "claude-sonnet-4-20250514",
+    },
+    "openai": {
+        "url_template": "https://api.openai.com/v1/chat/completions",
+        "env_key": "OPENAI_API_KEY",
+        "auth_header": lambda api_key: {"Authorization": f"Bearer {api_key}"},
+        "auth_params": lambda api_key: {},
+        "extra_headers": {},
+        "body_extras": lambda model: {"model": model, "max_tokens": MAX_TOKENS},
+        "transform_messages": openai_transform_messages,
+        "extract_response": openai_extract_response,
+        "default_model": "gpt-4o",
+    },
+    "gemini": {
+        "url_template": ("https://generativelanguage.googleapis.com/v1beta/"
+                         "models/{model}:generateContent"),
+        "env_key": "GEMINI_API_KEY",
+        "auth_header": lambda api_key: {},
+        "auth_params": lambda api_key: {"key": api_key},
+        "extra_headers": {},
+        "body_extras": lambda model: {"generationConfig": {"maxOutputTokens": MAX_TOKENS}},
+        "transform_messages": gemini_transform_messages,
+        "extract_response": gemini_extract_response,
+        "default_model": "gemini-2.0-flash",
+    },
+}
+
+
+def parse_args() -> argparse.Namespace:
+    """Build the subcommand CLI and parse arguments."""
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--provider", default="anthropic", choices=sorted(PROVIDERS),
+                        help="Provider name (default: anthropic)")
+    common.add_argument("--model", default=None,
+                        help="Model string (default: provider's default_model)")
+    common.add_argument("--output", default=".",
+                        help="Directory for output files (default: current directory)")
+    common.add_argument("--system", default=None,
+                        help="System prompt text")
+    common.add_argument("--system-file", default=None,
+                        help="Path to a file containing the system prompt")
+
+    parser = argparse.ArgumentParser(
+        description="Send prompts and files to LLM APIs: six interaction patterns.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("single", parents=[common],
+                       help="One prompt, one file, one call")
+    p.add_argument("prompt", help="Prompt text, sent before the file content")
+    p.add_argument("filepath", help="Path to the file to attach")
+    p.set_defaults(func=cmd_single)
+
+    p = sub.add_parser("append", parents=[common],
+                       help="One prompt, many files appended into one call")
+    p.add_argument("prompt", help="Prompt text, sent before the file blocks")
+    p.add_argument("filepath", nargs="*", help="Paths to files to attach")
+    p.add_argument("--dir", default=None, help="Directory to glob for input files")
+    p.add_argument("--ext", default=None, help="Filter --dir files by extension, e.g. .py")
+    p.set_defaults(func=cmd_append)
+
+    p = sub.add_parser("batch", parents=[common],
+                       help="Same prompt sent once per file, one response file each")
+    p.add_argument("prompt", help="Prompt text, sent before each file's content")
+    p.add_argument("filepath", nargs="*", help="Paths to files to process")
+    p.add_argument("--dir", default=None, help="Directory to glob for input files")
+    p.add_argument("--ext", default=None, help="Filter --dir files by extension, e.g. .py")
+    p.set_defaults(func=cmd_batch)
+
+    p = sub.add_parser("manifest", parents=[common],
+                       help="TSV manifest of filepath<TAB>prompt pairs, one call each")
+    p.add_argument("manifest_path", help="Path to the TSV manifest")
+    p.set_defaults(func=cmd_manifest)
+
+    p = sub.add_parser("loop", parents=[common],
+                       help="Iterative refinement over N fresh calls")
+    p.add_argument("initial_prompt", help="Prompt text used in every iteration")
+    p.add_argument("filepath", nargs="?", default=None,
+                   help="Optional file included in the first iteration only")
+    p.add_argument("--iterations", type=int, default=3,
+                   help="Number of iterations (default: 3)")
+    p.add_argument("--interactive", action="store_true",
+                   help="Print each response and prompt for refinement instructions")
+    p.set_defaults(func=cmd_loop)
+
+    p = sub.add_parser("interactive", parents=[common],
+                       help="Multi-turn conversation REPL")
+    p.add_argument("filepath", nargs="?", default=None,
+                   help="Optional file included as context in the first message")
+    p.set_defaults(func=cmd_interactive)
+
+    return parser.parse_args()
+
+
+# --- TRANSFORM ---
+# All pure functions: message builders, delimiter wrapping, manifest parsing,
+# conversation formatting. No open(), no print(), no httpx.
+
+def file_block(filename: str, text: str) -> str:
+    """Wrap text in the toolkit's BEGIN/END delimiter convention."""
+    return f"--- BEGIN {filename} ---\n{text}\n--- END {filename} ---"
+
+
+def build_user_content(prompt: str, files: list[tuple[str, str]]) -> str:
+    """Assemble user message content: prompt text, then each (filename, text) as a block."""
+    return "\n\n".join([prompt, *(file_block(name, text) for name, text in files)])
+
+
+def prepend_system(messages: list[dict], system: str | None) -> list[dict]:
+    """Return messages with a system message prepended, or unchanged if system is None."""
+    if system is None:
+        return messages
+    return [{"role": "system", "content": system}, *messages]
+
+
+def build_iteration_content(prompt: str, iteration: int, total: int,
+                            previous_response: str | None,
+                            files: list[tuple[str, str]],
+                            refinement: str | None) -> str:
+    """Assemble the user message content for one iteration of the refinement loop."""
+    if iteration == 1:
+        return build_user_content(prompt, files)
+    parts = [prompt,
+             file_block("previous_response", previous_response),
+             f"Iteration {iteration} of {total}. Refine your previous response."]
+    if refinement:
+        parts.append(refinement)
+    return "\n\n".join(parts)
+
+
+def parse_manifest(manifest_text: str) -> list[tuple[str, str]]:
+    """Parse TSV manifest text into (filepath, prompt) tuples."""
+    entries = []
+    for line in manifest_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "\t" in stripped:
+            filepath, prompt = stripped.split("\t", 1)
+            entries.append((filepath.strip(), prompt.strip() or DEFAULT_MANIFEST_PROMPT))
+        else:
+            entries.append((stripped, DEFAULT_MANIFEST_PROMPT))
+    return entries
+
+
+def combine_responses(responses: list[str]) -> str:
+    """Concatenate iteration responses under '## Iteration {i}' headers."""
+    sections = [f"## Iteration {i}\n\n{text}" for i, text in enumerate(responses, start=1)]
+    return "\n\n".join(sections)
+
+
+def format_conversation(history: list[dict]) -> str:
+    """Format the conversation history as a markdown transcript string."""
+    sections = [f"## {message['role'].upper()}\n{message['content']}"
+                for message in history]
+    return "\n\n".join(sections) + "\n"
+
+
+# --- IO ---
+# call_llm, file reading, file writing. Collision avoidance lives in
+# write_response (not TRANSFORM) because checking for an existing file
+# is a filesystem read.
+
+def call_llm(provider_name: str, model: str | None, messages: list[dict]) -> str:
+    """POST messages to the named provider and return the response text."""
+    provider = PROVIDERS[provider_name]
+
+    api_key = os.environ.get(provider["env_key"])
+    if api_key is None:
+        print(f"Missing API key: set the {provider['env_key']} environment variable.",
+              file=sys.stderr)
+        sys.exit(1)
+
+    model = model or provider["default_model"]
+    url = provider["url_template"].format(model=model)
+    body = {**provider["transform_messages"](messages), **provider["body_extras"](model)}
+    headers = {
+        "content-type": "application/json",
+        **provider["auth_header"](api_key),
+        **provider["extra_headers"],
+    }
+
+    response = httpx.post(url, params=provider["auth_params"](api_key),
+                          json=body, headers=headers, timeout=TIMEOUT_SECONDS)
+    if response.status_code >= 400:
+        # Print here so error formatting lives in one place; raise so the
+        # caller decides whether to exit (single-call commands) or skip and
+        # continue (batch-style commands).
+        print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
+        response.raise_for_status()
+
+    return provider["extract_response"](response.json())
+
+
+def read_file(path: Path) -> str:
+    """Read a text file; print an error and exit if it doesn't exist."""
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        print(f"File not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+
+def collect_paths(positional: list[str], dir_arg: str | None, ext: str | None) -> list[Path]:
+    """Combine positional paths with a directory glob, deduplicate, sort alphabetically."""
+    paths = [Path(p) for p in positional]
+    if dir_arg is not None:
+        pattern = f"*{ext}" if ext else "*"
+        paths.extend(p for p in Path(dir_arg).glob(pattern) if p.is_file())
+    return sorted(set(paths))
+
+
+def write_response(output_dir: str, filename: str, text: str) -> Path:
+    """Write text to output_dir/filename, appending _2, _3, ... if the path exists."""
+    path = Path(output_dir) / filename
+    stem, suffix = path.stem, path.suffix
+    counter = 2
+    while path.exists():
+        path = Path(output_dir) / f"{stem}_{counter}{suffix}"
+        counter += 1
+    path.write_text(text)
+    return path
+
+
+# --- COMMANDS ---
+# One function per subcommand. Each sequences: read -> transform -> call -> write.
+# These are the only functions that mix IO and transforms.
+
+def cmd_single(args: argparse.Namespace, system: str | None) -> None:
+    """One prompt, one file, one call, one response file."""
+    input_path = Path(args.filepath)
+    content = build_user_content(args.prompt, [(input_path.name, read_file(input_path))])
+    messages = prepend_system([{"role": "user", "content": content}], system)
+    try:
+        response_text = call_llm(args.provider, args.model, messages)
+    except httpx.HTTPStatusError:
+        sys.exit(1)  # call_llm already printed the HTTP error to stderr
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = write_response(args.output, f"{input_path.stem}_response_{timestamp}.md",
+                         response_text)
+    print(f"Wrote {out}")
+
+
+def cmd_append(args: argparse.Namespace, system: str | None) -> None:
+    """Many files appended into one user message, one call, one response file."""
+    input_paths = collect_paths(args.filepath, args.dir, args.ext)
+    if not input_paths:
+        print("No input files: pass file paths and/or --dir.", file=sys.stderr)
+        sys.exit(1)
+
+    files = [(p.name, read_file(p)) for p in input_paths]
+    content = build_user_content(args.prompt, files)
+    messages = prepend_system([{"role": "user", "content": content}], system)
+    try:
+        response_text = call_llm(args.provider, args.model, messages)
+    except httpx.HTTPStatusError:
+        sys.exit(1)  # call_llm already printed the HTTP error to stderr
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = write_response(args.output, f"appended_response_{timestamp}.md", response_text)
+    print(f"Wrote {out}")
+
+
+def run_entries(entries: list[tuple[Path, str]], args: argparse.Namespace,
+                system: str | None) -> None:
+    """Sequentially call the LLM once per (path, prompt) entry; skip HTTP failures."""
+    total = len(entries)
+    written = 0
+    skipped = 0
+
+    for index, (input_path, prompt) in enumerate(entries, start=1):
+        content = build_user_content(prompt, [(input_path.name, read_file(input_path))])
+        messages = prepend_system([{"role": "user", "content": content}], system)
+        try:
+            response_text = call_llm(args.provider, args.model, messages)
+        except httpx.HTTPStatusError:
+            skipped += 1  # call_llm already printed the HTTP error to stderr
+            continue
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = write_response(args.output, f"{input_path.stem}_response_{timestamp}.md",
+                             response_text)
+        written += 1
+        print(f"[{index}/{total}] {input_path} -> {out}")
+
+    print(f"Processed {total} files, wrote {written} responses to {args.output}")
+    if skipped:
+        print(f"Skipped {skipped} files due to errors", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_batch(args: argparse.Namespace, system: str | None) -> None:
+    """Same prompt sent once per file; one response file per input."""
+    input_paths = collect_paths(args.filepath, args.dir, args.ext)
+    if not input_paths:
+        print("No input files: pass file paths and/or --dir.", file=sys.stderr)
+        sys.exit(1)
+    run_entries([(p, args.prompt) for p in input_paths], args, system)
+
+
+def cmd_manifest(args: argparse.Namespace, system: str | None) -> None:
+    """TSV manifest drives per-file prompts; one call and one response file per entry."""
+    manifest_path = Path(args.manifest_path)
+    entries = parse_manifest(read_file(manifest_path))
+    if not entries:
+        print(f"No entries in manifest: {manifest_path}", file=sys.stderr)
+        sys.exit(1)
+    run_entries([(Path(fp), prompt) for fp, prompt in entries], args, system)
+
+
+def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
+    """Iterative refinement: each iteration is a fresh call carrying the previous response."""
+    files = []
+    if args.filepath is not None:
+        input_path = Path(args.filepath)
+        files = [(input_path.name, read_file(input_path))]
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    total = args.iterations
+
+    responses: list[str] = []
+    previous_response = None
+    refinement = None
+    failed = False
+
+    for iteration in range(1, total + 1):
+        content = build_iteration_content(args.initial_prompt, iteration, total,
+                                          previous_response, files, refinement)
+        messages = prepend_system([{"role": "user", "content": content}], system)
+        try:
+            response_text = call_llm(args.provider, args.model, messages)
+        except httpx.HTTPStatusError:
+            failed = True  # call_llm already printed the HTTP error to stderr
+            break
+
+        responses.append(response_text)
+        previous_response = response_text
+        refinement = None
+
+        out = write_response(args.output, f"loop_iter{iteration}_{timestamp}.md",
+                             response_text)
+        print(f"Wrote {out}")
+
+        if args.interactive and iteration < total:
+            print(response_text)
+            try:
+                answer = input(f"[iteration {iteration}/{total}] Enter refinement "
+                               f"instructions (empty to continue, q to quit): ").strip()
+            except EOFError:
+                print()
+                break  # Ctrl-D at the prompt == q: stop, write combined file
+            if answer == "q":
+                break
+            if answer:
+                refinement = answer
+
+    if responses:
+        out = write_response(args.output, f"loop_combined_{timestamp}.md",
+                             combine_responses(responses))
+        print(f"Wrote {out}")
+
+    if failed:
+        sys.exit(1)
+
+
+def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
+    """Multi-turn REPL; full history sent each call; transcript written on exit."""
+    files = []
+    if args.filepath is not None:
+        input_path = Path(args.filepath)
+        files = [(input_path.name, read_file(input_path))]
+
+    history: list[dict] = []
+
+    try:
+        while True:
+            text = input("> ").strip()
+            if text in ("quit", "exit"):
+                break
+            if not text:
+                continue
+
+            content = build_user_content(text, files) if not history else text
+            attempt = history + [{"role": "user", "content": content}]
+            try:
+                response_text = call_llm(args.provider, args.model,
+                                         prepend_system(attempt, system))
+            except httpx.HTTPStatusError:
+                # call_llm already printed the HTTP error to stderr.
+                print("(LLM call failed, try again)")
+                continue
+
+            history = attempt + [{"role": "assistant", "content": response_text}]
+            print(f"\n{response_text}\n")
+    except (KeyboardInterrupt, EOFError):
+        print()
+
+    if history:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = write_response(args.output, f"interactive_{timestamp}.md",
+                             format_conversation(history))
+        print(f"Wrote {out}")
+
+
+# --- MAIN ---
+
+def main() -> None:
+    """Parse arguments, resolve the system prompt, dispatch to the subcommand."""
+    args = parse_args()
+
+    if args.system and args.system_file:
+        print("Pass --system or --system-file, not both.", file=sys.stderr)
+        sys.exit(1)
+    system = args.system
+    if args.system_file:
+        system = read_file(Path(args.system_file))
+
+    args.func(args, system)
+
+
+if __name__ == "__main__":
+    main()
