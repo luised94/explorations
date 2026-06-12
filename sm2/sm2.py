@@ -1,3 +1,28 @@
+"""SM-2 spaced repetition review tool.
+
+Single-file, banner-sectioned topology. Section order is binding and purity
+decreases monotonically downward:
+
+    TYPES AND CONSTANTS   plain data definitions, defaults (read only in ENTRY)
+    ALGORITHM             pure: SM-2 math, grading, domain derivation
+    PARSER                pure core (parse_text) + thin file wrapper
+    SCHEDULER             pure: due-queue throttling
+    VIEWS                 pure: strings/rows in, strings out          [phase 3]
+    STORE                 DB edge: conn in, plain data out; no print/exit
+    SHELL                 all terminal IO, input(), clock capture
+    ENTRY POINT           argparse, composition root, sys.exit
+
+Purity fence (grep-enforced): input(, sys.exit, print(, date.today,
+time.monotonic, sqlite3, terminal_output. may not appear above the STORE
+banner (sqlite3) / SHELL banner (everything else).
+
+Deliberate denormalizations (A2 boundary, named protocol):
+  review_log.domain     derived from item_id at insert, never updated.
+  review_log.sm2_grade  derived from grade at insert, never updated.
+  items.source          copied from file at first insert, never updated;
+                        the exercise file remains the source of truth.
+"""
+
 import argparse
 import datetime
 import os
@@ -5,114 +30,91 @@ import re
 import sqlite3
 import sys
 import time
-from typing import TypeAlias
-import terminal_output
+from typing import NamedTuple
 
+import terminal_output
 
 # =============================================================================
 # TYPES AND CONSTANTS
 # =============================================================================
-ParsedItem: TypeAlias = tuple[str, str, str, list[str], list[str]]
-# positions:                  id   content  criteria  tags     prerequisites
+# Defaults only. Nothing below ENTRY POINT may read these as ambient config;
+# they flow downward as parameters from main().
 
-ContentMap: TypeAlias = dict[str, tuple[str, str, list[str], list[str], str]]
-# positions:                                   content  criteria  tags     prerequisites  source
-
-DueItem: TypeAlias = tuple[str, int, int]
-# positions:               item_id  repetition_count  due_date
-
-DATABASE_PATH: str = "data/sm2.db"
+DEFAULT_DATABASE_PATH: str = "data/sm2.db"
+DEFAULT_EXERCISES_DIR: str = "exercises"
 LEECH_THRESHOLD: int = 3
 TOTAL_NEW_MAX: int = 9
 MIN_PER_DOMAIN: int = 1
 MAX_REVIEWS: int = 100
-
-# =============================================================================
-# PARSER
-# =============================================================================
-ITEM_DELIMITER_PATTERN: re.Pattern[str] = re.compile(r"^@@@ id:\s*(.+)$")
+BUSY_TIMEOUT_MS: int = 5000
 
 
-def parse_exercises(directory_path: str) -> list[ParsedItem]:
-    all_filenames: list[str] = os.listdir(directory_path)
-    markdown_filenames: list[str] = []
-    for filename in all_filenames:
-        if filename.endswith(".md"):
-            markdown_filenames.append(filename)
+class Exercise(NamedTuple):
+    """One parsed exercise item. Immutable per-run value; files own it."""
 
-    parsed_items: list[ParsedItem] = []
-    seen_ids: dict[str, str] = {}  # item_id -> source filepath
+    item_id: str
+    content: str
+    criteria: str
+    tags: tuple[str, ...]
+    source: str
 
-    for filename in sorted(markdown_filenames):
-        filepath: str = os.path.join(directory_path, filename)
-        file_handle = open(filepath, "r", encoding="utf-8")
-        raw_text: str = file_handle.read()
-        file_handle.close()
 
-        lines: list[str] = raw_text.splitlines()
+class ItemState(NamedTuple):
+    """One row of the items table: the SM-2 state vector."""
 
-        blocks: list[tuple[str, list[str]]] = []
-        current_id: str = ""
-        current_lines: list[str] = []
+    item_id: str
+    easiness_factor: float
+    interval_days: float
+    repetition_count: int
+    due_date: int
+    last_review: int
+    lapse_count: int
 
-        for line in lines:
-            delimiter_match: re.Match[str] | None = ITEM_DELIMITER_PATTERN.match(line)
-            if delimiter_match is not None:
-                if current_id != "":
-                    blocks.append((current_id, current_lines))
-                current_id = delimiter_match.group(1).strip()
-                current_lines = []
-            else:
-                if current_id != "":
-                    current_lines.append(line)
 
-        if current_id != "":
-            blocks.append((current_id, current_lines))
+class DueItem(NamedTuple):
+    """Queue entry: the minimum the scheduler needs to order and throttle."""
 
-        for item_id, block_lines in blocks:
-            if item_id in seen_ids:
-                raise ValueError(
-                    f"duplicate item id '{item_id}' in '{filepath}' and '{seen_ids[item_id]}'"
-                )
-            seen_ids[item_id] = filepath
+    item_id: str
+    repetition_count: int
+    due_date: int
 
-            criteria: str = ""
-            tags: list[str] = []
-            prerequisites: list[str] = []
-            source: str = ""
-            content_lines: list[str] = []
 
-            for line in block_lines:
-                if line.startswith("criteria:"):
-                    criteria = line[len("criteria:") :].strip()
-                elif line.startswith("tags:"):
-                    raw_tags: str = line[len("tags:") :].strip()
-                    for raw_tag in raw_tags.split(","):
-                        stripped_tag: str = raw_tag.strip()
-                        if stripped_tag != "":
-                            tags.append(stripped_tag)
-                elif line.startswith("after:"):
-                    raw_prerequisites: str = line[len("after:") :].strip()
-                    for raw_prerequisite in raw_prerequisites.split(","):
-                        stripped_prerequisite: str = raw_prerequisite.strip()
-                        if stripped_prerequisite != "":
-                            prerequisites.append(stripped_prerequisite)
-                elif line.startswith("source:"):
-                    source = line[len("source:") :].strip()
-                else:
-                    content_lines.append(line)
+class ReviewOutcome(NamedTuple):
+    """Complete result of grading one item: the new state plus the log row.
 
-            content: str = "\n".join(content_lines).strip()
-            parsed_item: ParsedItem = (item_id, content, criteria, tags, prerequisites, source)
-            parsed_items.append(parsed_item)
+    This is the unit commit_review() executes atomically. Building it is
+    pure (grade_item); executing it is the store's job.
+    """
 
-    return parsed_items
+    item_id: str
+    domain: str
+    grade: int
+    sm2_grade: int
+    review_date: int
+    elapsed_days: int
+    easiness_factor_before: float
+    easiness_factor_after: float
+    interval_days_before: float
+    interval_days_after: float
+    repetition_count_before: int
+    repetition_count_after: int
+    lapse_count_after: int
+    due_date: int
+    error_note: str | None
+    answer_text: str | None
+    response_seconds: float | None
 
 
 # =============================================================================
-# SM-2 ALGORITHM
+# ALGORITHM (pure)
 # =============================================================================
+
 USER_GRADE_TO_SM2_GRADE: dict[int, int] = {0: 1, 1: 3, 2: 5}
+
+
+def domain_of(item_id: str) -> str:
+    """Derive the domain from an item id: the segment before the first dash."""
+    return item_id.split("-")[0]
 
 
 def sm2_update(
@@ -124,12 +126,10 @@ def sm2_update(
     review_date: int,
 ) -> dict[str, float | int]:
     sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
-
     ef_delta_inner: float = 0.08 + (5 - sm2_grade) * 0.02
     ef_delta: float = 0.1 - (5 - sm2_grade) * ef_delta_inner
     raw_easiness_factor: float = easiness_factor + ef_delta
     new_easiness_factor: float = max(1.3, min(3.0, raw_easiness_factor))
-
     if sm2_grade < 3:
         new_repetition_count: int = 0
         new_interval_days: float = 1.0
@@ -143,9 +143,7 @@ def sm2_update(
         else:
             new_interval_days = interval_days * new_easiness_factor
         new_repetition_count = repetition_count + 1
-
     new_due_date: int = review_date + round(new_interval_days)
-
     return {
         "easiness_factor": new_easiness_factor,
         "repetition_count": new_repetition_count,
@@ -155,15 +153,215 @@ def sm2_update(
     }
 
 
+def grade_item(
+    state: ItemState,
+    grade: int,
+    today: int,
+    error_note: str | None = None,
+    answer_text: str | None = None,
+    response_seconds: float | None = None,
+) -> ReviewOutcome:
+    """Pure apply step: current state + grade -> the full review outcome."""
+    if state.last_review > 0:
+        elapsed_days: int = today - state.last_review
+    else:
+        elapsed_days = 0
+    update = sm2_update(
+        grade,
+        state.easiness_factor,
+        state.interval_days,
+        state.repetition_count,
+        state.lapse_count,
+        today,
+    )
+    return ReviewOutcome(
+        item_id=state.item_id,
+        domain=domain_of(state.item_id),
+        grade=grade,
+        sm2_grade=USER_GRADE_TO_SM2_GRADE[grade],
+        review_date=today,
+        elapsed_days=elapsed_days,
+        easiness_factor_before=state.easiness_factor,
+        easiness_factor_after=float(update["easiness_factor"]),
+        interval_days_before=state.interval_days,
+        interval_days_after=float(update["interval_days"]),
+        repetition_count_before=state.repetition_count,
+        repetition_count_after=int(update["repetition_count"]),
+        lapse_count_after=int(update["lapse_count"]),
+        due_date=int(update["due_date"]),
+        error_note=error_note,
+        answer_text=answer_text,
+        response_seconds=response_seconds,
+    )
+
+
 # =============================================================================
-# DATABASE SCHEMA
+# PARSER (pure core + thin file wrapper)
+# =============================================================================
+
+ITEM_DELIMITER_PATTERN: re.Pattern[str] = re.compile(r"^@@@ id:\s*(.+)$")
+
+# 'after:' (prerequisite gating) was removed; lines using it are discarded
+# with a warning so stale files surface instead of silently feeding content.
+DISCARDED_KEY_PREFIXES: tuple[str, ...] = ("after:",)
+
+
+def parse_text(filename: str, text: str) -> tuple[list[Exercise], list[str]]:
+    """Parse one exercise file's text. Pure: no IO, no duplicate-id policy
+    across files (the wrapper owns that).
+
+    Returns (exercises, warnings). Raises ValueError on a duplicate id
+    within the same text.
+    """
+    warnings: list[str] = []
+    blocks: list[tuple[str, list[str]]] = []
+    current_id: str = ""
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        delimiter_match = ITEM_DELIMITER_PATTERN.match(line)
+        if delimiter_match is not None:
+            if current_id != "":
+                blocks.append((current_id, current_lines))
+            current_id = delimiter_match.group(1).strip()
+            current_lines = []
+        elif current_id != "":
+            current_lines.append(line)
+    if current_id != "":
+        blocks.append((current_id, current_lines))
+
+    exercises: list[Exercise] = []
+    seen_ids: set[str] = set()
+    for item_id, block_lines in blocks:
+        if item_id in seen_ids:
+            raise ValueError(f"duplicate item id '{item_id}' in '{filename}'")
+        seen_ids.add(item_id)
+        criteria: str = ""
+        tags: list[str] = []
+        source: str = ""
+        content_lines: list[str] = []
+        for line in block_lines:
+            if line.startswith("criteria:"):
+                criteria = line[len("criteria:") :].strip()
+            elif line.startswith("tags:"):
+                raw_tags = line[len("tags:") :].strip()
+                tags = [t.strip() for t in raw_tags.split(",") if t.strip() != ""]
+            elif line.startswith("source:"):
+                source = line[len("source:") :].strip()
+            elif line.startswith(DISCARDED_KEY_PREFIXES):
+                key = line.split(":", 1)[0]
+                warnings.append(
+                    f"{filename}: item '{item_id}': '{key}:' is no longer supported; line discarded"
+                )
+            else:
+                content_lines.append(line)
+        exercises.append(
+            Exercise(
+                item_id=item_id,
+                content="\n".join(content_lines).strip(),
+                criteria=criteria,
+                tags=tuple(tags),
+                source=source,
+            )
+        )
+    return exercises, warnings
+
+
+def parse_exercises(directory_path: str) -> tuple[dict[str, Exercise], list[str]]:
+    """Read every *.md file in directory_path and parse it.
+
+    The only file IO in the parser section. Cross-file duplicate ids raise
+    ValueError naming both files.
+    """
+    markdown_filenames = sorted(f for f in os.listdir(directory_path) if f.endswith(".md"))
+    exercises: dict[str, Exercise] = {}
+    seen_in: dict[str, str] = {}
+    all_warnings: list[str] = []
+    for filename in markdown_filenames:
+        filepath = os.path.join(directory_path, filename)
+        with open(filepath, "r", encoding="utf-8") as file_handle:
+            raw_text = file_handle.read()
+        file_exercises, warnings = parse_text(filepath, raw_text)
+        all_warnings.extend(warnings)
+        for exercise in file_exercises:
+            if exercise.item_id in seen_in:
+                raise ValueError(
+                    f"duplicate item id '{exercise.item_id}' in "
+                    f"'{filepath}' and '{seen_in[exercise.item_id]}'"
+                )
+            seen_in[exercise.item_id] = filepath
+            exercises[exercise.item_id] = exercise
+    return exercises, all_warnings
+
+
+# =============================================================================
+# SCHEDULER (pure)
 # =============================================================================
 
 
-def initialize_database(database_path: str) -> sqlite3.Connection:
-    database_connection: sqlite3.Connection = sqlite3.connect(database_path)
-    database_connection.execute("PRAGMA journal_mode=WAL")
-    database_connection.execute("""
+def apply_throttle_and_cap(
+    due_queue: list[DueItem],
+    today_new_by_domain: dict[str, int],
+    total_new_max: int,
+    min_per_domain: int,
+    max_reviews: int,
+) -> list[str]:
+    """Order-preserving throttle: all due reviews pass through; new items are
+    capped at total_new_max with a min_per_domain floor reserved first.
+    """
+    # pass 1: reserve floor items per domain
+    reserved_item_ids: set[str] = set()
+    reserved_count_by_domain: dict[str, int] = {}
+    for due_item in due_queue:
+        if due_item.repetition_count == 0:
+            domain = domain_of(due_item.item_id)
+            already_reviewed = today_new_by_domain.get(domain, 0)
+            already_reserved = reserved_count_by_domain.get(domain, 0)
+            if min_per_domain - already_reviewed - already_reserved > 0:
+                reserved_item_ids.add(due_item.item_id)
+                reserved_count_by_domain[domain] = already_reserved + 1
+    # pass 2: build result - reserved slots pre-allocated from budget
+    already_new_today: int = sum(today_new_by_domain.values())
+    non_reserved_budget: int = max(0, total_new_max - len(reserved_item_ids) - already_new_today)
+    non_reserved_added: int = 0
+    result: list[str] = []
+    for due_item in due_queue:
+        if due_item.repetition_count > 0:
+            result.append(due_item.item_id)
+        elif due_item.item_id in reserved_item_ids:
+            result.append(due_item.item_id)
+        elif non_reserved_added < non_reserved_budget:
+            result.append(due_item.item_id)
+            non_reserved_added += 1
+    return result[:max_reviews]
+
+
+# =============================================================================
+# VIEWS (pure)  -- placeholder; table row-builders land in Phase 3
+# =============================================================================
+# Phase 3 extracts the four inline table printers in SHELL into
+# (headers, rows) builders plus one render_table(). Until then the shell
+# carries the old inline rendering, adapted only for NamedTuple access.
+
+
+# =============================================================================
+# STORE (DB edge: conn in, plain data out; no printing, no exits)
+# =============================================================================
+
+
+def connect(database_path: str) -> sqlite3.Connection:
+    """Open the database in explicit-transaction mode with concurrency
+    protection: WAL + busy timeout; writes use BEGIN IMMEDIATE.
+    """
+    conn = sqlite3.connect(database_path, isolation_level=None)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    return conn
+
+
+def init_schema(conn: sqlite3.Connection) -> None:
+    """Create tables if absent. Schema is frozen: byte-compatible with
+    databases created by the pre-refactor tool."""
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS items (
             item_id           TEXT PRIMARY KEY,
             easiness_factor   REAL DEFAULT 2.5,
@@ -175,7 +373,7 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
             source            TEXT DEFAULT ''
         )
     """)
-    database_connection.execute("""
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS review_log (
             id                        INTEGER PRIMARY KEY AUTOINCREMENT,
             item_id                   TEXT,
@@ -194,277 +392,91 @@ def initialize_database(database_path: str) -> sqlite3.Connection:
             response_seconds          REAL
         )
     """)
-
-    database_connection.execute("CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)")
-    database_connection.commit()
-    return database_connection
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_due_date ON items(due_date)")
 
 
-# =============================================================================
-# THROTTLE
-# =============================================================================
-def apply_throttle_and_cap(
-    due_queue: list[DueItem],
-    today_new_by_domain: dict[str, int],
-    total_new_max: int,
-    min_per_domain: int,
-    max_reviews: int,
-    blocked_set: set[str],
-) -> list[str]:
-    # pass 1: reserve floor items per domain
-    reserved_item_ids: set[str] = set()
-    reserved_count_by_domain: dict[str, int] = {}
-    for due_item in due_queue:
-        item_id: str = due_item[0]
-        repetition_count: int = due_item[1]
-        if item_id in blocked_set:
-            continue
-        if repetition_count == 0:
-            identifier_parts: list[str] = item_id.split("-")
-            domain: str = identifier_parts[0]
-            already_reviewed_in_domain: int = today_new_by_domain.get(domain, 0)
-            already_reserved_in_domain: int = reserved_count_by_domain.get(domain, 0)
-            floor_remaining: int = (
-                min_per_domain - already_reviewed_in_domain - already_reserved_in_domain
+def reconcile(conn: sqlite3.Connection, exercises: dict[str, Exercise], today: int) -> set[str]:
+    """Insert items present in files but absent from the DB. Returns the
+    inserted ids. source is copied at insert (write-once denormalization)."""
+    database_ids = {row[0] for row in conn.execute("SELECT item_id FROM items")}
+    new_item_ids = set(exercises) - database_ids
+    if new_item_ids:
+        conn.execute("BEGIN IMMEDIATE")
+        for item_id in sorted(new_item_ids):
+            conn.execute(
+                "INSERT INTO items (item_id, due_date, source) VALUES (?, ?, ?)",
+                (item_id, today, exercises[item_id].source),
             )
-            if floor_remaining > 0:
-                reserved_item_ids.add(item_id)
-                reserved_count_by_domain[domain] = already_reserved_in_domain + 1
-    # pass 2: build result - reserved slots pre-allocated from budget
-    already_new_today: int = 0
-    for domain_count in today_new_by_domain.values():
-        already_new_today = already_new_today + domain_count
-    total_reserved: int = len(reserved_item_ids)
-    non_reserved_budget: int = max(0, total_new_max - total_reserved - already_new_today)
-    non_reserved_added: int = 0
-    result: list[str] = []
-    for due_item in due_queue:
-        item_id: str = due_item[0]
-        repetition_count: int = due_item[1]
-        if item_id in blocked_set:
-            continue
-        if repetition_count > 0:
-            result.append(item_id)
-        else:
-            if item_id in reserved_item_ids:
-                result.append(item_id)
-            elif non_reserved_added < non_reserved_budget:
-                result.append(item_id)
-                non_reserved_added = non_reserved_added + 1
-    if len(result) > max_reviews:
-        result = result[:max_reviews]
-    return result
+        conn.execute("COMMIT")
+    return new_item_ids
 
 
-# =============================================================================
-# PREREQUISITE ENFORCEMENT
-# =============================================================================
-def build_blocked_set(
-    content_map: ContentMap,
-    database_connection: sqlite3.Connection,
-) -> set[str]:
-    # Prerequisite chains are assumed acyclic by authoring convention.
-    # No runtime cycle detection.
-    blocked_item_ids: set[str] = set()
-    for item_id in content_map:
-        prerequisites: list[str] = content_map[item_id][3]
-        for prerequisite_id in prerequisites:
-            prerequisite_in_db: int = database_connection.execute(
-                "SELECT COUNT(*) FROM items WHERE item_id = ?",
-                (prerequisite_id,),
-            ).fetchone()[0]
-            if prerequisite_in_db == 0:
-                continue
-            passing_grades: int = database_connection.execute(
-                "SELECT COUNT(*) FROM review_log WHERE item_id = ? AND grade > 0",
-                (prerequisite_id,),
-            ).fetchone()[0]
-            if passing_grades == 0:
-                blocked_item_ids.add(item_id)
-                break
-    return blocked_item_ids
-
-
-# =============================================================================
-# VALIDATION
-# =============================================================================
-def run_validation() -> None:
-    failure_count: int = 0
-    FLOAT_TOLERANCE: float = 0.0001
-    validation_today: int = datetime.date.today().toordinal()
-
-    # sanity check: ordinal is a plausible current date
-    if validation_today <= datetime.date(2024, 1, 1).toordinal():
-        print("FAIL: today ordinal is not a plausible current date")
-        failure_count = failure_count + 1
-
-    # build 15 synthetic parsed items: 5 per domain
-    synthetic_items: list[ParsedItem] = []
-    for domain_prefix in ["drive", "c", "bio"]:
-        for index in range(1, 6):
-            synthetic_id: str = f"{domain_prefix}-val-{index}"
-            synthetic_source: str = "wozniak1999" if synthetic_id == "drive-val-1" else ""
-            synthetic_item: ParsedItem = (
-                synthetic_id,
-                f"validation content for {synthetic_id}",
-                "",
-                [],
-                [],
-                synthetic_source,
-            )
-            synthetic_items.append(synthetic_item)
-
-    # init in-memory database
-    validation_connection: sqlite3.Connection = initialize_database(":memory:")
-
-    # build parsed_ids and content_map
-    validation_parsed_ids: set[str] = set()
-    validation_content_map: ContentMap = {}
-    for item_id, content, criteria, tags, prerequisites, source in synthetic_items:
-        validation_parsed_ids.add(item_id)
-        validation_content_map[item_id] = (content, criteria, tags, prerequisites, source)
-
-    # reconcile
-    existing_rows: list[tuple] = validation_connection.execute(
-        "SELECT item_id FROM items"
-    ).fetchall()
-    validation_database_ids: set[str] = set()
-    for row in existing_rows:
-        validation_database_ids.add(row[0])
-    new_item_ids: set[str] = validation_parsed_ids - validation_database_ids
-
-    for new_item_id in new_item_ids:
-        new_item_source: str = validation_content_map[new_item_id][4]
-        validation_connection.execute(
-            "INSERT INTO items (item_id, due_date, source) VALUES (?, ?, ?)",
-            (new_item_id, validation_today, new_item_source),
-        )
-    validation_connection.commit()
-    # assert 15 items in table
-    item_count_row: tuple = validation_connection.execute("SELECT COUNT(*) FROM items").fetchone()
-    item_count: int = item_count_row[0]
-
-    if item_count != 15:
-        print(f"FAIL: expected 15 items in table, got {item_count}")
-        failure_count = failure_count + 1
-    source_check_row: tuple | None = validation_connection.execute(
-        "SELECT source FROM items WHERE item_id = ?",
-        ("drive-val-1",),
-    ).fetchone()
-    if source_check_row is None or source_check_row[0] != "wozniak1999":
-        print("FAIL: source value did not round-trip through reconcile")
-        failure_count = failure_count + 1
-    empty_source_check_row: tuple | None = validation_connection.execute(
-        "SELECT source FROM items WHERE item_id = ?",
-        ("drive-val-2",),
-    ).fetchone()
-    if empty_source_check_row is None or empty_source_check_row[0] != "":
-        print("FAIL: item without source: field did not get empty string default")
-        failure_count = failure_count + 1
-
-    # build due queue
-    validation_due_queue: list[DueItem] = []
-    validation_parsed_ids_list: list[str] = list(validation_parsed_ids)
-    in_placeholders: str = ",".join("?" * len(validation_parsed_ids_list))
-    due_queue_query: str = (
+def fetch_due_queue(conn: sqlite3.Connection, item_ids: set[str], today: int) -> list[DueItem]:
+    """Items from item_ids due on or before today, ordered by due date."""
+    if not item_ids:
+        return []
+    ids = sorted(item_ids)
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
         f"SELECT item_id, repetition_count, due_date FROM items "
-        f"WHERE item_id IN ({in_placeholders}) AND due_date <= ? "
-        f"ORDER BY due_date ASC"
-    )
-    due_queue_parameters: list[str | int] = validation_parsed_ids_list + [validation_today]
-    due_queue_rows: list[tuple] = validation_connection.execute(
-        due_queue_query, due_queue_parameters
+        f"WHERE item_id IN ({placeholders}) AND due_date <= ? "
+        f"ORDER BY due_date ASC",
+        ids + [today],
     ).fetchall()
-    for row in due_queue_rows:
-        validation_due_item: DueItem = (row[0], row[1], row[2])
-        validation_due_queue.append(validation_due_item)
+    return [DueItem(*row) for row in rows]
 
-    # query today new by domain (empty on fresh db)
-    validation_today_new_rows: list[tuple] = validation_connection.execute(
+
+def fetch_today_new_by_domain(conn: sqlite3.Connection, today: int) -> dict[str, int]:
+    """How many first-time items were already reviewed today, per domain."""
+    rows = conn.execute(
         "SELECT domain, COUNT(*) FROM review_log "
         "WHERE review_date = ? AND repetition_count_before = 0 "
         "GROUP BY domain",
-        (validation_today,),
+        (today,),
     ).fetchall()
-    validation_today_new_by_domain: dict[str, int] = {}
-    for row in validation_today_new_rows:
-        validation_today_new_by_domain[row[0]] = row[1]
+    return {row[0]: row[1] for row in rows}
 
-    # apply throttle
-    validation_review_queue: list[str] = apply_throttle_and_cap(
-        validation_due_queue,
-        validation_today_new_by_domain,
-        TOTAL_NEW_MAX,
-        MIN_PER_DOMAIN,
-        MAX_REVIEWS,
-        set(),
-    )
 
-    # assert 9 items in review queue
-    if len(validation_review_queue) != 9:
-        print(f"FAIL: expected 9 in review queue, got {len(validation_review_queue)}")
-        failure_count = failure_count + 1
+def fetch_item_state(conn: sqlite3.Connection, item_id: str) -> ItemState:
+    row = conn.execute(
+        "SELECT item_id, easiness_factor, interval_days, repetition_count, "
+        "due_date, last_review, lapse_count FROM items WHERE item_id = ?",
+        (item_id,),
+    ).fetchone()
+    if row is None:
+        raise KeyError(f"item '{item_id}' not found in items table")
+    return ItemState(*row)
 
-    # simulate reviews: grades cycle 0, 1, 2
-    simulated_grades: list[int] = [0, 1, 2, 0, 1, 2, 0, 1, 2]
 
-    for queue_index, item_id in enumerate(validation_review_queue):
-        grade: int = simulated_grades[queue_index]
-        sim_sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
+def fetch_reviews_today_count(conn: sqlite3.Connection, today: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM review_log WHERE review_date = ?", (today,)
+    ).fetchone()[0]
 
-        sim_state_row: tuple = validation_connection.execute(
-            "SELECT easiness_factor, interval_days, repetition_count, "
-            "due_date, last_review, lapse_count "
-            "FROM items WHERE item_id = ?",
-            (item_id,),
-        ).fetchone()
 
-        sim_easiness_factor_before: float = sim_state_row[0]
-        sim_interval_days_before: float = sim_state_row[1]
-        sim_repetition_count_before: int = sim_state_row[2]
-        sim_last_review: int = sim_state_row[4]
-        sim_lapse_count_before: int = sim_state_row[5]
-
-        if sim_last_review > 0:
-            sim_elapsed_days: int = validation_today - sim_last_review
-        else:
-            sim_elapsed_days = 0
-
-        sim_update_result: dict[str, float | int] = sm2_update(
-            grade,
-            sim_easiness_factor_before,
-            sim_interval_days_before,
-            sim_repetition_count_before,
-            sim_lapse_count_before,
-            validation_today,
-        )
-
-        sim_new_easiness_factor: float = float(sim_update_result["easiness_factor"])
-        sim_new_repetition_count: int = int(sim_update_result["repetition_count"])
-        sim_new_interval_days: float = float(sim_update_result["interval_days"])
-        sim_new_lapse_count: int = int(sim_update_result["lapse_count"])
-        sim_new_due_date: int = int(sim_update_result["due_date"])
-
-        identifier_parts: list[str] = item_id.split("-")
-        domain: str = identifier_parts[0]
-
-        validation_connection.execute(
+def commit_review(conn: sqlite3.Connection, outcome: ReviewOutcome) -> None:
+    """Execute one ReviewOutcome atomically: state update + log insert in a
+    single transaction. Crash-state analysis: with one transaction the only
+    partial state is 'nothing happened', which is detectable (item still due)
+    and self-healing (review it again). The pre-refactor two-commit sequence
+    could advance an item without logging it -- silent history loss."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
             "UPDATE items SET easiness_factor=?, interval_days=?, "
             "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
             "WHERE item_id=?",
             (
-                sim_new_easiness_factor,
-                sim_new_interval_days,
-                sim_new_repetition_count,
-                sim_new_due_date,
-                validation_today,
-                sim_new_lapse_count,
-                item_id,
+                outcome.easiness_factor_after,
+                outcome.interval_days_after,
+                outcome.repetition_count_after,
+                outcome.due_date,
+                outcome.review_date,
+                outcome.lapse_count_after,
+                outcome.item_id,
             ),
         )
-        validation_connection.commit()
-
-        validation_connection.execute(
+        conn.execute(
             "INSERT INTO review_log ("
             "item_id, grade, sm2_grade, review_date, elapsed_days, "
             "easiness_factor_before, easiness_factor_after, "
@@ -473,575 +485,211 @@ def run_validation() -> None:
             "response_seconds"
             ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                item_id,
-                grade,
-                sim_sm2_grade,
-                validation_today,
-                sim_elapsed_days,
-                sim_easiness_factor_before,
-                sim_new_easiness_factor,
-                sim_interval_days_before,
-                sim_new_interval_days,
-                sim_repetition_count_before,
-                domain,
-                None,
-                None,
-                None,
+                outcome.item_id,
+                outcome.grade,
+                outcome.sm2_grade,
+                outcome.review_date,
+                outcome.elapsed_days,
+                outcome.easiness_factor_before,
+                outcome.easiness_factor_after,
+                outcome.interval_days_before,
+                outcome.interval_days_after,
+                outcome.repetition_count_before,
+                outcome.domain,
+                outcome.error_note,
+                outcome.answer_text,
+                outcome.response_seconds,
             ),
         )
-        validation_connection.commit()
-
-    # assert 9 review_log rows
-    log_count_row: tuple = validation_connection.execute(
-        "SELECT COUNT(*) FROM review_log"
-    ).fetchone()
-    log_count: int = log_count_row[0]
-    if log_count != 9:
-        print(f"FAIL: expected 9 review_log rows, got {log_count}")
-        failure_count = failure_count + 1
-
-    # assert state transitions per grade
-    for queue_index, item_id in enumerate(validation_review_queue):
-        grade = simulated_grades[queue_index]
-
-        post_state_row: tuple = validation_connection.execute(
-            "SELECT easiness_factor, interval_days, repetition_count, "
-            "lapse_count, due_date "
-            "FROM items WHERE item_id = ?",
-            (item_id,),
-        ).fetchone()
-
-        post_easiness_factor: float = post_state_row[0]
-        post_interval_days: float = post_state_row[1]
-        post_repetition_count: int = post_state_row[2]
-        post_lapse_count: int = post_state_row[3]
-        post_due_date: int = post_state_row[4]
-
-        if grade == 0:
-            if post_repetition_count != 0:
-                print(
-                    f"FAIL: {item_id} grade 0 expected repetition_count 0, "
-                    f"got {post_repetition_count}"
-                )
-                failure_count = failure_count + 1
-            if post_lapse_count != 1:
-                print(f"FAIL: {item_id} grade 0 expected lapse_count 1, got {post_lapse_count}")
-                failure_count = failure_count + 1
-            if abs(post_easiness_factor - 1.96) > FLOAT_TOLERANCE:
-                print(
-                    f"FAIL: {item_id} grade 0 expected easiness_factor 1.96, "
-                    f"got {post_easiness_factor}"
-                )
-                failure_count = failure_count + 1
-        elif grade == 1:
-            if post_repetition_count != 1:
-                print(
-                    f"FAIL: {item_id} grade 1 expected repetition_count 1, "
-                    f"got {post_repetition_count}"
-                )
-                failure_count = failure_count + 1
-            if abs(post_easiness_factor - 2.36) > FLOAT_TOLERANCE:
-                print(
-                    f"FAIL: {item_id} grade 1 expected easiness_factor 2.36, "
-                    f"got {post_easiness_factor}"
-                )
-                failure_count = failure_count + 1
-        elif grade == 2:
-            if post_repetition_count != 1:
-                print(
-                    f"FAIL: {item_id} grade 2 expected repetition_count 1, "
-                    f"got {post_repetition_count}"
-                )
-                failure_count = failure_count + 1
-            if abs(post_easiness_factor - 2.60) > FLOAT_TOLERANCE:
-                print(
-                    f"FAIL: {item_id} grade 2 expected easiness_factor 2.60, "
-                    f"got {post_easiness_factor}"
-                )
-                failure_count = failure_count + 1
-
-        if abs(post_interval_days - 1.0) > FLOAT_TOLERANCE:
-            print(f"FAIL: {item_id} expected interval_days 1.0, got {post_interval_days}")
-            failure_count = failure_count + 1
-
-        if post_due_date != validation_today + 1:
-            print(f"FAIL: {item_id} expected due_date {validation_today + 1}, got {post_due_date}")
-            failure_count = failure_count + 1
-
-    validation_connection.close()
-
-    if failure_count == 0:
-        print("validation passed: all checks ok")
-    else:
-        print(f"validation failed: {failure_count} check(s) failed")
-        sys.exit(1)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
 
 
 # =============================================================================
-# ENTRY POINT
+# SHELL (all terminal IO, input(), clock capture)
 # =============================================================================
+# Carried over from the monolith in Phase 1, adapted to NamedTuples and the
+# store functions. Phase 3 replaces the inline table printing with VIEWS;
+# Phase 4 finishes the T5 sandwich restructuring of the review loop.
 
-if __name__ == "__main__":
-    argument_parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="SM-2 spaced repetition review tool."
-    )
-    argument_parser.add_argument(
-        "--new-max",
-        type=int,
-        default=TOTAL_NEW_MAX,
-        help="maximum new items per session (default: 9)",
-    )
-    argument_parser.add_argument(
-        "--min-per-domain",
-        type=int,
-        default=MIN_PER_DOMAIN,
-        help="minimum new items guaranteed per domain (default: 1)",
-    )
-    argument_parser.add_argument(
-        "--max-reviews",
-        type=int,
-        default=MAX_REVIEWS,
-        help="hard session cap on total items reviewed (default: 100)",
-    )
-    argument_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="print the review queue and exit without reviewing",
-    )
-    argument_parser.add_argument(
-        "--preview",
-        action="store_true",
-        help="show upcoming items not yet due and exit",
-    )
-    argument_parser.add_argument(
-        "--validate",
-        action="store_true",
-        help="run internal validation suite and exit",
-    )
-    argument_parser.add_argument(
-        "--rehearse",
-        action="store_true",
-        help="run review session without writing to database",
-    )
-    argument_parser.add_argument(
-        "--show_failures",
-        action="store_true",
-        help="show most recent grade-0 rows with error notes and exit",
-    )
-    argument_parser.add_argument(
-        "--show_leeches",
-        action="store_true",
-        help="show items with lapse_count >= LEECH_THRESHOLD and exit",
-    )
-    parsed_args: argparse.Namespace = argument_parser.parse_args()
-    rehearse_mode: bool = parsed_args.rehearse
-    terminal_output.set_verbosity(3)
-    terminal_output.set_layout(max_width=76, align="center")
-    if parsed_args.validate:
-        run_validation()
-        sys.exit(0)
 
-    TOTAL_NEW_MAX = parsed_args.new_max
-    MIN_PER_DOMAIN = parsed_args.min_per_domain
-    MAX_REVIEWS = parsed_args.max_reviews
-
-    today: int = datetime.date.today().toordinal()
-    if parsed_args.show_failures or parsed_args.show_leeches:
-        if not os.path.isdir("data"):
-            print("error: data/ directory not found")
-            sys.exit(1)
-        flags_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
-        if parsed_args.show_failures:
-            failures_rows: list[tuple] = flags_connection.execute(
-                "SELECT r.item_id, r.domain, r.review_date, r.error_note, "
-                "       i.lapse_count "
-                "FROM review_log r "
-                "JOIN items i ON r.item_id = i.item_id "
-                "WHERE r.grade = 0 "
-                "  AND r.error_note IS NOT NULL "
-                "  AND r.id = ( "
-                "      SELECT MAX(id) FROM review_log "
-                "      WHERE item_id = r.item_id "
-                "        AND grade = 0 "
-                "        AND error_note IS NOT NULL "
-                "  ) "
-                "ORDER BY r.review_date DESC"
-            ).fetchall()
-            if len(failures_rows) == 0:
-                print("no recorded failures with notes.")
-            else:
-                failures_id_width: int = len("item_id")
-                for failures_row in failures_rows:
-                    if len(failures_row[0]) > failures_id_width:
-                        failures_id_width = len(failures_row[0])
-                print(
-                    f"{'item_id':<{failures_id_width}}  "
-                    f"{'domain':<6}  {'date':<10}  {'lapses':>6}  error_note"
-                )
-                for failures_row in failures_rows:
-                    failure_item_id: str = failures_row[0]
-                    failure_domain: str = failures_row[1]
-                    failure_date: str = datetime.date.fromordinal(failures_row[2]).isoformat()
-                    failure_error_note: str = failures_row[3]
-                    failure_lapse_count: int = failures_row[4]
-                    print(
-                        f"{failure_item_id:<{failures_id_width}}  "
-                        f"{failure_domain:<6}  {failure_date:<10}  "
-                        f"{failure_lapse_count:>6}  {failure_error_note}"
-                    )
-        if parsed_args.show_leeches:
-            leeches_rows: list[tuple] = flags_connection.execute(
-                "SELECT item_id, lapse_count, easiness_factor, last_review "
-                "FROM items "
-                "WHERE lapse_count >= ? "
-                "ORDER BY lapse_count DESC, easiness_factor ASC",
-                (LEECH_THRESHOLD,),
-            ).fetchall()
-            if len(leeches_rows) == 0:
-                print(f"no show_leeches found (lapse_count < {LEECH_THRESHOLD} for all items).")
-            else:
-                leeches_id_width: int = len("item_id")
-                for leeches_row in leeches_rows:
-                    if len(leeches_row[0]) > leeches_id_width:
-                        leeches_id_width = len(leeches_row[0])
-                print(
-                    f"{'item_id':<{leeches_id_width}}  "
-                    f"{'domain':<6}  {'lapses':>6}  {'EF':>5}  days_since"
-                )
-                for leeches_row in leeches_rows:
-                    leech_item_id: str = leeches_row[0]
-                    leech_lapse_count: int = leeches_row[1]
-                    leech_easiness_factor: float = leeches_row[2]
-                    leech_last_review: int = leeches_row[3]
-                    leech_domain: str = leech_item_id.split("-")[0]
-                    if leech_last_review == 0:
-                        leech_days_since: str = "never"
-                    else:
-                        leech_days_since = str(today - leech_last_review)
-                    print(
-                        f"{leech_item_id:<{leeches_id_width}}  "
-                        f"{leech_domain:<6}  {leech_lapse_count:>6}  "
-                        f"{leech_easiness_factor:>5.2f}  {leech_days_since}"
-                    )
-        sys.exit(0)
-    if not os.path.isdir("data"):
-        print("error: data/ directory not found")
-        sys.exit(1)
-    if not os.path.isdir("exercises"):
-        print("error: exercises/ directory not found")
-        sys.exit(1)
-    database_connection: sqlite3.Connection = initialize_database(DATABASE_PATH)
-    # --- parse
-    parsed_items: list[ParsedItem] = parse_exercises("exercises/")
-
-    parsed_ids: set[str] = set()
-    content_map: ContentMap = {}
-    for item_id, content, criteria, tags, prerequisites, source in parsed_items:
-        parsed_ids.add(item_id)
-        content_map[item_id] = (content, criteria, tags, prerequisites, source)
-
-    # --- reconcile
-    existing_rows: list[tuple] = database_connection.execute("SELECT item_id FROM items").fetchall()
-    database_ids: set[str] = set()
-    for row in existing_rows:
-        database_ids.add(row[0])
-
-    new_item_ids: set[str] = parsed_ids - database_ids
-
-    for new_item_id in new_item_ids:
-        new_item_source: str = content_map[new_item_id][4]
-        database_connection.execute(
-            "INSERT INTO items (item_id, due_date, source) VALUES (?, ?, ?)",
-            (new_item_id, today, new_item_source),
-        )
-    database_connection.commit()
-    # --- preview upcoming items
-    if parsed_args.preview:
-        if len(parsed_ids) == 0:
-            print("no upcoming items found.")
-            sys.exit(0)
-        preview_parsed_ids_list: list[str] = list(parsed_ids)
-        preview_placeholders: str = ",".join("?" * len(preview_parsed_ids_list))
-        preview_rows: list[tuple] = database_connection.execute(
-            f"SELECT item_id, easiness_factor, interval_days, "
-            f"repetition_count, due_date "
-            f"FROM items "
-            f"WHERE item_id IN ({preview_placeholders}) "
-            f"  AND due_date > ? "
-            f"ORDER BY due_date ASC "
-            f"LIMIT 20",
-            preview_parsed_ids_list + [today],
-        ).fetchall()
-        if len(preview_rows) == 0:
-            print("no upcoming items found.")
-            sys.exit(0)
-        preview_id_width: int = len("item_id")
-        for preview_row in preview_rows:
-            if len(preview_row[0]) > preview_id_width:
-                preview_id_width = len(preview_row[0])
-        print(
-            f"{'item_id':<{preview_id_width}}  {'domain':<6}  {'due_in':>6}  {'rep':>3}  {'EF':>5}"
-        )
-        for preview_row in preview_rows:
-            preview_item_id: str = preview_row[0]
-            preview_easiness_factor: float = preview_row[1]
-            preview_repetition_count: int = preview_row[3]
-            preview_due_date: int = preview_row[4]
-            preview_domain: str = preview_item_id.split("-")[0]
-            preview_due_in: int = preview_due_date - today
-            print(
-                f"{preview_item_id:<{preview_id_width}}  "
-                f"{preview_domain:<6}  {preview_due_in:>6}  "
-                f"{preview_repetition_count:>3}  {preview_easiness_factor:>5.2f}"
-            )
-        sys.exit(0)
-    # --- build due queue
-    due_queue: list[DueItem] = []
-    if len(parsed_ids) > 0:
-        parsed_ids_list: list[str] = list(parsed_ids)
-        in_placeholders: str = ",".join("?" * len(parsed_ids_list))
-        due_queue_query: str = (
-            f"SELECT item_id, repetition_count, due_date FROM items "
-            f"WHERE item_id IN ({in_placeholders}) AND due_date <= ? "
-            f"ORDER BY due_date ASC"
-        )
-        due_queue_parameters: list[str | int] = parsed_ids_list + [today]
-        due_queue_rows: list[tuple] = database_connection.execute(
-            due_queue_query, due_queue_parameters
-        ).fetchall()
-        for row in due_queue_rows:
-            due_item: DueItem = (row[0], row[1], row[2])
-            due_queue.append(due_item)
-
-    # --- query today new counts
-    today_new_rows: list[tuple] = database_connection.execute(
-        "SELECT domain, COUNT(*) FROM review_log "
-        "WHERE review_date = ? AND repetition_count_before = 0 "
-        "GROUP BY domain",
-        (today,),
+def show_failures(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT r.item_id, r.domain, r.review_date, r.error_note, "
+        "       i.lapse_count "
+        "FROM review_log r "
+        "JOIN items i ON r.item_id = i.item_id "
+        "WHERE r.grade = 0 "
+        "  AND r.error_note IS NOT NULL "
+        "  AND r.id = ( "
+        "      SELECT MAX(id) FROM review_log "
+        "      WHERE item_id = r.item_id "
+        "        AND grade = 0 "
+        "        AND error_note IS NOT NULL "
+        "  ) "
+        "ORDER BY r.review_date DESC"
     ).fetchall()
-    today_new_by_domain: dict[str, int] = {}
-    for row in today_new_rows:
-        today_new_by_domain[row[0]] = row[1]
+    if len(rows) == 0:
+        print("no recorded failures with notes.")
+        return
+    id_width = max(len("item_id"), max(len(r[0]) for r in rows))
+    print(f"{'item_id':<{id_width}}  {'domain':<6}  {'date':<10}  {'lapses':>6}  error_note")
+    for item_id, domain, review_date, error_note, lapse_count in rows:
+        date_string = datetime.date.fromordinal(review_date).isoformat()
+        print(
+            f"{item_id:<{id_width}}  {domain:<6}  {date_string:<10}  {lapse_count:>6}  {error_note}"
+        )
 
-    # --- build blocked set
-    blocked_set: set[str] = set()
 
-    # --- apply throttle and cap
-    review_queue: list[str] = apply_throttle_and_cap(
-        due_queue,
-        today_new_by_domain,
-        TOTAL_NEW_MAX,
-        MIN_PER_DOMAIN,
-        MAX_REVIEWS,
-        blocked_set,
+def show_leeches(conn: sqlite3.Connection, today: int) -> None:
+    rows = conn.execute(
+        "SELECT item_id, lapse_count, easiness_factor, last_review "
+        "FROM items WHERE lapse_count >= ? "
+        "ORDER BY lapse_count DESC, easiness_factor ASC",
+        (LEECH_THRESHOLD,),
+    ).fetchall()
+    if len(rows) == 0:
+        print(f"no leeches found (lapse_count < {LEECH_THRESHOLD} for all items).")
+        return
+    id_width = max(len("item_id"), max(len(r[0]) for r in rows))
+    print(f"{'item_id':<{id_width}}  {'domain':<6}  {'lapses':>6}  {'EF':>5}  days_since")
+    for item_id, lapse_count, easiness_factor, last_review in rows:
+        days_since = "never" if last_review == 0 else str(today - last_review)
+        print(
+            f"{item_id:<{id_width}}  {domain_of(item_id):<6}  "
+            f"{lapse_count:>6}  {easiness_factor:>5.2f}  {days_since}"
+        )
+
+
+def show_preview(conn: sqlite3.Connection, item_ids: set[str], today: int) -> None:
+    if not item_ids:
+        print("no upcoming items found.")
+        return
+    ids = sorted(item_ids)
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT item_id, easiness_factor, interval_days, "
+        f"repetition_count, due_date FROM items "
+        f"WHERE item_id IN ({placeholders}) AND due_date > ? "
+        f"ORDER BY due_date ASC LIMIT 20",
+        ids + [today],
+    ).fetchall()
+    if len(rows) == 0:
+        print("no upcoming items found.")
+        return
+    id_width = max(len("item_id"), max(len(r[0]) for r in rows))
+    print(f"{'item_id':<{id_width}}  {'domain':<6}  {'due_in':>6}  {'rep':>3}  {'EF':>5}")
+    for item_id, easiness_factor, _interval, repetition_count, due_date in rows:
+        print(
+            f"{item_id:<{id_width}}  {domain_of(item_id):<6}  "
+            f"{due_date - today:>6}  {repetition_count:>3}  {easiness_factor:>5.2f}"
+        )
+
+
+def show_dry_run(conn: sqlite3.Connection, review_queue: list[str], today: int) -> None:
+    print(f"dry run: {len(review_queue)} item(s) in review queue")
+    if len(review_queue) == 0:
+        return
+    placeholders = ",".join("?" * len(review_queue))
+    rows = conn.execute(
+        f"SELECT item_id, easiness_factor, interval_days, "
+        f"repetition_count, due_date FROM items "
+        f"WHERE item_id IN ({placeholders})",
+        review_queue,
+    ).fetchall()
+    state = {row[0]: row for row in rows}
+    id_width = max(len("item_id"), max(len(i) for i in review_queue))
+    print(
+        f"{'item_id':<{id_width}}  "
+        f"{'domain':<6}  {'rep':>3}  {'EF':>5}  "
+        f"{'interval':>8}  days_overdue"
     )
+    for item_id in review_queue:
+        _, ef, interval, rep, due_date = state[item_id]
+        print(
+            f"{item_id:<{id_width}}  {domain_of(item_id):<6}  {rep:>3}  "
+            f"{ef:>5.2f}  {interval:>8.1f}  {today - due_date}"
+        )
 
-    if parsed_args.dry_run:
-        print(f"dry run: {len(review_queue)} item(s) in review queue")
-        if len(review_queue) > 0:
-            dry_run_placeholders: str = ",".join("?" * len(review_queue))
-            dry_run_rows: list[tuple] = database_connection.execute(
-                f"SELECT item_id, easiness_factor, interval_days, "
-                f"repetition_count, due_date "
-                f"FROM items WHERE item_id IN ({dry_run_placeholders})",
-                review_queue,
-            ).fetchall()
-            dry_run_state: dict[str, tuple] = {}
-            for row in dry_run_rows:
-                dry_run_state[row[0]] = row
-            id_column_width: int = len("item_id")
-            for queued_item_id in review_queue:
-                if len(queued_item_id) > id_column_width:
-                    id_column_width = len(queued_item_id)
-            print(
-                f"{'item_id':<{id_column_width}}  "
-                f"{'domain':<6}  {'rep':>3}  {'EF':>5}  "
-                f"{'interval':>8}  days_overdue"
-            )
-            for queued_item_id in review_queue:
-                dry_run_row: tuple = dry_run_state[queued_item_id]
-                item_domain: str = queued_item_id.split("-")[0]
-                item_ef: float = dry_run_row[1]
-                item_interval: float = dry_run_row[2]
-                item_rep: int = dry_run_row[3]
-                item_due_date: int = dry_run_row[4]
-                item_days_overdue: int = today - item_due_date
-                print(
-                    f"{queued_item_id:<{id_column_width}}  "
-                    f"{item_domain:<6}  {item_rep:>3}  {item_ef:>5.2f}  "
-                    f"{item_interval:>8.1f}  {item_days_overdue}"
-                )
-        sys.exit(0)
-    if not rehearse_mode:
-        items_reviewed_today: int = database_connection.execute(
-            "SELECT COUNT(*) FROM review_log WHERE review_date = ?",
-            (today,),
-        ).fetchone()[0]
-        if len(review_queue) == 0 and len(parsed_ids) == 0:
-            terminal_output.msg_warn("no items found in exercises/")
-            sys.exit(0)
-        if len(review_queue) == 0 and items_reviewed_today > 0:
-            terminal_output.msg_info(
-                "all due items reviewed today - next session recommended tomorrow"
-            )
-            sys.exit(0)
-        if len(review_queue) == 0 and items_reviewed_today == 0 and len(parsed_ids) > 0:
-            terminal_output.msg_info("no items due today")
-            sys.exit(0)
 
-    # --- review loop
-    review_count: int = 0
-    pass_count: int = 0
-    fail_count: int = 0
-    new_count: int = 0
+def prompt_answer() -> str | None:
+    """Tiny labeled-impure IO (T7): read the free-form answer."""
+    terminal_output.emit("Your answer (enter to skip):")
+    raw = input("").strip()
+    return raw if raw != "" else None
+
+
+def prompt_grade() -> int:
+    """Tiny labeled-impure IO (T7): loop until a legal grade is entered."""
+    while True:
+        terminal_output.emit("Grade (0/1/2):")
+        raw = input("").strip()
+        if raw in ("0", "1", "2"):
+            return int(raw)
+        terminal_output.emit("Invalid grade. Enter 0, 1, or 2.")
+
+
+def prompt_error_note() -> str | None:
+    """Tiny labeled-impure IO (T7): optional what-went-wrong note."""
+    terminal_output.emit("What went wrong? (enter to skip):")
+    raw = input("").strip()
+    return raw if raw != "" else None
+
+
+def run_review_session(
+    conn: sqlite3.Connection,
+    exercises: dict[str, Exercise],
+    review_queue: list[str],
+    today: int,
+    rehearse: bool,
+) -> None:
+    review_count = 0
+    pass_count = 0
+    fail_count = 0
+    new_count = 0
     try:
         for item_id in review_queue:
-            content_entry: tuple[str, str, list[str], list[str], str] = content_map[item_id]
-            content: str = content_entry[0]
-            criteria: str = content_entry[1]
-
-            identifier_parts: list[str] = item_id.split("-")
-            domain: str = identifier_parts[0]
-
-            if rehearse_mode:
-                progress_string: str = (
+            exercise = exercises[item_id]
+            if rehearse:
+                progress = (
                     f"{review_count + 1} / {len(review_queue)}  "
                     + terminal_output.format_label("rehearse")
                 )
             else:
-                progress_string: str = f"{review_count + 1} / {len(review_queue)}"
-
+                progress = f"{review_count + 1} / {len(review_queue)}"
             terminal_output.clear_screen()
             terminal_output.emit(
                 terminal_output.format_card(
-                    header_left=progress_string,
-                    header_right=domain,
-                    body=content,
+                    header_left=progress,
+                    header_right=domain_of(item_id),
+                    body=exercise.content,
                     footer=None,
                 )
             )
-
-            response_start: float = time.monotonic()
-            terminal_output.emit("Your answer (enter to skip):")
-            raw_answer: str = input("").strip()
-            answer_text: str | None = raw_answer if raw_answer != "" else None
-            if criteria != "":
+            response_start = time.monotonic()
+            answer_text = prompt_answer()
+            if exercise.criteria != "":
                 terminal_output.emit(terminal_output.format_separator())
                 terminal_output.emit(terminal_output.format_label("criteria"))
-                terminal_output.emit(terminal_output.wrap_text(criteria))
+                terminal_output.emit(terminal_output.wrap_text(exercise.criteria))
             terminal_output.emit(
                 terminal_output.format_choices(
-                    [
-                        ("0", "failed"),
-                        ("1", "passed with effort"),
-                        ("2", "easy, fluent"),
-                    ]
+                    [("0", "failed"), ("1", "passed with effort"), ("2", "easy, fluent")]
                 )
             )
-            grade: int = -1
-            while grade == -1:
-                terminal_output.emit("Grade (0/1/2):")
-                raw_grade: str = input("").strip()
-                if raw_grade == "0":
-                    grade = 0
-                elif raw_grade == "1":
-                    grade = 1
-                elif raw_grade == "2":
-                    grade = 2
-                else:
-                    terminal_output.emit("Invalid grade. Enter 0, 1, or 2.")
+            grade = prompt_grade()
+            response_seconds = round(time.monotonic() - response_start, 2)
+            error_note = prompt_error_note() if grade == 0 else None
 
-            response_seconds: float = round(time.monotonic() - response_start, 2)
-            error_note: str | None = None
-            if grade == 0:
-                terminal_output.emit("What went wrong? (enter to skip):")
-                raw_error_note: str = input("").strip()
-                if raw_error_note != "":
-                    error_note = raw_error_note
+            state = fetch_item_state(conn, item_id)
+            outcome = grade_item(state, grade, today, error_note, answer_text, response_seconds)
+            if not rehearse:
+                commit_review(conn, outcome)
 
-            state_row: tuple = database_connection.execute(
-                "SELECT easiness_factor, interval_days, repetition_count, "
-                "due_date, last_review, lapse_count "
-                "FROM items WHERE item_id = ?",
-                (item_id,),
-            ).fetchone()
-
-            easiness_factor_before: float = state_row[0]
-            interval_days_before: float = state_row[1]
-            repetition_count_before: int = state_row[2]
-            last_review: int = state_row[4]
-            lapse_count_before: int = state_row[5]
-
-            if last_review > 0:
-                elapsed_days = today - last_review
-            else:
-                elapsed_days = 0
-
-            sm2_grade: int = USER_GRADE_TO_SM2_GRADE[grade]
-
-            update_result: dict[str, float | int] = sm2_update(
-                grade,
-                easiness_factor_before,
-                interval_days_before,
-                repetition_count_before,
-                lapse_count_before,
-                today,
-            )
-
-            new_easiness_factor: float = float(update_result["easiness_factor"])
-            new_repetition_count: int = int(update_result["repetition_count"])
-            new_interval_days: float = float(update_result["interval_days"])
-            new_lapse_count: int = int(update_result["lapse_count"])
-            new_due_date: int = int(update_result["due_date"])
-
-            if not rehearse_mode:
-                database_connection.execute(
-                    "UPDATE items SET easiness_factor=?, interval_days=?, "
-                    "repetition_count=?, due_date=?, last_review=?, lapse_count=? "
-                    "WHERE item_id=?",
-                    (
-                        new_easiness_factor,
-                        new_interval_days,
-                        new_repetition_count,
-                        new_due_date,
-                        today,
-                        new_lapse_count,
-                        item_id,
-                    ),
-                )
-                database_connection.commit()
-                database_connection.execute(
-                    "INSERT INTO review_log ("
-                    "item_id, grade, sm2_grade, review_date, elapsed_days, "
-                    "easiness_factor_before, easiness_factor_after, "
-                    "interval_days_before, interval_days_after, "
-                    "repetition_count_before, domain, error_note, answer_text, "
-                    "response_seconds"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        item_id,
-                        grade,
-                        sm2_grade,
-                        today,
-                        elapsed_days,
-                        easiness_factor_before,
-                        new_easiness_factor,
-                        interval_days_before,
-                        new_interval_days,
-                        repetition_count_before,
-                        domain,
-                        error_note,
-                        answer_text,
-                        response_seconds,
-                    ),
-                )
-                database_connection.commit()
-
-            days_until: int = new_due_date - today
-            duration_string: str = terminal_output.format_duration(days_until)
-
-            if rehearse_mode:
+            duration_string = terminal_output.format_duration(outcome.due_date - today)
+            if rehearse:
                 if grade == 0:
                     terminal_output.emit(f"Would fail. Would return in {duration_string}.")
                 else:
@@ -1051,15 +699,13 @@ if __name__ == "__main__":
                     terminal_output.emit(f"Failed. Returns in {duration_string}.")
                 else:
                     terminal_output.emit(f"Passed. Next review in {duration_string}.")
-
-            review_count = review_count + 1
+            review_count += 1
             if grade == 0:
-                fail_count = fail_count + 1
+                fail_count += 1
             else:
-                pass_count = pass_count + 1
-            if repetition_count_before == 0:
-                new_count = new_count + 1
-
+                pass_count += 1
+            if state.repetition_count == 0:
+                new_count += 1
     except KeyboardInterrupt:
         print("")
         print("Session interrupted.")
@@ -1070,10 +716,136 @@ if __name__ == "__main__":
             f"Failed: {fail_count}  "
             f"New: {new_count}"
         )
-        if rehearse_mode:
+        if rehearse:
             terminal_output.msg_success("session complete (rehearse - nothing written)")
         else:
             terminal_output.msg_success("session complete")
-
         if fail_count > 0:
             terminal_output.msg_info(f"{fail_count} item(s) return tomorrow")
+
+
+# =============================================================================
+# ENTRY POINT
+# =============================================================================
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SM-2 spaced repetition review tool.")
+    parser.add_argument(
+        "--new-max",
+        type=int,
+        default=TOTAL_NEW_MAX,
+        help="maximum new items per session (default: 9)",
+    )
+    parser.add_argument(
+        "--min-per-domain",
+        type=int,
+        default=MIN_PER_DOMAIN,
+        help="minimum new items guaranteed per domain (default: 1)",
+    )
+    parser.add_argument(
+        "--max-reviews",
+        type=int,
+        default=MAX_REVIEWS,
+        help="hard session cap on total items reviewed (default: 100)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the review queue and exit without reviewing",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="show upcoming items not yet due and exit",
+    )
+    parser.add_argument(
+        "--rehearse",
+        action="store_true",
+        help="run review session without writing to database",
+    )
+    parser.add_argument(
+        "--show-failures",
+        action="store_true",
+        help="show most recent grade-0 rows with error notes and exit",
+    )
+    parser.add_argument(
+        "--show-leeches",
+        action="store_true",
+        help="show items with lapse_count >= LEECH_THRESHOLD and exit",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_argument_parser().parse_args(argv)
+
+    terminal_output.set_verbosity(3)
+    terminal_output.set_layout(max_width=76, align="center")
+
+    # Ambient inputs captured once, here, and only here.
+    today: int = datetime.date.today().toordinal()
+    database_path: str = DEFAULT_DATABASE_PATH
+    exercises_dir: str = DEFAULT_EXERCISES_DIR
+
+    if not os.path.isdir(os.path.dirname(database_path)):
+        print(f"error: {os.path.dirname(database_path)}/ directory not found")
+        return 1
+
+    if args.show_failures or args.show_leeches:
+        conn = connect(database_path)
+        init_schema(conn)
+        if args.show_failures:
+            show_failures(conn)
+        if args.show_leeches:
+            show_leeches(conn, today)
+        return 0
+
+    if not os.path.isdir(exercises_dir):
+        print(f"error: {exercises_dir}/ directory not found")
+        return 1
+
+    conn = connect(database_path)
+    init_schema(conn)
+
+    exercises, parse_warnings = parse_exercises(exercises_dir)
+    for warning in parse_warnings:
+        terminal_output.msg_warn(warning)
+    item_ids = set(exercises)
+
+    reconcile(conn, exercises, today)
+
+    if args.preview:
+        show_preview(conn, item_ids, today)
+        return 0
+
+    due_queue = fetch_due_queue(conn, item_ids, today)
+    today_new = fetch_today_new_by_domain(conn, today)
+    review_queue = apply_throttle_and_cap(
+        due_queue, today_new, args.new_max, args.min_per_domain, args.max_reviews
+    )
+
+    if args.dry_run:
+        show_dry_run(conn, review_queue, today)
+        return 0
+
+    if not args.rehearse:
+        reviewed_today = fetch_reviews_today_count(conn, today)
+        if len(review_queue) == 0 and len(item_ids) == 0:
+            terminal_output.msg_warn(f"no items found in {exercises_dir}/")
+            return 0
+        if len(review_queue) == 0 and reviewed_today > 0:
+            terminal_output.msg_info(
+                "all due items reviewed today - next session recommended tomorrow"
+            )
+            return 0
+        if len(review_queue) == 0:
+            terminal_output.msg_info("no items due today")
+            return 0
+
+    run_review_session(conn, exercises, review_queue, today, args.rehearse)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
