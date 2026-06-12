@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pytest"]
+# ///
 """Tests for sm2.py. Frozen clock throughout: no test reads today's date.
 
 Sections mirror sm2.py's banners: ALGORITHM tests are migrated from the
@@ -6,7 +10,8 @@ sequences, recovery path); PARSER, SCHEDULER, and STORE tests are new with
 the Phase 1 conversions (R5: one happy path, one error path, one non-effect
 assertion per converted unit).
 
-Run: python -m pytest test_sm2.py -q
+Run: uv run test_sm2.py        (provisions pytest via inline metadata)
+ or: python -m pytest test_sm2.py -q
 """
 
 import datetime
@@ -490,3 +495,9 @@ def test_full_pipeline_fresh_db_matches_old_validation_scenario():
         assert s.lapse_count == (1 if grade == 0 else 0)
         assert s.interval_days == 1.0
         assert s.due_date == START + 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(pytest.main([__file__, "-q"]))
