@@ -227,6 +227,32 @@ alias drf='dojo_open_random_source_file'
 # =============================================================================
 # Requires: KBD_DIR (set in SECTION 1 above).
 
+# _threadlog_parse_line LINE -> sets reply array TL_FIELDS
+# The single parser for a thread-log record. Splits on '|' into the seven
+# schema fields (id status date provider tags summary url). Empty trailing
+# fields are preserved. Both `new` and `close` paths read records through
+# this; the format lives in exactly one place. A caller may use any subset
+# of the fields, so all seven are set even when unread here.
+# shellcheck disable=SC2034
+_threadlog_parse_line() {
+    IFS='|' read -r \
+        TL_FIELDS_id \
+        TL_FIELDS_status \
+        TL_FIELDS_date \
+        TL_FIELDS_provider \
+        TL_FIELDS_tags \
+        TL_FIELDS_summary \
+        TL_FIELDS_url \
+        <<< "$1"
+}
+
+# _threadlog_format_line id status date provider tags summary url -> stdout
+# The single formatter for a thread-log record. The inverse of the parser;
+# the '|' layout exists only here. Both `new` and `close` emit through it.
+_threadlog_format_line() {
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
 # kbd_llm_threadlog <new|close> [args]
 #
 # Boundary (known, not fixed): the `new` path computes the next per-project
@@ -318,7 +344,10 @@ kbd_llm_threadlog() {
 
         # -- append to log --------------------------------------------------
 
-        echo "${thread_id}|active|${today_date}|${provider_name}|${thread_tags}|${thread_summary}|${thread_url}" >> "$log_file"
+        _threadlog_format_line \
+            "$thread_id" active "$today_date" \
+            "$provider_name" "$thread_tags" "$thread_summary" "$thread_url" \
+            >> "$log_file"
 
         echo "$thread_id"
 
@@ -373,22 +402,12 @@ kbd_llm_threadlog() {
 
         # -- extract current fields -----------------------------------------
 
-        local remaining_after_id="${found_line#*|}"
-        local old_status="${remaining_after_id%%|*}"
-
-        local remaining_after_status="${remaining_after_id#*|}"
-        local entry_date="${remaining_after_status%%|*}"
-
-        local remaining_after_date="${remaining_after_status#*|}"
-        local entry_provider="${remaining_after_date%%|*}"
-
-        local remaining_after_provider="${remaining_after_date#*|}"
-        local entry_tags="${remaining_after_provider%%|*}"
-
-        local remaining_after_tags="${remaining_after_provider#*|}"
-        local entry_summary="${remaining_after_tags%%|*}"
-
-        local entry_url="${remaining_after_tags#*|}"
+        _threadlog_parse_line "$found_line"
+        local entry_date="$TL_FIELDS_date"
+        local entry_provider="$TL_FIELDS_provider"
+        local entry_tags="$TL_FIELDS_tags"
+        local entry_summary="$TL_FIELDS_summary"
+        local entry_url="$TL_FIELDS_url"
 
         # -- prompt for summary revision ------------------------------------
 
@@ -418,7 +437,9 @@ kbd_llm_threadlog() {
             rewrite_line_number=$((rewrite_line_number + 1))
 
             if [[ $rewrite_line_number -eq $found_line_number ]]; then
-                echo "${target_thread_id}|${close_status}|${entry_date}|${entry_provider}|${entry_tags}|${entry_summary}|${entry_url}"
+                _threadlog_format_line \
+                    "$target_thread_id" "$close_status" "$entry_date" \
+                    "$entry_provider" "$entry_tags" "$entry_summary" "$entry_url"
             else
                 echo "$rewrite_line"
             fi
