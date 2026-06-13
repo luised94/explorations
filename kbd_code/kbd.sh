@@ -217,3 +217,202 @@ dojo_open_random_source_file() {
 # Suggested aliases (add to .bashrc or .zshrc):
 alias dme='dojo_open_most_edited_files'
 alias drf='dojo_open_random_source_file'
+
+#!/usr/bin/env bash
+# Source this file to make the thread log function available in your shell.
+# Requires: KBD_DIR environment variable set to kbd repo root.
+
+KBD_DIR="${KBD_DIR:-}"
+
+kbd_llm_threadlog() {
+    if [[ -z "$KBD_DIR" ]]; then
+        echo "error: KBD_DIR is not set" >&2
+        return 1
+    fi
+
+    local threads_directory="$KBD_DIR/threads"
+    local log_file="$threads_directory/thread-log.txt"
+
+    # -- ensure directory and file exist ------------------------------------
+
+    if [[ ! -d "$threads_directory" ]]; then
+        mkdir -p "$threads_directory"
+    fi
+
+    if [[ ! -f "$log_file" ]]; then
+        echo "# project-sequence|status|date|provider|tags|summary|url" > "$log_file"
+        echo "# status: active, complete, abandoned" >> "$log_file"
+        echo "# tags: comma-separated, no spaces" >> "$log_file"
+    fi
+
+    # -- route subcommand ---------------------------------------------------
+
+    local subcommand="${1:-}"
+
+    if [[ -z "$subcommand" ]]; then
+        echo "usage: kbd_llm_threadlog <new|close> [arguments]" >&2
+        echo "" >&2
+        echo "  new   <project> <provider> <summary> [tags] [url]" >&2
+        echo "  close <thread_id> [complete|abandoned]" >&2
+        return 1
+    fi
+
+    shift
+
+    if [[ "$subcommand" == "new" ]]; then
+
+        # -- subcommand: new ------------------------------------------------
+
+        local project_name="${1:-}"
+        local provider_name="${2:-}"
+        local thread_summary="${3:-}"
+        local thread_tags="${4:-}"
+        local thread_url="${5:-}"
+
+        if [[ -z "$project_name" ]] || [[ -z "$provider_name" ]] || [[ -z "$thread_summary" ]]; then
+            echo "usage: kbd_llm_threadlog new <project> <provider> <summary> [tags] [url]" >&2
+            return 1
+        fi
+
+        # -- determine next sequence number ---------------------------------
+
+        local highest_sequence=0
+
+        while IFS='|' read -r existing_thread_id _ _ _ _ _ _; do
+            if [[ "$existing_thread_id" =~ ^#  ]]; then
+                continue
+            fi
+            if [[ -z "$existing_thread_id" ]]; then
+                continue
+            fi
+
+            local existing_project="${existing_thread_id%-*}"
+            local existing_sequence_raw="${existing_thread_id##*-}"
+
+            if [[ "$existing_project" == "$project_name" ]]; then
+                local existing_sequence_number=$((10#$existing_sequence_raw))
+                if [[ $existing_sequence_number -gt $highest_sequence ]]; then
+                    highest_sequence=$existing_sequence_number
+                fi
+            fi
+        done < "$log_file"
+
+        local next_sequence=$((highest_sequence + 1))
+        local padded_sequence
+        padded_sequence=$(printf "%02d" "$next_sequence")
+
+        local thread_id="${project_name}-${padded_sequence}"
+        local today_date
+        today_date=$(date +%Y-%m-%d)
+
+        # -- append to log --------------------------------------------------
+
+        echo "${thread_id}|active|${today_date}|${provider_name}|${thread_tags}|${thread_summary}|${thread_url}" >> "$log_file"
+
+        echo "$thread_id"
+
+    elif [[ "$subcommand" == "close" ]]; then
+
+        # -- subcommand: close ----------------------------------------------
+
+        local target_thread_id="${1:-}"
+        local close_status="${2:-complete}"
+
+        if [[ -z "$target_thread_id" ]]; then
+            echo "usage: kbd_llm_threadlog close <thread_id> [complete|abandoned]" >&2
+            return 1
+        fi
+
+        if [[ "$close_status" != "complete" ]] && [[ "$close_status" != "abandoned" ]]; then
+            echo "error: status must be 'complete' or 'abandoned', got '$close_status'" >&2
+            return 1
+        fi
+
+        # -- find the matching line -----------------------------------------
+
+        local found_line=""
+        local found_line_number=0
+        local current_line_number=0
+
+        while IFS= read -r scan_line; do
+            current_line_number=$((current_line_number + 1))
+
+            if [[ "$scan_line" =~ ^# ]] || [[ -z "$scan_line" ]]; then
+                continue
+            fi
+
+            local scan_thread_id="${scan_line%%|*}"
+
+            if [[ "$scan_thread_id" == "$target_thread_id" ]]; then
+                found_line="$scan_line"
+                found_line_number=$current_line_number
+            fi
+        done < "$log_file"
+
+        if [[ -z "$found_line" ]]; then
+            echo "error: thread '$target_thread_id' not found in log" >&2
+            return 1
+        fi
+
+        # -- display current entry ------------------------------------------
+
+        echo "current entry:"
+        echo "  $found_line"
+        echo ""
+
+        # -- extract current fields -----------------------------------------
+
+        local remaining_after_id="${found_line#*|}"
+        local old_status="${remaining_after_id%%|*}"
+
+        local remaining_after_status="${remaining_after_id#*|}"
+        local entry_date="${remaining_after_status%%|*}"
+
+        local remaining_after_date="${remaining_after_status#*|}"
+        local entry_provider="${remaining_after_date%%|*}"
+
+        local remaining_after_provider="${remaining_after_date#*|}"
+        local entry_tags="${remaining_after_provider%%|*}"
+
+        local remaining_after_tags="${remaining_after_provider#*|}"
+        local entry_summary="${remaining_after_tags%%|*}"
+
+        local entry_url="${remaining_after_tags#*|}"
+
+        # -- prompt for summary revision ------------------------------------
+
+        echo "current summary: $entry_summary"
+        read -r -p "update summary? (enter to keep, or type new): " revised_summary
+
+        if [[ -n "$revised_summary" ]]; then
+            entry_summary="$revised_summary"
+        fi
+
+        # -- rewrite log with updated line ----------------------------------
+
+        local temp_file="$log_file.tmp"
+        local rewrite_line_number=0
+
+        while IFS= read -r rewrite_line; do
+            rewrite_line_number=$((rewrite_line_number + 1))
+
+            if [[ $rewrite_line_number -eq $found_line_number ]]; then
+                echo "${target_thread_id}|${close_status}|${entry_date}|${entry_provider}|${entry_tags}|${entry_summary}|${entry_url}"
+            else
+                echo "$rewrite_line"
+            fi
+        done < "$log_file" > "$temp_file"
+
+        mv "$temp_file" "$log_file"
+
+        echo "closed $target_thread_id ($close_status)"
+
+    else
+        echo "error: unknown subcommand '$subcommand'" >&2
+        echo "usage: kbd_llm_threadlog <new|close> [arguments]" >&2
+        return 1
+    fi
+}
+
+# Suggested alias (add to .bashrc or .zshrc):
+alias klt='kbd_llm_threadlog'
