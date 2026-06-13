@@ -336,11 +336,163 @@ def apply_throttle_and_cap(
 
 
 # =============================================================================
-# VIEWS (pure)  -- placeholder; table row-builders land in Phase 3
+# VIEWS (pure -- rows/values in, strings out; no IO, no conn, no clock)
 # =============================================================================
-# Phase 3 extracts the four inline table printers in SHELL into
-# (headers, rows) builders plus one render_table(). Until then the shell
-# carries the old inline rendering, adapted only for NamedTuple access.
+# One table renderer (T3): the four pre-refactor printers differed only in
+# columns and format specs, so those differences live in Column tables and
+# the rendering mechanism exists once. Adding a view = one Column tuple +
+# one row-builder; render_table is never touched.
+
+
+class Column(NamedTuple):
+    """One table column: header text, alignment, width, value format spec.
+
+    width=None fits the widest of header/cells (the dynamic item_id column).
+    A left-aligned LAST column is emitted unpadded -- preserves the
+    pre-refactor convention of no trailing whitespace."""
+
+    header: str
+    align: str = "<"
+    width: int | None = None
+    fmt: str = ""
+
+
+def render_table(columns: tuple[Column, ...], rows: list[tuple]) -> str:
+    grid: list[list[str]] = [
+        [format(value, col.fmt) if col.fmt else str(value) for col, value in zip(columns, row)]
+        for row in rows
+    ]
+    widths: list[int] = []
+    for index, column in enumerate(columns):
+        if column.width is not None:
+            widths.append(column.width)
+        else:
+            widest_cell = max((len(row[index]) for row in grid), default=0)
+            widths.append(max(len(column.header), widest_cell))
+    last = len(columns) - 1
+
+    def line(cells: list[str]) -> str:
+        parts: list[str] = []
+        for index, (cell, column, width) in enumerate(zip(cells, columns, widths)):
+            if index == last and column.align == "<":
+                parts.append(cell)
+            else:
+                parts.append(f"{cell:{column.align}{width}}")
+        return "  ".join(parts)
+
+    lines = [line([column.header for column in columns])]
+    lines.extend(line(row) for row in grid)
+    return "\n".join(lines)
+
+
+FAILURES_COLUMNS: tuple[Column, ...] = (
+    Column("item_id"),
+    Column("domain", "<", 6),
+    Column("date", "<", 10),
+    Column("lapses", ">", 6),
+    Column("error_note"),
+)
+
+
+def failures_view(rows: list[tuple]) -> str:
+    """rows: (item_id, domain, review_date_ordinal, error_note, lapse_count)"""
+    if not rows:
+        return "no recorded failures with notes."
+    table_rows = [
+        (
+            item_id,
+            domain,
+            datetime.date.fromordinal(review_date).isoformat(),
+            lapse_count,
+            error_note,
+        )
+        for item_id, domain, review_date, error_note, lapse_count in rows
+    ]
+    return render_table(FAILURES_COLUMNS, table_rows)
+
+
+LEECHES_COLUMNS: tuple[Column, ...] = (
+    Column("item_id"),
+    Column("domain", "<", 6),
+    Column("lapses", ">", 6),
+    Column("EF", ">", 5, ".2f"),
+    Column("days_since"),
+)
+
+
+def leeches_view(rows: list[tuple], today: int, leech_threshold: int) -> str:
+    """rows: (item_id, lapse_count, easiness_factor, last_review)"""
+    if not rows:
+        return f"no leeches found (lapse_count < {leech_threshold} for all items)."
+    table_rows = [
+        (
+            item_id,
+            domain_of(item_id),
+            lapse_count,
+            easiness_factor,
+            "never" if last_review == 0 else str(today - last_review),
+        )
+        for item_id, lapse_count, easiness_factor, last_review in rows
+    ]
+    return render_table(LEECHES_COLUMNS, table_rows)
+
+
+PREVIEW_COLUMNS: tuple[Column, ...] = (
+    Column("item_id"),
+    Column("domain", "<", 6),
+    Column("due_in", ">", 6),
+    Column("rep", ">", 3),
+    Column("EF", ">", 5, ".2f"),
+)
+
+
+def preview_view(rows: list[tuple], today: int) -> str:
+    """rows: (item_id, easiness_factor, interval_days, repetition_count,
+    due_date)"""
+    if not rows:
+        return "no upcoming items found."
+    table_rows = [
+        (item_id, domain_of(item_id), due_date - today, repetition_count, easiness_factor)
+        for item_id, easiness_factor, _interval, repetition_count, due_date in rows
+    ]
+    return render_table(PREVIEW_COLUMNS, table_rows)
+
+
+DRY_RUN_COLUMNS: tuple[Column, ...] = (
+    Column("item_id"),
+    Column("domain", "<", 6),
+    Column("rep", ">", 3),
+    Column("EF", ">", 5, ".2f"),
+    Column("interval", ">", 8, ".1f"),
+    Column("days_overdue"),
+)
+
+
+def dry_run_view(review_queue: list[str], state_by_id: dict[str, "ItemState"], today: int) -> str:
+    header = f"dry run: {len(review_queue)} item(s) in review queue"
+    if not review_queue:
+        return header
+    table_rows = [
+        (
+            item_id,
+            domain_of(item_id),
+            state_by_id[item_id].repetition_count,
+            state_by_id[item_id].easiness_factor,
+            state_by_id[item_id].interval_days,
+            today - state_by_id[item_id].due_date,
+        )
+        for item_id in review_queue
+    ]
+    return header + "\n" + render_table(DRY_RUN_COLUMNS, table_rows)
+
+
+# Result message per (rehearse, failed) -- four same-shaped branches, tabled.
+SESSION_RESULT_MESSAGES: dict[tuple[bool, bool], str] = {
+    (True, True): "Would fail. Would return in {duration}.",
+    (True, False): "Would pass. Next review in {duration}.",
+    (False, True): "Failed. Returns in {duration}.",
+    (False, False): "Passed. Next review in {duration}.",
+}
 
 
 # =============================================================================
@@ -454,6 +606,64 @@ def fetch_reviews_today_count(conn: sqlite3.Connection, today: int) -> int:
     ).fetchone()[0]
 
 
+def fetch_failures(conn: sqlite3.Connection) -> list[tuple]:
+    """Most recent grade-0 row with a note, per item, newest first."""
+    return conn.execute(
+        "SELECT r.item_id, r.domain, r.review_date, r.error_note, "
+        "       i.lapse_count "
+        "FROM review_log r "
+        "JOIN items i ON r.item_id = i.item_id "
+        "WHERE r.grade = 0 "
+        "  AND r.error_note IS NOT NULL "
+        "  AND r.id = ( "
+        "      SELECT MAX(id) FROM review_log "
+        "      WHERE item_id = r.item_id "
+        "        AND grade = 0 "
+        "        AND error_note IS NOT NULL "
+        "  ) "
+        "ORDER BY r.review_date DESC"
+    ).fetchall()
+
+
+def fetch_leeches(conn: sqlite3.Connection, leech_threshold: int) -> list[tuple]:
+    return conn.execute(
+        "SELECT item_id, lapse_count, easiness_factor, last_review "
+        "FROM items WHERE lapse_count >= ? "
+        "ORDER BY lapse_count DESC, easiness_factor ASC",
+        (leech_threshold,),
+    ).fetchall()
+
+
+def fetch_preview_rows(
+    conn: sqlite3.Connection, item_ids: set[str], today: int, limit: int = 20
+) -> list[tuple]:
+    """Items not yet due, soonest first."""
+    if not item_ids:
+        return []
+    ids = sorted(item_ids)
+    placeholders = ",".join("?" * len(ids))
+    return conn.execute(
+        f"SELECT item_id, easiness_factor, interval_days, "
+        f"repetition_count, due_date FROM items "
+        f"WHERE item_id IN ({placeholders}) AND due_date > ? "
+        f"ORDER BY due_date ASC LIMIT ?",
+        ids + [today, limit],
+    ).fetchall()
+
+
+def fetch_states(conn: sqlite3.Connection, item_ids: list[str]) -> dict[str, ItemState]:
+    if not item_ids:
+        return {}
+    placeholders = ",".join("?" * len(item_ids))
+    rows = conn.execute(
+        f"SELECT item_id, easiness_factor, interval_days, repetition_count, "
+        f"due_date, last_review, lapse_count FROM items "
+        f"WHERE item_id IN ({placeholders})",
+        item_ids,
+    ).fetchall()
+    return {row[0]: ItemState(*row) for row in rows}
+
+
 def commit_review(conn: sqlite3.Connection, outcome: ReviewOutcome) -> None:
     """Execute one ReviewOutcome atomically: state update + log insert in a
     single transaction. Crash-state analysis: with one transaction the only
@@ -516,102 +726,19 @@ def commit_review(conn: sqlite3.Connection, outcome: ReviewOutcome) -> None:
 
 
 def show_failures(conn: sqlite3.Connection) -> None:
-    rows = conn.execute(
-        "SELECT r.item_id, r.domain, r.review_date, r.error_note, "
-        "       i.lapse_count "
-        "FROM review_log r "
-        "JOIN items i ON r.item_id = i.item_id "
-        "WHERE r.grade = 0 "
-        "  AND r.error_note IS NOT NULL "
-        "  AND r.id = ( "
-        "      SELECT MAX(id) FROM review_log "
-        "      WHERE item_id = r.item_id "
-        "        AND grade = 0 "
-        "        AND error_note IS NOT NULL "
-        "  ) "
-        "ORDER BY r.review_date DESC"
-    ).fetchall()
-    if len(rows) == 0:
-        print("no recorded failures with notes.")
-        return
-    id_width = max(len("item_id"), max(len(r[0]) for r in rows))
-    print(f"{'item_id':<{id_width}}  {'domain':<6}  {'date':<10}  {'lapses':>6}  error_note")
-    for item_id, domain, review_date, error_note, lapse_count in rows:
-        date_string = datetime.date.fromordinal(review_date).isoformat()
-        print(
-            f"{item_id:<{id_width}}  {domain:<6}  {date_string:<10}  {lapse_count:>6}  {error_note}"
-        )
+    print(failures_view(fetch_failures(conn)))
 
 
 def show_leeches(conn: sqlite3.Connection, today: int) -> None:
-    rows = conn.execute(
-        "SELECT item_id, lapse_count, easiness_factor, last_review "
-        "FROM items WHERE lapse_count >= ? "
-        "ORDER BY lapse_count DESC, easiness_factor ASC",
-        (LEECH_THRESHOLD,),
-    ).fetchall()
-    if len(rows) == 0:
-        print(f"no leeches found (lapse_count < {LEECH_THRESHOLD} for all items).")
-        return
-    id_width = max(len("item_id"), max(len(r[0]) for r in rows))
-    print(f"{'item_id':<{id_width}}  {'domain':<6}  {'lapses':>6}  {'EF':>5}  days_since")
-    for item_id, lapse_count, easiness_factor, last_review in rows:
-        days_since = "never" if last_review == 0 else str(today - last_review)
-        print(
-            f"{item_id:<{id_width}}  {domain_of(item_id):<6}  "
-            f"{lapse_count:>6}  {easiness_factor:>5.2f}  {days_since}"
-        )
+    print(leeches_view(fetch_leeches(conn, LEECH_THRESHOLD), today, LEECH_THRESHOLD))
 
 
 def show_preview(conn: sqlite3.Connection, item_ids: set[str], today: int) -> None:
-    if not item_ids:
-        print("no upcoming items found.")
-        return
-    ids = sorted(item_ids)
-    placeholders = ",".join("?" * len(ids))
-    rows = conn.execute(
-        f"SELECT item_id, easiness_factor, interval_days, "
-        f"repetition_count, due_date FROM items "
-        f"WHERE item_id IN ({placeholders}) AND due_date > ? "
-        f"ORDER BY due_date ASC LIMIT 20",
-        ids + [today],
-    ).fetchall()
-    if len(rows) == 0:
-        print("no upcoming items found.")
-        return
-    id_width = max(len("item_id"), max(len(r[0]) for r in rows))
-    print(f"{'item_id':<{id_width}}  {'domain':<6}  {'due_in':>6}  {'rep':>3}  {'EF':>5}")
-    for item_id, easiness_factor, _interval, repetition_count, due_date in rows:
-        print(
-            f"{item_id:<{id_width}}  {domain_of(item_id):<6}  "
-            f"{due_date - today:>6}  {repetition_count:>3}  {easiness_factor:>5.2f}"
-        )
+    print(preview_view(fetch_preview_rows(conn, item_ids, today), today))
 
 
 def show_dry_run(conn: sqlite3.Connection, review_queue: list[str], today: int) -> None:
-    print(f"dry run: {len(review_queue)} item(s) in review queue")
-    if len(review_queue) == 0:
-        return
-    placeholders = ",".join("?" * len(review_queue))
-    rows = conn.execute(
-        f"SELECT item_id, easiness_factor, interval_days, "
-        f"repetition_count, due_date FROM items "
-        f"WHERE item_id IN ({placeholders})",
-        review_queue,
-    ).fetchall()
-    state = {row[0]: row for row in rows}
-    id_width = max(len("item_id"), max(len(i) for i in review_queue))
-    print(
-        f"{'item_id':<{id_width}}  "
-        f"{'domain':<6}  {'rep':>3}  {'EF':>5}  "
-        f"{'interval':>8}  days_overdue"
-    )
-    for item_id in review_queue:
-        _, ef, interval, rep, due_date = state[item_id]
-        print(
-            f"{item_id:<{id_width}}  {domain_of(item_id):<6}  {rep:>3}  "
-            f"{ef:>5.2f}  {interval:>8.1f}  {today - due_date}"
-        )
+    print(dry_run_view(review_queue, fetch_states(conn, review_queue), today))
 
 
 def prompt_answer() -> str | None:
@@ -689,16 +816,9 @@ def run_review_session(
                 commit_review(conn, outcome)
 
             duration_string = terminal_output.format_duration(outcome.due_date - today)
-            if rehearse:
-                if grade == 0:
-                    terminal_output.emit(f"Would fail. Would return in {duration_string}.")
-                else:
-                    terminal_output.emit(f"Would pass. Next review in {duration_string}.")
-            else:
-                if grade == 0:
-                    terminal_output.emit(f"Failed. Returns in {duration_string}.")
-                else:
-                    terminal_output.emit(f"Passed. Next review in {duration_string}.")
+            terminal_output.emit(
+                SESSION_RESULT_MESSAGES[(rehearse, grade == 0)].format(duration=duration_string)
+            )
             review_count += 1
             if grade == 0:
                 fail_count += 1

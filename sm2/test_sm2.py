@@ -497,6 +497,100 @@ def test_full_pipeline_fresh_db_matches_old_validation_scenario():
         assert s.due_date == START + 1
 
 
+# =============================================================================
+# VIEWS (golden strings, frozen)
+# =============================================================================
+
+from sm2 import (  # noqa: E402
+    Column,
+    DRY_RUN_COLUMNS,
+    SESSION_RESULT_MESSAGES,
+    dry_run_view,
+    failures_view,
+    leeches_view,
+    preview_view,
+    render_table,
+)
+
+
+def test_render_table_dynamic_width_and_last_column_rules():
+    columns = (Column("item_id"), Column("n", ">", 4), Column("note"))
+    rows = [("a-very-long-id", 7, "x"), ("b-1", 12, "yy")]
+    expected = "item_id            n  note\na-very-long-id     7  x\nb-1               12  yy"
+    assert render_table(columns, rows) == expected
+    # trailing left-aligned column is never padded
+    for line in render_table(columns, rows).split("\n"):
+        assert line == line.rstrip()
+
+
+def test_render_table_right_aligned_last_column_is_padded():
+    columns = (Column("id"), Column("EF", ">", 5, ".2f"))
+    assert render_table(columns, [("x", 2.5)]) == "id     EF\nx    2.50"
+
+
+def test_failures_view_golden():
+    rows = [("drive-speed-school", "drive", START, "blanked on it", 4)]
+    assert failures_view(rows) == (
+        "item_id             domain  date        lapses  error_note\n"
+        "drive-speed-school  drive   2025-01-01       4  blanked on it"
+    )
+    assert failures_view([]) == "no recorded failures with notes."
+
+
+def test_leeches_view_golden():
+    rows = [("drive-speed-school", 4, 1.42, START - 1), ("c-x", 3, 1.3, 0)]
+    assert leeches_view(rows, START, 3) == (
+        "item_id             domain  lapses     EF  days_since\n"
+        "drive-speed-school  drive        4   1.42  1\n"
+        "c-x                 c            3   1.30  never"
+    )
+    assert leeches_view([], START, 3) == ("no leeches found (lapse_count < 3 for all items).")
+
+
+def test_preview_view_golden():
+    rows = [("bio-cell-1", 2.6, 1.0, 1, START + 3)]
+    assert preview_view(rows, START) == (
+        "item_id     domain  due_in  rep     EF\nbio-cell-1  bio          3    1   2.60"
+    )
+    assert preview_view([], START) == "no upcoming items found."
+
+
+def test_dry_run_view_golden_preserves_queue_order():
+    states = {
+        "drive-a": ItemState("drive-a", 2.36, 1.0, 1, START - 1, START - 2, 0),
+        "bio-b": ItemState("bio-b", 2.5, 0.0, 0, START, 0, 0),
+    }
+    assert dry_run_view(["drive-a", "bio-b"], states, START) == (
+        "dry run: 2 item(s) in review queue\n"
+        "item_id  domain  rep     EF  interval  days_overdue\n"
+        "drive-a  drive     1   2.36       1.0  1\n"
+        "bio-b    bio       0   2.50       0.0  0"
+    )
+    assert dry_run_view([], {}, START) == "dry run: 0 item(s) in review queue"
+
+
+def test_session_result_messages_cover_all_states():
+    assert set(SESSION_RESULT_MESSAGES) == {
+        (True, True),
+        (True, False),
+        (False, True),
+        (False, False),
+    }
+    assert SESSION_RESULT_MESSAGES[(False, True)].format(duration="tomorrow") == (
+        "Failed. Returns in tomorrow."
+    )
+    assert SESSION_RESULT_MESSAGES[(True, False)].format(duration="3 days") == (
+        "Would pass. Next review in 3 days."
+    )
+
+
+def test_views_extension_point_one_new_column_no_renderer_change():
+    """T3 audit: extending a view = editing its Column table only."""
+    extended = DRY_RUN_COLUMNS[:1] + (Column("lapses", ">", 6),)
+    out = render_table(extended, [("a-1", 4)])
+    assert out == "item_id  lapses\na-1           4"
+
+
 if __name__ == "__main__":
     import sys
 
