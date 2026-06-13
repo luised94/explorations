@@ -14,31 +14,46 @@ set -o pipefail
 
 readonly SCRIPT_NAME="move_prompts_to_review.sh"
 readonly SOURCE_DIR="${HOME}/personal_repos/explorations/llms/prompts"
-readonly TARGET_PARENT_DIR="${KBD_DIR}/prompts/for_review"
 readonly BATCH_SIZE=25
 readonly GIT_COMMIT_MESSAGE_PREFIX="chore: relocate prompts batch"
 
-# Toggle for dry-run mode (true = simulate only, false = execute)
-readonly DRY_RUN=true
+# Dry-run flag, overridable via --execute
+DRY_RUN=true
+for arg in "$@"; do
+    case "$arg" in
+        --execute) DRY_RUN=false ;;
+        *)
+            printf "[FATAL] Unknown argument: %s\n" "$arg" >&2
+            printf "Usage: %s [--execute]\n" "${SCRIPT_NAME}" >&2
+            exit 1
+            ;;
+    esac
+done
+readonly DRY_RUN
 
-# Dynamic path holders (filled in Phase 3)
-SOURCE_RESOLVED=""
-TARGET_RESOLVED=""
+# Target directory depends on KBD_DIR - will be set after preflight
+TARGET_PARENT_DIR=""
 
 # ------------------------------------------------------------------------------
 # PHASE 2: PREFLIGHT CHECKS
 # ------------------------------------------------------------------------------
 
+# 2.1 Check for required environment variable
+if [[ -z "${KBD_DIR:-}" ]]; then
+    printf "[FATAL] KBD_DIR is not set or not exported.\n" >&2
+    printf "Please export it before running this script:\n" >&2
+    printf "    export KBD_DIR=/home/lius/personal_repos/kbd\n" >&2
+    exit 1
+fi
+readonly KBD_DIR   # lock it as read-only inside the script
+
+# 2.2 Verify git binary
 if ! command -v git >/dev/null 2>&1; then
     printf "[FATAL] git binary not found in PATH\n" >&2
     exit 1
 fi
 
-if [[ -z "${KBD_DIR:-}" ]]; then
-    printf "[FATAL] KBD_DIR environment variable is not set\n" >&2
-    exit 1
-fi
-
+# 2.3 Verify source directory exists and is readable
 if [[ ! -d "${SOURCE_DIR}" ]]; then
     printf "[FATAL] Source directory does not exist: %s\n" "${SOURCE_DIR}" >&2
     exit 1
@@ -55,7 +70,11 @@ printf "[INFO] Preflight checks passed\n"
 # PHASE 3: PREPROCESSING / DERIVED VALUES
 # ------------------------------------------------------------------------------
 
-# Resolve paths
+# Build target directory path now that KBD_DIR is guaranteed
+TARGET_PARENT_DIR="${KBD_DIR}/prompts/for_review"
+readonly TARGET_PARENT_DIR
+
+# Resolve any shortcuts (like ~)
 SOURCE_RESOLVED=$(eval echo "${SOURCE_DIR}")
 TARGET_RESOLVED=$(eval echo "${TARGET_PARENT_DIR}")
 
@@ -67,7 +86,7 @@ fi
 printf "[INFO] Source resolved: %s\n" "${SOURCE_RESOLVED}"
 printf "[INFO] Target resolved: %s\n" "${TARGET_RESOLVED}"
 
-# Create target directory (dry-run: only log, don't create)
+# Create target directory (dry-run: log only)
 if [[ "${DRY_RUN}" == "true" ]]; then
     printf "[DRY-RUN] Would create target directory: %s\n" "${TARGET_RESOLVED}"
 else
@@ -88,7 +107,7 @@ fi
 declare -a PROMPT_FILES=()
 declare -i FILE_COUNT=0
 
-# Gather files using null-terminated find
+# Null-terminated file discovery
 temp_file=$(mktemp) || {
     printf "[FATAL] Cannot create temporary file for file listing\n" >&2
     exit 3
@@ -124,7 +143,7 @@ declare -i BATCH_NUMBER=0
 declare -a CURRENT_BATCH=()
 declare -i BATCH_ITEM_COUNT=0
 
-# Early check: target is a git repo (unless dry-run)
+# Early check: target directory is inside a git repository (unless dry-run)
 if [[ "${DRY_RUN}" != "true" ]]; then
     cd "${TARGET_RESOLVED}" || { printf "[FATAL] Cannot change to target directory\n" >&2; exit 5; }
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
@@ -135,7 +154,7 @@ if [[ "${DRY_RUN}" != "true" ]]; then
     printf "[INFO] Git repository root: %s\n" "${repo_root}"
 fi
 
-# Helper for batch commit (embedded as a small inline procedure, but flat)
+# Inline batch commit helper (small, local procedure)
 perform_batch_commit() {
     if [[ ${BATCH_ITEM_COUNT} -eq 0 ]]; then
         return
@@ -152,7 +171,13 @@ perform_batch_commit() {
         return
     fi
 
-    cd "${TARGET_RESOLVED}" || { printf "[ERROR] Cannot enter target dir\n" >&2; FAIL_COUNT+=BATCH_ITEM_COUNT; CURRENT_BATCH=(); BATCH_ITEM_COUNT=0; return; }
+    cd "${TARGET_RESOLVED}" || {
+        printf "[ERROR] Cannot enter target directory for git operations\n" >&2
+        FAIL_COUNT+=BATCH_ITEM_COUNT
+        CURRENT_BATCH=()
+        BATCH_ITEM_COUNT=0
+        return
+    }
 
     git add . 2>&1
     if [[ $? -ne 0 ]]; then
@@ -173,16 +198,16 @@ perform_batch_commit() {
     BATCH_ITEM_COUNT=0
 }
 
-# Main move loop (flat, iterates over array)
+# Move files (flat loop)
 cd "${SOURCE_RESOLVED}" || { printf "[FATAL] Cannot change to source directory\n" >&2; exit 5; }
 
 for file_path in "${PROMPT_FILES[@]}"; do
     filename=$(basename "${file_path}")
     target_path="${TARGET_RESOLVED}/${filename}"
 
-    # Conflict check
+    # Conflict detection
     if [[ -e "${target_path}" ]]; then
-        printf "[WARN] Target file already exists: %s\n" "${filename}" >&2
+        printf "[WARN] Target file already exists, skipping: %s\n" "${filename}" >&2
         FAIL_COUNT+=1
         continue
     fi
@@ -209,7 +234,7 @@ for file_path in "${PROMPT_FILES[@]}"; do
     fi
 done
 
-# Final partial batch
+# Commit final partial batch
 perform_batch_commit
 
 # ------------------------------------------------------------------------------
@@ -220,8 +245,6 @@ printf "\n[INFO] Running post-migration validation...\n"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
     printf "[DRY-RUN] Skipping real filesystem checks.\n"
-    remaining_count="N/A"
-    target_count="N/A"
 else
     remaining_count=$(find "${SOURCE_RESOLVED}" -maxdepth 1 -type f 2>/dev/null | wc -l)
     target_count=$(find "${TARGET_RESOLVED}" -maxdepth 1 -type f 2>/dev/null | wc -l)
@@ -230,7 +253,6 @@ else
 fi
 
 separator="================================================"
-total_processed=$((SUCCESS_COUNT + FAIL_COUNT))
 
 printf "\n%s\n" "${separator}"
 printf "MIGRATION SUMMARY\n"
@@ -241,7 +263,6 @@ printf "Failed / Skipped:        %d\n" "${FAIL_COUNT}"
 printf "Total batches committed: %d\n" "${BATCH_NUMBER}"
 printf "%s\n" "${separator}"
 
-# Final assertion and exit code
 if [[ "${DRY_RUN}" != "true" ]]; then
     if [[ ${FAIL_COUNT} -gt 0 ]] || [[ ${SUCCESS_COUNT} -eq 0 ]]; then
         printf "[FATAL] Migration incomplete or failed. Review errors above.\n" >&2
