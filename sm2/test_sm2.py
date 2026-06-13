@@ -591,6 +591,41 @@ def test_views_extension_point_one_new_column_no_renderer_change():
     assert out == "item_id  lapses\na-1           4"
 
 
+# =============================================================================
+# SHELL prepare-step builders (pure given terminal_output layout config)
+# =============================================================================
+
+from sm2 import build_review_card, build_reveal  # noqa: E402
+
+
+def _exercise(criteria=""):
+    return Exercise("drive-x", "What is X?", criteria, (), "")
+
+
+def test_build_review_card_structure():
+    card = build_review_card(_exercise(), 2, 5, rehearse=False)
+    lines = card.split("\n")
+    # bordered card, fixed visible width, contains progress/domain/content
+    assert lines[0].startswith("+") and lines[0].endswith("+")
+    assert all(len(line) == len(lines[0]) for line in lines)  # styles off in tests
+    assert "2 / 5" in card and "drive" in card and "What is X?" in card
+    assert "rehearse" not in card
+
+
+def test_build_review_card_rehearse_label():
+    assert "[rehearse]" in build_review_card(_exercise(), 1, 1, rehearse=True)
+
+
+def test_build_reveal_blocks():
+    with_criteria = build_reveal(_exercise("Answer is X."))
+    assert len(with_criteria) == 4  # separator, label, criteria, choices
+    assert with_criteria[1] == "[criteria]"
+    assert "Answer is X." in with_criteria[2]
+    assert "0 = failed" in with_criteria[3] or "0  failed" in with_criteria[3]
+    without = build_reveal(_exercise())
+    assert len(without) == 1  # choices only
+
+
 if __name__ == "__main__":
     import sys
 

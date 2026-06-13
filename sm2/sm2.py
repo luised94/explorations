@@ -765,6 +765,58 @@ def prompt_error_note() -> str | None:
     return raw if raw != "" else None
 
 
+def build_review_card(exercise: Exercise, position: int, total: int, rehearse: bool) -> str:
+    """T5 prepare (first slice): the card shown before the answer prompt.
+
+    Pure given terminal_output's layout config -- a documented hidden input
+    of its formatters (Thread B scope). No IO performed here."""
+    progress = f"{position} / {total}"
+    if rehearse:
+        progress += "  " + terminal_output.format_label("rehearse")
+    return terminal_output.format_card(
+        header_left=progress,
+        header_right=domain_of(exercise.item_id),
+        body=exercise.content,
+        footer=None,
+    )
+
+
+def build_reveal(exercise: Exercise) -> list[str]:
+    """T5 prepare (second slice): criteria block (if any) plus the grade
+    choices, shown after the answer is taken.
+
+    Returns separate blocks: each is emitted (and centered) independently,
+    matching pre-refactor alignment behavior."""
+    parts: list[str] = []
+    if exercise.criteria != "":
+        parts.append(terminal_output.format_separator())
+        parts.append(terminal_output.format_label("criteria"))
+        parts.append(terminal_output.wrap_text(exercise.criteria))
+    parts.append(
+        terminal_output.format_choices(
+            [("0", "failed"), ("1", "passed with effort"), ("2", "easy, fluent")]
+        )
+    )
+    return parts
+
+
+def conduct_review_io(exercise: Exercise, card: str) -> tuple[str | None, int, str | None, float]:
+    """T5 middle: the ONLY function performing interactive IO for one item.
+    Owns its hazards (timing, the input prompts) and nothing else.
+
+    Returns (answer_text, grade, error_note, response_seconds)."""
+    terminal_output.clear_screen()
+    terminal_output.emit(card)
+    response_start = time.monotonic()
+    answer_text = prompt_answer()
+    for block in build_reveal(exercise):
+        terminal_output.emit(block)
+    grade = prompt_grade()
+    response_seconds = round(time.monotonic() - response_start, 2)
+    error_note = prompt_error_note() if grade == 0 else None
+    return answer_text, grade, error_note, response_seconds
+
+
 def run_review_session(
     conn: sqlite3.Connection,
     exercises: dict[str, Exercise],
@@ -779,42 +831,16 @@ def run_review_session(
     try:
         for item_id in review_queue:
             exercise = exercises[item_id]
-            if rehearse:
-                progress = (
-                    f"{review_count + 1} / {len(review_queue)}  "
-                    + terminal_output.format_label("rehearse")
-                )
-            else:
-                progress = f"{review_count + 1} / {len(review_queue)}"
-            terminal_output.clear_screen()
-            terminal_output.emit(
-                terminal_output.format_card(
-                    header_left=progress,
-                    header_right=domain_of(item_id),
-                    body=exercise.content,
-                    footer=None,
-                )
-            )
-            response_start = time.monotonic()
-            answer_text = prompt_answer()
-            if exercise.criteria != "":
-                terminal_output.emit(terminal_output.format_separator())
-                terminal_output.emit(terminal_output.format_label("criteria"))
-                terminal_output.emit(terminal_output.wrap_text(exercise.criteria))
-            terminal_output.emit(
-                terminal_output.format_choices(
-                    [("0", "failed"), ("1", "passed with effort"), ("2", "easy, fluent")]
-                )
-            )
-            grade = prompt_grade()
-            response_seconds = round(time.monotonic() - response_start, 2)
-            error_note = prompt_error_note() if grade == 0 else None
-
+            # prepare (pure)
+            card = build_review_card(exercise, review_count + 1, len(review_queue), rehearse)
+            # IO (the sandwich middle)
+            answer_text, grade, error_note, response_seconds = conduct_review_io(exercise, card)
+            # apply (pure judgment; commit is the one effect, skipped
+            # structurally in rehearse mode)
             state = fetch_item_state(conn, item_id)
             outcome = grade_item(state, grade, today, error_note, answer_text, response_seconds)
             if not rehearse:
                 commit_review(conn, outcome)
-
             duration_string = terminal_output.format_duration(outcome.due_date - today)
             terminal_output.emit(
                 SESSION_RESULT_MESSAGES[(rehearse, grade == 0)].format(duration=duration_string)
