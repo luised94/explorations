@@ -19,6 +19,10 @@ import sqlite3
 
 import pytest
 
+import terminal_output
+
+terminal_output.set_color(False)  # deterministic output on any terminal
+
 import sm2
 from sm2 import (
     DueItem,

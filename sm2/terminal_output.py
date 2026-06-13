@@ -1,8 +1,5 @@
 """Terminal output utility - styling and messaging for CLI scripts.
 
-All additions are backward compatible. If set_layout() is never called,
-every existing caller sees identical behavior.
-
 -------------------------------------------------------------------------------
 TWO-WIDTH MODEL
 -------------------------------------------------------------------------------
@@ -28,92 +25,6 @@ STDOUT / STDERR CONVENTION
              plain print() for raw piped output.
   stderr  -- status and diagnostics. Use msg_*() functions.
   stderr  -- terminal control. Use clear_screen().
-
--------------------------------------------------------------------------------
-PUBLIC API
--------------------------------------------------------------------------------
-CONFIG
-  set_verbosity(level)
-      Set msg_* filter threshold. 0=silent, 1=error, 2=+warn, 3=+info
-      (default), 4=+debug, 5=+trace. Call once at startup.
-
-  set_layout(max_width, align)
-      Set content width and alignment. Call once at startup. Safe to omit --
-      defaults (80, "left") preserve all prior behavior.
-
-PRIMITIVES  (pure functions, no I/O, no config reads)
-  get_terminal_width() -> int
-      Cached terminal column count. Falls back to 80 if detection fails.
-
-  measure_width(text) -> int
-      Visible character count after stripping ANSI SGR escape sequences.
-      Multi-line input returns width of longest line. ASCII/Latin-1 only.
-
-  align_text(text, align, width) -> str
-      Prepend uniform left padding to a text block. Padding computed from
-      the widest line and applied to all lines (block alignment). No-op when
-      align="left". Does not right-pad.
-
-STYLING  (pure functions, return strings, read layout config)
-  apply_style(text, style_code) -> str
-      Wrap text in an ANSI SGR code + reset. All other styling calls this.
-
-  format_highlight(text) -> str
-      Bold yellow. Semantic: "this matched a search query."
-
-  format_label(name, value=None) -> str
-      Cyan bracketed label: "[name]" or "[name: value]".
-
-  format_separator(character="-", width=None) -> str
-      Dim repeated-character rule. Defaults to _get_max_width().
-
-  format_token_counts(tokens_in, tokens_out) -> str
-      "850 in / 320 out (1170 total)". Unstyled.
-
-  format_cost(cost_dollars) -> str
-      "$0.0032", "$0.125", "$3.45". Precision scaled to magnitude. Unstyled.
-
-  format_block(header, content) -> str
-      Dim-bordered block with header label and free-form content.
-
-  wrap_text(text, indent=0, width=None) -> str
-      Paragraph-aware line wrapper. Defaults to _get_max_width().
-
-  format_duration(days) -> str
-      Float day count to human string: "today", "3 days", "2 weeks",
-      "1 month", "3 years", "overdue". Unstyled.
-
-  format_choices(choices, layout="horizontal") -> str
-      Render (key, label) tuples. Horizontal auto-falls back to vertical
-      when total width exceeds _get_max_width(). Keys are bold.
-
-  format_card(header_left, header_right, body, footer=None, width=None) -> str
-      Bordered multi-region card. header_right and footer styled dim.
-      Body unstyled -- caller controls. Uses measure_width internally so
-      ANSI codes in content do not break border alignment.
-
-OUTPUT  (perform I/O)
-  emit(text) -> None
-      Layout-aware stdout writer. Applies align_text using current layout
-      config. Use for all formatted content. Not filtered by verbosity.
-
-  clear_screen() -> None
-      ANSI clear + cursor home to stderr. Falls back to newlines when not
-      a terminal. Always executes regardless of verbosity.
-
-  msg_error(message) -> None    priority 1, red,   stderr
-  msg_warn(message) -> None     priority 2, yellow, stderr
-  msg_info(message) -> None     priority 3, cyan,   stderr
-  msg_debug(message) -> None    priority 4, gray,   stderr
-  msg_success(message) -> None  priority 3, green,  stderr
-      Leveled diagnostic messages. Filtered by set_verbosity(). All apply
-      align_text using current layout config before writing.
-
-STYLE CONSTANTS
-  STYLE_BOLD, STYLE_DIM, STYLE_RED, STYLE_YELLOW, STYLE_CYAN,
-  STYLE_GRAY, STYLE_GREEN, STYLE_BOLD_YELLOW
-      Empty strings when stderr is not a terminal.
-
 -------------------------------------------------------------------------------
 CALLER CONVENTION (COMPLETE)
 -------------------------------------------------------------------------------
@@ -138,28 +49,57 @@ import sys
 import textwrap
 
 # ============================================================================
-# Section 1: Constants (determined at module import)
+# Section 1: Color state and style constants
 # ============================================================================
+# Color is a configurable capability, not an import-time fact. The default is
+# detected once (NO_COLOR env var respected; both stdout and stderr must be
+# ttys, since styled content goes to both streams), and set_color() can
+# override it at any time -- the injection point for tests and embedding
+# programs. STYLE_* remain module attributes for API compatibility; access
+# them fully qualified (terminal_output.STYLE_RED) so overrides are seen.
 
 STDERR_IS_TERMINAL: bool = sys.stderr.isatty()
-
 VERBOSITY: int = 3  # default: show error, warn, info
 
-# ANSI escape codes (empty strings if stderr is not a terminal)
-STYLE_RESET: str = "\033[0m" if STDERR_IS_TERMINAL else ""
-STYLE_BOLD: str = "\033[1m" if STDERR_IS_TERMINAL else ""
-STYLE_DIM: str = "\033[2m" if STDERR_IS_TERMINAL else ""
-STYLE_RED: str = "\033[31m" if STDERR_IS_TERMINAL else ""
-STYLE_YELLOW: str = "\033[33m" if STDERR_IS_TERMINAL else ""
-STYLE_CYAN: str = "\033[36m" if STDERR_IS_TERMINAL else ""
-STYLE_GRAY: str = "\033[90m" if STDERR_IS_TERMINAL else ""
-STYLE_GREEN: str = "\033[32m" if STDERR_IS_TERMINAL else ""
-STYLE_BOLD_YELLOW: str = "\033[1;33m" if STDERR_IS_TERMINAL else ""
+_ANSI_CODES: dict[str, str] = {
+    "STYLE_RESET": "\033[0m",
+    "STYLE_BOLD": "\033[1m",
+    "STYLE_DIM": "\033[2m",
+    "STYLE_RED": "\033[31m",
+    "STYLE_YELLOW": "\033[33m",
+    "STYLE_CYAN": "\033[36m",
+    "STYLE_GRAY": "\033[90m",
+    "STYLE_GREEN": "\033[32m",
+    "STYLE_BOLD_YELLOW": "\033[1;33m",
+}
+
+# Populated by set_color() below; declared for readers and type checkers.
+STYLE_RESET = STYLE_BOLD = STYLE_DIM = STYLE_RED = STYLE_YELLOW = ""
+STYLE_CYAN = STYLE_GRAY = STYLE_GREEN = STYLE_BOLD_YELLOW = ""
+
+
+def _detect_color_default() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    return sys.stdout.isatty() and sys.stderr.isatty()
+
+
+def set_color(enabled: bool | None = None) -> None:
+    """Enable or disable ANSI styling for all formatters and messages.
+
+    enabled=True/False forces the state; enabled=None re-runs detection
+    (NO_COLOR, stdout+stderr tty check). Call once at startup, or from
+    tests to make output deterministic."""
+    state = _detect_color_default() if enabled is None else enabled
+    for name, code in _ANSI_CODES.items():
+        globals()[name] = code if state else ""
+
+
+set_color(None)
 
 # ============================================================================
 # Section 2: Module Configuration
 # ============================================================================
-
 _layout_max_width: int = 80
 _layout_align: str = "left"
 
@@ -223,9 +163,7 @@ def set_verbosity(level: int) -> None:
 # ============================================================================
 # Section 3: Primitive Layer
 # ============================================================================
-
 _cached_terminal_width: int | None = None
-
 _ANSI_PATTERN: re.Pattern = re.compile(r"\033\[[0-9;]*m")
 
 
