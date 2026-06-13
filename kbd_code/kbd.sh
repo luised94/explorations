@@ -12,10 +12,10 @@
 # See: ~/personal_repos/usb-sh/docs/usb-setup.md (Loading Architecture)
 if [[ "${USB_INITIALIZED:-}" != true ]]; then
     if [[ -f "$HOME/personal_repos/usb-sh/usb.sh" ]]; then
-        echo "kbd[WARN]: usb.sh found but not loaded (check bash/ chain load order)"
+        echo "kbd[WARN]: usb.sh found but not loaded (check bash/ chain load order)" >&2
     else
-        echo "kbd[WARN]: usb.sh not found, USB features unavailable"
-        echo "kbd[WARN]: clone luised94/usb-sh github repo."
+        echo "kbd[WARN]: usb.sh not found, USB features unavailable" >&2
+        echo "kbd[WARN]: clone luised94/usb-sh github repo." >&2
     fi
     export USB_CONNECTED=false
 fi
@@ -101,6 +101,10 @@ kbd_questions() {
 
 kbd_usage_stats() {
   local hist="${HISTFILE:-$HOME/.bash_history}"
+  if [[ ! -f "$hist" ]]; then
+    echo "kbd[ERROR]: history file not found: $hist" >&2
+    return 1
+  fi
   echo "kbd command usage (from history):"
   grep -oE '\bk(j|t|n|vim|st|sync|pull)\b' "$hist" 2>/dev/null | sort | uniq -c | sort -rn
 }
@@ -218,11 +222,10 @@ dojo_open_random_source_file() {
 alias dme='dojo_open_most_edited_files'
 alias drf='dojo_open_random_source_file'
 
-#!/usr/bin/env bash
-# Source this file to make the thread log function available in your shell.
-# Requires: KBD_DIR environment variable set to kbd repo root.
-
-KBD_DIR="${KBD_DIR:-}"
+# =============================================================================
+# SECTION 5: LLM thread log
+# =============================================================================
+# Requires: KBD_DIR (set in SECTION 1 above).
 
 kbd_llm_threadlog() {
     if [[ -z "$KBD_DIR" ]]; then
