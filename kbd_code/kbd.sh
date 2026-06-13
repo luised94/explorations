@@ -227,6 +227,14 @@ alias drf='dojo_open_random_source_file'
 # =============================================================================
 # Requires: KBD_DIR (set in SECTION 1 above).
 
+# kbd_llm_threadlog <new|close> [args]
+#
+# Boundary (known, not fixed): the `new` path computes the next per-project
+# sequence number by scanning the log, then appends. Two `new` calls racing
+# (concurrent shells) can read the same highest sequence and mint duplicate
+# ids. Safe for the single-human, one-shell-at-a-time use this tool is for.
+# If that assumption ever breaks, the fix is an O_APPEND + flock around the
+# scan-and-append, or moving the counter to a separate locked file.
 kbd_llm_threadlog() {
     if [[ -z "$KBD_DIR" ]]; then
         echo "error: KBD_DIR is not set" >&2
@@ -392,11 +400,21 @@ kbd_llm_threadlog() {
         fi
 
         # -- rewrite log with updated line ----------------------------------
+        #
+        # Commit is rewrite-to-tmp then atomic mv. Crash-state analysis:
+        # a death between the redirect opening $temp_file and the mv leaves
+        # the ORIGINAL $log_file intact (mv is atomic on the same filesystem)
+        # and an orphaned .tmp on disk. Nothing reads .tmp, so the orphan is
+        # inert -- the worst crash state is a stale temp file, not data loss.
+        # We clear any prior orphan before writing, and refuse to mv if the
+        # rewrite itself failed, so a partial .tmp never replaces a good log.
 
         local temp_file="$log_file.tmp"
         local rewrite_line_number=0
 
-        while IFS= read -r rewrite_line; do
+        rm -f "$temp_file"
+
+        if ! while IFS= read -r rewrite_line; do
             rewrite_line_number=$((rewrite_line_number + 1))
 
             if [[ $rewrite_line_number -eq $found_line_number ]]; then
@@ -404,9 +422,17 @@ kbd_llm_threadlog() {
             else
                 echo "$rewrite_line"
             fi
-        done < "$log_file" > "$temp_file"
+        done < "$log_file" > "$temp_file"; then
+            echo "error: failed to rewrite log; original left untouched" >&2
+            rm -f "$temp_file"
+            return 1
+        fi
 
-        mv "$temp_file" "$log_file"
+        if ! mv "$temp_file" "$log_file"; then
+            echo "error: failed to commit log; original left untouched" >&2
+            rm -f "$temp_file"
+            return 1
+        fi
 
         echo "closed $target_thread_id ($close_status)"
 
