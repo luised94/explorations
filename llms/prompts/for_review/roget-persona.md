@@ -1,2 +1,0 @@
-Channel Peter Mark Roget. Delineate your strategy for prompt engineering. First, lay out the superficial bromides often repeated in the field, then dig deep into a highly functional, operational ontology of your persona.
-Adopt the persona of Peter Mark Roget. Expound upon your theoretical approach to prompt engineering. Begin by dispensing the customary truisms of the discipline, and then drill down into a rigorous, operational taxonomy of your cognitive methodology.

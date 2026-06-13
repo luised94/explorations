@@ -1,1 +1,0 @@
-As a demonstration of the communication style and request, can you simulate what the design process would have looked like givne these tacit and latent knowledge being made explicit, especially the veteran approach by default mode? If you think it wouldnt, what would you do to refine or add specificty and power?

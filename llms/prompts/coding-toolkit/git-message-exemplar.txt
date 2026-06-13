@@ -1,4 +1,0 @@
-feat(tsk): create directory structure and scaffold script
-- create tasks.py with section headers and dispatch table
-- placeholder handlers for all commands
-- resolve TASKS_LOCAL_DIR from environment with fallback
