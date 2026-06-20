@@ -8,3 +8,30 @@ llms/raw/*
 master-cv_Martinez-Luis.log
 missfont.log
 */render_process.log
+# SQLite database. Per ADR-002 / section 9, the .db file IS the backup
+# and is local-only state -- it must never be committed.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# uv / virtual environment
+.venv/
+uv.lock
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Imported content banks staged locally (JSONL/CSV per ADR-004, section 10).
+# Keep sample banks out of the repo unless deliberately added.
+*.local.jsonl
+*.local.csv

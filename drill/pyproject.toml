@@ -1,0 +1,28 @@
+# C-001: Project scaffolding.
+# Drill tool -- local single-user practice tool with cross-session tracking.
+# See design spec sections 1-2 for stack and constraints.
+
+[project]
+name = "drill"
+version = "0.1.0"
+description = "Local single-user drill/practice tool with cross-session tracking"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Bottle is the ONE external Python dependency (ADR-001).
+# SQLite (sqlite3) and everything else come from the standard library.
+dependencies = [
+    "bottle>=0.13",
+]
+
+[project.scripts]
+# Convenience entry point: `uv run drill` starts the server (wired in C-019/MAIN).
+drill = "drill:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Single-module project: drill.py is the whole backend (spec section 2).
+include = ["drill.py", "index.html"]
