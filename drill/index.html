@@ -232,21 +232,23 @@
   }
 
   /* ---- Question stage -------------------------------------------------- */
-  /* Top-align content rather than vertically centering: a multiple-choice
-     question with four options can exceed the stage's min-height, and
-     centering overflowing content pushes the top items UP out of the stage,
-     overlapping the stats bar (a real bug seen in C-016 testing). Flex-start
-     keeps everything flowing downward from the stage top. Short arithmetic
-     still looks balanced thanks to the padding. */
+  /* The stage sizes to its content and must NOT shrink below it: in a flex
+     column, a flex item defaults to flex-shrink:1, so when the page is short
+     the stage was compressed below its content height and the choices/feedback
+     overflowed downward, overlapping the run-log (the bug from the C-016
+     screenshots). flex-shrink:0 keeps the stage tall enough to contain
+     everything, so later siblings sit below it. Content is top-aligned so a
+     tall multiple-choice question never pushes items up over the stats bar
+     either. */
   .stage {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    gap: 1.5rem;
+    gap: 1.25rem;
     text-align: center;
     padding: 2rem 0;
-    min-height: 14rem;
   }
   .expression {
     font-family: var(--serif);
@@ -315,6 +317,7 @@
     outline-offset: 2px;
   }
   button:disabled { opacity: 0.5; cursor: default; }
+  button[hidden] { display: none; }
 
   /* ---- Feedback area --------------------------------------------------- */
   .feedback {
@@ -611,13 +614,19 @@
           aria-label="Your answer"
           placeholder="answer"
           disabled>
-        <button id="action" disabled>Submit</button>
       </div>
 
       <!-- Multiple-choice options (C-016): shown in place of the answer row
            for multiple_choice questions. Built from the payload's `options`
            array; clicking a choice submits that option's text. -->
       <div class="choices" id="choices" hidden></div>
+
+      <!-- Action button lives OUTSIDE the answer row so it remains available
+           in the feedback phase for multiple_choice (where the answer row is
+           hidden). For text qtypes it is the Submit/Next control; for MC it
+           is hidden while answering (choices are clicked) and shown as "Next"
+           in feedback. -->
+      <button id="action" disabled>Submit</button>
 
       <!-- Inline hint under the input (C-015): shown when Submit fires on an
            empty field; cleared as soon as the user types. Distinct from the
@@ -1167,15 +1176,18 @@ function enterAnswering() {
   state.phase = "answering";
   clearAnswerHint();
   if (state.current && state.current.qtype === "multiple_choice") {
-    /* Choice buttons are the input; the action button and text field stay
-       out of the way. Focus the first choice for keyboard users. */
-    el.action.disabled = true;
+    /* Choice buttons are the input. Hide the action button entirely while
+       answering (there is nothing to submit -- a click on a choice submits);
+       it returns as "Next" in the feedback phase. Focus the first choice for
+       keyboard users. */
+    el.action.hidden = true;
     setChoicesDisabled(false);
     var first = el.choices.querySelector(".choice");
     if (first) {
       first.focus();
     }
   } else {
+    el.action.hidden = false;
     el.answer.disabled = false;
     el.action.disabled = false;
     el.action.textContent = "Submit";
@@ -1320,6 +1332,10 @@ function clearFeedback() {
 
 function enterFeedback() {
   state.phase = "feedback";
+  /* Show the action button as "Next" regardless of qtype -- for MC it was
+     hidden during answering, so this is where the advance affordance returns
+     (the missing-Next-button bug from the screenshots). */
+  el.action.hidden = false;
   el.action.disabled = false;
   el.action.textContent = "Next";
   el.action.focus();
@@ -1431,6 +1447,7 @@ function enterResting() {
   el.answer.value = "";
   el.answer.disabled = true;
   el.answerRow.hidden = false;
+  el.action.hidden = false;
   el.action.disabled = true;
   el.action.textContent = "Submit";
   clearChoices();
