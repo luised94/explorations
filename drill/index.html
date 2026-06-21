@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<!--
+  index.html -- Drill frontend.
+
+  C-013: Minimal HTML page with the drill UI (arithmetic loop).
+  Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
+  ASCII only.
+
+  Scope (C-013): the full arithmetic drill loop against the frozen section-6
+  API -- category list (gated), an auto-started session reused for the page's
+  life, question render, answer grading via POST /api/answer, live session
+  stats read from the answer response, and load-next.
+
+  Deliberately NOT in C-013 (later commits own these):
+    - visible session lifecycle: see/end/switch/restart    -> C-014
+    - keyboard interaction (Enter/Space/Escape niceties)   -> C-015
+    - bank selection + non-arithmetic categories           -> C-016
+    - import section                                       -> C-017
+    - TTS pronunciation                                    -> C-018
+    - stats view (GET /api/stats is still a 501 stub)      -> C-019
+
+  As-built contracts honored (verified against drill.py, not just the spec):
+    - GET /api/categories -> {categories:[{id,name,description,config}]}
+    - POST /api/session/start {category_id} -> {session_id}
+    - GET /api/question?category=arithmetic ->
+        {qtype:"arithmetic", question_text, expected,
+         question_id:null, alternatives:null, media_url:null}
+    - POST /api/answer echoes the served context; question_id passes through
+      as JSON null (not stringified) so it lands as a NULL response row;
+      response carries session_stats:{total,correct,accuracy,streak} with
+      accuracy as a 0.0-1.0 float -- no separate GET /api/stats call.
+    - POST /api/session/end {session_id} -> {ended:bool}; harmless no-op on
+      an unknown id, so it is safe to fire on beforeunload as dev cleanup.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drill</title>
+<style>
+  /* ---- Design tokens (C-013) -------------------------------------------
+     Slate-ink dark ground; paper-white expression as the stage; one cyan
+     correct signal and one clay miss signal. Two faces only: a math-capable
+     serif for the expression, a mono for instrumentation (digits sit still
+     as they change). */
+  :root {
+    --ground:      #161a1d;
+    --ground-soft: #1d2327;
+    --line:        #2b3439;
+    --paper:       #f3efe6;
+    --muted:       #8c9aa1;
+    --muted-dim:   #5c686e;
+    --correct:     #5ad1b0;
+    --miss:        #e08a76;
+    --focus:       #7fb9d4;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+             Georgia, "Times New Roman", serif;
+    --mono:  ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono",
+             Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--paper);
+    font-family: var(--mono);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+  }
+
+  .shell {
+    width: 100%;
+    max-width: 40rem;
+    min-height: 100%;
+    padding: 1.5rem 1.25rem 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ---- Category selector ---------------------------------------------- */
+  .selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .selector label {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .selector select {
+    appearance: none;
+    background: var(--ground-soft);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.7rem;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .selector select:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- Stats bar (always visible) ------------------------------------- */
+  .stats {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.75rem;
+    padding: 0.9rem 1rem;
+    background: var(--ground-soft);
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+  }
+  .stat { display: flex; flex-direction: column; gap: 0.15rem; }
+  .stat .value {
+    font-size: 1.35rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .stat .label {
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stat.streak { margin-left: auto; align-items: flex-end; }
+
+  /* Signature element: the streak pips. A row of marks that fills as a run
+     of correct answers chains, and clears on a miss -- the current run made
+     glanceable, derived straight from session_stats.streak. */
+  .pips {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+    min-height: 0.5rem;
+  }
+  .pip {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--muted-dim);
+    transition: background 0.18s ease, transform 0.18s ease;
+  }
+  .pip.on {
+    background: var(--correct);
+    transform: scale(1.12);
+  }
+  .pips .more {
+    align-self: center;
+    margin-left: 0.15rem;
+    font-size: 0.7rem;
+    color: var(--correct);
+  }
+
+  /* ---- Question stage -------------------------------------------------- */
+  .stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    text-align: center;
+    padding: 1.5rem 0;
+    min-height: 14rem;
+  }
+  .expression {
+    font-family: var(--serif);
+    font-size: clamp(2.75rem, 12vw, 5rem);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.05;
+    color: var(--paper);
+  }
+
+  .answer-row {
+    display: flex;
+    gap: 0.6rem;
+    width: 100%;
+    max-width: 22rem;
+  }
+  .answer-row input {
+    flex: 1;
+    background: var(--ground-soft);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.7rem 0.85rem;
+    font-family: var(--mono);
+    font-size: 1.15rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .answer-row input:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .answer-row input:disabled { opacity: 0.5; }
+
+  button {
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    letter-spacing: 0.04em;
+    border-radius: 0.4rem;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ground);
+    padding: 0.7rem 1.1rem;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #fff; }
+  button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  /* ---- Feedback area --------------------------------------------------- */
+  .feedback {
+    min-height: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 1rem;
+  }
+  .feedback .verdict { font-size: 1.1rem; letter-spacing: 0.02em; }
+  .feedback.correct .verdict { color: var(--correct); }
+  .feedback.miss .verdict { color: var(--miss); }
+  .feedback .detail { font-size: 0.85rem; color: var(--muted); }
+  .feedback .detail b { color: var(--paper); font-weight: 500; }
+
+  /* ---- Gate / status notes -------------------------------------------- */
+  .note {
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+  .note.error { color: var(--miss); }
+
+  /* ---- Later-commit placeholders (kept hidden so C-014/16/17/19 slot in
+     without restructuring the page) ------------------------------------- */
+  #bank-selector, #import-section, #stats-view { display: none; }
+
+  @media (max-width: 30rem) {
+    .stats { gap: 1.1rem; }
+    .stat .value { font-size: 1.15rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+    .pip.on { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <!-- Category selector: populated from /api/categories. Non-drillable
+         categories are gated (disabled) until they have content. -->
+    <div class="selector">
+      <label for="category">Category</label>
+      <select id="category" aria-label="Category"></select>
+    </div>
+
+    <!-- Stats bar: always visible, fed only by session_stats from the
+         /api/answer response. -->
+    <div class="stats" aria-live="polite">
+      <div class="stat">
+        <span class="value" id="stat-total">0</span>
+        <span class="label">Answered</span>
+      </div>
+      <div class="stat">
+        <span class="value" id="stat-accuracy">--</span>
+        <span class="label">Accuracy</span>
+      </div>
+      <div class="stat streak">
+        <span class="value" id="stat-streak">0</span>
+        <span class="label">Streak</span>
+        <div class="pips" id="streak-pips" aria-hidden="true"></div>
+      </div>
+    </div>
+
+    <!-- Question stage: the expression is the hero. -->
+    <section class="stage">
+      <div class="expression" id="expression" aria-live="polite">--</div>
+
+      <div class="answer-row">
+        <input
+          id="answer"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          aria-label="Your answer"
+          placeholder="answer"
+          disabled>
+        <button id="action" disabled>Submit</button>
+      </div>
+
+      <div class="feedback" id="feedback" aria-live="polite"></div>
+    </section>
+
+    <!-- Status / gate messaging. -->
+    <p class="note" id="note"></p>
+
+    <!-- Placeholders for later commits. Hidden in C-013. -->
+    <div id="bank-selector"></div>
+    <div id="import-section"></div>
+    <div id="stats-view"></div>
+  </main>
+
+<script>
+"use strict";
+/* C-013 -- arithmetic drill loop.
+
+   State is intentionally tiny and lives in module scope: the active session
+   id (auto-started once and reused), the question payload currently on
+   screen (echoed back to /api/answer), and a phase flag that says whether
+   the action button submits an answer or advances to the next question. */
+
+var STREAK_PIPS_MAX = 10; /* visual cap for the signature pip row */
+
+var state = {
+  sessionId: null,        /* set on first question; reused for page life */
+  arithmeticCategoryId: null,
+  current: null,          /* the question payload now on screen */
+  phase: "idle"           /* idle | loading | answering | feedback */
+};
+
+var el = {
+  category:  document.getElementById("category"),
+  expression: document.getElementById("expression"),
+  answer:    document.getElementById("answer"),
+  action:    document.getElementById("action"),
+  feedback:  document.getElementById("feedback"),
+  note:      document.getElementById("note"),
+  statTotal: document.getElementById("stat-total"),
+  statAccuracy: document.getElementById("stat-accuracy"),
+  statStreak: document.getElementById("stat-streak"),
+  streakPips: document.getElementById("streak-pips")
+};
+
+/* ---- API helpers ------------------------------------------------------ */
+
+/* Read a JSON response, surfacing the backend's {error} envelope as a thrown
+   Error so callers can show it in the interface's own voice. */
+async function readJson(response) {
+  var data;
+  try {
+    data = await response.json();
+  } catch (parseError) {
+    throw new Error("The server sent a response that could not be read.");
+  }
+  if (!response.ok) {
+    var message = (data && data.error) ? data.error
+                                       : "Request failed (" + response.status + ").";
+    throw new Error(message);
+  }
+  return data;
+}
+
+async function apiGet(path) {
+  var response = await fetch(path, { headers: { "Accept": "application/json" } });
+  return readJson(response);
+}
+
+async function apiPost(path, body) {
+  var response = await fetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  return readJson(response);
+}
+
+/* ---- Drillability gate ------------------------------------------------
+   A category is drillable in C-013 if it is arithmetic OR it has at least one
+   bank. Bank selection is C-016, so `banks` is never populated yet and only
+   arithmetic is live -- but the predicate is written so C-016 turns the rest
+   on by wiring /api/banks, not by editing this gate. */
+function isDrillable(category) {
+  return category.name === "arithmetic" ||
+         (Array.isArray(category.banks) && category.banks.length > 0);
+}
+
+/* ---- Stats bar -------------------------------------------------------- */
+
+/* Render the stats bar from a session_stats object as returned by
+   /api/answer: {total, correct, accuracy (0.0-1.0 float), streak}. */
+function renderStats(stats) {
+  el.statTotal.textContent = String(stats.total);
+  el.statAccuracy.textContent = stats.total > 0
+    ? Math.round(stats.accuracy * 100) + "%"
+    : "--";
+  el.statStreak.textContent = String(stats.streak);
+  renderStreakPips(stats.streak);
+}
+
+function renderStreakPips(streak) {
+  el.streakPips.textContent = "";
+  var shown = Math.min(streak, STREAK_PIPS_MAX);
+  for (var i = 0; i < STREAK_PIPS_MAX; i++) {
+    var pip = document.createElement("span");
+    pip.className = "pip" + (i < shown ? " on" : "");
+    el.streakPips.appendChild(pip);
+  }
+  if (streak > STREAK_PIPS_MAX) {
+    var more = document.createElement("span");
+    more.className = "more";
+    more.textContent = "+" + (streak - STREAK_PIPS_MAX);
+    el.streakPips.appendChild(more);
+  }
+}
+
+/* ---- Notes / errors --------------------------------------------------- */
+
+function setNote(text, isError) {
+  el.note.textContent = text || "";
+  el.note.classList.toggle("error", !!isError);
+}
+
+/* ---- Session ---------------------------------------------------------- */
+
+/* Auto-start a single session the first time the user needs one, and reuse
+   it for the life of the page. C-013 owns only "a session exists so answers
+   can be logged"; seeing/ending/switching sessions is C-014. */
+async function ensureSession() {
+  if (state.sessionId !== null) {
+    return state.sessionId;
+  }
+  var result = await apiPost("/api/session/start", {
+    category_id: state.arithmeticCategoryId
+  });
+  state.sessionId = result.session_id;
+  return state.sessionId;
+}
+
+/* Dev cleanup, not session UI: end the auto-started session on page
+   close/refresh so the DB does not fill with dangling never-ended sessions
+   during development. Unknown-id end is a harmless no-op server-side. Uses
+   sendBeacon so the request survives unload. */
+function endSessionOnUnload() {
+  if (state.sessionId === null) {
+    return;
+  }
+  var payload = JSON.stringify({ session_id: state.sessionId });
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(
+      "/api/session/end",
+      new Blob([payload], { type: "application/json" })
+    );
+  } else {
+    /* Best-effort fallback for browsers without sendBeacon. */
+    fetch("/api/session/end", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true
+    });
+  }
+}
+
+/* ---- Drill loop ------------------------------------------------------- */
+
+async function loadQuestion() {
+  state.phase = "loading";
+  state.current = null;
+  el.action.disabled = true;
+  el.answer.disabled = true;
+  el.answer.value = "";
+  clearFeedback();
+  el.expression.textContent = "...";
+
+  try {
+    await ensureSession();
+    var payload = await apiGet("/api/question?category=arithmetic");
+    state.current = payload;
+    el.expression.textContent = payload.question_text;
+    enterAnswering();
+  } catch (error) {
+    el.expression.textContent = "--";
+    setNote(error.message, true);
+    state.phase = "idle";
+  }
+}
+
+function enterAnswering() {
+  state.phase = "answering";
+  el.answer.disabled = false;
+  el.action.disabled = false;
+  el.action.textContent = "Submit";
+  el.answer.focus();
+}
+
+async function submitAnswer() {
+  if (state.phase !== "answering" || state.current === null) {
+    return;
+  }
+  var userInput = el.answer.value.trim();
+  if (userInput === "") {
+    el.answer.focus();
+    return;
+  }
+
+  state.phase = "loading";
+  el.action.disabled = true;
+  el.answer.disabled = true;
+
+  var q = state.current;
+  try {
+    var result = await apiPost("/api/answer", {
+      session_id: state.sessionId,
+      qtype: q.qtype,
+      question_text: q.question_text,
+      expected: q.expected,
+      user_input: userInput,
+      /* Arithmetic is generated: pass question_id through as JSON null (not a
+         string) so it lands as a proper NULL in responses.question_id. No
+         alternatives, no tolerance (exact integer compare), no recent= . */
+      question_id: q.question_id
+    });
+    renderStats(result.session_stats);
+    showFeedback(result);
+    enterFeedback();
+  } catch (error) {
+    setNote(error.message, true);
+    /* Let the user retry the same question rather than losing it. */
+    enterAnswering();
+  }
+}
+
+function showFeedback(result) {
+  setNote("");
+  el.feedback.classList.remove("correct", "miss");
+  el.feedback.classList.add(result.correct ? "correct" : "miss");
+
+  var verdict = document.createElement("div");
+  verdict.className = "verdict";
+  verdict.textContent = result.correct ? "Correct" : "Not quite";
+  el.feedback.appendChild(clearAnd(verdict));
+
+  if (!result.correct) {
+    var detail = document.createElement("div");
+    detail.className = "detail";
+    var label = document.createTextNode("Answer: ");
+    var value = document.createElement("b");
+    value.textContent = result.expected;
+    detail.appendChild(label);
+    detail.appendChild(value);
+    el.feedback.appendChild(detail);
+  }
+}
+
+/* Replace feedback contents with the first node in one step (keeps the
+   aria-live region from announcing stale text). */
+function clearAnd(firstNode) {
+  el.feedback.textContent = "";
+  return firstNode;
+}
+
+function clearFeedback() {
+  el.feedback.textContent = "";
+  el.feedback.classList.remove("correct", "miss");
+}
+
+function enterFeedback() {
+  state.phase = "feedback";
+  el.action.disabled = false;
+  el.action.textContent = "Next";
+  el.action.focus();
+}
+
+/* The single action button drives the loop: submit while answering, advance
+   while showing feedback. (Richer keyboard control is C-015.) */
+function onAction() {
+  if (state.phase === "answering") {
+    submitAnswer();
+  } else if (state.phase === "feedback") {
+    loadQuestion();
+  }
+}
+
+/* Enter submits an answer from the input. Broader keyboard interaction
+   (Enter/Space to advance, Escape to end) is C-015. */
+function onAnswerKey(event) {
+  if (event.key === "Enter" && state.phase === "answering") {
+    event.preventDefault();
+    submitAnswer();
+  }
+}
+
+/* ---- Category wiring -------------------------------------------------- */
+
+function populateCategories(categories) {
+  el.category.textContent = "";
+  categories.forEach(function (category) {
+    var drillable = isDrillable(category);
+    var option = document.createElement("option");
+    option.value = String(category.id);
+    option.dataset.name = category.name;
+    option.textContent = drillable
+      ? category.name
+      : category.name + " (no banks yet)";
+    option.disabled = !drillable;
+    el.category.appendChild(option);
+    if (category.name === "arithmetic") {
+      state.arithmeticCategoryId = category.id;
+    }
+  });
+}
+
+/* C-013 drills arithmetic only; the selector defaults to it. Selecting a
+   different (gated) category is impossible since they are disabled. When
+   C-016 makes more categories drillable, this handler is where switching
+   logic will grow. */
+function onCategoryChange() {
+  var selected = el.category.options[el.category.selectedIndex];
+  if (selected && selected.dataset.name === "arithmetic") {
+    loadQuestion();
+  }
+}
+
+/* ---- Boot ------------------------------------------------------------- */
+
+async function boot() {
+  el.action.addEventListener("click", onAction);
+  el.answer.addEventListener("keydown", onAnswerKey);
+  el.category.addEventListener("change", onCategoryChange);
+  window.addEventListener("beforeunload", endSessionOnUnload);
+
+  try {
+    var data = await apiGet("/api/categories");
+    populateCategories(data.categories);
+
+    if (state.arithmeticCategoryId === null) {
+      setNote("No arithmetic category found. Check the seeded categories.", true);
+      return;
+    }
+    /* Default selection is arithmetic (first seeded category); start drilling. */
+    el.category.value = String(state.arithmeticCategoryId);
+    await loadQuestion();
+  } catch (error) {
+    setNote(error.message, true);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}
+</script>
+</body>
+</html>
