@@ -5,6 +5,7 @@
   C-013: Minimal HTML page with the drill UI (arithmetic loop).
   C-014: Session lifecycle UI (end, restart) + in-memory run log.
   C-015: Keyboard control + empty-answer hint.
+  C-017: Import UI (upload a JSONL/CSV bank).
   Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
   ASCII only.
 
@@ -35,16 +36,29 @@
   number" hint under the input when Submit fires on an empty field (was
   previously a silent refocus), cleared as soon as the user types.
 
-  Deliberately NOT in C-015 (later commits own these):
-    - bank selection + non-arithmetic categories           -> C-016
-    - import section                                       -> C-017
+  Scope (C-017): import a question bank. A collapsed "Import a bank"
+  disclosure reveals a panel with its own import-target category picker (a
+  separate control from the top drill selector -- different intent: "where
+  does this bank go" vs "what am I drilling"), a JSONL/CSV file chooser, and
+  optional bank-name and language fields. Submits as multipart/form-data to
+  POST /api/banks/import (this endpoint is multipart, NOT JSON -- so it uses
+  FormData + fetch directly, not the JSON apiPost helper). On success shows
+  "Imported N questions into '<name>'" and silently refreshes the in-memory
+  category->banks data so C-016's selector (next commit) sees the new bank
+  without a reload. Parse errors surface the server's row-naming message in
+  the panel's own error area. Does NOT drill the imported bank -- that is
+  C-016; C-017's payoff is a successful import + count, verifiable because
+  GET /api/banks then shows the bank.
+
+  Deliberately NOT in C-017 (later commits own these):
+    - bank selection + drilling non-arithmetic categories  -> C-016
     - TTS pronunciation                                    -> C-018
     - stats view (GET /api/stats is still a 501 stub)      -> C-019
     - NOTED (no commit yet): a no-feedback "speed drill" mode where submit
       advances immediately and per-answer feedback is withheld until the run
       ends (feedback concentrated at session end). Deferred deliberately: it
       changes the loop's meaning and needs extra state (a pending-results
-      buffer), so it is a distinct future commit, not folded into C-015.
+      buffer), so it is a distinct future commit.
 
   As-built contracts honored (verified against drill.py, not just the spec):
     - GET /api/categories -> {categories:[{id,name,description,config}]}
@@ -358,9 +372,74 @@
   }
   .note.error { color: var(--miss); }
 
-  /* ---- Later-commit placeholders (kept hidden so C-014/16/17/19 slot in
+  /* ---- Import panel (C-017) -------------------------------------------
+     A collapsed disclosure that expands an import form. Quiet, secondary --
+     an occasional action, not part of the drill stage. */
+  .import-disclosure { margin-top: 0.5rem; }
+  .import-toggle {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.85rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+  }
+  .import-toggle:hover { background: var(--ground-soft); color: var(--paper); }
+  .import-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .import-panel {
+    margin-top: 0.6rem;
+    padding: 1rem;
+    background: var(--ground-soft);
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .import-field { display: flex; flex-direction: column; gap: 0.3rem; }
+  .import-field label {
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .import-field select,
+  .import-field input[type="text"],
+  .import-field input[type="file"] {
+    background: var(--ground);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+  }
+  .import-field input[type="file"] { cursor: pointer; padding: 0.45rem; }
+  .import-field select:focus-visible,
+  .import-field input:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .import-help {
+    font-size: 0.72rem;
+    color: var(--muted-dim);
+    line-height: 1.5;
+  }
+  .import-help code { color: var(--muted); }
+  .import-actions { display: flex; align-items: center; gap: 0.75rem; }
+  .import-status { font-size: 0.78rem; }
+  .import-status.ok { color: var(--correct); }
+  .import-status.error { color: var(--miss); }
+
+  /* ---- Later-commit placeholders (kept hidden so C-016/19 slot in
      without restructuring the page) ------------------------------------- */
-  #bank-selector, #import-section, #stats-view { display: none; }
+  #bank-selector, #stats-view { display: none; }
 
   @media (max-width: 30rem) {
     .stats { gap: 1.1rem; }
@@ -441,9 +520,21 @@
     <!-- Status / gate messaging. -->
     <p class="note" id="note"></p>
 
-    <!-- Placeholders for later commits. Hidden in C-013. -->
+    <!-- Placeholders for later commits. -->
     <div id="bank-selector"></div>
-    <div id="import-section"></div>
+
+    <!-- Import panel (C-017): collapsed disclosure. The panel is built/torn
+         down by JS on toggle so its category picker always reflects current
+         categories. The file input + form fields submit as multipart to
+         POST /api/banks/import. -->
+    <div class="import-disclosure" id="import-section">
+      <button type="button" class="import-toggle" id="import-toggle"
+              aria-expanded="false" aria-controls="import-panel">
+        + Import a bank
+      </button>
+      <div class="import-panel" id="import-panel" hidden></div>
+    </div>
+
     <div id="stats-view"></div>
   </main>
 
@@ -474,6 +565,9 @@ var state = {
   activeSessionId: null,   /* id of the active record, or null when resting */
   arithmeticCategoryId: null,
   arithmeticCategoryName: "arithmetic",
+  categories: [],          /* category records from /api/categories (C-017
+                              import picker reads these; C-016 will attach
+                              banks to them) */
   current: null,           /* the question payload now on screen */
   phase: "idle"            /* idle | resting | loading | answering | feedback */
 };
@@ -494,7 +588,9 @@ var el = {
   sessionControls: document.getElementById("session-controls"),
   runLog:    document.getElementById("run-log"),
   runLogList: document.getElementById("run-log-list"),
-  answerHint: document.getElementById("answer-hint")
+  answerHint: document.getElementById("answer-hint"),
+  importToggle: document.getElementById("import-toggle"),
+  importPanel: document.getElementById("import-panel")
 };
 
 /* ---- API helpers ------------------------------------------------------ */
@@ -961,9 +1057,14 @@ function onAnswerInput() {
    rather than advancing twice. */
 function onDocumentKey(event) {
   var key = event.key;
+  var target = event.target;
 
-  /* Let the category selector keep its native keyboard behavior. */
-  if (event.target === el.category) {
+  /* Do not hijack keys typed into form controls (the category selector, and
+     the import panel's text inputs / file picker / select). Escape there
+     should not end the session; Space/Enter there are normal keystrokes.
+     The answer input is excluded from this guard: it has its own Enter-to-
+     submit handler and the phase gate below covers the rest. */
+  if (target !== el.answer && isFormControl(target)) {
     return;
   }
 
@@ -984,12 +1085,23 @@ function onDocumentKey(event) {
        on Space would suppress the native click and swallow the action. (No
        page scroll happens while a button is focused.) This prevents a
        focused "End"/"Restart" from both activating AND advancing. */
-    if (event.target.tagName === "BUTTON") {
+    if (target.tagName === "BUTTON") {
       return;
     }
     event.preventDefault();
     loadQuestion();
   }
+}
+
+/* True for interactive form controls where keystrokes must not be hijacked
+   by the global keyboard handler. */
+function isFormControl(node) {
+  if (!node || !node.tagName) {
+    return false;
+  }
+  var tag = node.tagName;
+  return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA"
+      || tag === "BUTTON";
 }
 
 /* ---- Session lifecycle controls (C-014) ------------------------------- */
@@ -1042,6 +1154,7 @@ async function onStartSession() {
 /* ---- Category wiring -------------------------------------------------- */
 
 function populateCategories(categories) {
+  state.categories = categories;
   el.category.textContent = "";
   categories.forEach(function (category) {
     var drillable = isDrillable(category);
@@ -1070,6 +1183,203 @@ function onCategoryChange() {
   }
 }
 
+/* ---- Import (C-017) ---------------------------------------------------
+
+   POST /api/banks/import is a MULTIPART endpoint (file part + form fields),
+   not JSON, so it bypasses the apiPost helper and posts a FormData. The
+   panel is rebuilt each time it opens so its category picker reflects the
+   current category list. On success we re-fetch categories so the
+   drillability gate updates (the bridge to C-016, which will read the new
+   bank); C-017 itself does not drill the imported bank. */
+
+/* Toggle the disclosure. Builds the panel lazily on first open. */
+function onImportToggle() {
+  var open = el.importToggle.getAttribute("aria-expanded") === "true";
+  if (open) {
+    el.importPanel.hidden = true;
+    el.importToggle.setAttribute("aria-expanded", "false");
+    el.importToggle.textContent = "+ Import a bank";
+  } else {
+    buildImportPanel();
+    el.importPanel.hidden = false;
+    el.importToggle.setAttribute("aria-expanded", "true");
+    el.importToggle.textContent = "- Import a bank";
+  }
+}
+
+/* (Re)build the import form. Pure DOM construction from state.categories;
+   no network. A separate category picker from the top drill selector --
+   different intent ("where does this bank go"), and every category is a
+   valid import target, including ones with no banks yet. */
+function buildImportPanel() {
+  el.importPanel.textContent = "";
+
+  /* Import-target category picker. */
+  var catField = importField("Import into category");
+  var catSelect = document.createElement("select");
+  catSelect.id = "import-category";
+  state.categories.forEach(function (category) {
+    var option = document.createElement("option");
+    option.value = String(category.id);
+    option.textContent = category.name;
+    catSelect.appendChild(option);
+  });
+  catField.appendChild(catSelect);
+  el.importPanel.appendChild(catField);
+
+  /* File chooser (JSONL or CSV). */
+  var fileField = importField("File (.jsonl or .csv)");
+  var fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.id = "import-file";
+  fileInput.accept = ".jsonl,.csv,.json,.txt";
+  fileField.appendChild(fileInput);
+  el.importPanel.appendChild(fileField);
+
+  /* Optional bank name. */
+  var nameField = importField("Bank name (optional)");
+  var nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.id = "import-name";
+  nameInput.placeholder = "defaults to the file name";
+  nameInput.autocomplete = "off";
+  nameField.appendChild(nameInput);
+  el.importPanel.appendChild(nameField);
+
+  /* Optional language code. */
+  var langField = importField("Language code (optional)");
+  var langInput = document.createElement("input");
+  langInput.type = "text";
+  langInput.id = "import-language";
+  langInput.placeholder = "e.g. en, es, fr";
+  langInput.autocomplete = "off";
+  langField.appendChild(langInput);
+  el.importPanel.appendChild(langField);
+
+  /* Format help. */
+  var help = document.createElement("p");
+  help.className = "import-help";
+  help.appendChild(document.createTextNode(
+    "Each record needs question and answer. Optional: qtype "
+    + "(free_response, multiple_choice, translate, identify; default "
+    + "free_response), alternatives, distractors, hints, tags, media_url, "
+    + "difficulty (1-5). JSONL: one JSON object per line. CSV: a header row; "
+    + "array cells are pipe-separated."));
+  el.importPanel.appendChild(help);
+
+  /* Action row + status. */
+  var actions = document.createElement("div");
+  actions.className = "import-actions";
+  var submit = document.createElement("button");
+  submit.type = "button";
+  submit.id = "import-submit";
+  submit.textContent = "Import";
+  submit.addEventListener("click", onImportSubmit);
+  actions.appendChild(submit);
+  var status = document.createElement("span");
+  status.className = "import-status";
+  status.id = "import-status";
+  actions.appendChild(status);
+  el.importPanel.appendChild(actions);
+}
+
+function importField(labelText) {
+  var field = document.createElement("div");
+  field.className = "import-field";
+  var label = document.createElement("label");
+  label.textContent = labelText;
+  field.appendChild(label);
+  return field;
+}
+
+function setImportStatus(text, kind) {
+  var status = document.getElementById("import-status");
+  if (!status) {
+    return;
+  }
+  status.textContent = text || "";
+  status.className = "import-status" + (kind ? " " + kind : "");
+}
+
+/* Submit the import as multipart/form-data. Validates a file is chosen,
+   builds FormData, posts, and reports the {bank_id, imported} count or the
+   server's row-naming parse error. */
+async function onImportSubmit() {
+  var fileInput = document.getElementById("import-file");
+  var catSelect = document.getElementById("import-category");
+  var nameInput = document.getElementById("import-name");
+  var langInput = document.getElementById("import-language");
+  var submit = document.getElementById("import-submit");
+
+  if (!fileInput || fileInput.files.length === 0) {
+    setImportStatus("Choose a file to import.", "error");
+    return;
+  }
+
+  var form = new FormData();
+  form.append("file", fileInput.files[0]);
+  form.append("category_id", catSelect.value);
+  if (nameInput.value.trim() !== "") {
+    form.append("name", nameInput.value.trim());
+  }
+  if (langInput.value.trim() !== "") {
+    form.append("language", langInput.value.trim());
+  }
+  /* format is omitted: the server infers it from the file extension. */
+
+  submit.disabled = true;
+  setImportStatus("Importing...", null);
+  try {
+    var response = await fetch("/api/banks/import", {
+      method: "POST",
+      body: form /* no Content-Type header: the browser sets the multipart
+                    boundary automatically */
+    });
+    var data = await readJson(response); /* throws on !ok with {error} */
+    var bankLabel = (nameInput.value.trim() !== "")
+      ? nameInput.value.trim()
+      : (fileInput.files[0].name || "bank");
+    setImportStatus(
+      "Imported " + data.imported + " question"
+      + (data.imported === 1 ? "" : "s") + " into '" + bankLabel + "'.",
+      "ok");
+    /* Refresh categories so the drillability gate updates now that a bank
+       exists. C-016 will read the attached banks to light up the category
+       and offer the bank in its selector. */
+    await refreshCategories();
+  } catch (error) {
+    setImportStatus(error.message, "error");
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+/* Re-fetch categories and re-render the top selector (keeping the current
+   selection if still present). Used after an import so a newly-drillable
+   category un-gates without a page reload. */
+async function refreshCategories() {
+  try {
+    var data = await apiGet("/api/categories");
+    var previous = el.category.value;
+    populateCategories(data.categories);
+    /* Restore prior selection when it still exists and is enabled. */
+    var optionToRestore = null;
+    for (var i = 0; i < el.category.options.length; i++) {
+      if (el.category.options[i].value === previous
+          && !el.category.options[i].disabled) {
+        optionToRestore = el.category.options[i];
+        break;
+      }
+    }
+    if (optionToRestore) {
+      el.category.value = previous;
+    }
+  } catch (error) {
+    /* A failed refresh is non-fatal: the import already succeeded. Leave the
+       selector as-is; the user can reload to see the new category state. */
+  }
+}
+
 /* ---- Boot ------------------------------------------------------------- */
 
 async function boot() {
@@ -1077,6 +1387,7 @@ async function boot() {
   el.answer.addEventListener("keydown", onAnswerKey);
   el.answer.addEventListener("input", onAnswerInput);
   el.category.addEventListener("change", onCategoryChange);
+  el.importToggle.addEventListener("click", onImportToggle);
   document.addEventListener("keydown", onDocumentKey);
   window.addEventListener("beforeunload", endSessionOnUnload);
 
