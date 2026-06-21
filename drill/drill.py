@@ -1938,3 +1938,83 @@ def post_banks_import():
     finally:
         connection.close()
     return {"bank_id": bank_id, "imported": imported}
+# =============================================================================
+# --- MAIN ---
+#
+# Partial C-019: server entry point only.
+#
+# Spec section 5 (# --- MAIN ---) defines this block as exactly three things:
+# the init_db call, bottle.run, and the __main__ guard. The rest of C-019
+# (the stats view and its time-windowed DB queries; GET /api/stats is still a
+# 501 stub) is NOT included here -- this is the minimum that makes the app
+# runnable so the C-013 UI can be exercised end to end.
+#
+# This block is meant to be appended to the END of drill.py (after the
+# /api/banks/import handler). It is kept in a separate file here only so the
+# verification thread stays clean; reinject it into drill.py's MAIN section.
+#
+# Design notes:
+#   - Runs the explicit `app` object (app.run), not bottle's module-global
+#     default, matching how routes are attached.
+#   - Rebinds the module global DATABASE_PATH before serving, because the
+#     per-request handlers read that global (the spec says "MAIN may override
+#     this at startup"). Overriding a local would not reach the handlers.
+#   - init_db is idempotent (schema IF NOT EXISTS, version stamp once, seed
+#     via INSERT OR IGNORE), so calling it on every startup is safe and is
+#     what creates + seeds drill.db the first time -- no separate init step.
+#   - No argparse/CLI flags (the spec does not specify any); host/port/db are
+#     overridable via environment variables for convenience (notably under
+#     WSL), defaulting to 127.0.0.1:8080 and the standard drill.db. Adds no
+#     new dependencies (os is already imported).
+
+
+def main() -> None:
+    """Initialize the database and start the drill server.
+
+    Reads optional overrides from the environment:
+      DRILL_HOST  (default 127.0.0.1)
+      DRILL_PORT  (default 8080)
+      DRILL_DB    (default DEFAULT_DATABASE_PATH, i.e. drill.db)
+
+    Calls init_db once at startup (creating and seeding the database on first
+    run) and then serves the app. The database path is published to the module
+    global DATABASE_PATH so the per-request handlers open the same file.
+    """
+    global DATABASE_PATH
+
+    host = os.environ.get("DRILL_HOST", "127.0.0.1")
+    database_path = os.environ.get("DRILL_DB", DEFAULT_DATABASE_PATH)
+
+    port_raw = os.environ.get("DRILL_PORT", "8080")
+    try:
+        port = int(port_raw)
+    except ValueError:
+        raise SystemExit(
+            "DRILL_PORT must be an integer (got: " + repr(port_raw) + ")"
+        )
+
+    # Publish the chosen path so request handlers (which read the module
+    # global) open the same database this startup initialized.
+    DATABASE_PATH = database_path
+
+    # Create the schema and seed categories if needed. Idempotent: safe on
+    # every startup. One connection, opened and closed here.
+    connection = connect(DATABASE_PATH)
+    try:
+        init_db(connection)
+        connection.commit()
+    finally:
+        connection.close()
+
+    # Friendly startup line so the operator knows the exact URL to open.
+    # (Bottle also prints its own banner.)
+    print(
+        "drill: serving on http://" + host + ":" + str(port) + "/"
+        " (database: " + DATABASE_PATH + ")"
+    )
+
+    app.run(host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
