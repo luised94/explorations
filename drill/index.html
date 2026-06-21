@@ -6,6 +6,7 @@
   C-014: Session lifecycle UI (end, restart) + in-memory run log.
   C-015: Keyboard control + empty-answer hint.
   C-017: Import UI (upload a JSONL/CSV bank).
+  C-016: Bank selection + drilling non-arithmetic categories.
   Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
   ASCII only.
 
@@ -50,8 +51,25 @@
   C-016; C-017's payoff is a successful import + count, verifiable because
   GET /api/banks then shows the bank.
 
-  Deliberately NOT in C-017 (later commits own these):
-    - bank selection + drilling non-arithmetic categories  -> C-016
+  Scope (C-016): bank selection and drilling the non-arithmetic categories.
+  The drillability gate (written in C-013, predicate unchanged since) finally
+  has its data: /api/categories does NOT carry banks, so the client fetches
+  /api/banks once and attaches a `banks` array to each category record. Now
+  isDrillable lights up any category with >= 1 bank. (This also fixes the
+  C-017 symptom where an imported category stayed gated -- refreshCategories
+  now re-fetches banks too, not just categories.) A bank selector appears
+  under the category selector for a drillable non-arithmetic category;
+  choosing a bank starts a session and drills it. Bank questions carry a real
+  question_id (sent back to /api/answer, not null) and use recent= (last 10
+  served ids per session) for soft repeat-avoidance; text qtypes also send
+  alternatives. multiple_choice renders the server's shuffled `options` as
+  clickable choices instead of the text input; the chosen option text is
+  submitted. Switching category or bank mid-run ends the current run
+  (preserved in the log) and starts a fresh one. Run-log rows now name the
+  bank. Folded in: the import panel auto-collapses on success (stays open on
+  error).
+
+  Deliberately NOT in C-016 (later commits own these):
     - TTS pronunciation                                    -> C-018
     - stats view (GET /api/stats is still a 501 stub)      -> C-019
     - NOTED (no commit yet): a no-feedback "speed drill" mode where submit
@@ -62,14 +80,23 @@
 
   As-built contracts honored (verified against drill.py, not just the spec):
     - GET /api/categories -> {categories:[{id,name,description,config}]}
+      (NO banks field -- the client must fetch /api/banks separately, C-016)
+    - GET /api/banks?category_id=N -> {banks:[{id,category_id,name,language,
+      source,metadata,created}]}, ordered by name (C-016)
     - POST /api/session/start {category_id} -> {session_id}
     - GET /api/question?category=arithmetic ->
         {qtype:"arithmetic", question_text, expected,
          question_id:null, alternatives:null, media_url:null}
+    - GET /api/question?category=X&bank_id=N&recent=a,b,c -> a bank question:
+        {qtype: free_response|multiple_choice|translate|identify,
+         question_text, expected, question_id:<real int>, alternatives:[...],
+         media_url, and for multiple_choice an extra options:[...] shuffled}
+        404 "bank N has no questions" if the bank is empty (C-016)
     - POST /api/answer echoes the served context; question_id passes through
-      as JSON null (not stringified) so it lands as a NULL response row;
-      response carries session_stats:{total,correct,accuracy,streak} with
-      accuracy as a 0.0-1.0 float -- no separate GET /api/stats call.
+      as JSON null for arithmetic (NULL response row) or the real int for a
+      bank question; text qtypes also send alternatives; response carries
+      session_stats:{total,correct,accuracy,streak} with accuracy as a
+      0.0-1.0 float -- no separate GET /api/stats call.
     - POST /api/session/end {session_id} -> {ended:bool}; harmless no-op on
       an unknown id, so it is safe to fire on beforeunload as dev cleanup.
 -->
@@ -205,15 +232,20 @@
   }
 
   /* ---- Question stage -------------------------------------------------- */
+  /* Top-align content rather than vertically centering: a multiple-choice
+     question with four options can exceed the stage's min-height, and
+     centering overflowing content pushes the top items UP out of the stage,
+     overlapping the stats bar (a real bug seen in C-016 testing). Flex-start
+     keeps everything flowing downward from the stage top. Short arithmetic
+     still looks balanced thanks to the padding. */
   .stage {
-    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 1.5rem;
     text-align: center;
-    padding: 1.5rem 0;
+    padding: 2rem 0;
     min-height: 14rem;
   }
   .expression {
@@ -224,6 +256,13 @@
     line-height: 1.05;
     color: var(--paper);
   }
+  /* Bank questions are prose, not short arithmetic expressions: smaller, with
+     a readable measure so a full sentence does not blow out the stage. */
+  .expression.prose {
+    font-size: clamp(1.5rem, 5vw, 2.4rem);
+    line-height: 1.25;
+    max-width: 30rem;
+  }
 
   .answer-row {
     display: flex;
@@ -231,6 +270,7 @@
     width: 100%;
     max-width: 22rem;
   }
+  .answer-row[hidden] { display: none; }
   .answer-row input {
     flex: 1;
     background: var(--ground-soft);
@@ -437,9 +477,73 @@
   .import-status.ok { color: var(--correct); }
   .import-status.error { color: var(--miss); }
 
-  /* ---- Later-commit placeholders (kept hidden so C-016/19 slot in
+  /* ---- Bank selector (C-016) ------------------------------------------
+     Appears under the category selector when a non-arithmetic drillable
+     category is chosen. Same visual language as the category selector. */
+  .bank-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .bank-selector[hidden] { display: none; }
+  .bank-selector label {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .bank-selector select {
+    appearance: none;
+    background: var(--ground-soft);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.7rem;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .bank-selector select:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- Multiple-choice options (C-016) --------------------------------
+     Rendered in place of the answer input for multiple_choice questions.
+     Each option is a full-width choice button; clicking submits that text. */
+  .choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+    max-width: 26rem;
+  }
+  .choices[hidden] { display: none; }
+  .choice {
+    width: 100%;
+    text-align: left;
+    background: var(--ground-soft);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.7rem 0.9rem;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .choice:hover:not(:disabled) {
+    background: var(--ground);
+    border-color: var(--muted-dim);
+  }
+  .choice:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .choice:disabled { cursor: default; opacity: 0.85; }
+  /* After answering, mark the correct choice and a wrong pick. */
+  .choice.correct { border-color: var(--correct); color: var(--correct); }
+  .choice.wrong { border-color: var(--miss); color: var(--miss); }
+
+  /* ---- Later-commit placeholders (kept hidden so C-019 slots in
      without restructuring the page) ------------------------------------- */
-  #bank-selector, #stats-view { display: none; }
+  #stats-view { display: none; }
 
   @media (max-width: 30rem) {
     .stats { gap: 1.1rem; }
@@ -459,6 +563,14 @@
     <div class="selector">
       <label for="category">Category</label>
       <select id="category" aria-label="Category"></select>
+    </div>
+
+    <!-- Bank selector (C-016): hidden for arithmetic and when the chosen
+         category has no banks; shown with the chosen category's banks
+         otherwise. Choosing a bank starts a session and drills it. -->
+    <div class="bank-selector" id="bank-selector" hidden>
+      <label for="bank">Bank</label>
+      <select id="bank" aria-label="Bank"></select>
     </div>
 
     <!-- Stats bar: always visible, fed only by session_stats from the
@@ -488,7 +600,7 @@
     <section class="stage">
       <div class="expression" id="expression" aria-live="polite">--</div>
 
-      <div class="answer-row">
+      <div class="answer-row" id="answer-row">
         <input
           id="answer"
           type="text"
@@ -501,6 +613,11 @@
           disabled>
         <button id="action" disabled>Submit</button>
       </div>
+
+      <!-- Multiple-choice options (C-016): shown in place of the answer row
+           for multiple_choice questions. Built from the payload's `options`
+           array; clicking a choice submits that option's text. -->
+      <div class="choices" id="choices" hidden></div>
 
       <!-- Inline hint under the input (C-015): shown when Submit fires on an
            empty field; cleared as soon as the user types. Distinct from the
@@ -519,9 +636,6 @@
 
     <!-- Status / gate messaging. -->
     <p class="note" id="note"></p>
-
-    <!-- Placeholders for later commits. -->
-    <div id="bank-selector"></div>
 
     <!-- Import panel (C-017): collapsed disclosure. The panel is built/torn
          down by JS on toggle so its category picker always reflects current
@@ -550,24 +664,36 @@
    Session state (C-014) is data-oriented: a single `sessions` array of plain
    records is the source of truth. Three transitions mutate it (startSession,
    recordStats, endSession); everything visible is a pure render derived from
-   it. A session record:
+   it. A session record (C-016 adds bankId/bankName):
      { id:int, categoryId:int, categoryName:str,
+       bankId:int|null, bankName:str|null,
        status:"active"|"ended",
        stats:{total,correct,accuracy,streak} }
    activeSessionId points at the one record with status "active" (or null in
    the resting state). The stats bar renders the active record's stats; the
-   run log renders ended records that have at least one answer. */
+   run log renders ended records that have at least one answer.
+
+   C-016 drill targeting: state.selection holds what the user has chosen to
+   drill -- {categoryId, categoryName, bankId|null, bankName|null}. Arithmetic
+   has bankId null and auto-starts; a bank category requires a bank choice.
+   state.recentIds is the per-active-session list of recently served bank
+   question ids (last 10) passed as recent= for soft repeat-avoidance. */
 
 var STREAK_PIPS_MAX = 10; /* visual cap for the signature pip row */
+var RECENT_MAX = 10;      /* C-016: per-session recent-id window for recent= */
 
 var state = {
   sessions: [],            /* run log: all sessions created this page visit */
   activeSessionId: null,   /* id of the active record, or null when resting */
   arithmeticCategoryId: null,
   arithmeticCategoryName: "arithmetic",
-  categories: [],          /* category records from /api/categories (C-017
-                              import picker reads these; C-016 will attach
-                              banks to them) */
+  categories: [],          /* category records from /api/categories, with a
+                              `banks` array attached by fetchAndAttachBanks
+                              (C-016) -- /api/categories itself carries none */
+  selection: null,         /* C-016: {categoryId, categoryName, bankId,
+                              bankName} -- the current drill target */
+  recentIds: [],           /* C-016: last-RECENT_MAX served bank question ids
+                              for the active session (recent= param) */
   current: null,           /* the question payload now on screen */
   phase: "idle"            /* idle | resting | loading | answering | feedback */
 };
@@ -590,7 +716,11 @@ var el = {
   runLogList: document.getElementById("run-log-list"),
   answerHint: document.getElementById("answer-hint"),
   importToggle: document.getElementById("import-toggle"),
-  importPanel: document.getElementById("import-panel")
+  importPanel: document.getElementById("import-panel"),
+  bankSelector: document.getElementById("bank-selector"),
+  bank:      document.getElementById("bank"),
+  answerRow: document.getElementById("answer-row"),
+  choices:   document.getElementById("choices")
 };
 
 /* ---- API helpers ------------------------------------------------------ */
@@ -630,13 +760,34 @@ async function apiPost(path, body) {
 }
 
 /* ---- Drillability gate ------------------------------------------------
-   A category is drillable in C-013 if it is arithmetic OR it has at least one
-   bank. Bank selection is C-016, so `banks` is never populated yet and only
-   arithmetic is live -- but the predicate is written so C-016 turns the rest
-   on by wiring /api/banks, not by editing this gate. */
+   A category is drillable if it is arithmetic OR it has at least one bank.
+   The predicate has been unchanged since C-013; C-016 finally feeds it real
+   data by attaching `banks` to each category (fetchAndAttachBanks below),
+   since /api/categories itself carries no banks. */
 function isDrillable(category) {
   return category.name === "arithmetic" ||
          (Array.isArray(category.banks) && category.banks.length > 0);
+}
+
+/* C-016: fetch all banks once and attach a `banks` array to each category in
+   state.categories, grouped by category_id. This is what makes the gate work
+   and what feeds the bank selector. /api/categories does not include banks,
+   so this separate fetch is required. Safe to call repeatedly (after import,
+   refreshCategories calls it again). On failure, categories keep whatever
+   banks they had (or none) -- non-fatal. */
+async function fetchAndAttachBanks() {
+  var data = await apiGet("/api/banks");
+  var byCategory = {};
+  (data.banks || []).forEach(function (bank) {
+    var key = String(bank.category_id);
+    if (!byCategory[key]) {
+      byCategory[key] = [];
+    }
+    byCategory[key].push(bank);
+  });
+  state.categories.forEach(function (category) {
+    category.banks = byCategory[String(category.id)] || [];
+  });
 }
 
 /* ---- Stats bar -------------------------------------------------------- */
@@ -700,21 +851,36 @@ function activeSession() {
   return null;
 }
 
-/* Start a session on the server and append a fresh active record. The record
-   carries its category (uniform "arithmetic" until C-016, but carried now so
-   C-016 needs no reshape). Returns the new id. */
+/* Start a session on the server for the current selection and append a fresh
+   active record carrying its category and (for bank categories) its bank.
+   Sends bank_id to /api/session/start when a bank is selected. Resets the
+   per-session recent-id window. Returns the new id.
+
+   The selection defaults to arithmetic when nothing else is chosen (e.g. on
+   boot), preserving C-013's arithmetic auto-start. */
 async function startSession() {
-  var result = await apiPost("/api/session/start", {
-    category_id: state.arithmeticCategoryId
-  });
-  state.sessions.push({
-    id: result.session_id,
+  var sel = state.selection || {
     categoryId: state.arithmeticCategoryId,
     categoryName: state.arithmeticCategoryName,
+    bankId: null,
+    bankName: null
+  };
+  var body = { category_id: sel.categoryId };
+  if (sel.bankId !== null && sel.bankId !== undefined) {
+    body.bank_id = sel.bankId;
+  }
+  var result = await apiPost("/api/session/start", body);
+  state.sessions.push({
+    id: result.session_id,
+    categoryId: sel.categoryId,
+    categoryName: sel.categoryName,
+    bankId: sel.bankId !== undefined ? sel.bankId : null,
+    bankName: sel.bankName !== undefined ? sel.bankName : null,
     status: "active",
     stats: ZERO_STATS
   });
   state.activeSessionId = result.session_id;
+  state.recentIds = []; /* fresh repeat-avoidance window per session */
   return result.session_id;
 }
 
@@ -838,7 +1004,13 @@ function renderRunLog() {
 
     var cat = document.createElement("span");
     cat.className = "run-cat";
-    cat.textContent = run.categoryName + " #" + run.id;
+    /* Runs are category (+ bank, for bank categories). Name both so the log
+       distinguishes a vocabulary/spanish run from vocabulary/french. */
+    var runLabel = run.categoryName;
+    if (run.bankName) {
+      runLabel += " / " + run.bankName;
+    }
+    cat.textContent = runLabel + " #" + run.id;
     li.appendChild(cat);
 
     var figs = document.createElement("span");
@@ -896,20 +1068,27 @@ async function loadQuestion() {
   el.action.disabled = true;
   el.answer.disabled = true;
   el.answer.value = "";
+  clearChoices();
   clearFeedback();
   el.expression.textContent = "...";
 
   try {
-    /* Auto-start a session if none is active (C-013 behavior, now expressed
-       as a transition). An explicit End puts us in the resting state; the
-       next question auto-starts a fresh run, same as page load. */
+    /* Auto-start a session if none is active. For arithmetic this is the
+       C-013 auto-start; for a bank category the session was already started
+       by the bank selection (onBankChange), so this branch is the arithmetic
+       fallback / resting-restart path. */
     if (state.activeSessionId === null) {
       await startSession();
       renderSessionUI();
     }
-    var payload = await apiGet("/api/question?category=arithmetic");
+    var payload = await apiGet(questionQuery());
     state.current = payload;
-    el.expression.textContent = payload.question_text;
+    /* Track served bank question ids for soft repeat-avoidance (recent=).
+       Arithmetic ids are null and are not tracked. */
+    if (payload.question_id !== null && payload.question_id !== undefined) {
+      pushRecent(payload.question_id);
+    }
+    renderQuestion(payload);
     enterAnswering();
   } catch (error) {
     el.expression.textContent = "--";
@@ -918,13 +1097,97 @@ async function loadQuestion() {
   }
 }
 
+/* Build the GET /api/question URL for the active selection. Arithmetic uses
+   just category; a bank category adds bank_id and the recent= window. */
+function questionQuery() {
+  var sel = state.selection || { categoryName: state.arithmeticCategoryName,
+                                  bankId: null };
+  if (sel.bankId === null || sel.bankId === undefined) {
+    return "/api/question?category=arithmetic";
+  }
+  var params = "category=" + encodeURIComponent(sel.categoryName)
+             + "&bank_id=" + encodeURIComponent(sel.bankId);
+  if (state.recentIds.length > 0) {
+    params += "&recent=" + state.recentIds.join(",");
+  }
+  return "/api/question?" + params;
+}
+
+/* Keep the last RECENT_MAX served bank ids. */
+function pushRecent(id) {
+  state.recentIds.push(id);
+  if (state.recentIds.length > RECENT_MAX) {
+    state.recentIds = state.recentIds.slice(-RECENT_MAX);
+  }
+}
+
+/* Render a question payload onto the stage. Text qtypes (arithmetic and
+   free_response/translate/identify) use the text input; multiple_choice
+   swaps in the choices list. Long bank prose gets the smaller .prose size. */
+function renderQuestion(payload) {
+  el.expression.textContent = payload.question_text;
+  var isArithmetic = payload.qtype === "arithmetic";
+  el.expression.classList.toggle("prose", !isArithmetic);
+
+  if (payload.qtype === "multiple_choice") {
+    el.answerRow.hidden = true;
+    renderChoices(payload.options || []);
+    el.choices.hidden = false;
+  } else {
+    el.choices.hidden = true;
+    clearChoices();
+    el.answerRow.hidden = false;
+    /* Numeric keypad for arithmetic; normal text for word answers. */
+    el.answer.setAttribute("inputmode", isArithmetic ? "numeric" : "text");
+    el.answer.setAttribute("placeholder", isArithmetic ? "answer" : "your answer");
+  }
+}
+
+/* Build the multiple-choice buttons. Each submits its own option text. */
+function renderChoices(options) {
+  el.choices.textContent = "";
+  options.forEach(function (optionText) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice";
+    button.textContent = optionText;
+    button.addEventListener("click", function () {
+      submitChoice(optionText);
+    });
+    el.choices.appendChild(button);
+  });
+}
+
+function clearChoices() {
+  el.choices.textContent = "";
+  el.choices.hidden = true;
+}
+
 function enterAnswering() {
   state.phase = "answering";
   clearAnswerHint();
-  el.answer.disabled = false;
-  el.action.disabled = false;
-  el.action.textContent = "Submit";
-  el.answer.focus();
+  if (state.current && state.current.qtype === "multiple_choice") {
+    /* Choice buttons are the input; the action button and text field stay
+       out of the way. Focus the first choice for keyboard users. */
+    el.action.disabled = true;
+    setChoicesDisabled(false);
+    var first = el.choices.querySelector(".choice");
+    if (first) {
+      first.focus();
+    }
+  } else {
+    el.answer.disabled = false;
+    el.action.disabled = false;
+    el.action.textContent = "Submit";
+    el.answer.focus();
+  }
+}
+
+function setChoicesDisabled(disabled) {
+  var buttons = el.choices.querySelectorAll(".choice");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].disabled = disabled;
+  }
 }
 
 async function submitAnswer() {
@@ -935,40 +1198,89 @@ async function submitAnswer() {
   if (userInput === "") {
     /* C-015: tell the user why nothing happened, instead of a silent refocus.
        The hint clears as soon as they type (see onAnswerInput). */
-    setAnswerHint("Enter a number to submit.");
+    setAnswerHint(emptyHintText());
     el.answer.focus();
     return;
   }
   clearAnswerHint();
+  el.answer.disabled = true;
+  await gradeAndShow(userInput);
+}
 
+/* Multiple-choice: the clicked option's text is the answer. Disables the
+   choices, then grades through the same path as a typed answer. */
+async function submitChoice(optionText) {
+  if (state.phase !== "answering" || state.current === null) {
+    return;
+  }
+  setChoicesDisabled(true);
+  await gradeAndShow(optionText);
+}
+
+/* Shared grading path for both typed answers and chosen options. Posts to
+   /api/answer with the served context: the real question_id for bank
+   questions (null for arithmetic), the qtype, and alternatives for text
+   qtypes. Arithmetic sends no tolerance (exact compare) and no alternatives. */
+async function gradeAndShow(userInput) {
   state.phase = "loading";
   el.action.disabled = true;
-  el.answer.disabled = true;
 
   var q = state.current;
   var sessionId = state.activeSessionId;
+  var body = {
+    session_id: sessionId,
+    qtype: q.qtype,
+    question_text: q.question_text,
+    expected: q.expected,
+    user_input: userInput,
+    /* Arithmetic: question_id is null -> NULL response row. Bank questions:
+       the real stored id passes through as an int -> proper FK. */
+    question_id: q.question_id
+  };
+  /* Text qtypes accept also-correct answers; forward them so the server can
+     match. multiple_choice ignores alternatives (exact match); arithmetic
+     has none. */
+  if (q.alternatives && q.alternatives.length > 0) {
+    body.alternatives = q.alternatives;
+  }
   try {
-    var result = await apiPost("/api/answer", {
-      session_id: sessionId,
-      qtype: q.qtype,
-      question_text: q.question_text,
-      expected: q.expected,
-      user_input: userInput,
-      /* Arithmetic is generated: pass question_id through as JSON null (not a
-         string) so it lands as a proper NULL in responses.question_id. No
-         alternatives, no tolerance (exact integer compare), no recent= . */
-      question_id: q.question_id
-    });
+    var result = await apiPost("/api/answer", body);
     /* Single source of truth: fold the snapshot into the session record and
        let the derived render redraw the stats bar (and any run log). */
     recordStats(sessionId, result.session_stats);
     renderSessionUI();
     showFeedback(result);
+    if (q.qtype === "multiple_choice") {
+      markChoices(result);
+    }
     enterFeedback();
   } catch (error) {
     setNote(error.message, true);
     /* Let the user retry the same question rather than losing it. */
     enterAnswering();
+  }
+}
+
+/* The empty-submit hint text depends on the question type: arithmetic wants
+   a number, word answers want text. */
+function emptyHintText() {
+  if (state.current && state.current.qtype === "arithmetic") {
+    return "Enter a number to submit.";
+  }
+  return "Enter an answer to submit.";
+}
+
+/* After grading a multiple_choice question, mark the correct option and, on a
+   miss, the wrong pick, so the feedback is visible on the choices too. */
+function markChoices(result) {
+  var buttons = el.choices.querySelectorAll(".choice");
+  for (var i = 0; i < buttons.length; i++) {
+    var text = buttons[i].textContent;
+    if (text === result.expected) {
+      buttons[i].classList.add("correct");
+    } else if (!result.correct && text === result.user_input) {
+      buttons[i].classList.add("wrong");
+    }
   }
 }
 
@@ -1115,10 +1427,13 @@ function enterResting() {
   state.phase = "resting";
   state.current = null;
   el.expression.textContent = "--";
+  el.expression.classList.remove("prose");
   el.answer.value = "";
   el.answer.disabled = true;
+  el.answerRow.hidden = false;
   el.action.disabled = true;
   el.action.textContent = "Submit";
+  clearChoices();
   clearAnswerHint();
   clearFeedback();
 }
@@ -1151,7 +1466,7 @@ async function onStartSession() {
   await loadQuestion(); /* loadQuestion auto-starts when none is active */
 }
 
-/* ---- Category wiring -------------------------------------------------- */
+/* ---- Category + bank wiring (C-016) ----------------------------------- */
 
 function populateCategories(categories) {
   state.categories = categories;
@@ -1172,15 +1487,95 @@ function populateCategories(categories) {
   });
 }
 
-/* C-013 drills arithmetic only; the selector defaults to it. Selecting a
-   different (gated) category is impossible since they are disabled. When
-   C-016 makes more categories drillable, this handler is where switching
-   logic will grow. */
-function onCategoryChange() {
-  var selected = el.category.options[el.category.selectedIndex];
-  if (selected && selected.dataset.name === "arithmetic") {
-    loadQuestion();
+/* Find a category record by id (string or number). */
+function findCategory(id) {
+  for (var i = 0; i < state.categories.length; i++) {
+    if (String(state.categories[i].id) === String(id)) {
+      return state.categories[i];
+    }
   }
+  return null;
+}
+
+/* Selecting a category: arithmetic hides the bank selector and drills
+   immediately (its run auto-starts, as before). A bank category reveals the
+   bank selector populated with that category's banks and waits for a bank
+   choice -- selecting the category alone does not start a run. */
+function onCategoryChange() {
+  var category = findCategory(el.category.value);
+  if (!category) {
+    return;
+  }
+  if (category.name === "arithmetic") {
+    el.bankSelector.hidden = true;
+    switchSelection({
+      categoryId: category.id,
+      categoryName: category.name,
+      bankId: null,
+      bankName: null
+    });
+    return;
+  }
+  /* Bank category: show its banks and let the user pick one. */
+  showBankSelector(category);
+}
+
+/* Populate and reveal the bank selector for a category. Auto-selects the
+   first bank and starts drilling it (so choosing a category gets you into a
+   run without a second click), matching how arithmetic starts on selection. */
+function showBankSelector(category) {
+  var banks = category.banks || [];
+  el.bank.textContent = "";
+  banks.forEach(function (bank) {
+    var option = document.createElement("option");
+    option.value = String(bank.id);
+    option.dataset.name = bank.name;
+    option.textContent = bank.name;
+    el.bank.appendChild(option);
+  });
+  el.bankSelector.hidden = banks.length === 0;
+  if (banks.length === 0) {
+    return;
+  }
+  /* Drill the first bank by default. */
+  el.bank.selectedIndex = 0;
+  switchSelection({
+    categoryId: category.id,
+    categoryName: category.name,
+    bankId: banks[0].id,
+    bankName: banks[0].name
+  });
+}
+
+/* Selecting a bank from the bank selector: switch the run to that bank. */
+function onBankChange() {
+  var category = findCategory(el.category.value);
+  if (!category) {
+    return;
+  }
+  var option = el.bank.options[el.bank.selectedIndex];
+  if (!option) {
+    return;
+  }
+  switchSelection({
+    categoryId: category.id,
+    categoryName: category.name,
+    bankId: parseInt(option.value, 10),
+    bankName: option.dataset.name
+  });
+}
+
+/* Set the drill target and (re)start a run for it. If a run is active, end
+   it first (preserved in the run log, per C-014) -- switching category or
+   bank is a deliberate "new run" action, like Restart. Then drill. */
+async function switchSelection(selection) {
+  setNote("");
+  state.selection = selection;
+  if (state.activeSessionId !== null) {
+    await endSession(state.activeSessionId);
+    renderSessionUI();
+  }
+  await loadQuestion(); /* auto-starts a fresh session for the new selection */
 }
 
 /* ---- Import (C-017) ---------------------------------------------------
@@ -1343,14 +1738,27 @@ async function onImportSubmit() {
       "Imported " + data.imported + " question"
       + (data.imported === 1 ? "" : "s") + " into '" + bankLabel + "'.",
       "ok");
-    /* Refresh categories so the drillability gate updates now that a bank
-       exists. C-016 will read the attached banks to light up the category
-       and offer the bank in its selector. */
+    /* Refresh categories AND banks so the drillability gate updates now that
+       a bank exists: the category un-gates and its new bank is selectable.
+       This is the C-016 fix for the C-017 symptom (category stayed gated). */
     await refreshCategories();
+    /* C-016 fold-in: collapse the panel on success so the user is returned to
+       the drill. Kept open on error (the catch below) so they can fix and
+       retry. A brief delay lets the success message be seen first. */
+    setTimeout(collapseImportPanel, 1200);
   } catch (error) {
     setImportStatus(error.message, "error");
   } finally {
     submit.disabled = false;
+  }
+}
+
+/* Collapse the import disclosure (used after a successful import). */
+function collapseImportPanel() {
+  if (el.importToggle.getAttribute("aria-expanded") === "true") {
+    el.importPanel.hidden = true;
+    el.importToggle.setAttribute("aria-expanded", "false");
+    el.importToggle.textContent = "+ Import a bank";
   }
 }
 
@@ -1362,6 +1770,11 @@ async function refreshCategories() {
     var data = await apiGet("/api/categories");
     var previous = el.category.value;
     populateCategories(data.categories);
+    /* CRITICAL (C-016 fix): re-attach banks after re-populating, since
+       /api/categories carries none. Without this the just-imported category
+       would re-render still gated -- this was the C-017 gray-dropdown bug. */
+    await fetchAndAttachBanks();
+    populateCategories(state.categories); /* re-render now that banks exist */
     /* Restore prior selection when it still exists and is enabled. */
     var optionToRestore = null;
     for (var i = 0; i < el.category.options.length; i++) {
@@ -1387,6 +1800,7 @@ async function boot() {
   el.answer.addEventListener("keydown", onAnswerKey);
   el.answer.addEventListener("input", onAnswerInput);
   el.category.addEventListener("change", onCategoryChange);
+  el.bank.addEventListener("change", onBankChange);
   el.importToggle.addEventListener("click", onImportToggle);
   document.addEventListener("keydown", onDocumentKey);
   window.addEventListener("beforeunload", endSessionOnUnload);
@@ -1394,13 +1808,30 @@ async function boot() {
   try {
     var data = await apiGet("/api/categories");
     populateCategories(data.categories);
+    /* Attach banks (separate fetch -- /api/categories has none), then
+       re-render so any category with banks is already un-gated on load. A
+       banks-fetch failure is non-fatal: arithmetic still drills. */
+    try {
+      await fetchAndAttachBanks();
+      populateCategories(state.categories);
+    } catch (banksError) {
+      /* Leave categories bank-less; only arithmetic will be drillable. */
+    }
 
     if (state.arithmeticCategoryId === null) {
       setNote("No arithmetic category found. Check the seeded categories.", true);
       return;
     }
-    /* Default selection is arithmetic (first seeded category); start drilling. */
+    /* Default selection is arithmetic (first seeded category); start drilling.
+       Set the selection explicitly so startSession targets arithmetic. */
     el.category.value = String(state.arithmeticCategoryId);
+    el.bankSelector.hidden = true;
+    state.selection = {
+      categoryId: state.arithmeticCategoryId,
+      categoryName: state.arithmeticCategoryName,
+      bankId: null,
+      bankName: null
+    };
     renderSessionUI(); /* show controls/zeroed bar before the first answer */
     await loadQuestion();
   } catch (error) {
