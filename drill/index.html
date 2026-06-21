@@ -3,6 +3,7 @@
   index.html -- Drill frontend.
 
   C-013: Minimal HTML page with the drill UI (arithmetic loop).
+  C-014: Session lifecycle UI (end, restart) + in-memory run log.
   Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
   ASCII only.
 
@@ -11,8 +12,20 @@
   life, question render, answer grading via POST /api/answer, live session
   stats read from the answer response, and load-next.
 
-  Deliberately NOT in C-013 (later commits own these):
-    - visible session lifecycle: see/end/switch/restart    -> C-014
+  Scope (C-014): the session becomes visible and controllable. End the active
+  session (-> resting state) and restart (end + start a fresh run). Sessions
+  created during THIS page visit are retained in an in-memory run log and
+  rendered newest-first; durable cross-visit history is C-019 (GET /api/stats)
+  and is deliberately not touched here -- C-014 reads nothing new from the
+  server, it retains and renders the session_stats snapshots it was handed.
+
+  Data-oriented design (C-014): one `sessions` array of plain records is the
+  single source of truth. Three isolated transitions mutate it (startSession,
+  recordStats, endSession); the stats bar and run log are pure renders derived
+  from the array, never hand-patched. One meaning per surface: the stats bar
+  always shows the ACTIVE session; the run log shows FINISHED runs.
+
+  Deliberately NOT in C-014 (later commits own these):
     - keyboard interaction (Enter/Space/Escape niceties)   -> C-015
     - bank selection + non-arithmetic categories           -> C-016
     - import section                                       -> C-017
@@ -241,6 +254,78 @@
   .feedback .detail { font-size: 0.85rem; color: var(--muted); }
   .feedback .detail b { color: var(--paper); font-weight: 500; }
 
+  /* ---- Session controls (C-014) --------------------------------------- */
+  /* A quiet control row under the stats bar. The active session has an
+     "End" and a "Restart" control; the resting state (no active session)
+     shows a single "Start new session" control. Secondary styling so the
+     loop's primary action (Submit/Next) stays visually dominant. */
+  .session-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .session-controls .session-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-right: auto;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--paper);
+    border: 1px solid var(--line);
+    padding: 0.45rem 0.85rem;
+    font-size: 0.8rem;
+  }
+  button.secondary:hover:not(:disabled) {
+    background: var(--ground-soft);
+    border-color: var(--muted-dim);
+  }
+
+  /* ---- Run log (C-014) -------------------------------------------------
+     Finished sessions from this page visit, newest-first. Pure render of
+     the `sessions` array. Hidden entirely until there is at least one
+     ended, non-empty run to show. */
+  .run-log { display: flex; flex-direction: column; gap: 0.5rem; }
+  .run-log .run-log-title {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .run-log ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .run-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.55rem 0.75rem;
+    background: var(--ground-soft);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    font-size: 0.82rem;
+  }
+  .run-row .run-cat {
+    color: var(--paper);
+    font-variant-numeric: tabular-nums;
+  }
+  .run-row .run-figs {
+    margin-left: auto;
+    display: flex;
+    gap: 1rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .run-row .run-figs b { color: var(--paper); font-weight: 500; }
+
   /* ---- Gate / status notes -------------------------------------------- */
   .note {
     font-size: 0.85rem;
@@ -292,6 +377,11 @@
       </div>
     </div>
 
+    <!-- Session controls (C-014): the active session's lifecycle, made
+         visible. Contents are rendered from session state so the resting
+         state (no active session) and the active state share one render. -->
+    <div class="session-controls" id="session-controls"></div>
+
     <!-- Question stage: the expression is the hero. -->
     <section class="stage">
       <div class="expression" id="expression" aria-live="polite">--</div>
@@ -313,6 +403,13 @@
       <div class="feedback" id="feedback" aria-live="polite"></div>
     </section>
 
+    <!-- Run log (C-014): finished sessions from this visit, newest-first.
+         Rendered from the `sessions` array; hidden when empty. -->
+    <div class="run-log" id="run-log" hidden>
+      <div class="run-log-title">This session's runs</div>
+      <ol id="run-log-list"></ol>
+    </div>
+
     <!-- Status / gate messaging. -->
     <p class="note" id="note"></p>
 
@@ -325,20 +422,35 @@
 <script>
 "use strict";
 /* C-013 -- arithmetic drill loop.
+   C-014 -- session lifecycle + in-memory run log.
 
-   State is intentionally tiny and lives in module scope: the active session
-   id (auto-started once and reused), the question payload currently on
-   screen (echoed back to /api/answer), and a phase flag that says whether
-   the action button submits an answer or advances to the next question. */
+   State lives in module scope. The drill-loop part is tiny: the question
+   payload currently on screen (echoed back to /api/answer) and a phase flag
+   that says whether the action button submits or advances.
+
+   Session state (C-014) is data-oriented: a single `sessions` array of plain
+   records is the source of truth. Three transitions mutate it (startSession,
+   recordStats, endSession); everything visible is a pure render derived from
+   it. A session record:
+     { id:int, categoryId:int, categoryName:str,
+       status:"active"|"ended",
+       stats:{total,correct,accuracy,streak} }
+   activeSessionId points at the one record with status "active" (or null in
+   the resting state). The stats bar renders the active record's stats; the
+   run log renders ended records that have at least one answer. */
 
 var STREAK_PIPS_MAX = 10; /* visual cap for the signature pip row */
 
 var state = {
-  sessionId: null,        /* set on first question; reused for page life */
+  sessions: [],            /* run log: all sessions created this page visit */
+  activeSessionId: null,   /* id of the active record, or null when resting */
   arithmeticCategoryId: null,
-  current: null,          /* the question payload now on screen */
-  phase: "idle"           /* idle | loading | answering | feedback */
+  arithmeticCategoryName: "arithmetic",
+  current: null,           /* the question payload now on screen */
+  phase: "idle"            /* idle | resting | loading | answering | feedback */
 };
+
+var ZERO_STATS = { total: 0, correct: 0, accuracy: 0.0, streak: 0 };
 
 var el = {
   category:  document.getElementById("category"),
@@ -350,7 +462,10 @@ var el = {
   statTotal: document.getElementById("stat-total"),
   statAccuracy: document.getElementById("stat-accuracy"),
   statStreak: document.getElementById("stat-streak"),
-  streakPips: document.getElementById("streak-pips")
+  streakPips: document.getElementById("streak-pips"),
+  sessionControls: document.getElementById("session-controls"),
+  runLog:    document.getElementById("run-log"),
+  runLogList: document.getElementById("run-log-list")
 };
 
 /* ---- API helpers ------------------------------------------------------ */
@@ -435,31 +550,195 @@ function setNote(text, isError) {
   el.note.classList.toggle("error", !!isError);
 }
 
-/* ---- Session ---------------------------------------------------------- */
+/* ---- Session state: transitions (the only mutators of state.sessions) --
 
-/* Auto-start a single session the first time the user needs one, and reuse
-   it for the life of the page. C-013 owns only "a session exists so answers
-   can be logged"; seeing/ending/switching sessions is C-014. */
-async function ensureSession() {
-  if (state.sessionId !== null) {
-    return state.sessionId;
+   These three functions are the single place session records change. Callers
+   never touch state.sessions or the DOM for sessions directly; they call a
+   transition and then renderSessionUI(), which derives every visible surface
+   from the array. */
+
+/* Find the active record (status "active"), or null in the resting state. */
+function activeSession() {
+  for (var i = 0; i < state.sessions.length; i++) {
+    if (state.sessions[i].id === state.activeSessionId) {
+      return state.sessions[i];
+    }
   }
+  return null;
+}
+
+/* Start a session on the server and append a fresh active record. The record
+   carries its category (uniform "arithmetic" until C-016, but carried now so
+   C-016 needs no reshape). Returns the new id. */
+async function startSession() {
   var result = await apiPost("/api/session/start", {
     category_id: state.arithmeticCategoryId
   });
-  state.sessionId = result.session_id;
-  return state.sessionId;
+  state.sessions.push({
+    id: result.session_id,
+    categoryId: state.arithmeticCategoryId,
+    categoryName: state.arithmeticCategoryName,
+    status: "active",
+    stats: ZERO_STATS
+  });
+  state.activeSessionId = result.session_id;
+  return result.session_id;
 }
 
-/* Dev cleanup, not session UI: end the auto-started session on page
-   close/refresh so the DB does not fill with dangling never-ended sessions
-   during development. Unknown-id end is a harmless no-op server-side. Uses
-   sendBeacon so the request survives unload. */
-function endSessionOnUnload() {
-  if (state.sessionId === null) {
+/* Fold a session_stats snapshot (from /api/answer) into the active record.
+   Pure assignment into the one record; no DOM here. */
+function recordStats(sessionId, stats) {
+  for (var i = 0; i < state.sessions.length; i++) {
+    if (state.sessions[i].id === sessionId) {
+      state.sessions[i].stats = {
+        total: stats.total,
+        correct: stats.correct,
+        accuracy: stats.accuracy,
+        streak: stats.streak
+      };
+      return;
+    }
+  }
+}
+
+/* End a session on the server and mark its record "ended". If it is the
+   active one, the resting state begins (activeSessionId -> null). Ending an
+   unknown/already-ended id is a harmless server no-op, so this is safe to
+   call without first checking server state. */
+async function endSession(sessionId) {
+  if (sessionId === null) {
     return;
   }
-  var payload = JSON.stringify({ session_id: state.sessionId });
+  try {
+    await apiPost("/api/session/end", { session_id: sessionId });
+  } catch (error) {
+    /* A failed end should not strand the UI: still mark it ended locally and
+       surface the message. The server treats unknown ids as no-ops anyway. */
+    setNote(error.message, true);
+  }
+  for (var i = 0; i < state.sessions.length; i++) {
+    if (state.sessions[i].id === sessionId) {
+      state.sessions[i].status = "ended";
+      break;
+    }
+  }
+  if (state.activeSessionId === sessionId) {
+    state.activeSessionId = null;
+  }
+}
+
+/* ---- Session UI: derived renders (never hand-patched) ----------------- */
+
+/* Draw every session-derived surface from the array in one place: the stats
+   bar (active session, or zeros when resting) and the run log (ended,
+   non-empty runs, newest-first). */
+function renderSessionUI() {
+  var active = activeSession();
+  renderStats(active ? active.stats : ZERO_STATS);
+  /* The streak pips are meaningful only for an in-progress run; hide the row
+     in the resting state so the bar reads as "nothing in progress". */
+  el.streakPips.style.visibility = active ? "visible" : "hidden";
+  renderSessionControls(active);
+  renderRunLog();
+}
+
+/* The control row. Active: a "Restart" and an "End" control. Resting: a
+   single "Start new session" control. Rendered from state, so the two states
+   share one code path. */
+function renderSessionControls(active) {
+  el.sessionControls.textContent = "";
+
+  var label = document.createElement("span");
+  label.className = "session-label";
+  if (active) {
+    label.textContent = "Session " + active.id;
+    el.sessionControls.appendChild(label);
+
+    var restart = document.createElement("button");
+    restart.type = "button";
+    restart.className = "secondary";
+    restart.id = "restart-session";
+    restart.textContent = "Restart";
+    restart.addEventListener("click", onRestartSession);
+    el.sessionControls.appendChild(restart);
+
+    var end = document.createElement("button");
+    end.type = "button";
+    end.className = "secondary";
+    end.id = "end-session";
+    end.textContent = "End session";
+    end.addEventListener("click", onEndSession);
+    el.sessionControls.appendChild(end);
+  } else {
+    label.textContent = "No active session";
+    el.sessionControls.appendChild(label);
+
+    var start = document.createElement("button");
+    start.type = "button";
+    start.className = "secondary";
+    start.id = "start-session";
+    start.textContent = "Start new session";
+    start.addEventListener("click", onStartSession);
+    el.sessionControls.appendChild(start);
+  }
+}
+
+/* The run log: ended sessions with at least one answer, newest-first. A
+   started-but-never-answered session (total 0) is not a run and is omitted.
+   Pure projection of state.sessions; rebuilt wholesale each call. */
+function renderRunLog() {
+  var runs = state.sessions.filter(function (s) {
+    return s.status === "ended" && s.stats.total > 0;
+  });
+  runs.reverse(); /* array is append order (oldest-first); show newest-first */
+
+  el.runLogList.textContent = "";
+  if (runs.length === 0) {
+    el.runLog.hidden = true;
+    return;
+  }
+  el.runLog.hidden = false;
+
+  runs.forEach(function (run) {
+    var li = document.createElement("li");
+    li.className = "run-row";
+
+    var cat = document.createElement("span");
+    cat.className = "run-cat";
+    cat.textContent = run.categoryName + " #" + run.id;
+    li.appendChild(cat);
+
+    var figs = document.createElement("span");
+    figs.className = "run-figs";
+    figs.appendChild(figure(run.stats.total, "answered"));
+    figs.appendChild(figure(Math.round(run.stats.accuracy * 100) + "%", "accuracy"));
+    figs.appendChild(figure(run.stats.streak, "final streak"));
+    li.appendChild(figs);
+
+    el.runLogList.appendChild(li);
+  });
+}
+
+/* A small run-row figure: an emphasized value followed by a muted label
+   (e.g. "<b>12</b> answered"). The value is the data; the label names it. */
+function figure(value, label) {
+  var span = document.createElement("span");
+  var head = document.createElement("b");
+  head.textContent = String(value);
+  span.appendChild(head);
+  span.appendChild(document.createTextNode(" " + label));
+  return span;
+}
+
+/* Dev cleanup, not session UI: end the active session on page close/refresh
+   so the DB does not fill with dangling never-ended sessions during
+   development. Unknown-id end is a harmless no-op server-side. Uses
+   sendBeacon so the request survives unload. */
+function endSessionOnUnload() {
+  if (state.activeSessionId === null) {
+    return;
+  }
+  var payload = JSON.stringify({ session_id: state.activeSessionId });
   if (navigator.sendBeacon) {
     navigator.sendBeacon(
       "/api/session/end",
@@ -488,7 +767,13 @@ async function loadQuestion() {
   el.expression.textContent = "...";
 
   try {
-    await ensureSession();
+    /* Auto-start a session if none is active (C-013 behavior, now expressed
+       as a transition). An explicit End puts us in the resting state; the
+       next question auto-starts a fresh run, same as page load. */
+    if (state.activeSessionId === null) {
+      await startSession();
+      renderSessionUI();
+    }
     var payload = await apiGet("/api/question?category=arithmetic");
     state.current = payload;
     el.expression.textContent = payload.question_text;
@@ -523,9 +808,10 @@ async function submitAnswer() {
   el.answer.disabled = true;
 
   var q = state.current;
+  var sessionId = state.activeSessionId;
   try {
     var result = await apiPost("/api/answer", {
-      session_id: state.sessionId,
+      session_id: sessionId,
       qtype: q.qtype,
       question_text: q.question_text,
       expected: q.expected,
@@ -535,7 +821,10 @@ async function submitAnswer() {
          alternatives, no tolerance (exact integer compare), no recent= . */
       question_id: q.question_id
     });
-    renderStats(result.session_stats);
+    /* Single source of truth: fold the snapshot into the session record and
+       let the derived render redraw the stats bar (and any run log). */
+    recordStats(sessionId, result.session_stats);
+    renderSessionUI();
     showFeedback(result);
     enterFeedback();
   } catch (error) {
@@ -605,6 +894,52 @@ function onAnswerKey(event) {
   }
 }
 
+/* ---- Session lifecycle controls (C-014) ------------------------------- */
+
+/* Put the stage in the resting state: no question, controls offer "Start
+   new session". The just-ended run (if any) is already in the log via the
+   endSession transition. One meaning per surface -- the stats bar resets to
+   zeros here because it always reflects the ACTIVE session, and there is
+   none. */
+function enterResting() {
+  state.phase = "resting";
+  state.current = null;
+  el.expression.textContent = "--";
+  el.answer.value = "";
+  el.answer.disabled = true;
+  el.action.disabled = true;
+  el.action.textContent = "Submit";
+  clearFeedback();
+}
+
+/* End the active session explicitly and rest. The ended run joins the log
+   (if it has at least one answer). */
+async function onEndSession() {
+  if (state.activeSessionId === null) {
+    return;
+  }
+  setNote("");
+  await endSession(state.activeSessionId);
+  enterResting();
+  renderSessionUI();
+}
+
+/* Restart = end the current run (preserved in the log) + start a fresh one,
+   then drill. Confirmed behavior: the just-ended run stays visible; the new
+   run begins with zeroed stats. */
+async function onRestartSession() {
+  setNote("");
+  await endSession(state.activeSessionId);
+  renderSessionUI(); /* show the ended run in the log + resting bar briefly */
+  await loadQuestion(); /* auto-starts a fresh session and serves a question */
+}
+
+/* Start a new session from the resting state and drill. */
+async function onStartSession() {
+  setNote("");
+  await loadQuestion(); /* loadQuestion auto-starts when none is active */
+}
+
 /* ---- Category wiring -------------------------------------------------- */
 
 function populateCategories(categories) {
@@ -654,6 +989,7 @@ async function boot() {
     }
     /* Default selection is arithmetic (first seeded category); start drilling. */
     el.category.value = String(state.arithmeticCategoryId);
+    renderSessionUI(); /* show controls/zeroed bar before the first answer */
     await loadQuestion();
   } catch (error) {
     setNote(error.message, true);
