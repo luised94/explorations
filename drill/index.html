@@ -7,6 +7,7 @@
   C-015: Keyboard control + empty-answer hint.
   C-017: Import UI (upload a JSONL/CSV bank).
   C-016: Bank selection + drilling non-arithmetic categories.
+  C-018a: TTS pronunciation (click-to-hear) for language questions.
   Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
   ASCII only.
 
@@ -69,9 +70,23 @@
   bank. Folded in: the import panel auto-collapses on success (stays open on
   error).
 
-  Deliberately NOT in C-016 (later commits own these):
-    - TTS pronunciation                                    -> C-018
+  Scope (C-018a): TTS pronunciation. A speaker button on the question stage
+  lets the user hear the prompt read aloud, for questions where the prompt is
+  itself the foreign-language content -- qtype translate or identify -- and
+  the bank carries an ISO 639-1 language code. The language is sourced from
+  the active drill selection (the chosen bank), NOT from the question payload
+  (the payload carries no language field; see the C-018b comment in drill.py
+  for the deferred per-question-language path). The browser SpeechSynthesis
+  API is the one weird external dependency; it is global, stateful, and async,
+  so it is quarantined behind a tiny speech wrapper (speak/cancelSpeech) that
+  is the ONLY code here that touches window.speechSynthesis. Speech is
+  cancelled on every question transition, session end, and page unload so a
+  prior word never talks over a new question. Collect-only siblings (timing)
+  and the durable stats view remain later commits.
+
+  Deliberately NOT in C-018a (later commits own these):
     - stats view (GET /api/stats is still a 501 stub)      -> C-019
+    - per-answer timing collection (elapsed_ms)            -> C-018c
     - NOTED (no commit yet): a no-feedback "speed drill" mode where submit
       advances immediately and per-answer feedback is withheld until the run
       ends (feedback concentrated at session end). Deferred deliberately: it
@@ -265,6 +280,31 @@
     line-height: 1.25;
     max-width: 30rem;
   }
+
+  /* TTS speaker (C-018a): a quiet, secondary control under the prompt. Muted
+     by default, brightening toward the focus cyan on hover/focus -- it should
+     read as an aid, not compete with the expression or the answer input. */
+  .speaker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--ground-soft);
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .speaker[hidden] { display: none; }
+  .speaker:hover { color: var(--paper); border-color: var(--muted-dim); }
+  .speaker:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* While a word is being spoken, mark the control so the state is visible. */
+  .speaker.speaking { color: var(--focus); border-color: var(--focus); }
 
   .answer-row {
     display: flex;
@@ -603,6 +643,18 @@
     <section class="stage">
       <div class="expression" id="expression" aria-live="polite">--</div>
 
+      <!-- TTS speaker (C-018a): click to hear the prompt read aloud. Shown
+           only for language questions (translate/identify) on a bank that
+           carries a language code, and only when SpeechSynthesis exists.
+           It is a <button>, so it inherits button[hidden]{display:none};
+           a dedicated .speaker[hidden] guard is added alongside for clarity
+           (the documented hidden-vs-explicit-display gotcha). -->
+      <button id="speaker" class="speaker" type="button"
+              aria-label="Hear pronunciation" title="Hear pronunciation"
+              hidden>
+        <span aria-hidden="true">&#9658;</span> Hear it
+      </button>
+
       <div class="answer-row" id="answer-row">
         <input
           id="answer"
@@ -729,7 +781,8 @@ var el = {
   bankSelector: document.getElementById("bank-selector"),
   bank:      document.getElementById("bank"),
   answerRow: document.getElementById("answer-row"),
-  choices:   document.getElementById("choices")
+  choices:   document.getElementById("choices"),
+  speaker:   document.getElementById("speaker")
 };
 
 /* ---- API helpers ------------------------------------------------------ */
@@ -917,6 +970,8 @@ async function endSession(sessionId) {
   if (sessionId === null) {
     return;
   }
+  /* C-018a: a run ending should not leave a word still being spoken. */
+  cancelSpeech(setSpeakerSpeaking);
   try {
     await apiPost("/api/session/end", { session_id: sessionId });
   } catch (error) {
@@ -1049,6 +1104,8 @@ function figure(value, label) {
    development. Unknown-id end is a harmless no-op server-side. Uses
    sendBeacon so the request survives unload. */
 function endSessionOnUnload() {
+  /* C-018a: stop speech on the way out so nothing speaks during unload. */
+  cancelSpeech();
   if (state.activeSessionId === null) {
     return;
   }
@@ -1079,6 +1136,12 @@ async function loadQuestion() {
   el.answer.value = "";
   clearChoices();
   clearFeedback();
+  /* C-018a: stop any prior word and hide the speaker until the next question
+     renders, so speech never carries across a question transition. */
+  cancelSpeech(setSpeakerSpeaking);
+  if (el.speaker) {
+    el.speaker.hidden = true;
+  }
   el.expression.textContent = "...";
 
   try {
@@ -1130,6 +1193,150 @@ function pushRecent(id) {
   }
 }
 
+/* ---- Text-to-speech (C-018a) -----------------------------------------
+
+   QUARANTINE. window.speechSynthesis is the one weird external dependency in
+   this file: a process-wide singleton with an internal mutable utterance
+   queue and async voice loading -- the opposite of this codebase's "single
+   source of truth, derived render, no shared mutable state" model. We cannot
+   make it pure, so we fence it off: the three functions below are the ONLY
+   code that touches window.speechSynthesis. Everything else calls speak() /
+   cancelSpeech() and never reaches through to the global.
+
+   Design choices (see DECISIONS C-018a):
+   - Feature-detected ONCE at module load (speechAvailable). If absent, the
+     speaker button is never shown and speak() is a no-op -- a visible control
+     that does nothing is worse than no control.
+   - We DO NOT enumerate voices via getVoices(). That call notoriously returns
+     [] until an async 'voiceschanged' event fires (the Chrome voices-load
+     bug), so picking a voice by language races the first click. Instead we set
+     utterance.lang and let the engine choose a matching voice -- it honours
+     lang without getVoices(), sidestepping the race entirely.
+   - cancelSpeech() is called on every question transition, session end, and
+     unload, so a prior word never talks over a new question (stale-speech).
+   - The "speaking" visual state is cleared on the utterance's end/error
+     events; cancelSpeech() also clears it for the immediate-cancel path. */
+
+var speechAvailable = (typeof window !== "undefined")
+  && ("speechSynthesis" in window)
+  && (typeof window.SpeechSynthesisUtterance !== "undefined");
+
+/* Speak `text` in `lang` (an ISO 639-1 code or null). No-op if speech is
+   unavailable or the text is empty. Cancels any in-flight utterance first so
+   clicks never stack. onStateChange(isSpeaking) is an optional callback for
+   the caller to reflect the speaking state in the UI; it is invoked with true
+   at start and false at end/error. */
+function speak(text, lang, onStateChange) {
+  if (!speechAvailable || !text) {
+    return;
+  }
+  /* Clear any queued/active utterance so a second click does not stack. */
+  window.speechSynthesis.cancel();
+
+  var utterance = new window.SpeechSynthesisUtterance(text);
+  if (lang) {
+    utterance.lang = lang; /* engine picks a matching voice; no getVoices() */
+  }
+  if (typeof onStateChange === "function") {
+    utterance.onend = function () { onStateChange(false); };
+    utterance.onerror = function () { onStateChange(false); };
+    onStateChange(true);
+  }
+  window.speechSynthesis.speak(utterance);
+}
+
+/* Stop any in-flight or queued speech immediately. Safe to call when nothing
+   is speaking (a no-op) and when speech is unavailable. onStateChange(false),
+   if provided, lets the caller clear any speaking UI on the cancel path
+   (cancel() does not always fire onend). */
+function cancelSpeech(onStateChange) {
+  if (!speechAvailable) {
+    return;
+  }
+  window.speechSynthesis.cancel();
+  if (typeof onStateChange === "function") {
+    onStateChange(false);
+  }
+}
+
+/* ---- TTS targeting (C-018a, pure-ish helpers) -------------------------
+
+   The language is a property of the chosen BANK (the drill target), not of
+   the individual question -- the question payload carries no language field.
+   So we resolve it from state.selection.bankId against the banks already
+   fetched and attached to state.categories by fetchAndAttachBanks() (C-016).
+   No backend call, no payload change. Returns the ISO 639-1 string or null
+   (banks may have a null language: trivia/geography/logic/code, or any vocab
+   imported without a language= field). */
+function activeBankLanguage() {
+  var sel = state.selection;
+  if (!sel || sel.bankId === null || sel.bankId === undefined) {
+    return null; /* arithmetic or no selection: no bank, no language */
+  }
+  for (var c = 0; c < state.categories.length; c++) {
+    var banks = state.categories[c].banks || [];
+    for (var b = 0; b < banks.length; b++) {
+      if (banks[b].id === sel.bankId) {
+        return banks[b].language || null;
+      }
+    }
+  }
+  return null;
+}
+
+/* Decide whether the current question should expose the speaker button. True
+   only when: speech is available in this browser; a bank language resolves;
+   and the prompt is itself the foreign-language content -- qtype translate or
+   identify. Explicitly NOT multiple_choice (its prompt is usually an L1
+   question), NOT arithmetic, NOT plain free_response (English trivia prompts).
+   Data-derived and explicit, in the spirit of isDrillable(). */
+function canSpeakCurrent() {
+  if (!speechAvailable) {
+    return false;
+  }
+  var q = state.current;
+  if (!q) {
+    return false;
+  }
+  if (q.qtype !== "translate" && q.qtype !== "identify") {
+    return false;
+  }
+  return activeBankLanguage() !== null;
+}
+
+/* Reflect the speaking state on the speaker button (class toggle only). */
+function setSpeakerSpeaking(isSpeaking) {
+  if (el.speaker) {
+    el.speaker.classList.toggle("speaking", !!isSpeaking);
+  }
+}
+
+/* Speak the current prompt. Wired to the speaker button's click. Blurs the
+   button afterward so focus returns off the control: this preserves the
+   C-015 Space-to-advance contract (a focused button would activate on Space
+   instead of advancing -- the documented double-fire trap). */
+function onSpeakerClick() {
+  if (!state.current) {
+    return;
+  }
+  speak(state.current.question_text, activeBankLanguage(), setSpeakerSpeaking);
+  el.speaker.blur();
+}
+
+/* Show or hide the speaker for the current question, driven by canSpeakCurrent
+   (called from renderQuestion). Hiding also stops any in-flight speech. */
+function updateSpeakerVisibility() {
+  if (!el.speaker) {
+    return;
+  }
+  if (canSpeakCurrent()) {
+    el.speaker.hidden = false;
+  } else {
+    el.speaker.hidden = true;
+    cancelSpeech(setSpeakerSpeaking);
+  }
+}
+
 /* Render a question payload onto the stage. Text qtypes (arithmetic and
    free_response/translate/identify) use the text input; multiple_choice
    swaps in the choices list. Long bank prose gets the smaller .prose size. */
@@ -1137,6 +1344,9 @@ function renderQuestion(payload) {
   el.expression.textContent = payload.question_text;
   var isArithmetic = payload.qtype === "arithmetic";
   el.expression.classList.toggle("prose", !isArithmetic);
+
+  /* C-018a: show the speaker for language prompts on a language bank. */
+  updateSpeakerVisibility();
 
   if (payload.qtype === "multiple_choice") {
     el.answerRow.hidden = true;
@@ -1819,6 +2029,7 @@ async function boot() {
   el.category.addEventListener("change", onCategoryChange);
   el.bank.addEventListener("change", onBankChange);
   el.importToggle.addEventListener("click", onImportToggle);
+  el.speaker.addEventListener("click", onSpeakerClick);
   document.addEventListener("keydown", onDocumentKey);
   window.addEventListener("beforeunload", endSessionOnUnload);
 
