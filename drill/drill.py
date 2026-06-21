@@ -18,6 +18,14 @@ is implemented except GET /api/stats, which remains a stub pending C-019
 (the stats view, which also adds the stats DB queries and the MAIN server
 entry point). The frontend (index.html) is built in C-013 onward.
 
+C-018b note: this commit adds NO executable backend code. It adds only
+comment-block scaffolding (in build_question_payload and the bank-question
+handler below) documenting the deferred "Option A" path -- threading a bank
+language code into the question payload -- so a future reader knows the gap
+exists, why it was deferred, and what shipping it would entail. TTS shipped in
+C-018a sources language on the client from the selected bank instead, leaving
+the backend frozen. See DECISIONS C-018a / C-018b.
+
 Error-handling contract for the HTTP layer: handlers return the standard
 {"error": message} envelope with a 4xx status for bad input (missing or
 non-integer fields, malformed uploads) and for database integrity conflicts
@@ -1430,6 +1438,34 @@ def build_question_payload(question: dict) -> dict:
         "alternatives": question.get("alternatives") or [],
         "media_url": question.get("media_url"),
     }
+    # ---- C-018b scaffold: deferred "Option A" (per-question language) -------
+    # TTS (C-018a) needs a language code to pronounce a prompt. It currently
+    # resolves one CLIENT-SIDE from the selected bank (banks.language, already
+    # sent by GET /api/banks), so this payload deliberately carries NO
+    # "language" field and the backend stays frozen.
+    #
+    # The future, more general path ("Option A") is to thread language THROUGH
+    # this payload instead. That would matter when language is a property of
+    # the QUESTION rather than the bank -- e.g. a single mixed-language bank,
+    # or per-row language overrides -- which the client's bank-level lookup
+    # cannot express. Shipping it would mean, in rough order:
+    #   1. carry a language up to here -- either as question["language"] (new
+    #      per-question column or metadata key, a schema/import change) or by
+    #      passing the owning bank's language in as a parameter, e.g.
+    #          def build_question_payload(question, *, bank_language=None)
+    #      and setting payload["language"] = question.get("language")
+    #      or bank_language;
+    #   2. have the bank-question handler below fetch the bank row (it already
+    #      has bank_id) and pass bank_language=bank["language"] (see the
+    #      matching comment at the call site);
+    #   3. update the section-6 payload contract + the frontend to prefer
+    #      payload.language over the client bank lookup when present.
+    #
+    # This is intentionally NOT built here: it changes the frozen backend and
+    # the API contract, so per the working agreement it needs its own spec
+    # amendment and commit. Until then, build_question_payload stays a pure
+    # function of the question dict alone. See DECISIONS C-018b.
+    # -------------------------------------------------------------------------
     if question["qtype"] == QTYPE_MULTIPLE_CHOICE:
         options = [question["answer"]] + list(question.get("distractors") or [])
         random.shuffle(options)
@@ -1708,6 +1744,16 @@ def get_question_endpoint():
         return _json_error(
             "bank " + str(bank_id) + " has no questions", status=404
         )
+    # C-018b scaffold (deferred Option A): if per-question-language TTS is ever
+    # built, this is where the bank's language enters the request. We already
+    # have bank_id; the handler would fetch the bank row (get_bank / a
+    # language lookup in DATABASE) and pass it down, e.g.
+    #     bank = get_bank(connection, bank_id)   # inside the try above
+    #     return build_question_payload(chosen, bank_language=bank["language"])
+    # Not done now: it touches the frozen backend and the section-6 payload
+    # contract, so it is its own future commit + spec amendment. C-018a sources
+    # language on the client from the already-fetched bank instead. See the
+    # longer note in build_question_payload and DECISIONS C-018b.
     return build_question_payload(chosen)
 
 
