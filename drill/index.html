@@ -4,6 +4,7 @@
 
   C-013: Minimal HTML page with the drill UI (arithmetic loop).
   C-014: Session lifecycle UI (end, restart) + in-memory run log.
+  C-015: Keyboard control + empty-answer hint.
   Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
   ASCII only.
 
@@ -25,12 +26,25 @@
   from the array, never hand-patched. One meaning per surface: the stats bar
   always shows the ACTIVE session; the run log shows FINISHED runs.
 
-  Deliberately NOT in C-014 (later commits own these):
-    - keyboard interaction (Enter/Space/Escape niceties)   -> C-015
+  Scope (C-015): keyboard rhythm so the drill runs hands-on-keys. A document-
+  level keydown handler gated strictly on state.phase: Enter or Space advances
+  to the next question while feedback is showing; Escape ends the active
+  session from any active phase ("I'm done with this run"). The answer input
+  keeps owning Enter-to-submit while answering, so the global handler ignores
+  Enter during answering and never double-fires. Also: an inline "enter a
+  number" hint under the input when Submit fires on an empty field (was
+  previously a silent refocus), cleared as soon as the user types.
+
+  Deliberately NOT in C-015 (later commits own these):
     - bank selection + non-arithmetic categories           -> C-016
     - import section                                       -> C-017
     - TTS pronunciation                                    -> C-018
     - stats view (GET /api/stats is still a 501 stub)      -> C-019
+    - NOTED (no commit yet): a no-feedback "speed drill" mode where submit
+      advances immediately and per-answer feedback is withheld until the run
+      ends (feedback concentrated at session end). Deferred deliberately: it
+      changes the loop's meaning and needs extra state (a pending-results
+      buffer), so it is a distinct future commit, not folded into C-015.
 
   As-built contracts honored (verified against drill.py, not just the spec):
     - GET /api/categories -> {categories:[{id,name,description,config}]}
@@ -221,6 +235,15 @@
   }
   .answer-row input:disabled { opacity: 0.5; }
 
+  /* Inline empty-answer hint (C-015): muted clay, sits directly under the
+     input. Reserves no vertical space when empty so the stage does not jump. */
+  .answer-hint {
+    min-height: 1.1rem;
+    font-size: 0.78rem;
+    color: var(--miss);
+    text-align: center;
+  }
+
   button {
     font-family: var(--mono);
     font-size: 0.9rem;
@@ -400,6 +423,11 @@
         <button id="action" disabled>Submit</button>
       </div>
 
+      <!-- Inline hint under the input (C-015): shown when Submit fires on an
+           empty field; cleared as soon as the user types. Distinct from the
+           bottom note, which is for errors. aria-live so it is announced. -->
+      <div class="answer-hint" id="answer-hint" aria-live="polite"></div>
+
       <div class="feedback" id="feedback" aria-live="polite"></div>
     </section>
 
@@ -465,7 +493,8 @@ var el = {
   streakPips: document.getElementById("streak-pips"),
   sessionControls: document.getElementById("session-controls"),
   runLog:    document.getElementById("run-log"),
-  runLogList: document.getElementById("run-log-list")
+  runLogList: document.getElementById("run-log-list"),
+  answerHint: document.getElementById("answer-hint")
 };
 
 /* ---- API helpers ------------------------------------------------------ */
@@ -548,6 +577,14 @@ function renderStreakPips(streak) {
 function setNote(text, isError) {
   el.note.textContent = text || "";
   el.note.classList.toggle("error", !!isError);
+}
+
+/* The inline hint under the input (C-015), distinct from the bottom note. */
+function setAnswerHint(text) {
+  el.answerHint.textContent = text || "";
+}
+function clearAnswerHint() {
+  el.answerHint.textContent = "";
 }
 
 /* ---- Session state: transitions (the only mutators of state.sessions) --
@@ -787,6 +824,7 @@ async function loadQuestion() {
 
 function enterAnswering() {
   state.phase = "answering";
+  clearAnswerHint();
   el.answer.disabled = false;
   el.action.disabled = false;
   el.action.textContent = "Submit";
@@ -799,9 +837,13 @@ async function submitAnswer() {
   }
   var userInput = el.answer.value.trim();
   if (userInput === "") {
+    /* C-015: tell the user why nothing happened, instead of a silent refocus.
+       The hint clears as soon as they type (see onAnswerInput). */
+    setAnswerHint("Enter a number to submit.");
     el.answer.focus();
     return;
   }
+  clearAnswerHint();
 
   state.phase = "loading";
   el.action.disabled = true;
@@ -885,12 +927,68 @@ function onAction() {
   }
 }
 
-/* Enter submits an answer from the input. Broader keyboard interaction
-   (Enter/Space to advance, Escape to end) is C-015. */
+/* Enter submits an answer from the input while answering. The answer input
+   owns Enter in this phase; the document-level handler deliberately ignores
+   Enter while answering so the two never both fire. */
 function onAnswerKey(event) {
   if (event.key === "Enter" && state.phase === "answering") {
     event.preventDefault();
     submitAnswer();
+  }
+}
+
+/* Typing anything clears a pending empty-answer hint. */
+function onAnswerInput() {
+  if (el.answerHint.textContent) {
+    clearAnswerHint();
+  }
+}
+
+/* ---- Keyboard control (C-015) ----------------------------------------
+
+   A single document-level keydown handler, gated strictly on state.phase so
+   it can never collide with the input's Enter-to-submit or double-fire with a
+   focused button:
+
+     - Escape: end the active session from ANY active phase ("I'm done").
+     - Enter / Space: advance to the next question, but ONLY in the feedback
+       phase. In the answering phase Enter belongs to the input and Space is
+       a literal keystroke (modal: keys mean different things by phase).
+
+   Guards: ignore key events originating from the category <select> (so its
+   own keyboard navigation works), and when the advance key's target is the
+   action button itself, let the button's native activation drive onAction
+   rather than advancing twice. */
+function onDocumentKey(event) {
+  var key = event.key;
+
+  /* Let the category selector keep its native keyboard behavior. */
+  if (event.target === el.category) {
+    return;
+  }
+
+  if (key === "Escape") {
+    /* End from any phase where a session is active. Discards an unsubmitted
+       answer by design -- Escape means done. */
+    if (state.activeSessionId !== null) {
+      event.preventDefault();
+      onEndSession();
+    }
+    return;
+  }
+
+  if (state.phase === "feedback" && (key === "Enter" || key === " ")) {
+    /* If a button is focused (the action button or a session control), its
+       native Enter/Space activation already does the right thing; let it.
+       Do NOT preventDefault on a focused button -- on a button, preventDefault
+       on Space would suppress the native click and swallow the action. (No
+       page scroll happens while a button is focused.) This prevents a
+       focused "End"/"Restart" from both activating AND advancing. */
+    if (event.target.tagName === "BUTTON") {
+      return;
+    }
+    event.preventDefault();
+    loadQuestion();
   }
 }
 
@@ -909,6 +1007,7 @@ function enterResting() {
   el.answer.disabled = true;
   el.action.disabled = true;
   el.action.textContent = "Submit";
+  clearAnswerHint();
   clearFeedback();
 }
 
@@ -976,7 +1075,9 @@ function onCategoryChange() {
 async function boot() {
   el.action.addEventListener("click", onAction);
   el.answer.addEventListener("keydown", onAnswerKey);
+  el.answer.addEventListener("input", onAnswerInput);
   el.category.addEventListener("change", onCategoryChange);
+  document.addEventListener("keydown", onDocumentKey);
   window.addEventListener("beforeunload", endSessionOnUnload);
 
   try {
