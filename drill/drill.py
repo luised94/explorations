@@ -7,24 +7,22 @@ sections that follow a data-oriented procedural style:
     DATABASE  -- functions over a sqlite3.Connection; IO only, no logic
     LOGIC     -- pure functions; no IO, no DB, no HTTP
     HTTP      -- thin Bottle route handlers
-    MAIN      -- server startup (added with C-019)
+    MAIN      -- server startup (added with C-013a)
 
 Boundary invariant (spec section 5): DATABASE never calls LOGIC or HTTP;
 LOGIC never calls DATABASE or HTTP; HTTP calls both. Data crosses
 boundaries as plain dicts, lists, strings, and numbers.
 
-Status: backend complete through C-012. Every API endpoint in spec section 6
-is implemented except GET /api/stats, which remains a stub pending C-019
-(the stats view, which also adds the stats DB queries and the MAIN server
-entry point). The frontend (index.html) is built in C-013 onward.
+Status: backend complete through C-019a. Every API endpoint in spec section 6
+is implemented, including GET /api/stats (C-019a): the DATABASE stats reader
+(get_responses_for_stats), the pure LOGIC summary (summarize_stats), and the
+handler that computes the day-window cutoff and returns the summary. The
+frontend (index.html) is built in C-013 onward; the stats VIEW that consumes
+this endpoint is C-019b.
 
-C-018b note: this commit adds NO executable backend code. It adds only
-comment-block scaffolding (in build_question_payload and the bank-question
-handler below) documenting the deferred "Option A" path -- threading a bank
-language code into the question payload -- so a future reader knows the gap
-exists, why it was deferred, and what shipping it would entail. TTS shipped in
-C-018a sources language on the client from the selected bank instead, leaving
-the backend frozen. See DECISIONS C-018a / C-018b.
+C-018b note: build_question_payload and the bank-question handler carry a
+comment-block scaffold for the deferred per-question-language TTS path; that
+remains comment-only (no executable backend code from C-018b).
 
 Error-handling contract for the HTTP layer: handlers return the standard
 {"error": message} envelope with a 4xx status for bad input (missing or
@@ -44,7 +42,7 @@ import os
 import random
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 try:
     import bottle
@@ -766,14 +764,75 @@ def get_session_correctness(
     C-011 support (pulled forward from the C-019 stats work): returns just
     the correct flags in answer order, as a list of bools. Computing the
     summary (total, accuracy, streak) from this sequence is a LOGIC concern
-    (summarize_correctness), keeping the streak logic out of SQL. The
-    broader category- and time-windowed stats queries remain in C-019.
+    (summarize_correctness), keeping the streak logic out of SQL. The broader
+    category- and time-windowed stats query is get_responses_for_stats below
+    (added in C-019a), summarized by summarize_stats.
     """
     cursor = connection.execute(
         "SELECT correct FROM responses WHERE session_id = ? ORDER BY id",
         (session_id,),
     )
     return [bool(row["correct"]) for row in cursor.fetchall()]
+
+
+def get_responses_for_stats(
+    connection: sqlite3.Connection,
+    category_id: int | None = None,
+    since: str | None = None,
+) -> list[dict]:
+    """Return response rows for the durable stats view, newest-first.
+
+    C-019a: the broad, cross-session counterpart to get_session_correctness.
+    Joins responses -> sessions -> categories so each row carries the owning
+    category (the stats view groups by category). This is a pure reader: it
+    only filters and returns rows; all aggregation (totals, accuracy, the
+    per-category breakdown) is a LOGIC concern (summarize_stats), keeping
+    computation out of SQL exactly as the C-011 correctness split does.
+
+    Filters (both optional, AND-combined):
+        category_id -- restrict to responses whose session belongs to this
+                       category; None means all categories.
+        since       -- an ISO 8601 timestamp lower bound (inclusive) compared
+                       against responses.answered; None means all time. The
+                       caller (HTTP) computes this cutoff from the clock and
+                       the requested day window; DATABASE never reads the clock.
+
+    Each returned dict carries: correct (bool), elapsed_ms (int|None),
+    answered (str), category_id (int), category_name (str). elapsed_ms is
+    SELECTed so the data is available to a future timing feature; v1's
+    summarize_stats ignores it. Ordered by answered DESC, id DESC so the most
+    recent activity leads (the view renders newest-first).
+    """
+    clauses = []
+    params: list[object] = []
+    if category_id is not None:
+        clauses.append("s.category_id = ?")
+        params.append(category_id)
+    if since is not None:
+        clauses.append("r.answered >= ?")
+        params.append(since)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    cursor = connection.execute(
+        "SELECT r.correct AS correct, r.elapsed_ms AS elapsed_ms, "
+        "r.answered AS answered, c.id AS category_id, c.name AS category_name "
+        "FROM responses r "
+        "JOIN sessions s ON r.session_id = s.id "
+        "JOIN categories c ON s.category_id = c.id"
+        + where
+        + " ORDER BY r.answered DESC, r.id DESC",
+        params,
+    )
+    return [
+        {
+            "correct": bool(row["correct"]),
+            "elapsed_ms": row["elapsed_ms"],
+            "answered": row["answered"],
+            "category_id": row["category_id"],
+            "category_name": row["category_name"],
+        }
+        for row in cursor.fetchall()
+    ]
 
 
 # --- LOGIC ---
@@ -1366,6 +1425,78 @@ def summarize_correctness(correctness: list[bool]) -> dict:
     }
 
 
+def summarize_stats(rows: list[dict]) -> dict:
+    """Summarize durable cross-session stats for the stats view (C-019a).
+
+    Pure counterpart to the DATABASE reader get_responses_for_stats. Takes the
+    response rows it returns (each with at least `correct` and the owning
+    `category_id`/`category_name`) and produces the text-only summary the view
+    renders (section 9 -- no charts in v1):
+
+        total      -- number of responses in the window/filter
+        correct    -- number marked correct
+        accuracy   -- correct / total as a float, or 0.0 when total is 0
+        categories -- per-category breakdown, a list of
+                      {category_id, category_name, total, correct, accuracy},
+                      ordered by descending total then category name, so the
+                      most-practiced category leads
+
+    The empty case (a fresh database, or a window/filter with no responses)
+    yields total 0, accuracy 0.0, and an empty categories list rather than a
+    division error -- the time-zero case, handled like summarize_correctness.
+
+    elapsed_ms is deliberately IGNORED in v1: timing collection began at C-018c
+    but the timing FEATURE (any per-answer or aggregate timing metric) is a
+    deferred future commit. The rows carry elapsed_ms so that feature can use
+    it later without a new query; this summary simply does not read it.
+
+    Pure and deterministic (the category ordering is total/name, not input
+    order, so the same rows always summarize identically).
+    """
+    total = len(rows)
+    correct_count = sum(1 for row in rows if row.get("correct"))
+    accuracy = (correct_count / total) if total > 0 else 0.0
+
+    # Group by category, preserving each category's id and display name.
+    grouped: dict[int, dict] = {}
+    for row in rows:
+        category_id = row.get("category_id")
+        bucket = grouped.get(category_id)
+        if bucket is None:
+            bucket = {
+                "category_id": category_id,
+                "category_name": row.get("category_name"),
+                "total": 0,
+                "correct": 0,
+            }
+            grouped[category_id] = bucket
+        bucket["total"] += 1
+        if row.get("correct"):
+            bucket["correct"] += 1
+
+    categories = []
+    for bucket in grouped.values():
+        bucket_total = bucket["total"]
+        bucket["accuracy"] = (
+            (bucket["correct"] / bucket_total) if bucket_total > 0 else 0.0
+        )
+        categories.append(bucket)
+
+    # Most-practiced first; name as a stable tiebreak so the order is
+    # deterministic regardless of dict/input ordering. (name may be None only
+    # for malformed data; coerce to "" for a total-safe sort key.)
+    categories.sort(
+        key=lambda entry: (-entry["total"], entry["category_name"] or "")
+    )
+
+    return {
+        "total": total,
+        "correct": correct_count,
+        "accuracy": accuracy,
+        "categories": categories,
+    }
+
+
 # C-012: bank question selection and payload assembly (pure LOGIC).
 # pick_next_question chooses one question dict from a list of candidates
 # (fetched by HTTP from DATABASE -- LOGIC never queries the DB). v1 uses
@@ -1480,10 +1611,9 @@ def build_question_payload(question: dict) -> dict:
 # formatting belongs in LOGIC. HTTP is the only layer that reads the clock
 # and the only glue between DATABASE output and LOGIC input.
 #
-# All endpoints from spec section 6 are implemented except GET /api/stats,
-# which remains a stub pending C-019. Handlers open a SQLite connection per
-# request and close it in a finally block. Integer fields from the request
-# are parsed through _require_int / _optional_int so malformed values yield a
+# All endpoints from spec section 6 are implemented, including GET /api/stats
+# (C-019a). Handlers open a SQLite connection per request and close it in a
+# finally block. Integer fields from the request are parsed through _require_int / _optional_int so malformed values yield a
 # 400 rather than an unhandled exception, and database integrity conflicts
 # (e.g. a referenced id deleted in another tab) are caught and returned as a
 # 400 with a clear message.
@@ -1902,8 +2032,62 @@ def post_session_end():
 
 @app.get("/api/stats")
 def get_stats():
-    """Get stats for a category over a window of days. [stub -> C-019]"""
-    return _json_error("not implemented yet (C-019)", status=501)
+    """Durable cross-session stats, optionally filtered by category and window.
+
+    C-019a (spec section 6, the one sanctioned post-freeze backend addition).
+    Query parameters (both optional):
+        category_id -- restrict to one category; omitted means all categories.
+        days        -- a positive integer window; only responses answered
+                       within the last N days are counted. Omitted means all
+                       time. days <= 0 is a 400 (a zero/negative window is a
+                       malformed request, not "all time" -- omit the param for
+                       all time).
+
+    The day-window cutoff is computed HERE from the clock (HTTP is the only
+    clock-reader alongside init_db); the cutoff is passed to DATABASE as an ISO
+    string so neither DATABASE nor LOGIC reads the clock. Rows come from
+    get_responses_for_stats; the summary is the pure summarize_stats. Returns:
+        {total, correct, accuracy, categories:[{category_id, category_name,
+         total, correct, accuracy}], window:{category_id, days, since}}
+    where window echoes the effective filter (since is the ISO cutoff or null).
+    """
+    query = bottle.request.query
+    try:
+        category_id = _optional_int(query.get("category_id"), "category_id")
+        days = _optional_int(query.get("days"), "days")
+    except _BadParameter as bad:
+        return _json_error(bad.message, status=400)
+
+    since = None
+    if days is not None:
+        if days <= 0:
+            return _json_error(
+                "days must be a positive integer (omit it for all time)",
+                status=400,
+            )
+        # Cutoff = now - days, emitted in the same ISO 8601 UTC format as
+        # responses.answered so the DATABASE comparison is string-vs-string in
+        # one consistent format. utc_now_iso() is the shared clock helper.
+        cutoff = datetime.fromisoformat(utc_now_iso()) - timedelta(days=days)
+        since = cutoff.isoformat()
+
+    connection = connect(DATABASE_PATH)
+    try:
+        rows = get_responses_for_stats(
+            connection,
+            category_id=category_id,
+            since=since,
+        )
+    finally:
+        connection.close()
+
+    summary = summarize_stats(rows)
+    summary["window"] = {
+        "category_id": category_id,
+        "days": days,
+        "since": since,
+    }
+    return summary
 
 
 @app.post("/api/banks/import")
@@ -1987,13 +2171,15 @@ def post_banks_import():
 # =============================================================================
 # --- MAIN ---
 #
-# Partial C-019: server entry point only.
+# Server entry point. Pulled forward to C-013a (originally bundled with the
+# C-019 stats work) so the app is runnable while the frontend is built.
 #
 # Spec section 5 (# --- MAIN ---) defines this block as exactly three things:
-# the init_db call, bottle.run, and the __main__ guard. The rest of C-019
-# (the stats view and its time-windowed DB queries; GET /api/stats is still a
-# 501 stub) is NOT included here -- this is the minimum that makes the app
-# runnable so the C-013 UI can be exercised end to end.
+# the init_db call, bottle.run, and the __main__ guard. As of C-019a the stats
+# endpoint (GET /api/stats) and its DB query are implemented in their proper
+# sections above; the only remaining stats work is the frontend view (C-019b),
+# which adds nothing here. This block stays the minimum that makes the app
+# runnable end to end.
 #
 # This block is meant to be appended to the END of drill.py (after the
 # /api/banks/import handler). It is kept in a separate file here only so the

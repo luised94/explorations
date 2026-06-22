@@ -1,0 +1,67 @@
+flowchart TD
+    subgraph P0["Phase 0.0 -- Safety net (do first, Carmack)"]
+        T1["Tests: LOGIC suite<br/>(keep the throwaway harnesses)"]
+        T2["Migration runner<br/>(version-aware ALTER)"]
+        T3["Docstring/ADR drift cleanup"]
+    end
+
+    subgraph P1["Phase 1 -- Arithmetic core (the cs)"]
+        A1["More operators<br/>(^, mod) -- data only"]
+        A2["Generalize generator<br/>(nested trees) + property tests"]
+        A3["Difficulty -> params<br/>(pure mapping)"]
+    end
+
+    subgraph P2["Phase 2 -- Modularize (cut along clean seams)"]
+        M1["Backend: drill.py -> package"]
+        M2["Frontend: 1 script -> ES modules"]
+    end
+
+    subgraph P3["Phase 3 -- Data model + schedulers"]
+        D1["Grading-kind enum<br/>+ question.metadata column"]
+        S1["Adaptive scheduler<br/>(concrete)"]
+        S2["SM2 scheduler<br/>(concrete)"]
+        S3["Seam: extract select_next<br/>from S1+S2 overlap (Muratori)"]
+        S4["Difficulty tuner<br/>(proportional controller)"]
+        SC["plan_session(config)<br/>uses sessions.config slot"]
+    end
+
+    subgraph P4["Phase 4 -- Curriculum (capstone)"]
+        C1["Curriculum: links into<br/>code+DECISIONS (Nelson)"]
+        C2["Concept-review SM2 bank<br/>from DECISIONS"]
+    end
+
+    subgraph PX["Cross-cutting (parallelizable, low coupling)"]
+        X1["Mistake-review at run end"]
+        X2["Minimal mastery grid<br/>(Victor, Tier 2)"]
+        X3["Logic drill"]
+        X4["Code drill"]
+        X5["Typing + timed mode"]
+    end
+
+    T1 --> A2
+    T2 --> D1
+    A1 --> A2 --> A3
+    A3 --> S4
+    A3 --> M1
+    T1 --> M1
+    T1 --> M2
+    M1 --> S1
+    M1 --> S2
+    D1 --> X3
+    D1 --> S1
+    S1 --> S3
+    S2 --> S3
+    S3 --> SC
+    M1 --> C1
+    M2 --> C1
+    S2 --> C2
+    C1 --> C2
+    D1 --> X4
+    A3 --> X5
+
+    classDef first fill:#1d2327,stroke:#7fb9d4,color:#f3efe6;
+    classDef core fill:#1d2327,stroke:#5ad1b0,color:#f3efe6;
+    classDef cross fill:#1d2327,stroke:#e08a76,color:#f3efe6;
+    class T1,T2,T3 first;
+    class A1,A2,A3,M1,M2,D1,S1,S2,S3,S4,SC,C1,C2 core;
+    class X1,X2,X3,X4,X5 cross;

@@ -8,6 +8,8 @@
   C-017: Import UI (upload a JSONL/CSV bank).
   C-016: Bank selection + drilling non-arithmetic categories.
   C-018a: TTS pronunciation (click-to-hear) for language questions.
+  C-018c: Per-answer timing collection (elapsed_ms), collect-only.
+  C-019b: Stats view -- durable cross-session stats from GET /api/stats.
   Single self-contained file: vanilla JS, HTML, CSS. No frameworks, no build.
   ASCII only.
 
@@ -84,14 +86,40 @@
   prior word never talks over a new question. Collect-only siblings (timing)
   and the durable stats view remain later commits.
 
-  Deliberately NOT in C-018a (later commits own these):
+  Scope (C-018c): per-answer timing collection. The backend already has the
+  plumbing -- responses.elapsed_ms exists, insert_response accepts it, the
+  /api/answer handler parses it (hardened _optional_int) and stores it -- but
+  nothing has been sending it, so every row so far has elapsed_ms NULL. This
+  commit closes that gap from the frontend ONLY (no backend change): a
+  monotonic performance.now() mark is taken when a question becomes answerable
+  (enterAnswering), and at submit the elapsed milliseconds are computed and
+  sent as elapsed_ms in the existing /api/answer body.
+
+  Semantics (deliberate, see DECISIONS C-018c): elapsed_ms is THINK+TYPE time
+  -- from when the prompt became answerable to submit -- not wall-clock and not
+  inclusive of network/grading latency. Because retry-after-error re-enters
+  enterAnswering, the mark RESETS on retry, so elapsed_ms measures the
+  successful attempt's think-time and excludes a failed round-trip. An empty
+  submit does not reset the mark (the user is still thinking). This is
+  COLLECT-ONLY: nothing computes or displays timing in v1 -- the data simply
+  begins accumulating so a future timing feature has real history to analyze.
+
+  Deliberately NOT in C-018c (later commits own these):
     - stats view (GET /api/stats is still a 501 stub)      -> C-019
-    - per-answer timing collection (elapsed_ms)            -> C-018c
-    - NOTED (no commit yet): a no-feedback "speed drill" mode where submit
-      advances immediately and per-answer feedback is withheld until the run
-      ends (feedback concentrated at session end). Deferred deliberately: it
-      changes the loop's meaning and needs extra state (a pending-results
-      buffer), so it is a distinct future commit.
+    - any timing CALCULATION or display (deferred feature)
+
+  Scope (C-019b): the stats view -- the final commit of the initial plan. A
+  collapsed disclosure (mirroring the import disclosure) under the run log; on
+  open it fetches GET /api/stats (implemented in C-019a) and renders durable
+  cross-session totals (answered / accuracy / correct) plus a per-category
+  breakdown, text-only (section 9, no charts in v1). Re-fetched each open (no
+  client cache) so it includes answers logged since it was last viewed. This
+  is SEPARATE from the live stats bar at the top: the bar is the current
+  session (session_stats from /api/answer, in memory); this panel is DB history
+  across all sessions -- the two never share state. The panel toggles via the
+  hidden attribute and carries the [hidden]{display:none} guard (the documented
+  gotcha, folded in). Timing (elapsed_ms) is collected and queryable but not
+  shown here -- the timing feature stays deferred.
 
   As-built contracts honored (verified against drill.py, not just the spec):
     - GET /api/categories -> {categories:[{id,name,description,config}]}
@@ -584,9 +612,75 @@
   .choice.correct { border-color: var(--correct); color: var(--correct); }
   .choice.wrong { border-color: var(--miss); color: var(--miss); }
 
-  /* ---- Later-commit placeholders (kept hidden so C-019 slots in
-     without restructuring the page) ------------------------------------- */
-  #stats-view { display: none; }
+  /* ---- Stats view (C-019b) -------------------------------------------
+     Disclosure styled to match the import disclosure (same quiet toggle,
+     same soft panel). The panel toggles via the hidden attribute, so it
+     carries the [hidden]{display:none} guard (the documented
+     hidden-vs-explicit-display gotcha). */
+  .stats-disclosure { margin-top: 0.5rem; }
+  .stats-toggle {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.5rem 0.85rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+  }
+  .stats-toggle:hover { background: var(--ground-soft); color: var(--paper); }
+  .stats-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .stats-panel {
+    margin-top: 0.6rem;
+    padding: 1rem;
+    background: var(--ground-soft);
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .stats-panel[hidden] { display: none; }
+  .stats-panel .stats-note { color: var(--muted); font-size: 0.82rem; }
+
+  /* Overall line: big total + accuracy, echoing the stat bar's hierarchy. */
+  .stats-overall {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .stats-overall .stats-figure { display: flex; flex-direction: column; gap: 0.15rem; }
+  .stats-overall .stats-figure b { font-size: 1.3rem; color: var(--paper); }
+  .stats-overall .stats-figure span {
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stats-window { color: var(--muted-dim); font-size: 0.72rem; }
+
+  /* Per-category breakdown: one row per category, name + figures. */
+  .stats-breakdown { display: flex; flex-direction: column; gap: 0.4rem; }
+  .stats-breakdown-title {
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stats-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--line);
+    font-size: 0.85rem;
+  }
+  .stats-row .stats-cat { color: var(--paper); }
+  .stats-row .stats-figs { color: var(--muted); }
 
   @media (max-width: 30rem) {
     .stats { gap: 1.1rem; }
@@ -710,7 +804,20 @@
       <div class="import-panel" id="import-panel" hidden></div>
     </div>
 
-    <div id="stats-view"></div>
+    <!-- Stats view (C-019b): collapsed disclosure, mirroring the import
+         pattern. On open it fetches GET /api/stats and renders durable
+         cross-session totals + a per-category breakdown (text only, no charts
+         -- section 9). This is SEPARATE from the live stats bar at the top:
+         the bar shows the current session (session_stats from /api/answer,
+         in-memory); this shows DB history across all sessions. Re-fetched on
+         each open so it reflects answers logged since it was last viewed. -->
+    <div class="stats-disclosure" id="stats-view">
+      <button type="button" class="stats-toggle" id="stats-toggle"
+              aria-expanded="false" aria-controls="stats-panel">
+        + Stats across sessions
+      </button>
+      <div class="stats-panel" id="stats-panel" hidden></div>
+    </div>
   </main>
 
 <script>
@@ -756,6 +863,10 @@ var state = {
   recentIds: [],           /* C-016: last-RECENT_MAX served bank question ids
                               for the active session (recent= param) */
   current: null,           /* the question payload now on screen */
+  answerStartMark: null,   /* C-018c: performance.now() ms when the current
+                              question became answerable; null when not in an
+                              answerable phase. Diffed at submit -> elapsed_ms.
+                              Resets each enterAnswering (so a retry re-times). */
   phase: "idle"            /* idle | resting | loading | answering | feedback */
 };
 
@@ -778,6 +889,8 @@ var el = {
   answerHint: document.getElementById("answer-hint"),
   importToggle: document.getElementById("import-toggle"),
   importPanel: document.getElementById("import-panel"),
+  statsToggle: document.getElementById("stats-toggle"),
+  statsPanel: document.getElementById("stats-panel"),
   bankSelector: document.getElementById("bank-selector"),
   bank:      document.getElementById("bank"),
   answerRow: document.getElementById("answer-row"),
@@ -1131,6 +1244,7 @@ function endSessionOnUnload() {
 async function loadQuestion() {
   state.phase = "loading";
   state.current = null;
+  state.answerStartMark = null; /* C-018c: no stale mark across a new load */
   el.action.disabled = true;
   el.answer.disabled = true;
   el.answer.value = "";
@@ -1382,9 +1496,26 @@ function clearChoices() {
   el.choices.hidden = true;
 }
 
+/* C-018c: a monotonic millisecond clock for measuring elapsed think+type
+   time. Prefers performance.now() (monotonic -- immune to wall-clock changes,
+   the right tool for durations); falls back to Date.now() where performance
+   is unavailable. Returns a float (ms). */
+function nowMs() {
+  if (typeof performance !== "undefined"
+      && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
 function enterAnswering() {
   state.phase = "answering";
   clearAnswerHint();
+  /* C-018c: start (or restart, on a retry) the think+type timer the instant
+     the question becomes answerable. Restarting here means a retry after a
+     failed /api/answer re-times the question and elapsed_ms reflects the
+     successful attempt, excluding the failed round-trip. */
+  state.answerStartMark = nowMs();
   if (state.current && state.current.qtype === "multiple_choice") {
     /* Choice buttons are the input. Hide the action button entirely while
        answering (there is nothing to submit -- a click on a choice submits);
@@ -1447,6 +1578,20 @@ async function gradeAndShow(userInput) {
   state.phase = "loading";
   el.action.disabled = true;
 
+  /* C-018c: capture think+type elapsed at SUBMIT time (before the network
+     round-trip), so elapsed_ms excludes grading latency. Guard the mark:
+     if it is somehow unset, omit elapsed_ms rather than send a bogus value
+     (the field is optional server-side). Clear the mark after reading so it
+     cannot leak into a later submit. */
+  var elapsedMs = null;
+  if (state.answerStartMark !== null) {
+    elapsedMs = Math.round(nowMs() - state.answerStartMark);
+    if (elapsedMs < 0) {
+      elapsedMs = null; /* clock anomaly: do not record a negative duration */
+    }
+  }
+  state.answerStartMark = null;
+
   var q = state.current;
   var sessionId = state.activeSessionId;
   var body = {
@@ -1459,6 +1604,11 @@ async function gradeAndShow(userInput) {
        the real stored id passes through as an int -> proper FK. */
     question_id: q.question_id
   };
+  /* C-018c: per-answer timing. Optional server-side (reserved column); sent
+     only when a valid measurement exists. Collect-only -- no UI uses it yet. */
+  if (elapsedMs !== null) {
+    body.elapsed_ms = elapsedMs;
+  }
   /* Text qtypes accept also-correct answers; forward them so the server can
      match. multiple_choice ignores alternatives (exact match); arithmetic
      has none. */
@@ -2020,6 +2170,155 @@ async function refreshCategories() {
   }
 }
 
+/* ---- Stats view (C-019b) ---------------------------------------------
+
+   Mirrors the import disclosure: a quiet toggle that builds its panel on open
+   and tears it down on close. On open it fetches GET /api/stats fresh (no
+   client cache) so the numbers reflect everything answered up to that moment,
+   including the current session's just-logged answers. This is deliberately
+   SEPARATE from renderStats (the live top bar, fed by session_stats on
+   /api/answer): that bar is the current session in memory; this panel is
+   durable DB history across all sessions. The two never share state. */
+async function onStatsToggle() {
+  var open = el.statsToggle.getAttribute("aria-expanded") === "true";
+  if (open) {
+    el.statsPanel.hidden = true;
+    el.statsPanel.textContent = "";
+    el.statsToggle.setAttribute("aria-expanded", "false");
+    el.statsToggle.textContent = "+ Stats across sessions";
+    return;
+  }
+  el.statsToggle.setAttribute("aria-expanded", "true");
+  el.statsToggle.textContent = "- Stats across sessions";
+  el.statsPanel.hidden = false;
+  el.statsPanel.textContent = "";
+  var loading = document.createElement("p");
+  loading.className = "stats-note";
+  loading.textContent = "Loading...";
+  el.statsPanel.appendChild(loading);
+  try {
+    var summary = await apiGet("/api/stats");
+    /* The panel may have been closed again while the fetch was in flight;
+       only render if it is still open. */
+    if (el.statsToggle.getAttribute("aria-expanded") === "true") {
+      renderStatsPanel(summary);
+    }
+  } catch (error) {
+    el.statsPanel.textContent = "";
+    var failed = document.createElement("p");
+    failed.className = "stats-note";
+    failed.textContent = "Could not load stats: " + error.message;
+    el.statsPanel.appendChild(failed);
+  }
+}
+
+/* Render the /api/stats summary into the panel. Pure DOM construction from the
+   response {total, correct, accuracy, categories:[...], window} -- no network.
+   Empty/time-zero (total 0) gets a friendly note rather than a wall of zeros.
+   The categories list arrives pre-sorted by the endpoint (most-practiced
+   first), so it renders in order as-is. Timing is intentionally absent: it is
+   collected (C-018c) and queryable but not summarized in v1. */
+function renderStatsPanel(summary) {
+  el.statsPanel.textContent = "";
+
+  if (!summary || !summary.total) {
+    var empty = document.createElement("p");
+    empty.className = "stats-note";
+    empty.textContent =
+      "No answers recorded yet. Stats appear here once you have drilled.";
+    el.statsPanel.appendChild(empty);
+    return;
+  }
+
+  /* Overall total + accuracy. */
+  var overall = document.createElement("div");
+  overall.className = "stats-overall";
+  overall.appendChild(statsFigure(String(summary.total), "answered"));
+  overall.appendChild(
+    statsFigure(Math.round((summary.accuracy || 0) * 100) + "%", "accuracy")
+  );
+  overall.appendChild(statsFigure(String(summary.correct), "correct"));
+  el.statsPanel.appendChild(overall);
+
+  /* Window echo (only when a filter is active), so the user knows the scope. */
+  var windowText = statsWindowText(summary.window);
+  if (windowText) {
+    var win = document.createElement("div");
+    win.className = "stats-window";
+    win.textContent = windowText;
+    el.statsPanel.appendChild(win);
+  }
+
+  /* Per-category breakdown (skip when there is only one category -- the
+     overall line already covers it). */
+  var categories = summary.categories || [];
+  if (categories.length > 1) {
+    var breakdown = document.createElement("div");
+    breakdown.className = "stats-breakdown";
+    var title = document.createElement("div");
+    title.className = "stats-breakdown-title";
+    title.textContent = "By category";
+    breakdown.appendChild(title);
+
+    categories.forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "stats-row";
+      var name = document.createElement("span");
+      name.className = "stats-cat";
+      name.textContent = entry.category_name || "(unknown)";
+      var figs = document.createElement("span");
+      figs.className = "stats-figs";
+      figs.textContent = entry.total + " answered, "
+        + Math.round((entry.accuracy || 0) * 100) + "%";
+      row.appendChild(name);
+      row.appendChild(figs);
+      breakdown.appendChild(row);
+    });
+    el.statsPanel.appendChild(breakdown);
+  }
+}
+
+/* A stacked figure (big value over a muted label) for the overall row. */
+function statsFigure(value, label) {
+  var fig = document.createElement("div");
+  fig.className = "stats-figure";
+  var head = document.createElement("b");
+  head.textContent = value;
+  var cap = document.createElement("span");
+  cap.textContent = label;
+  fig.appendChild(head);
+  fig.appendChild(cap);
+  return fig;
+}
+
+/* Build a short human description of the active window/filter, or "" when the
+   view is unfiltered (all categories, all time -- the common case, no note
+   needed). Reads the window echo the endpoint returns. */
+function statsWindowText(window) {
+  if (!window) {
+    return "";
+  }
+  var parts = [];
+  if (window.days) {
+    parts.push("last " + window.days + (window.days === 1 ? " day" : " days"));
+  }
+  if (window.category_id !== null && window.category_id !== undefined) {
+    var name = categoryNameById(window.category_id);
+    parts.push(name ? ("category: " + name) : ("category " + window.category_id));
+  }
+  return parts.length ? ("Showing " + parts.join(", ")) : "";
+}
+
+/* Resolve a category id to its name from state.categories, or "" if unknown. */
+function categoryNameById(categoryId) {
+  for (var i = 0; i < state.categories.length; i++) {
+    if (state.categories[i].id === categoryId) {
+      return state.categories[i].name;
+    }
+  }
+  return "";
+}
+
 /* ---- Boot ------------------------------------------------------------- */
 
 async function boot() {
@@ -2029,6 +2328,7 @@ async function boot() {
   el.category.addEventListener("change", onCategoryChange);
   el.bank.addEventListener("change", onBankChange);
   el.importToggle.addEventListener("click", onImportToggle);
+  el.statsToggle.addEventListener("click", onStatsToggle);
   el.speaker.addEventListener("click", onSpeakerClick);
   document.addEventListener("keydown", onDocumentKey);
   window.addEventListener("beforeunload", endSessionOnUnload);
