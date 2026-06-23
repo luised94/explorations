@@ -13,6 +13,7 @@ Concerns gathered here, by source:
   - pick_next_question   : NEW in C-020 (avoid-recent policy + fallbacks).
 
 These are functions of plain data, so they need no fixtures beyond the module.
+
 Decision anchors (decisions.md):
   validate_answer ............ C-007 (single dispatcher; unknown qtype -> False)
   generate/forbid_identity ... C-005, C-006, ADR-007 (operand ranges, identities)
@@ -153,8 +154,6 @@ def test_validate_multiple_choice_is_exact(m):
 def test_validate_unknown_qtype_is_never_correct(m):
     # C-007 [DECIDED]: an unrecognized qtype returns False (never silently
     # scored correct), rather than raising -- even on an exact string match.
-    # The "can never be silently scored correct" guarantee, even on an exact
-    # string match.
     assert m.validate_answer("x", "x", "no_such_qtype") is False
 
 
@@ -190,8 +189,6 @@ def test_generate_division_is_always_integral(m):
     # ADR-007 / C-005: division generation derives the dividend as
     # divisor*quotient, so the quotient is exact every time. Sample enough to
     # catch a regression.
-    # Division generation derives the dividend as divisor*quotient, so the
-    # quotient is exact every time. Sample enough to catch a regression.
     for _ in range(200):
         node = m.generate_expression(enabled_symbols=["/"])
         assert node["left"] % node["right"] == 0
@@ -219,3 +216,84 @@ def test_pick_next_falls_back_when_all_recent(m):
     # Every candidate recently seen -> fall back to the full pool, never None.
     for _ in range(50):
         assert m.pick_next_question(candidates, history=[1, 2])["id"] in (1, 2)
+
+
+# --------------------------------------------------------------------------
+# normalize_text -- the lenient free-text comparison pipeline (C-007 feedback)
+# What it DOES: lowercase, drop interior punctuation (,.!?:;), collapse
+# whitespace, strip surrounding quotes/parens. What it deliberately does NOT
+# do: strip interior hyphens, apostrophes, or Unicode accents -- those carry
+# meaning in language drills. These tests pin both halves so a future
+# "clean up normalization" change cannot silently widen what counts as equal.
+# --------------------------------------------------------------------------
+def test_normalize_lowercases_and_drops_interior_punctuation(m):
+    assert m.normalize_text("Hello, World!") == "hello world"
+
+
+def test_normalize_collapses_whitespace(m):
+    assert m.normalize_text("a   b\t c") == "a b c"
+
+
+def test_normalize_strips_surrounding_quotes_and_parens(m):
+    assert m.normalize_text('"answer"') == "answer"
+    assert m.normalize_text("(answer)") == "answer"
+
+
+def test_normalize_preserves_interior_apostrophe(m):
+    # C-007: apostrophes carry meaning -> NOT stripped from the interior.
+    assert m.normalize_text("don't") == "don't"
+
+
+def test_normalize_preserves_interior_hyphen(m):
+    # C-007: hyphens carry meaning -> NOT stripped.
+    assert m.normalize_text("e-mail") == "e-mail"
+
+
+def test_normalize_preserves_accents(m):
+    # C-007: accent-sensitive by decision -> accents survive normalization.
+    assert m.normalize_text("caf‚") == "caf‚"
+
+
+def test_validate_translate_is_accent_sensitive(m):
+    # The consequence of accent preservation: an unaccented answer to an
+    # accented expected value is WRONG. Pins the decision at the validator.
+    assert m.validate_answer("caf‚", "cafe", m.QTYPE_TRANSLATE) is False
+    assert m.validate_answer("caf‚", "caf‚", m.QTYPE_TRANSLATE) is True
+
+
+# --------------------------------------------------------------------------
+# _validate_numeric tolerance -- the arithmetic comparison band (ADR-007 path)
+# tolerance None/0 means exact; a positive tolerance is an INCLUSIVE absolute
+# band (<=); a malformed tolerance degrades to exact rather than raising.
+# This is the path the property test does not cover (it tests generation, not
+# answer comparison).
+# --------------------------------------------------------------------------
+def test_tolerance_none_requires_exact(m):
+    assert m.validate_answer("10", "10.0", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("10", "10.1", m.QTYPE_ARITHMETIC) is False
+
+
+def test_tolerance_band_is_inclusive(m):
+    # A difference exactly equal to the tolerance is accepted (<=, not <).
+    assert m.validate_answer("10", "10.5", m.QTYPE_ARITHMETIC, tolerance=0.5) is True
+
+
+def test_tolerance_just_outside_band_is_wrong(m):
+    assert m.validate_answer("10", "10.6", m.QTYPE_ARITHMETIC, tolerance=0.5) is False
+
+
+def test_tolerance_zero_is_exact(m):
+    assert m.validate_answer("10", "10.0", m.QTYPE_ARITHMETIC, tolerance=0) is True
+    assert m.validate_answer("10", "10.1", m.QTYPE_ARITHMETIC, tolerance=0) is False
+
+
+def test_malformed_tolerance_degrades_to_exact(m):
+    # A stray non-numeric tolerance from a client must not crash the
+    # validator; it falls back to exact-match.
+    assert m.validate_answer("10", "10.1", m.QTYPE_ARITHMETIC, tolerance="oops") is False
+    assert m.validate_answer("10", "10.0", m.QTYPE_ARITHMETIC, tolerance="oops") is True
+
+
+def test_non_numeric_given_is_wrong_not_error(m):
+    # Letters typed for a math question are simply incorrect, never an error.
+    assert m.validate_answer("13", "abc", m.QTYPE_ARITHMETIC) is False
