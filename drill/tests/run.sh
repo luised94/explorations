@@ -49,16 +49,47 @@ cd "$PROJECT_ROOT"
 
 fail=0
 
+# Prefer `uv run` so pytest resolves from the project venv (where the test
+# dependency-group is installed) rather than the system python3, which on some
+# machines has no pytest even after `uv sync --group test`. Fall back to a bare
+# python3 invocation if uv is not on PATH (e.g. CI images without uv).
 echo
 echo "== Backend (pytest: logic, db, http, generator property) =="
-python3 -m pytest "$TESTS_DIR" -q || fail=1
+if command -v uv >/dev/null 2>&1; then
+  if ! uv run python3 -c "import pytest" >/dev/null 2>&1; then
+    echo "  test deps missing -- run: uv sync --group test" >&2
+    exit 2
+  fi
+  uv run pytest "$TESTS_DIR" -q || fail=1
+else
+  python3 -m pytest "$TESTS_DIR" -q || fail=1
+fi
 
+# jsdom 24+ and the harnesses use optional chaining (?.), which Node < 18
+# cannot parse -- an old node fails with a cryptic "Unexpected token '.'" deep
+# inside tough-cookie. Check the major version up front and say so plainly.
+# (npm's version is irrelevant here; only the Node runtime matters.)
+# The integration test shells out to Python; route it through the venv the
+# same way the backend pytest run is, so the child process sees bottle. Mirror
+# the uv-preferred / system-fallback choice used for pytest above.
 echo
 echo "== Frontend (node + jsdom, real index.html) =="
-for t in drill.test.js speech.test.js timing.test.js stats.test.js stats.integration.test.js; do
-  echo "-- $t"
-  node "$TESTS_DIR/frontend/$t" || fail=1
-done
+if command -v uv >/dev/null 2>&1; then
+  export PYTHON_CMD="uv run python3"
+else
+  export PYTHON_CMD="python3"
+fi
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+if [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "  SKIP: Node 18+ required for jsdom (found $(node --version 2>/dev/null || echo 'no node'))."
+  echo "        Install via nvm: nvm install 20 && nvm use 20, then: npm install jsdom --no-save"
+  fail=1
+else
+  for t in drill.test.js speech.test.js timing.test.js stats.test.js stats.integration.test.js; do
+    echo "-- $t"
+    node "$TESTS_DIR/frontend/$t" || fail=1
+  done
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then echo "ALL GREEN"; else echo "FAILURES ABOVE"; fi

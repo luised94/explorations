@@ -14,6 +14,9 @@ that will break first when operators and nesting are added in Section D:
 
 hypothesis explores the operator-subset space and shrinks any counterexample
 to a minimal failing case -- the edge cases an example test would miss.
+Decision anchors: the forbidden-identity and exact-division invariants are
+ADR-007 (operand ranges + identities, parameters in C-005); subtraction's
+non-negative result is the C-006 generation choice (left >= right).
 """
 import os
 import sys

@@ -4,6 +4,25 @@ The permanent test suite, reorganized **by concern** from the per-commit
 harnesses harvested during C-018a..C-019b. ASCII only, no framework on the JS
 side, pytest on the Python side.
 
+## First-time setup (do this once per machine)
+
+    # 1. Python test deps -- MUST use --group test (plain `uv sync` skips it)
+    uv sync --group test
+
+    # 2. Node 18+ required (jsdom uses optional chaining; Node 12/14 cannot
+    #    parse it). If `node --version` is below 18, install via nvm:
+    #       curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    #       export NVM_DIR="$HOME/.nvm"
+    #       [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    #      nvm install 20 && nvm use 20 && nvm alias default 20
+    # node --version    # expect v20.x
+    # which node        # expect ~/.nvm/.../bin/node, NOT /usr/bin/node
+    # 3. jsdom for the frontend suites:
+    npm install jsdom --no-save
+
+    # Then:
+    bash tests/run.sh
+
 ## Layout
 
     tests/
@@ -49,9 +68,13 @@ From the project root (the directory with drill.py and index.html):
     node tests/frontend/drill.test.js    # one frontend suite
     bash tests/run.sh                    # everything
 
+
 Requirements (project root):
 - Python: bottle, pytest, hypothesis  (add to pyproject [dependency-groups].test)
-- Node:   jsdom resolvable  ->  npm install jsdom --no-save
+  Run the backend via `uv run pytest tests` so it resolves from the project
+  venv; run.sh prefers `uv run` automatically when uv is present.
+- Node 18+ (jsdom 24+ uses optional chaining; Node 12/14 cannot parse it).
+  Then: npm install jsdom --no-save.  The npm version itself does not matter.
 
 `file://` blocks the app's ES modules, so the integration test (and the app)
 must go through the server / a loaded module, never a double-clicked HTML file.

@@ -59,7 +59,15 @@ print(json.dumps({"all":{"status":s1,"body":b1},"d7":{"status":s7,"body":b7}}))
 // (tests/frontend/ -> project root); override with PROJECT_ROOT for other
 // layouts. The pyDriver loads drill.py relative to this cwd.
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, "..", "..");
-const out = execFileSync("python3", ["-c", pyDriver], { cwd: PROJECT_ROOT, encoding: "utf8" });
+// The Python interpreter to spawn. Default to bare "python3" so the test runs
+// standalone, but allow run.sh to inject "uv run python3" so the child resolves
+// bottle from the project venv (the system python3 has no bottle). Split on
+// spaces: PYTHON_CMD="uv run python3" -> argv ["uv","run","python3"].
+const PYTHON_CMD = (process.env.PYTHON_CMD || "python3").split(" ");
+const pyExe = PYTHON_CMD[0];
+const pyPrefix = PYTHON_CMD.slice(1);   // e.g. ["run","python3"]
+const out = execFileSync(pyExe, [...pyPrefix, "-c", pyDriver],
+  { cwd: PROJECT_ROOT, encoding: "utf8" });
 const payloads = JSON.parse(out.trim().split("\n").pop());
 const allSummary = JSON.parse(payloads.all.body);
 const d7Summary = JSON.parse(payloads.d7.body);

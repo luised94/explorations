@@ -13,6 +13,12 @@ Concerns gathered here, by source:
   - pick_next_question   : NEW in C-020 (avoid-recent policy + fallbacks).
 
 These are functions of plain data, so they need no fixtures beyond the module.
+Decision anchors (decisions.md):
+  validate_answer ............ C-007 (single dispatcher; unknown qtype -> False)
+  generate/forbid_identity ... C-005, C-006, ADR-007 (operand ranges, identities)
+  division derivation ........ C-005 / ADR-007 (dividend = divisor * quotient)
+  subtraction non-negative ... C-006 (left >= right, reject x - x)
+  pick_next_question ......... C-012, ADR-005 (random + avoid-recent, v1)
 """
 import os
 import sys
@@ -145,6 +151,8 @@ def test_validate_multiple_choice_is_exact(m):
 
 
 def test_validate_unknown_qtype_is_never_correct(m):
+    # C-007 [DECIDED]: an unrecognized qtype returns False (never silently
+    # scored correct), rather than raising -- even on an exact string match.
     # The "can never be silently scored correct" guarantee, even on an exact
     # string match.
     assert m.validate_answer("x", "x", "no_such_qtype") is False
@@ -179,6 +187,9 @@ def test_generate_unknown_symbol_raises(m):
 
 
 def test_generate_division_is_always_integral(m):
+    # ADR-007 / C-005: division generation derives the dividend as
+    # divisor*quotient, so the quotient is exact every time. Sample enough to
+    # catch a regression.
     # Division generation derives the dividend as divisor*quotient, so the
     # quotient is exact every time. Sample enough to catch a regression.
     for _ in range(200):
@@ -189,6 +200,8 @@ def test_generate_division_is_always_integral(m):
 
 # --------------------------------------------------------------------------
 # pick_next_question -- avoid-recent policy with safe fallbacks
+# C-012 / ADR-005: v1 is uniformly-random with an avoid-recent window; falls
+# back to the full pool rather than ever failing to return for a non-empty bank.
 # --------------------------------------------------------------------------
 def test_pick_next_empty_returns_none(m):
     assert m.pick_next_question([]) is None
