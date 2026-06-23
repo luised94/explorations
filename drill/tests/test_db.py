@@ -8,6 +8,7 @@ What is deliberately NOT tested here (phase0.md Section B, "what NOT to
 test"): sqlite itself. We test our queries and our row->dict shaping, not the
 database engine.
 """
+
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -48,9 +49,15 @@ def seeded(tmp_path):
 
     def resp(sid, q, a, ui, correct, when, ms):
         m.insert_response(
-            conn, session_id=sid, question_text=q, answer_text=a,
-            user_input=ui, correct=correct, answered=_iso(when),
-            question_id=None, elapsed_ms=ms,
+            conn,
+            session_id=sid,
+            question_text=q,
+            answer_text=a,
+            user_input=ui,
+            correct=correct,
+            answered=_iso(when),
+            question_id=None,
+            elapsed_ms=ms,
         )
 
     resp(s_arith, "1+1", "2", "2", True, recent, 1500)

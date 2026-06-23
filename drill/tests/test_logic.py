@@ -21,6 +21,7 @@ Decision anchors (decisions.md):
   subtraction non-negative ... C-006 (left >= right, reject x - x)
   pick_next_question ......... C-012, ADR-005 (random + avoid-recent, v1)
 """
+
 import os
 import sys
 
@@ -107,9 +108,7 @@ def test_summarize_stats_empty_is_time_zero(m):
 
 def test_summarize_stats_ignores_elapsed_ms(m):
     s = m.summarize_stats(_rows((1, "arithmetic", True, 1500)))
-    assert not any(
-        ("elapsed" in k) or ("ms" in k) or ("time" in k) for k in s.keys()
-    )
+    assert not any(("elapsed" in k) or ("ms" in k) or ("time" in k) for k in s.keys())
 
 
 def test_summarize_stats_is_order_independent(m):
@@ -122,9 +121,10 @@ def test_summarize_stats_is_order_independent(m):
     )
     shuffled = rows[:]
     random.Random(7).shuffle(shuffled)
-    assert m.summarize_stats(shuffled)["categories"] == m.summarize_stats(rows)[
-        "categories"
-    ]
+    assert (
+        m.summarize_stats(shuffled)["categories"]
+        == m.summarize_stats(rows)["categories"]
+    )
 
 
 # --------------------------------------------------------------------------
@@ -251,14 +251,17 @@ def test_normalize_preserves_interior_hyphen(m):
 
 def test_normalize_preserves_accents(m):
     # C-007: accent-sensitive by decision -> accents survive normalization.
-    assert m.normalize_text("caf‚") == "caf‚"
+    # "caf\u00e9" is "cafe" + lowercase e-acute (U+00E9). Written as an ASCII
+    # \u escape, not a literal accented byte: a raw 0x82 here (CP1252 e-acute)
+    # was invalid UTF-8 and broke pytest collection -- see decisions.md C-021.
+    assert m.normalize_text("caf\u00e9") == "caf\u00e9"
 
 
 def test_validate_translate_is_accent_sensitive(m):
     # The consequence of accent preservation: an unaccented answer to an
     # accented expected value is WRONG. Pins the decision at the validator.
-    assert m.validate_answer("caf‚", "cafe", m.QTYPE_TRANSLATE) is False
-    assert m.validate_answer("caf‚", "caf‚", m.QTYPE_TRANSLATE) is True
+    assert m.validate_answer("caf\u00e9", "cafe", m.QTYPE_TRANSLATE) is False
+    assert m.validate_answer("caf\u00e9", "caf\u00e9", m.QTYPE_TRANSLATE) is True
 
 
 # --------------------------------------------------------------------------
@@ -290,7 +293,9 @@ def test_tolerance_zero_is_exact(m):
 def test_malformed_tolerance_degrades_to_exact(m):
     # A stray non-numeric tolerance from a client must not crash the
     # validator; it falls back to exact-match.
-    assert m.validate_answer("10", "10.1", m.QTYPE_ARITHMETIC, tolerance="oops") is False
+    assert (
+        m.validate_answer("10", "10.1", m.QTYPE_ARITHMETIC, tolerance="oops") is False
+    )
     assert m.validate_answer("10", "10.0", m.QTYPE_ARITHMETIC, tolerance="oops") is True
 
 

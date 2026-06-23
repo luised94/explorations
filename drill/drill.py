@@ -404,7 +404,10 @@ def _load_json(text: str | None, default: object) -> object:
     except json.JSONDecodeError as error:
         raise ValueError(
             "stored JSON column is corrupt (not valid JSON): "
-            + repr(text[:80]) + " (" + str(error) + ")"
+            + repr(text[:80])
+            + " ("
+            + str(error)
+            + ")"
         )
 
 
@@ -454,9 +457,7 @@ def list_banks(
     name for stable, predictable listing in the bank selector UI.
     """
     if category_id is None:
-        cursor = connection.execute(
-            "SELECT * FROM banks ORDER BY name"
-        )
+        cursor = connection.execute("SELECT * FROM banks ORDER BY name")
     else:
         cursor = connection.execute(
             "SELECT * FROM banks WHERE category_id = ? ORDER BY name",
@@ -968,18 +969,17 @@ def _build_operator_table() -> dict:
     for symbol in OPERATOR_SYMBOLS:
         if symbol not in config_by_symbol:
             raise ValueError(
-                "enabled operator symbol " + repr(symbol)
+                "enabled operator symbol "
+                + repr(symbol)
                 + " has no entry in OPERATOR_CONFIG"
             )
         if symbol not in _OPERATOR_EVAL_FUNCTIONS:
             raise ValueError(
-                "operator symbol " + repr(symbol)
-                + " has no eval function"
+                "operator symbol " + repr(symbol) + " has no eval function"
             )
         if symbol not in _OPERATOR_OPERAND_GENERATORS:
             raise ValueError(
-                "operator symbol " + repr(symbol)
-                + " has no operand generator"
+                "operator symbol " + repr(symbol) + " has no operand generator"
             )
 
     table = {}
@@ -1019,9 +1019,7 @@ def generate_expression(
     # symbols).
     symbols = OPERATOR_SYMBOLS if enabled_symbols is None else enabled_symbols
     if not symbols:
-        raise ValueError(
-            "generate_expression requires at least one operator symbol"
-        )
+        raise ValueError("generate_expression requires at least one operator symbol")
     unknown = [symbol for symbol in symbols if symbol not in OPERATORS]
     if unknown:
         # A caller passed a symbol with no operator-table entry. HTTP already
@@ -1053,9 +1051,7 @@ def evaluate_expression(node: dict | int) -> int:
             "node, got " + repr(node)
         )
     if node["op"] not in OPERATORS:
-        raise ValueError(
-            "evaluate_expression got unknown operator " + repr(node["op"])
-        )
+        raise ValueError("evaluate_expression got unknown operator " + repr(node["op"]))
     operator = OPERATORS[node["op"]]
     left_value = evaluate_expression(node["left"])
     right_value = evaluate_expression(node["right"])
@@ -1119,9 +1115,7 @@ def normalize_text(text: str) -> str:
     """
     lowered = text.lower()
     without_punctuation = "".join(
-        character
-        for character in lowered
-        if character not in _STRIP_PUNCTUATION
+        character for character in lowered if character not in _STRIP_PUNCTUATION
     )
     collapsed = _WHITESPACE_RUN.sub(" ", without_punctuation).strip()
     return collapsed.strip(_STRIP_OUTER_CHARACTERS).strip()
@@ -1238,9 +1232,7 @@ def _coerce_difficulty(value: object) -> int | None:
     try:
         difficulty = int(value)
     except (ValueError, TypeError):
-        raise ImportParseError(
-            "difficulty must be an integer 1-5, got " + repr(value)
-        )
+        raise ImportParseError("difficulty must be an integer 1-5, got " + repr(value))
     if difficulty < 1 or difficulty > 5:
         raise ImportParseError(
             "difficulty must be between 1 and 5, got " + repr(difficulty)
@@ -1308,19 +1300,14 @@ def parse_jsonl(text: str) -> list[dict]:
             raw = json.loads(line)
         except json.JSONDecodeError as error:
             raise ImportParseError(
-                "line " + str(line_number) + " is not valid JSON: "
-                + str(error)
+                "line " + str(line_number) + " is not valid JSON: " + str(error)
             )
         if not isinstance(raw, dict):
-            raise ImportParseError(
-                "line " + str(line_number) + " is not a JSON object"
-            )
+            raise ImportParseError("line " + str(line_number) + " is not a JSON object")
         try:
             questions.append(_normalize_question_dict(raw))
         except ImportParseError as error:
-            raise ImportParseError(
-                "line " + str(line_number) + ": " + str(error)
-            )
+            raise ImportParseError("line " + str(line_number) + ": " + str(error))
     return questions
 
 
@@ -1360,9 +1347,7 @@ def parse_csv(text: str) -> list[dict]:
         try:
             questions.append(_normalize_question_dict(prepared))
         except ImportParseError as error:
-            raise ImportParseError(
-                "row " + str(row_number) + ": " + str(error)
-            )
+            raise ImportParseError("row " + str(row_number) + ": " + str(error))
     return questions
 
 
@@ -1379,8 +1364,7 @@ def parse_import(text: str, file_format: str) -> list[dict]:
     if file_format == "csv":
         return parse_csv(text)
     raise ImportParseError(
-        "unknown import format " + repr(file_format)
-        + "; expected 'jsonl' or 'csv'"
+        "unknown import format " + repr(file_format) + "; expected 'jsonl' or 'csv'"
     )
 
 
@@ -1485,9 +1469,7 @@ def summarize_stats(rows: list[dict]) -> dict:
     # Most-practiced first; name as a stable tiebreak so the order is
     # deterministic regardless of dict/input ordering. (name may be None only
     # for malformed data; coerce to "" for a total-safe sort key.)
-    categories.sort(
-        key=lambda entry: (-entry["total"], entry["category_name"] or "")
-    )
+    categories.sort(key=lambda entry: (-entry["total"], entry["category_name"] or ""))
 
     return {
         "total": total,
@@ -1527,11 +1509,7 @@ def pick_next_question(
         return None
 
     recent = set(history or [])
-    fresh = [
-        question
-        for question in candidates
-        if question.get("id") not in recent
-    ]
+    fresh = [question for question in candidates if question.get("id") not in recent]
     pool = fresh if fresh else candidates
     return random.choice(pool)
 
@@ -1766,9 +1744,7 @@ def get_banks():
         try:
             category_id = int(category_id_raw)
         except ValueError:
-            return _json_error(
-                "category_id must be an integer", status=400
-            )
+            return _json_error("category_id must be an integer", status=400)
     connection = connect(DATABASE_PATH)
     try:
         banks = list_banks(connection, category_id)
@@ -1838,9 +1814,7 @@ def get_question_endpoint():
     # from a specific bank identified by the required bank_id parameter.
     bank_id_raw = bottle.request.query.get("bank_id")
     if bank_id_raw is None or bank_id_raw == "":
-        return _json_error(
-            "missing required parameter: bank_id", status=400
-        )
+        return _json_error("missing required parameter: bank_id", status=400)
     try:
         bank_id = int(bank_id_raw)
     except ValueError:
@@ -1871,9 +1845,7 @@ def get_question_endpoint():
 
     chosen = pick_next_question(candidates, history)
     if chosen is None:
-        return _json_error(
-            "bank " + str(bank_id) + " has no questions", status=404
-        )
+        return _json_error("bank " + str(bank_id) + " has no questions", status=404)
     # C-018b scaffold (deferred Option A): if per-question-language TTS is ever
     # built, this is where the bank's language enters the request. We already
     # have bank_id; the handler would fetch the bank row (get_bank / a
@@ -1909,8 +1881,7 @@ def post_answer():
     stats bar without a separate GET /api/stats call.
     """
     body = _request_json()
-    required_fields = ("session_id", "qtype", "question_text",
-                       "expected", "user_input")
+    required_fields = ("session_id", "qtype", "question_text", "expected", "user_input")
     for field in required_fields:
         if field not in body:
             return _json_error("missing required field: " + field, status=400)
@@ -2159,15 +2130,15 @@ def post_banks_import():
             created=created,
             language=language,
         )
-        imported = insert_questions_bulk(
-            connection, bank_id, questions, created
-        )
+        imported = insert_questions_bulk(connection, bank_id, questions, created)
     except sqlite3.IntegrityError as error:
         # category_id does not reference an existing category.
         return _json_error(_integrity_message(error), status=400)
     finally:
         connection.close()
     return {"bank_id": bank_id, "imported": imported}
+
+
 # =============================================================================
 # --- MAIN ---
 #
@@ -2221,9 +2192,7 @@ def main() -> None:
     try:
         port = int(port_raw)
     except ValueError:
-        raise SystemExit(
-            "DRILL_PORT must be an integer (got: " + repr(port_raw) + ")"
-        )
+        raise SystemExit("DRILL_PORT must be an integer (got: " + repr(port_raw) + ")")
 
     # Publish the chosen path so request handlers (which read the module
     # global) open the same database this startup initialized.

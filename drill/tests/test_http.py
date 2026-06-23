@@ -9,6 +9,7 @@ seam-level check on /api/question so the boundary payload shape is covered.
 What is NOT tested here: Bottle's routing internals. We test our handlers and
 the JSON contracts they emit.
 """
+
 import json
 import os
 import sys
@@ -50,9 +51,15 @@ def app_with_data(tmp_path):
 
     def resp(sid, correct, when, ms):
         m.insert_response(
-            conn, session_id=sid, question_text="q", answer_text="a",
-            user_input="a" if correct else "x", correct=correct,
-            answered=_iso(when), question_id=None, elapsed_ms=ms,
+            conn,
+            session_id=sid,
+            question_text="q",
+            answer_text="a",
+            user_input="a" if correct else "x",
+            correct=correct,
+            answered=_iso(when),
+            question_id=None,
+            elapsed_ms=ms,
         )
 
     resp(s_arith, True, recent, 1500)
@@ -175,7 +182,9 @@ def app_blank(tmp_path):
 # ---- /api/session/start ---------------------------------------------------
 def test_session_start_returns_id(app_blank):
     m, cats = app_blank
-    status, data = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    status, data = _post_json(
+        m, "/api/session/start", {"category_id": cats["arithmetic"]}
+    )
     assert status.startswith("200")
     assert isinstance(data["session_id"], int)
 
@@ -208,19 +217,36 @@ def test_answer_grades_correct_and_incorrect(app_blank):
     _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
     sid = start["session_id"]
 
-    _, right = _post_json(m, "/api/answer", {
-        "session_id": sid, "qtype": "arithmetic",
-        "question_text": "6 + 7", "expected": "13", "user_input": "13",
-    })
+    _, right = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": sid,
+            "qtype": "arithmetic",
+            "question_text": "6 + 7",
+            "expected": "13",
+            "user_input": "13",
+        },
+    )
     assert right["correct"] is True
     assert right["session_stats"] == {
-        "total": 1, "correct": 1, "accuracy": 1.0, "streak": 1
+        "total": 1,
+        "correct": 1,
+        "accuracy": 1.0,
+        "streak": 1,
     }
 
-    _, wrong = _post_json(m, "/api/answer", {
-        "session_id": sid, "qtype": "arithmetic",
-        "question_text": "6 + 7", "expected": "13", "user_input": "12",
-    })
+    _, wrong = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": sid,
+            "qtype": "arithmetic",
+            "question_text": "6 + 7",
+            "expected": "13",
+            "user_input": "12",
+        },
+    )
     assert wrong["correct"] is False
     # streak resets on the miss; accuracy is now 1/2.
     assert wrong["session_stats"]["streak"] == 0
@@ -235,8 +261,11 @@ def test_answer_missing_required_field_is_400(app_blank, missing):
     m, cats = app_blank
     _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
     payload = {
-        "session_id": start["session_id"], "qtype": "arithmetic",
-        "question_text": "x", "expected": "1", "user_input": "1",
+        "session_id": start["session_id"],
+        "qtype": "arithmetic",
+        "question_text": "x",
+        "expected": "1",
+        "user_input": "1",
     }
     del payload[missing]
     status, _ = wsgi_post_json(m, "/api/answer", payload)
@@ -245,10 +274,17 @@ def test_answer_missing_required_field_is_400(app_blank, missing):
 
 def test_answer_unknown_session_is_400_integrity(app_blank):
     m, _ = app_blank
-    status, data = _post_json(m, "/api/answer", {
-        "session_id": 999999, "qtype": "arithmetic",
-        "question_text": "x", "expected": "1", "user_input": "1",
-    })
+    status, data = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": 999999,
+            "qtype": "arithmetic",
+            "question_text": "x",
+            "expected": "1",
+            "user_input": "1",
+        },
+    )
     assert status.startswith("400")
     assert "error" in data
 
@@ -257,7 +293,9 @@ def test_answer_unknown_session_is_400_integrity(app_blank):
 def test_session_end_real_session_returns_true(app_blank):
     m, cats = app_blank
     _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
-    status, data = _post_json(m, "/api/session/end", {"session_id": start["session_id"]})
+    status, data = _post_json(
+        m, "/api/session/end", {"session_id": start["session_id"]}
+    )
     assert status.startswith("200")
     assert data["ended"] is True
 
@@ -290,12 +328,21 @@ def app_with_bank(tmp_path):
     cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
     cat_name = next(n for n in cats if n != "arithmetic")
     now = m.utc_now_iso()
-    full = m.insert_bank(conn, category_id=cat_id, name="b", source="manual", created=now)
-    m.insert_questions_bulk(conn, full, [
-        {"question": "hola", "answer": "hello", "qtype": "translate"},
-        {"question": "adios", "answer": "goodbye", "qtype": "translate"},
-    ], now)
-    empty = m.insert_bank(conn, category_id=cat_id, name="empty", source="manual", created=now)
+    full = m.insert_bank(
+        conn, category_id=cat_id, name="b", source="manual", created=now
+    )
+    m.insert_questions_bulk(
+        conn,
+        full,
+        [
+            {"question": "hola", "answer": "hello", "qtype": "translate"},
+            {"question": "adios", "answer": "goodbye", "qtype": "translate"},
+        ],
+        now,
+    )
+    empty = m.insert_bank(
+        conn, category_id=cat_id, name="empty", source="manual", created=now
+    )
     conn.commit()
     conn.close()
     return m, cat_name, full, empty
@@ -303,7 +350,9 @@ def app_with_bank(tmp_path):
 
 def test_question_bank_branch_returns_payload(app_with_bank):
     m, cat_name, full, _ = app_with_bank
-    status, data = _get_json(m, "/api/question", "category=%s&bank_id=%d" % (cat_name, full))
+    status, data = _get_json(
+        m, "/api/question", "category=%s&bank_id=%d" % (cat_name, full)
+    )
     assert status.startswith("200")
     assert data["question_text"] in ("hola", "adios")
     assert data["qtype"] == "translate"
@@ -332,7 +381,9 @@ def test_question_bank_bad_recent_is_400(app_with_bank):
 
 def test_question_empty_bank_is_404(app_with_bank):
     m, cat_name, _, empty = app_with_bank
-    status, data = _get_json(m, "/api/question", "category=%s&bank_id=%d" % (cat_name, empty))
+    status, data = _get_json(
+        m, "/api/question", "category=%s&bank_id=%d" % (cat_name, empty)
+    )
     assert status.startswith("404")
     assert "error" in data
 
@@ -382,9 +433,12 @@ def test_import_jsonl_round_trips(app_blank):
         '{"question": "capital of Spain", "answer": "Madrid"}\n'
     )
     status, body = wsgi_post_multipart(
-        m, "/api/banks/import",
+        m,
+        "/api/banks/import",
         {"category_id": cat_id, "name": "geo", "format": "jsonl"},
-        "file", "geo.jsonl", jsonl.encode("utf-8"),
+        "file",
+        "geo.jsonl",
+        jsonl.encode("utf-8"),
     )
     data = json.loads(body)
     assert status.startswith("200")
@@ -396,8 +450,12 @@ def test_import_missing_file_part_is_400(app_blank):
     m, cats = app_blank
     cat_id = cats["arithmetic"]
     status, _ = wsgi_post_multipart(
-        m, "/api/banks/import", {"category_id": cat_id},
-        "notfile", "x.jsonl", b"",
+        m,
+        "/api/banks/import",
+        {"category_id": cat_id},
+        "notfile",
+        "x.jsonl",
+        b"",
     )
     assert status.startswith("400")
 
@@ -405,8 +463,12 @@ def test_import_missing_file_part_is_400(app_blank):
 def test_import_missing_category_is_400(app_blank):
     m, _ = app_blank
     status, _ = wsgi_post_multipart(
-        m, "/api/banks/import", {"format": "jsonl"},
-        "file", "x.jsonl", b'{"question":"q","answer":"a"}\n',
+        m,
+        "/api/banks/import",
+        {"format": "jsonl"},
+        "file",
+        "x.jsonl",
+        b'{"question":"q","answer":"a"}\n',
     )
     assert status.startswith("400")
 
@@ -415,8 +477,12 @@ def test_import_non_utf8_is_400(app_blank):
     m, cats = app_blank
     cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
     status, _ = wsgi_post_multipart(
-        m, "/api/banks/import", {"category_id": cat_id, "format": "jsonl"},
-        "file", "bad.jsonl", b"\xff\xfe\x00bad",
+        m,
+        "/api/banks/import",
+        {"category_id": cat_id, "format": "jsonl"},
+        "file",
+        "bad.jsonl",
+        b"\xff\xfe\x00bad",
     )
     assert status.startswith("400")
 
@@ -425,8 +491,12 @@ def test_import_malformed_jsonl_is_400(app_blank):
     m, cats = app_blank
     cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
     status, data = wsgi_post_multipart(
-        m, "/api/banks/import", {"category_id": cat_id, "format": "jsonl"},
-        "file", "m.jsonl", b"{not valid json}\n",
+        m,
+        "/api/banks/import",
+        {"category_id": cat_id, "format": "jsonl"},
+        "file",
+        "m.jsonl",
+        b"{not valid json}\n",
     )
     assert status.startswith("400")
     assert "error" in json.loads(data)

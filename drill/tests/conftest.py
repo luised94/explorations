@@ -12,6 +12,7 @@ Resolution order for the project root:
      found,
   3. else: leave cwd alone and let the test surface a clear error.
 """
+
 import os
 
 import pytest

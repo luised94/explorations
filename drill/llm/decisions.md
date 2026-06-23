@@ -1135,3 +1135,26 @@ GET /api/question?operators= (empty value) returns 200 - the handler treats an e
 normalize_text strips an apostrophe at an answer's ends (surrounding-quote stripping) but preserves it interior (don't  don't). Accents and interior hyphens are likewise preserved by the C-007 accent-sensitivity decision. Relevant to any thread touching normalization or adding accent_insensitive.
 
 validate_answer's qtype dispatch is the seam for the future grading-kind enum (D1); it is now test-covered, so D1 can refactor against a green net.
+
+
+C-021 - Encoding fix: test_logic.py accent literals (THREAD-FIX).
+
+The accent-sensitivity tests (test_normalize_preserves_accents,
+test_validate_translate_is_accent_sensitive) carried the intended lowercase
+e-acute as a raw 0x82 byte -- a CP1252 encoding of the character that is
+invalid as UTF-8. Python could not decode the source file, so pytest aborted
+at COLLECTION: all 84 backend assertions failed to run and a clean clone at
+21b5b57 reported only 75 green (frontend) instead of 159. The frontend suite
+was unaffected.
+
+Fix is encoding-only, no behavior change. The three "caf" + 0x82 literals are
+now written "caf\u00e9" (an ASCII \u escape for U+00E9). normalize_text
+lowercases and preserves accents (C-007), so the lowercase escape matches the
+existing contract exactly; the assertions and their meaning are unchanged.
+Harness-only: zero changes to drill.py / index.html, and no other test
+changed. After the fix the suite is back to 159 green ("ALL GREEN").
+
+Guidance for downstream threads: keep non-ASCII test data as \u escapes, not
+literal high bytes, so the source stays valid UTF-8 (and ASCII-only). An
+accent_insensitive bank flag, if ever added, would relax the C-007 contract
+these two tests pin -- update them together if so.

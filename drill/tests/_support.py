@@ -21,6 +21,7 @@ Gotcha already paid for (kept here so it is never re-paid): start_response
 MUST accept the third exc_info argument -- Bottle passes it, and a 2-arg
 callable raises at request time.
 """
+
 import importlib.util
 import io
 import os
@@ -145,9 +146,7 @@ def wsgi_post_multipart(m, path, fields, file_field, filename, file_bytes):
     parts = []
     for name, value in fields.items():
         parts.append(("--" + boundary).encode())
-        parts.append(
-            ('Content-Disposition: form-data; name="%s"' % name).encode()
-        )
+        parts.append(('Content-Disposition: form-data; name="%s"' % name).encode())
         parts.append(b"")
         parts.append(str(value).encode())
     parts.append(("--" + boundary).encode())

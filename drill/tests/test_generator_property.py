@@ -18,6 +18,7 @@ Decision anchors: the forbidden-identity and exact-division invariants are
 ADR-007 (operand ranges + identities, parameters in C-005); subtraction's
 non-negative result is the C-006 generation choice (left >= right).
 """
+
 import os
 import sys
 
@@ -34,7 +35,10 @@ _ALL_SYMBOLS = list(_M.OPERATOR_SYMBOLS)
 
 def _nonempty_symbol_subsets():
     return st.lists(
-        st.sampled_from(_ALL_SYMBOLS), min_size=1, max_size=len(_ALL_SYMBOLS), unique=True
+        st.sampled_from(_ALL_SYMBOLS),
+        min_size=1,
+        max_size=len(_ALL_SYMBOLS),
+        unique=True,
     )
 
 
