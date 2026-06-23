@@ -26,3 +26,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 # Single-module project: drill.py is the whole backend (spec section 2).
 include = ["drill.py", "index.html"]
+
+[dependency-groups]
+test = ["pytest>=8", "hypothesis>=6"]

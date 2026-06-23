@@ -35,3 +35,6 @@ __pycache__/
 # Keep sample banks out of the repo unless deliberately added.
 *.local.jsonl
 *.local.csv
+
+# js
+*node_modules
