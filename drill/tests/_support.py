@@ -96,3 +96,62 @@ def wsgi_post_json(m, path, payload):
 
     body = b"".join(m.app(environ, start_response))
     return captured["status"], body.decode("utf-8")
+
+
+def wsgi_post_multipart(m, path, fields, file_field, filename, file_bytes):
+    """POST a multipart/form-data body through the WSGI callable.
+
+    fields      -- dict of plain form fields (name -> value, stringified).
+    file_field  -- the form name of the file part (the import endpoint wants
+                   "file"; pass a different name to exercise the missing-part
+                   400).
+    filename    -- the upload's filename (its extension drives format
+                   inference when no explicit format field is given).
+    file_bytes  -- the raw upload bytes (pass non-UTF-8 bytes to exercise the
+                   decode-error 400).
+
+    Returns (status_string, body_text). Builds the body by hand so the test
+    needs no extra dependency; the boundary is unique per call.
+    """
+    boundary = "----c020test" + uuid.uuid4().hex
+    parts = []
+    for name, value in fields.items():
+        parts.append(("--" + boundary).encode())
+        parts.append(
+            ('Content-Disposition: form-data; name="%s"' % name).encode()
+        )
+        parts.append(b"")
+        parts.append(str(value).encode())
+    parts.append(("--" + boundary).encode())
+    parts.append(
+        (
+            'Content-Disposition: form-data; name="%s"; filename="%s"'
+            % (file_field, filename)
+        ).encode()
+    )
+    parts.append(b"Content-Type: application/octet-stream")
+    parts.append(b"")
+    parts.append(file_bytes)
+    parts.append(("--" + boundary + "--").encode())
+    parts.append(b"")
+    body = b"\r\n".join(parts)
+
+    captured = {}
+    environ = {
+        "REQUEST_METHOD": "POST",
+        "PATH_INFO": path,
+        "QUERY_STRING": "",
+        "CONTENT_TYPE": "multipart/form-data; boundary=" + boundary,
+        "CONTENT_LENGTH": str(len(body)),
+        "SERVER_NAME": "test",
+        "SERVER_PORT": "80",
+        "wsgi.input": io.BytesIO(body),
+        "wsgi.errors": sys.stderr,
+        "wsgi.url_scheme": "http",
+    }
+
+    def start_response(status, headers, exc_info=None):
+        captured["status"] = status
+
+    out = b"".join(m.app(environ, start_response))
+    return captured["status"], out.decode("utf-8")

@@ -60,6 +60,33 @@ summarize_correctness, validate_answer (all qtype branches + the unknown-qtype
 guarantee), generate/evaluate/render example invariants, pick_next_question,
 and the hypothesis generator property test.
 
+## HTTP endpoint coverage (test_http.py)
+
+Every endpoint and its 400/404 surface is now exercised over a temp DB:
+
+    /api/categories     list
+    /api/banks          list, non-int category_id -> 400
+    /api/stats          all-time, category filter, day window, window echo,
+                        4x 400 (days<=0, days=abc, category_id=notint),
+                        empty-category 200/zeros
+    /api/question       arithmetic payload; bank-branch payload; missing
+                        category/bank_id -> 400; non-int bank_id -> 400; bad
+                        recent -> 400; empty bank -> 404; unknown operator
+                        -> 400; separators-only operators -> 400
+    /api/session/start  id; missing/non-int category -> 400; unknown
+                        category -> 400 (integrity translation)
+    /api/answer         correct + incorrect grading + session_stats; each of
+                        5 required fields missing -> 400; unknown session
+                        -> 400 (integrity)
+    /api/session/end    real -> ended:true; unknown -> ended:false (the
+                        deliberate no-op); missing id -> 400
+    /api/banks/import   JSONL round-trip; missing file part -> 400; missing
+                        category -> 400; non-UTF-8 -> 400; malformed -> 400
+
+Note: GET /api/question with operators= (truly empty) is a 200 -- the handler
+treats an empty value as "omitted, use all". The 400 fires for operators=,,
+(present but parses to no symbols). The tests pin the path that actually 400s.
+
 ## Running
 
 From the project root (the directory with drill.py and index.html):
@@ -68,13 +95,9 @@ From the project root (the directory with drill.py and index.html):
     node tests/frontend/drill.test.js    # one frontend suite
     bash tests/run.sh                    # everything
 
-
 Requirements (project root):
 - Python: bottle, pytest, hypothesis  (add to pyproject [dependency-groups].test)
-  Run the backend via `uv run pytest tests` so it resolves from the project
-  venv; run.sh prefers `uv run` automatically when uv is present.
-- Node 18+ (jsdom 24+ uses optional chaining; Node 12/14 cannot parse it).
-  Then: npm install jsdom --no-save.  The npm version itself does not matter.
+- Node:   jsdom resolvable  ->  npm install jsdom --no-save
 
 `file://` blocks the app's ES modules, so the integration test (and the app)
 must go through the server / a loaded module, never a double-clicked HTML file.
