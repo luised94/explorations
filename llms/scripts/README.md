@@ -1,11 +1,13 @@
 # llm.py
 Author: Fable 5, with Opus 4.6 feedback
 
-A single-file CLI for sending prompts and files to LLM APIs (Anthropic, OpenAI, Gemini), with six interaction patterns as subcommands.
+A CLI for sending prompts and files to LLM APIs (Anthropic, OpenAI, Gemini), with six interaction patterns as subcommands.
 
 ## Setup
 
 Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/). The httpx dependency is declared inline (PEP 723), so there is nothing to install - `uv run llm.py` handles it.
+
+The tool is two files that must sit in the same directory: `llm.py` (the CLI) and `llm_config.py` (the provider table and shared `call_llm`). Copy both together; `llm.py` exits with a clear message if `llm_config.py` is missing. `llm_config.py` is a local module, not an extra dependency - httpx is still the only one.
 
 Set the API key for whichever provider you use (only that one is needed):
 
@@ -49,7 +51,7 @@ All subcommands accept `--provider`, `--model`, `--output DIR`, and `--system TE
 
 ## Adding a provider
 
-Add three things to llm.py: an entry in the `PROVIDERS` dict (following the field list documented above it), a `transform_messages` / `extract_response` function pair referenced by that entry, and the environment variable holding its API key. `call_llm` reads everything else from the dict - no other code changes.
+Add three things to `llm_config.py` (the provider machinery moved there): an entry in the `PROVIDERS` dict (following the field list documented above it), a `transform_messages` / `extract_response` function pair referenced by that entry, and the environment variable holding its API key. `call_llm` reads everything else from the dict - no changes to `llm.py` are needed.
 
 ## Workflow recipes
 

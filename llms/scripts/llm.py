@@ -454,15 +454,25 @@ def call_with_logging(
     except httpx.HTTPStatusError as exc:
         # Status error: llm_config already printed "HTTP <status>: ..." to stderr.
         record_call(
-            command, provider_name, resolved_model, max_tokens, payload_chars,
-            started, f"http_{exc.response.status_code}",
+            command,
+            provider_name,
+            resolved_model,
+            max_tokens,
+            payload_chars,
+            started,
+            f"http_{exc.response.status_code}",
         )
         raise
     except httpx.HTTPError:
         # Transport failure (no network, DNS, timeout): already printed by llm_config.
         record_call(
-            command, provider_name, resolved_model, max_tokens, payload_chars,
-            started, "transport",
+            command,
+            provider_name,
+            resolved_model,
+            max_tokens,
+            payload_chars,
+            started,
+            "transport",
         )
         raise
     except llm_config.ResponseError:
@@ -471,8 +481,13 @@ def call_with_logging(
         # exception alone can't distinguish them; response_error is the honest
         # label for "a 2xx we could not turn into text".
         record_call(
-            command, provider_name, resolved_model, max_tokens, payload_chars,
-            started, "response_error",
+            command,
+            provider_name,
+            resolved_model,
+            max_tokens,
+            payload_chars,
+            started,
+            "response_error",
         )
         raise
 
@@ -483,8 +498,14 @@ def call_with_logging(
             file=sys.stderr,
         )
     record_call(
-        command, provider_name, resolved_model, max_tokens, payload_chars,
-        started, "truncated" if truncated else "ok", usage,
+        command,
+        provider_name,
+        resolved_model,
+        max_tokens,
+        payload_chars,
+        started,
+        "truncated" if truncated else "ok",
+        usage,
     )
     return apply_truncation_marker(text, truncated, max_tokens)
 

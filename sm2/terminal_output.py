@@ -409,6 +409,79 @@ def format_block(header: str, content: str) -> str:
     return "\n".join(lines)
 
 
+def format_labeled_separator(label: str, character: str = "-", width: int | None = None) -> str:
+    """Generate a separator line with a centered label embedded in the rule.
+
+    Like format_separator, but with the label set into the middle of the rule:
+    a short run of the fill character, the label in brackets, then fill to width.
+
+    Args:
+        label: Text to embed (e.g. "turn 1", "session")
+        character: Fill character to repeat (default: "-")
+        width: Line width (default: layout max width)
+
+    Returns:
+        Dim-styled separator with the label embedded, e.g.
+        "--- [turn 1] -------------------------------------"
+    """
+    if width is None:
+        width = _get_max_width()
+    label_segment = f"[{label}]"
+    prefix = character * 3
+    # Remaining fill after the prefix, a space, the label, and a trailing space.
+    used = len(prefix) + 1 + len(label_segment) + 1
+    suffix = character * max(0, width - used)
+    line = f"{prefix} {label_segment} {suffix}".rstrip()
+    return apply_style(line, STYLE_DIM)
+
+
+def format_metadata_inline(pairs: list[tuple[str, str]]) -> str:
+    """Format a list of (name, value) pairs as space-joined bracketed labels.
+
+    A one-line metadata strip built from the same bracketed-label vocabulary as
+    format_label, used for per-turn and session summaries (tokens, cost, turns).
+
+    Args:
+        pairs: (name, value) tuples, rendered left to right
+
+    Returns:
+        Space-joined labels, e.g. "[turns: 3] [tokens: 1500 in / 800 out ...] [cost: $0.012]"
+    """
+    return " ".join(format_label(name, value) for name, value in pairs)
+
+
+def format_tree(
+    nodes: list[tuple[str, str, str | None]], current: str | None = None
+) -> str:
+    """Render a parent/child node list as an indented ASCII tree.
+
+    Supports the Phase-2 branching view (see workbench): each node is
+    (id, label, parent_id); roots have parent_id None. The node whose id equals
+    current is marked with a trailing "*".
+
+    Args:
+        nodes: (id, label, parent_id) tuples
+        current: id of the node to mark as current (optional)
+
+    Returns:
+        Multi-line indented tree string; depth shown by indentation.
+    """
+    children: dict[str | None, list[tuple[str, str]]] = {}
+    for node_id, label, parent_id in nodes:
+        children.setdefault(parent_id, []).append((node_id, label))
+
+    lines: list[str] = []
+
+    def walk(parent_id: str | None, depth: int) -> None:
+        for node_id, label in children.get(parent_id, []):
+            marker = " *" if node_id == current else ""
+            lines.append(("  " * depth) + f"- {label}{marker}")
+            walk(node_id, depth + 1)
+
+    walk(None, 0)
+    return "\n".join(lines)
+
+
 def format_card(
     header_left: str,
     header_right: str,
