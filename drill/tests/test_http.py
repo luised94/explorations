@@ -31,11 +31,11 @@ def _iso(dt):
 
 
 @pytest.fixture
-def app_with_data():
+def app_with_data(tmp_path):
     """Module + temp DB seeded for stats endpoint tests. DATABASE_PATH is
     bound to the temp file so the handlers read it."""
     m = load_drill()
-    conn = temp_db(m)
+    conn = temp_db(m, tmp_path)
 
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     arith_id = cats["arithmetic"]
@@ -164,9 +164,9 @@ def _post_json(m, path, payload):
 # A fresh module + empty temp DB (no responses seeded). The category ids are
 # returned for building valid/invalid foreign keys.
 @pytest.fixture
-def app_blank():
+def app_blank(tmp_path):
     m = load_drill()
-    conn = temp_db(m)
+    conn = temp_db(m, tmp_path)
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     conn.close()
     return m, cats
@@ -280,12 +280,12 @@ def test_session_end_missing_id_is_400(app_blank):
 
 # ---- /api/question: bank branch ------------------------------------------
 @pytest.fixture
-def app_with_bank():
+def app_with_bank(tmp_path):
     """A module + temp DB carrying one populated bank and one empty bank in a
     non-arithmetic category. Returns (m, category_id, full_bank_id,
     empty_bank_id)."""
     m = load_drill()
-    conn = temp_db(m)
+    conn = temp_db(m, tmp_path)
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
     cat_name = next(n for n in cats if n != "arithmetic")

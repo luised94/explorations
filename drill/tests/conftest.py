@@ -42,3 +42,21 @@ def _chdir_project_root():
     os.chdir(root)
     yield
     os.chdir(prev)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_fallback_tmp_dirs():
+    """Remove any mkdtemp fallback dirs temp_db created without a tmp_path.
+
+    Fixtures route their temp DB through pytest's tmp_path (auto-cleaned), so
+    in a normal run this finds nothing. It is the safety net for any temp_db
+    call made without a dir_ -- it keeps the suite from leaving stray
+    /tmp/tmp* directories behind across repeated runs.
+    """
+    import sys
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from _support import cleanup_fallback_tmp_dirs
+
+    yield
+    cleanup_fallback_tmp_dirs()

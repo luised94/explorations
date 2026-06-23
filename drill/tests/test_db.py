@@ -31,7 +31,7 @@ def seeded(tmp_path):
     Returns (module, conn, ids dict).
     """
     m = load_drill()
-    conn = temp_db(m)
+    conn = temp_db(m, tmp_path)
 
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     arith_id = cats["arithmetic"]

@@ -38,13 +38,41 @@ def load_drill(path="drill.py"):
     return module
 
 
-def temp_db(m):
-    """Create a temp DB, point m.DATABASE_PATH at it, init schema, return conn."""
-    dbpath = os.path.join(tempfile.mkdtemp(), "drill.db")
+# Temp directories created by temp_db() WITHOUT a caller-supplied dir_ (the
+# mkdtemp fallback). pytest's tmp_path cleans up after itself, but the
+# fallback path does not -- so we record those dirs here and an autouse
+# session fixture in conftest.py removes them at the end of the run. This
+# stops the per-call mkdtemp leak from accumulating across repeated runs.
+_FALLBACK_TMP_DIRS = []
+
+
+def temp_db(m, dir_=None):
+    """Create a temp DB, point m.DATABASE_PATH at it, init schema, return conn.
+
+    dir_ -- optional directory to put the DB file in. Pass pytest's tmp_path
+            so the file is cleaned up automatically with the test's tmp tree.
+            When omitted, a mkdtemp() directory is created and registered for
+            end-of-session cleanup (see _FALLBACK_TMP_DIRS); this keeps
+            standalone/non-pytest use working without leaking.
+    """
+    if dir_ is None:
+        dir_ = tempfile.mkdtemp()
+        _FALLBACK_TMP_DIRS.append(dir_)
+    dbpath = os.path.join(str(dir_), "drill.db")
     m.DATABASE_PATH = dbpath
     conn = m.connect(dbpath)
     m.init_db(conn)
     return conn
+
+
+def cleanup_fallback_tmp_dirs():
+    """Remove every mkdtemp fallback directory temp_db created. Idempotent;
+    safe to call from a session-scoped teardown."""
+    import shutil
+
+    while _FALLBACK_TMP_DIRS:
+        path = _FALLBACK_TMP_DIRS.pop()
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def wsgi_get(m, path, query_string=""):
