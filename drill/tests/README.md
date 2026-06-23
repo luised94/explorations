@@ -22,6 +22,11 @@ side, pytest on the Python side.
 
     # Then:
     bash tests/run.sh
+# Drill test suite (C-020)
+
+The permanent test suite, reorganized **by concern** from the per-commit
+harnesses harvested during C-018a..C-019b. ASCII only, no framework on the JS
+side, pytest on the Python side.
 
 ## Layout
 
@@ -58,7 +63,10 @@ side, pytest on the Python side.
 New coverage added in C-020 (did not exist in the harnesses):
 summarize_correctness, validate_answer (all qtype branches + the unknown-qtype
 guarantee), generate/evaluate/render example invariants, pick_next_question,
-and the hypothesis generator property test.
+and the hypothesis generator property test. C-020c adds the normalize_text
+pipeline (interior apostrophe/hyphen/accent preserved by decision C-007) and
+the numeric tolerance band (inclusive <=; malformed tolerance degrades to
+exact, never raises).
 
 ## HTTP endpoint coverage (test_http.py)
 

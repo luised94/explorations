@@ -91,6 +91,8 @@ the seams will be obvious rather than guessed.
 
 ## B. Tests -- how hard, and what is worth testing
 
+Section B status (C-020, T1): IMPLEMENTED. The by-concern split (test_logic / test_db / test_http + frontend) and the one targeted hypothesis property test (generator invariants) are built and green at 159 assertions. The four reusable patterns are documented in tests/README.md. The grading-kind seam noted in Section F is test-covered at validate_answer and ready for D1.
+
 **Difficulty: very low, because the tests already exist -- they are just being
 thrown away each commit.** Every commit this session shipped a jsdom harness or
 a WSGI-over-temp-DB Python harness and then discarded it. Phase 0 is mostly

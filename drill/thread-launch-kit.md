@@ -59,7 +59,7 @@ when every thread feeding it has landed.
 
 ```
 Wave 0 (start now, fully parallel):
-  THREAD-TEST     tests + safety net      (T1)   <- do this one FIRST of the wave
+  DONE THREAD-TEST     tests + safety net      (T1)   <- do this one FIRST of the wave
   THREAD-MIGRATE  migration runner         (T2)
   THREAD-DOCS     docstring/ADR cleanup    (T3)
   THREAD-ARITH    arithmetic operators     (A1)  (can start; A2 waits on TEST)
@@ -123,6 +123,7 @@ freely; the point is each thread owns a disjoint ID range.
 ---
 
 ### THREAD-TEST (C-020) -- start first
+THREAD-TEST (T1) DONE - tests/ suite, 159 assertions green (backend 84: logic 35, http 40, db 7, property 2; frontend 75). Baseline for all post-merge "re-run the suite" checks. Unlocks A2, M2, M1.
 Attach: drill.py, index.html, spec.md, decisions.md, PHASE0_PLAN.md
 
 > Commit C-020. Per PHASE0_PLAN.md Section B, set up the permanent test suite by
@@ -137,6 +138,8 @@ Attach: drill.py, index.html, spec.md, decisions.md, PHASE0_PLAN.md
 > arithmetic generator invariants. Do not test Bottle/sqlite/the DOM
 > themselves. Scope is the harness only -- no behavior changes to drill.py.
 > Report the pass count.
+
+Post-merge protocol (all threads touching tested code): after merging into the integration branch, run bash tests/run.sh from the merged tree (not just the feature branch). Expect 159 green. A red test is a real contract change to reconcile, not a merge artifact. If a thread deliberately changes a pinned contract, update the test and note it in decisions.md in the same commit.
 
 ### THREAD-MIGRATE (C-021)
 Attach: drill.py, spec.md, decisions.md, PHASE0_PLAN.md

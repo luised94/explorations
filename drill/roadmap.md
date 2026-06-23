@@ -52,7 +52,7 @@ defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 | 5 | Generalize expression generation (nested multi-operator trees) | 4.32 |
 | 6 | Consolidate the SM2 spaced-repetition engine | 4.04 |
 | 7 | Adaptive question selection (swap `pick_next_question`) | 3.98 |
-| 8 | Automated test suite checked into the repo | 3.94 |
+| 8 | Automated test suite checked into the repo | 3.94 | DONE
 | 9 | Logic / deduction drill (truth tables, syllogisms) | 3.80 |
 | 10 | Code drill ("what does this snippet output?") | 3.72 |
 
@@ -104,7 +104,7 @@ defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 You asked me to fold in anything relevant to code quality. Six items, each
 placed in the ranking above:
 
-1. **Automated test suite in the repo (T1, #8).** We have been writing
+1. DONE **Automated test suite in the repo (T1, #8).** We have been writing
    throwaway jsdom and Python harnesses each commit and discarding them. The
    single highest-quality-leverage move is to keep them: a `tests/` directory
    with the WSGI-over-temp-DB pattern for the backend and the jsdom pattern for
@@ -145,6 +145,7 @@ The ranking tells you what is valuable; this tells you what order avoids
 rework. Dependencies matter more than raw score for the first moves.
 
 **Phase 0 -- lock the foundation (do before anything else).**
+Test suite done.
 Test suite (#8) and the migration runner (#11) first, even though #11 is
 Tier 2. Reason: every Tier 1 feature either changes the generator/selection
 logic (wants tests) or adds columns (wants migrations). Spend the small upfront

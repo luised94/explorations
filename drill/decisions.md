@@ -1123,3 +1123,15 @@ day window correctly excludes a 20-day-old row -> 6/5/83%). All prior suites
   done (with C-013a/C-016a inserted and C-018/C-019 split into a/b[/c]). The
   only remaining noted-but-unscheduled item is the no-feedback "speed drill"
   mode, which was always outside the initial plan.
+C-020 - Permanent test suite (THREAD-TEST, T1).
+
+Formalized the harvested C-018a..C-019b harnesses into tests/, organized by concern (logic / db / http / generator-property + frontend), 159 assertions green. Harness-only: zero changes to drill.py / index.html.
+
+Decisions: JS suites keep the dependency-free hand-rolled scorer rather than node:test (Pattern 4); Python side is pytest. Test deps live in [dependency-groups] test, not runtime dependencies; the wheel still ships only drill.py + index.html.
+
+Two behavioral asymmetries the suite surfaced and now pins (note for downstream threads):
+
+GET /api/question?operators= (empty value) returns 200 - the handler treats an empty string as "omitted, use all operators." Only operators=,, (present but parsing to no symbols) is a 400. Relevant to A1/A2 if operator handling changes.
+normalize_text strips an apostrophe at an answer's ends (surrounding-quote stripping) but preserves it interior (don't  don't). Accents and interior hyphens are likewise preserved by the C-007 accent-sensitivity decision. Relevant to any thread touching normalization or adding accent_insensitive.
+
+validate_answer's qtype dispatch is the seam for the future grading-kind enum (D1); it is now test-covered, so D1 can refactor against a green net.
