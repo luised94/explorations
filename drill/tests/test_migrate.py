@@ -162,6 +162,7 @@ def test_run_migrations_applies_pending_in_order(db):
         def migrate(c):
             calls.append(tag)
             c.execute("CREATE TABLE _probe_%s (id INTEGER)" % tag)
+
         return migrate
 
     injected = [(2, "add two", mk("two")), (3, "add three", mk("three"))]
@@ -274,3 +275,93 @@ def test_existing_baselined_db_is_untouched_by_startup_sequence(tmp_path):
     assert result["applied"] == []
     assert result["from_version"] == result["to_version"] == m.SCHEMA_VERSION
     conn.close()
+
+
+# --- C-T2c capstone: recovery, data preservation, and the unbaselined path ---
+
+
+def test_rerun_after_failed_migration_recovers_and_advances(db):
+    # The realistic operator path: a migration fails (DB stays at the last good
+    # version), the migration is corrected, and the next run succeeds and
+    # advances. Proves a rolled-back failure does not poison the connection for
+    # a later successful run.
+    m, conn = db
+
+    class Boom(Exception):
+        pass
+
+    def bad(c):
+        c.execute("CREATE TABLE _recover (id INTEGER)")
+        raise Boom("first attempt fails")
+
+    failing = [(2, "attempt", bad)]
+    with pytest.raises(Boom):
+        m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=failing)
+    assert m.get_schema_version(conn) == 1  # held at last good version
+
+    # Corrected migration, same version, re-run: now it advances cleanly.
+    def good(c):
+        c.execute("CREATE TABLE _recover (id INTEGER)")
+
+    fixed = [(2, "attempt", good)]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=fixed)
+    assert result["applied"] == [(2, "attempt")]
+    assert m.get_schema_version(conn) == 2
+    tables = {
+        r["name"]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert "_recover" in tables
+
+
+def test_existing_user_data_survives_a_migration(db):
+    # The data-loss guarantee: a user's rows (their only copy -- the .db file IS
+    # the backup) must survive a schema change. Seed a category + bank, run a
+    # column-adding migration, and confirm the pre-existing rows are intact and
+    # the new column is present with its default.
+    m, conn = db
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    arith_id = cats["arithmetic"]
+    bank_id = m.insert_bank(
+        conn,
+        category_id=arith_id,
+        name="pre-existing bank",
+        source="seed",
+        created=FIXED_NOW,
+        language=None,
+    )
+    conn.commit()
+
+    def add_column(c):
+        # An additive, non-destructive change of the kind D1 will make. T2 owns
+        # no real column; this lives only in the injected test registry.
+        c.execute("ALTER TABLE banks ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+
+    injected = [(2, "add banks.note", add_column)]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
+    assert result["to_version"] == 2
+
+    row = conn.execute(
+        "SELECT id, name, note FROM banks WHERE id = ?", (bank_id,)
+    ).fetchone()
+    assert row["name"] == "pre-existing bank"  # data preserved
+    assert row["note"] == ""  # new column present with default
+
+
+def test_run_migrations_on_unbaselined_db_treats_current_as_zero(tmp_path):
+    # When no baseline is stamped yet (get_schema_version is None), the runner
+    # treats current as 0 for selection. With a v1-baseline-layered registry it
+    # still applies nothing it should not; here an empty registry is a no-op and
+    # from_version is reported as 0.
+    m = load_drill()
+    dbpath = os.path.join(str(tmp_path), "raw.db")
+    m.DATABASE_PATH = dbpath
+    conn = m.connect(dbpath)  # NOT init_db'd: schema_version table absent
+    try:
+        assert m.get_schema_version(conn) is None
+        result = m.run_migrations(conn, FIXED_NOW)
+        assert result["from_version"] == 0
+        assert result["to_version"] == 0
+        assert result["applied"] == []
+    finally:
+        conn.close()

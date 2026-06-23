@@ -2395,13 +2395,7 @@ def main() -> None:
     # Operator-facing migration report: what ran and the resulting version.
     if result["applied"]:
         for version, description in result["applied"]:
-            print(
-                "drill: applied migration "
-                + str(version)
-                + " ("
-                + description
-                + ")"
-            )
+            print("drill: applied migration " + str(version) + " (" + description + ")")
         print(
             "drill: schema migrated "
             + str(result["from_version"])
