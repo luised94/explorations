@@ -162,7 +162,6 @@ def test_run_migrations_applies_pending_in_order(db):
         def migrate(c):
             calls.append(tag)
             c.execute("CREATE TABLE _probe_%s (id INTEGER)" % tag)
-
         return migrate
 
     injected = [(2, "add two", mk("two")), (3, "add three", mk("three"))]
@@ -229,3 +228,49 @@ def test_run_migrations_stops_at_last_good_version_on_failure(db):
     }
     assert "_good" in tables
     assert "_bad" not in tables
+
+
+# --- init_db reconciliation (the startup sequence MAIN runs) ---
+
+
+def test_fresh_db_reaches_current_version_via_startup_sequence(tmp_path):
+    # A fresh DB, taken through the exact init_db -> run_migrations sequence
+    # main() uses, lands at SCHEMA_VERSION. With the shipped empty registry the
+    # runner is a no-op and the version is the init_db baseline (1).
+    m = load_drill()
+    dbpath = os.path.join(str(tmp_path), "fresh.db")
+    m.DATABASE_PATH = dbpath
+    conn = m.connect(dbpath)
+    try:
+        m.init_db(conn)
+        conn.commit()
+        result = m.run_migrations(conn, FIXED_NOW)
+    finally:
+        pass
+    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
+    assert result["to_version"] == m.SCHEMA_VERSION
+    assert result["applied"] == []  # empty registry: nothing to apply
+    conn.close()
+
+
+def test_existing_baselined_db_is_untouched_by_startup_sequence(tmp_path):
+    # An existing DB already at the baseline is not re-stamped or advanced when
+    # the startup sequence runs again: init_db is stamp-once, runner is a no-op.
+    m = load_drill()
+    conn = temp_db(m, tmp_path)  # init_db already ran; DB is at v1
+    before_rows = conn.execute(
+        "SELECT version, applied FROM schema_version ORDER BY version"
+    ).fetchall()
+
+    # Re-run the sequence as a restart would.
+    m.init_db(conn)
+    conn.commit()
+    result = m.run_migrations(conn, FIXED_NOW)
+
+    after_rows = conn.execute(
+        "SELECT version, applied FROM schema_version ORDER BY version"
+    ).fetchall()
+    assert [tuple(r) for r in after_rows] == [tuple(r) for r in before_rows]
+    assert result["applied"] == []
+    assert result["from_version"] == result["to_version"] == m.SCHEMA_VERSION
+    conn.close()

@@ -2372,14 +2372,44 @@ def main() -> None:
     # global) open the same database this startup initialized.
     DATABASE_PATH = database_path
 
-    # Create the schema and seed categories if needed. Idempotent: safe on
-    # every startup. One connection, opened and closed here.
+    # Create the schema and seed categories if needed, then apply any pending
+    # schema migrations. Reconciliation (decisions.md ADR): init_db stays the
+    # version-1 baseline -- it builds today's schema and stamps v1 -- and the
+    # migration runner layers versions 2..N on top. Both fresh and existing
+    # databases reach the current version by this one path: a fresh DB is built
+    # to v1 by init_db then advanced by the runner; an existing DB is left as-is
+    # by init_db's IF NOT EXISTS / stamp-once and advanced from its current
+    # version by the runner. With an empty MIGRATIONS (T2) the runner is a
+    # no-op. Idempotent and safe on every startup. One connection here.
+    #
+    # The clock is read HERE (MAIN boundary) and injected into the runner, so
+    # the DATABASE layer stays clock-free.
     connection = connect(DATABASE_PATH)
     try:
         init_db(connection)
         connection.commit()
+        result = run_migrations(connection, utc_now_iso())
     finally:
         connection.close()
+
+    # Operator-facing migration report: what ran and the resulting version.
+    if result["applied"]:
+        for version, description in result["applied"]:
+            print(
+                "drill: applied migration "
+                + str(version)
+                + " ("
+                + description
+                + ")"
+            )
+        print(
+            "drill: schema migrated "
+            + str(result["from_version"])
+            + " -> "
+            + str(result["to_version"])
+        )
+    else:
+        print("drill: schema up to date (version " + str(result["to_version"]) + ")")
 
     # Friendly startup line so the operator knows the exact URL to open.
     # (Bottle also prints its own banner.)
