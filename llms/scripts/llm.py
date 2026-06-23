@@ -2,9 +2,19 @@
 # requires-python = ">=3.10"
 # dependencies = ["httpx"]
 # ///
+# Local module required: llm_config.py must sit in the same directory as this
+# file. PEP 723 above declares only PyPI deps; it cannot declare a local-file
+# dependency, so the requirement is enforced by the guarded import below and
+# documented here where anyone running `uv run llm.py` will see it. The two
+# files travel together (see ADR-1): copying llm.py alone will fail loudly.
 """One CLI, six interaction patterns for sending prompts and files to LLM APIs.
 Subcommands: single, append, batch, manifest, loop, interactive.
 Run with: uv run llm.py <subcommand> ...
+
+Requires llm_config.py alongside this file: it owns the provider table and the
+shared call_llm (transport + the (text, truncated, usage) triple). This file
+owns the interaction patterns, file IO, and usage telemetry, and wraps
+llm_config.call_llm to add its truncation marker and JSONL usage log.
 """
 
 import argparse
@@ -15,6 +25,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 import httpx
+
+try:
+    import llm_config
+except ImportError:
+    sys.exit(
+        "llm.py requires llm_config.py in the same directory; copy both files "
+        "together (see ADR-1). Missing or unimportable: llm_config.py"
+    )
 
 try:
     import readline  # noqa: F401  -- arrow keys / history for input() REPLs
@@ -31,150 +49,10 @@ USAGE_LOG_PATH = Path.home() / ".llm_usage.jsonl"
 DEFAULT_MANIFEST_PROMPT = "Analyze this file."
 
 
-# Provider transform/extract functions live here, next to the dict that
-# references them, because the dict is built at import time and needs them
-# defined first. They are pure (data in, data out) like everything in
-# TRANSFORM, but they are part of the provider table, not toolkit logic.
-def anthropic_transform_messages(system: str | None, messages: list[dict]) -> dict:
-    """Return Anthropic's body fragment: chat messages plus a top-level system field."""
-    body: dict = {"messages": messages}
-    if system is not None:
-        body["system"] = system
-    return body
-
-
-def anthropic_extract_response(data: dict) -> tuple[str, bool, dict]:
-    """Return (text, truncated, usage) from an Anthropic messages-API response."""
-    text = "".join(
-        block["text"] for block in data["content"] if block["type"] == "text"
-    )
-    usage = data.get("usage", {})
-    return (
-        text,
-        data.get("stop_reason") == "max_tokens",
-        {
-            "input_tokens": usage.get("input_tokens"),
-            "output_tokens": usage.get("output_tokens"),
-        },
-    )
-
-
-def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
-    """Return OpenAI's body fragment: system rides in the messages array."""
-    if system is not None:
-        messages = [{"role": "system", "content": system}, *messages]
-    return {"messages": messages}
-
-
-def openai_extract_response(data: dict) -> tuple[str, bool]:
-    """Return (text, truncated, usage) from an OpenAI chat-completions response."""
-    choice = data["choices"][0]
-    text = choice["message"]["content"]
-    if text is None:
-        raise KeyError("message.content is null")  # caught by call_llm's shape guard
-    usage = data.get("usage", {})
-    return (
-        text,
-        choice.get("finish_reason") == "length",
-        {
-            "input_tokens": usage.get("prompt_tokens"),
-            "output_tokens": usage.get("completion_tokens"),
-        },
-    )
-
-
-def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
-    """Reshape messages into Gemini's contents/parts format with role mapping."""
-    contents = []
-    if system is not None:
-        contents.append({"role": "user", "parts": [{"text": f"[System] {system}"}]})
-    for m in messages:
-        role = "model" if m["role"] == "assistant" else m["role"]
-        contents.append({"role": role, "parts": [{"text": m["content"]}]})
-    return {"contents": contents}
-
-
-def gemini_extract_response(data: dict) -> tuple[str, bool]:
-    """Return (text, truncated, usage) from a Gemini generateContent response.
-
-    Safety-blocked responses arrive with no parts; the resulting KeyError is
-    caught by call_llm's shape guard, which prints the raw JSON (including
-    the block reason) instead of tracebacking.
-    """
-    candidate = data["candidates"][0]
-    text = candidate["content"]["parts"][0]["text"]
-    usage = data.get("usageMetadata", {})
-    return (
-        text,
-        candidate.get("finishReason") == "MAX_TOKENS",
-        {
-            "input_tokens": usage.get("promptTokenCount"),
-            "output_tokens": usage.get("candidatesTokenCount"),
-        },
-    )
-
-
-# To add a new provider: add an entry here following the pattern below.
-# Then add its env var name. Each entry needs ALL of these fields (use
-# lambda-returning-{} for auth mechanisms the provider doesn't use):
-#   url_template       POST endpoint; may contain a {model} placeholder
-#   env_key            environment variable holding the API key
-#   auth_header        function: api_key -> header dict ({} if auth is not header-based)
-#   auth_params        function: api_key -> query-param dict ({} if auth is not query-based)
-#   extra_headers      static provider-required headers ({} if none)
-#   body_extras        function: (model, max_tokens) -> dict merged into the body
-#                      (model name, token limits -- whatever the provider wants top-level)
-#   transform_messages function: (system or None, messages list) -> provider body fragment
-#   extract_response   function: response JSON -> (response text, truncated bool,
-#                      usage dict with input_tokens/output_tokens, None values if
-#                      the provider omitted them -- usage must never raise)
-#   default_model      model string used when --model is not given
-PROVIDERS: dict = {
-    "anthropic": {
-        "url_template": "https://api.anthropic.com/v1/messages",
-        "env_key": "ANTHROPIC_API_KEY",
-        "auth_header": lambda api_key: {"x-api-key": api_key},
-        "auth_params": lambda api_key: {},
-        "extra_headers": {"anthropic-version": "2023-06-01"},
-        "body_extras": lambda model, max_tokens: {
-            "model": model,
-            "max_tokens": max_tokens,
-        },
-        "transform_messages": anthropic_transform_messages,
-        "extract_response": anthropic_extract_response,
-        "default_model": "claude-sonnet-4-20250514",
-    },
-    "openai": {
-        "url_template": "https://api.openai.com/v1/chat/completions",
-        "env_key": "OPENAI_API_KEY",
-        "auth_header": lambda api_key: {"Authorization": f"Bearer {api_key}"},
-        "auth_params": lambda api_key: {},
-        "extra_headers": {},
-        "body_extras": lambda model, max_tokens: {
-            "model": model,
-            "max_tokens": max_tokens,
-        },
-        "transform_messages": openai_transform_messages,
-        "extract_response": openai_extract_response,
-        "default_model": "gpt-4o",
-    },
-    "gemini": {
-        "url_template": (
-            "https://generativelanguage.googleapis.com/v1beta/"
-            "models/{model}:generateContent"
-        ),
-        "env_key": "GEMINI_API_KEY",
-        "auth_header": lambda api_key: {"x-goog-api-key": api_key},
-        "auth_params": lambda api_key: {},
-        "extra_headers": {},
-        "body_extras": lambda model, max_tokens: {
-            "generationConfig": {"maxOutputTokens": max_tokens}
-        },
-        "transform_messages": gemini_transform_messages,
-        "extract_response": gemini_extract_response,
-        "default_model": "gemini-2.0-flash",
-    },
-}
+# Provider table and the shared call_llm live in llm_config.py (imported
+# above). llm.py references them as llm_config.PROVIDERS / llm_config.call_llm.
+# To add a provider, edit llm_config.py (see its field documentation); no
+# change is needed here.
 
 
 def parse_args() -> argparse.Namespace:
@@ -183,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     common.add_argument(
         "--provider",
         default="anthropic",
-        choices=sorted(PROVIDERS),
+        choices=sorted(llm_config.PROVIDERS),
         help="Provider name (default: anthropic)",
     )
     common.add_argument(
@@ -377,7 +255,7 @@ def metadata_header(
     supplies the timestamp string. Prompt/system are collapsed to one line
     and truncated so they can't break the comment block.
     """
-    model = args.model or PROVIDERS[args.provider]["default_model"]
+    model = args.model or llm_config.PROVIDERS[args.provider]["default_model"]
     lines = [
         "<!--",
         f"  generated: {generated}",
@@ -539,7 +417,7 @@ def call_llm(
     never affects the request. Every exit path -- success, truncated,
     transport, HTTP status, non-JSON, bad shape -- appends one usage record.
     """
-    provider = PROVIDERS[provider_name]
+    provider = llm_config.PROVIDERS[provider_name]
     api_key = os.environ.get(provider["env_key"])
     if api_key is None:
         print(
