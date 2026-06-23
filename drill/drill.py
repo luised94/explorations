@@ -296,6 +296,47 @@ def get_schema_version(connection: sqlite3.Connection) -> int | None:
     return int(row["version"])
 
 
+def _apply_one(
+    connection: sqlite3.Connection,
+    version: int,
+    description: str,
+    migrate,
+    now: str,
+) -> None:
+    """Apply a single migration inside one explicit, all-or-nothing transaction.
+
+    migrate -- a callable taking the connection; it performs the schema change
+               (DDL and/or data backfill) for this version. It MUST NOT commit,
+               rollback, or stamp schema_version itself: this function owns the
+               transaction boundary and records the version row on success.
+
+    Why an explicit BEGIN/COMMIT/ROLLBACK rather than relying on the
+    connection's implicit handling: Python's legacy sqlite3 isolation mode
+    (the default for connect()) does NOT open a transaction before a DDL
+    statement such as ALTER TABLE, so a DDL change autocommits and SURVIVES a
+    later rollback(). That would make a half-finished migration permanent --
+    the opposite of the forward-only, last-good-version guarantee. Issuing
+    BEGIN ourselves puts the DDL inside a transaction we control, so any
+    failure (in the migrate callable or the version stamp) rolls the whole
+    step back and leaves the database at its prior version, not half-migrated.
+
+    On failure the original exception is re-raised unchanged after rollback,
+    so the caller sees the real error; the caller is responsible for the
+    operator-facing "migration N failed" framing.
+    """
+    connection.execute("BEGIN")
+    try:
+        migrate(connection)
+        connection.execute(
+            "INSERT INTO schema_version (version, applied) VALUES (?, ?)",
+            (version, now),
+        )
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+
+
 def seed_categories(connection: sqlite3.Connection) -> None:
     """Insert the seed categories that are not already present.
 
