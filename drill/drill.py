@@ -397,6 +397,79 @@ def _apply_one(
         raise
 
 
+def run_migrations(
+    connection: sqlite3.Connection,
+    now: str,
+    target_version: int = None,
+    migrations: list = None,
+) -> dict:
+    """Apply every pending migration in order, each in its own transaction.
+
+    Forward-only and idempotent: applies the registry entries whose version is
+    greater than the database's current version and not greater than the
+    target, in ascending order, via _apply_one (which owns each transaction so
+    a failure rolls that step back and stops the walk at the last good version).
+    Running this against an already-current database selects nothing and is a
+    safe no-op.
+
+    Parameters:
+      now             -- ISO timestamp string stamped into each applied
+                         migration's schema_version row. Injected by the caller
+                         (MAIN reads the clock; DATABASE does not) so this layer
+                         stays clock-free and tests are deterministic.
+      target_version  -- highest version to migrate to; defaults to
+                         SCHEMA_VERSION. Lets a caller stop short of the latest.
+      migrations      -- the (version, description, migrate) registry; defaults
+                         to the module MIGRATIONS. Injectable so a test can run
+                         the real loop over a deliberately-failing migration
+                         without touching the shipped registry.
+
+    Returns an operator-facing dict the caller can report from:
+      {"from_version": int, "to_version": int, "applied": [(version, desc), ...]}
+    "from_version" is the version before this run (0 when the database is not
+    yet baselined, i.e. get_schema_version returned None); "to_version" is the
+    version after; "applied" lists what ran, in order. On a no-op, "applied" is
+    empty and from_version == to_version.
+
+    This function reads and selects but performs no commit/rollback itself: all
+    transactional writes happen inside _apply_one, one per migration.
+    """
+    if target_version is None:
+        target_version = SCHEMA_VERSION
+    if migrations is None:
+        migrations = MIGRATIONS
+
+    current_raw = get_schema_version(connection)
+    # None means no baseline is stamped yet (table absent or empty). The wired
+    # path always runs init_db first (which stamps the version-1 baseline), so
+    # this layer treats a missing baseline as 0 purely to compute the selection;
+    # with migrations layered on version 1, that still skips nothing it should
+    # not, and an empty registry makes it a no-op regardless.
+    current = 0 if current_raw is None else current_raw
+
+    pending = [
+        (version, description, migrate)
+        for version, description, migrate in migrations
+        if current < version <= target_version
+    ]
+    pending.sort(key=lambda entry: entry[0])
+
+    applied = []
+    for version, description, migrate in pending:
+        # On failure _apply_one rolls back this step and re-raises; the loop
+        # stops here, leaving the database at the last successfully applied
+        # version. The partial "applied" list reflects what did commit.
+        _apply_one(connection, version, description, migrate, now)
+        applied.append((version, description))
+
+    to_version = applied[-1][0] if applied else current
+    return {
+        "from_version": current,
+        "to_version": to_version,
+        "applied": applied,
+    }
+
+
 def seed_categories(connection: sqlite3.Connection) -> None:
     """Insert the seed categories that are not already present.
 

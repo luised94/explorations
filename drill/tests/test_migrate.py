@@ -135,3 +135,97 @@ def test_drift_guard_rejects_gap_from_baseline(db):
     m.MIGRATIONS = [(3, "skips 2", noop)]  # starts at 3, leaves a gap
     with pytest.raises(RuntimeError):
         m._check_migration_version_consistency()
+
+
+# --- run_migrations loop ---
+
+
+def test_run_migrations_empty_registry_is_noop(db):
+    # The shipped T2 case: DB baselined at 1 by init_db, empty registry, nothing
+    # to do. from == to, no migrations applied, version untouched.
+    m, conn = db
+    before = m.get_schema_version(conn)
+    result = m.run_migrations(conn, FIXED_NOW)
+    assert result["from_version"] == before
+    assert result["to_version"] == before
+    assert result["applied"] == []
+    assert m.get_schema_version(conn) == before
+
+
+def test_run_migrations_applies_pending_in_order(db):
+    # Two injected migrations layered on the version-1 baseline apply in order,
+    # advance the version to the target, and report what ran.
+    m, conn = db
+    calls = []
+
+    def mk(tag):
+        def migrate(c):
+            calls.append(tag)
+            c.execute("CREATE TABLE _probe_%s (id INTEGER)" % tag)
+
+        return migrate
+
+    injected = [(2, "add two", mk("two")), (3, "add three", mk("three"))]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=3, migrations=injected)
+
+    assert calls == ["two", "three"]  # ascending order
+    assert result["from_version"] == 1
+    assert result["to_version"] == 3
+    assert result["applied"] == [(2, "add two"), (3, "add three")]
+    assert m.get_schema_version(conn) == 3
+
+
+def test_run_migrations_is_idempotent_on_rerun(db):
+    # Running the same set again selects nothing: a safe no-op.
+    m, conn = db
+    injected = [(2, "add two", lambda c: c.execute("CREATE TABLE _p2 (id INTEGER)"))]
+    first = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
+    assert first["applied"] == [(2, "add two")]
+
+    second = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
+    assert second["from_version"] == 2
+    assert second["to_version"] == 2
+    assert second["applied"] == []
+    assert m.get_schema_version(conn) == 2
+
+
+def test_run_migrations_respects_target_version(db):
+    # target_version stops the walk short of the latest available migration.
+    m, conn = db
+    injected = [
+        (2, "two", lambda c: c.execute("CREATE TABLE _t2 (id INTEGER)")),
+        (3, "three", lambda c: c.execute("CREATE TABLE _t3 (id INTEGER)")),
+    ]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
+    assert result["to_version"] == 2
+    assert result["applied"] == [(2, "two")]
+    assert m.get_schema_version(conn) == 2
+
+
+def test_run_migrations_stops_at_last_good_version_on_failure(db):
+    # A failing migration partway through leaves the DB at the last good
+    # version, with the earlier migration committed and the later one absent.
+    m, conn = db
+
+    class Boom(Exception):
+        pass
+
+    def ok(c):
+        c.execute("CREATE TABLE _good (id INTEGER)")
+
+    def bad(c):
+        c.execute("CREATE TABLE _bad (id INTEGER)")  # DDL, then fail
+        raise Boom("migration 3 fails")
+
+    injected = [(2, "good", ok), (3, "bad", bad), (4, "never", ok)]
+    with pytest.raises(Boom):
+        m.run_migrations(conn, FIXED_NOW, target_version=4, migrations=injected)
+
+    # Stopped at 2: migration 2 committed, 3 rolled back, 4 never ran.
+    assert m.get_schema_version(conn) == 2
+    tables = {
+        r["name"]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert "_good" in tables
+    assert "_bad" not in tables
