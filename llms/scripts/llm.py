@@ -39,9 +39,9 @@ try:
 except ImportError:
     pass  # not available on some platforms; input() still works, just bare
 # --- CONFIG ---
-# Constants, provider dict, argparse.
-MAX_TOKENS = 4096
-TIMEOUT_SECONDS = 120.0
+# llm.py-specific constants. The shared MAX_TOKENS and TIMEOUT_SECONDS live in
+# llm_config (single source of truth); reference them as llm_config.MAX_TOKENS
+# where needed (e.g. the --max-tokens argparse default).
 PAYLOAD_WARN_TOKENS = 100_000  # C20: warn (not refuse) above this estimated input size
 # One JSONL line per API call -- metadata only, never message content, so the
 # log is safe to share when analyzing usage. Set LLM_NO_USAGE_LOG=1 to disable.
@@ -87,8 +87,8 @@ def parse_args() -> argparse.Namespace:
     common.add_argument(
         "--max-tokens",
         type=int,
-        default=MAX_TOKENS,
-        help=f"Response token limit (default: {MAX_TOKENS})",
+        default=llm_config.MAX_TOKENS,
+        help=f"Response token limit (default: {llm_config.MAX_TOKENS})",
     )
     parser = argparse.ArgumentParser(
         description="Send prompts and files to LLM APIs: six interaction patterns."
@@ -345,7 +345,8 @@ def dry_run_report(system: str | None, messages: list[dict]) -> str:
 
 
 # --- IO ---
-# call_llm, file reading, file writing. Collision avoidance lives in
+# call_with_logging (the logging observer), file reading, file writing.
+# Collision avoidance lives in
 # write_response (not TRANSFORM) because checking for an existing file
 # is a filesystem read.
 def append_usage(record: dict) -> None:
@@ -395,48 +396,45 @@ def record_call(
     )
 
 
-class ResponseError(Exception):
-    """Raised by call_llm when a 2xx response can't be parsed or extracted.
+def apply_truncation_marker(text: str, truncated: bool, max_tokens: int) -> str:
+    """Append the truncation marker to text when the response was cut short.
 
-    Same contract as FileReadError: the error (with raw payload) is already
-    printed to stderr; the caller decides exit vs skip.
+    ADR-12: a truncated response still carries useful partial output, so we keep
+    the text and make the truncation visible in the written file. The matching
+    stderr warning is emitted by call_with_logging at call time. Kept separate
+    from logging because it transforms the returned text, not the usage record.
     """
+    if not truncated:
+        return text
+    return text + f"\n\n> [warning: response truncated at max_tokens={max_tokens}]"
 
 
-def call_llm(
+def call_with_logging(
+    command: str | None,
     provider_name: str,
     model: str | None,
     system: str | None,
     messages: list[dict],
-    max_tokens: int = MAX_TOKENS,
-    command: str | None = None,
+    max_tokens: int = None,
 ) -> str:
-    """POST system + messages to the named provider and return the response text.
+    """Call llm_config.call_llm, append exactly one usage record, return the text.
 
-    command is only for the usage log (which subcommand made this call); it
-    never affects the request. Every exit path -- success, truncated,
-    transport, HTTP status, non-JSON, bad shape -- appends one usage record.
+    This is the single logging locus for the toolkit (ADR-14): llm_config.call_llm
+    is logging-free transport, and this observer turns each outcome -- success,
+    truncated, transport failure, HTTP status, or response_error -- into one JSONL
+    record via the pure usage_record builder and the swallowing append_usage writer.
+    On success the truncation marker (ADR-12) is applied here before returning, so
+    the marker and the truncated flag stay adjacent. Errors are logged and re-raised
+    unchanged so each command keeps deciding exit-vs-skip. command labels which
+    subcommand made the call; it never affects the request.
     """
-    provider = llm_config.PROVIDERS[provider_name]
-    api_key = os.environ.get(provider["env_key"])
-    if api_key is None:
-        print(
-            f"Missing API key: set the {provider['env_key']} environment variable.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    model = model or provider["default_model"]
-    url = provider["url_template"].format(model=model)
-    body = {
-        **provider["transform_messages"](system, messages),
-        **provider["body_extras"](model, max_tokens),
-    }
-    headers = {
-        "content-type": "application/json",
-        **provider["auth_header"](api_key),
-        **provider["extra_headers"],
-    }
+    if max_tokens is None:
+        max_tokens = llm_config.MAX_TOKENS
+    # Recomputed here (not threaded from call_llm) because logging is decoupled
+    # from transport: the observer derives what it needs from its own inputs.
     payload_chars = sum(len(m["content"]) for m in messages) + len(system or "")
+    resolved_model = model or llm_config.PROVIDERS[provider_name]["default_model"]
+
     payload_tokens = estimate_tokens(payload_chars)
     if payload_tokens > PAYLOAD_WARN_TOKENS:
         # C20: oversized payloads otherwise fail server-side with an opaque
@@ -447,97 +445,48 @@ def call_llm(
             f"the provider may reject or truncate it.",
             file=sys.stderr,
         )
+
     started = time.monotonic()
     try:
-        response = httpx.post(
-            url,
-            params=provider["auth_params"](api_key),
-            json=body,
-            headers=headers,
-            timeout=TIMEOUT_SECONDS,
+        text, truncated, usage = llm_config.call_llm(
+            provider_name, model, system, messages, max_tokens
         )
-    except httpx.HTTPError as exc:
-        # Transport-level failure: no network, DNS, timeout, broken connection.
-        # Same contract as the status-error path below: print here, raise so
-        # the caller decides exit vs skip.
-        print(f"Request failed ({type(exc).__name__}): {exc}", file=sys.stderr)
+    except httpx.HTTPStatusError as exc:
+        # Status error: llm_config already printed "HTTP <status>: ..." to stderr.
         record_call(
-            command,
-            provider_name,
-            model,
-            max_tokens,
-            payload_chars,
-            started,
-            "transport",
+            command, provider_name, resolved_model, max_tokens, payload_chars,
+            started, f"http_{exc.response.status_code}",
         )
         raise
-    if response.status_code >= 400:
-        # Print here so error formatting lives in one place; raise so the
-        # caller decides whether to exit (single-call commands) or skip and
-        # continue (batch-style commands).
-        print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
+    except httpx.HTTPError:
+        # Transport failure (no network, DNS, timeout): already printed by llm_config.
         record_call(
-            command,
-            provider_name,
-            model,
-            max_tokens,
-            payload_chars,
-            started,
-            f"http_{response.status_code}",
+            command, provider_name, resolved_model, max_tokens, payload_chars,
+            started, "transport",
         )
-        response.raise_for_status()
-    try:
-        data = response.json()
-    except ValueError as exc:
-        print(
-            f"Non-JSON response from {provider_name}: {response.text[:2000]}",
-            file=sys.stderr,
-        )
+        raise
+    except llm_config.ResponseError:
+        # Non-JSON or unexpected 2xx shape: llm_config already printed the raw
+        # payload. ADR-14: the old non_json/shape split is gone because the
+        # exception alone can't distinguish them; response_error is the honest
+        # label for "a 2xx we could not turn into text".
         record_call(
-            command,
-            provider_name,
-            model,
-            max_tokens,
-            payload_chars,
-            started,
-            "non_json",
+            command, provider_name, resolved_model, max_tokens, payload_chars,
+            started, "response_error",
         )
-        raise ResponseError(provider_name) from exc
-    try:
-        text, truncated, usage = provider["extract_response"](data)
-    except (KeyError, IndexError, TypeError) as exc:
-        # C15: a 2xx with an unexpected shape (safety block, null content,
-        # API drift). Surface the raw payload instead of a traceback.
-        print(
-            f"Unexpected response shape from {provider_name} "
-            f"({type(exc).__name__}: {exc}); raw JSON follows:",
-            file=sys.stderr,
-        )
-        print(json.dumps(data, indent=2)[:5000], file=sys.stderr)
-        record_call(
-            command, provider_name, model, max_tokens, payload_chars, started, "shape"
-        )
-        raise ResponseError(provider_name) from exc
+        raise
+
     if truncated:
-        # C16b: make truncation loud in both channels -- stderr for the run,
-        # a marker in the text so the written file carries the evidence.
         print(
             f"Warning: response truncated at max_tokens={max_tokens}; "
             f"re-run with a larger --max-tokens.",
             file=sys.stderr,
         )
-        text += f"\n\n> [warning: response truncated at max_tokens={max_tokens}]"
     record_call(
-        command,
-        provider_name,
-        model,
-        max_tokens,
-        payload_chars,
-        started,
-        "truncated" if truncated else "ok",
-        usage,
+        command, provider_name, resolved_model, max_tokens, payload_chars,
+        started, "truncated" if truncated else "ok", usage,
     )
-    return text
+    return apply_truncation_marker(text, truncated, max_tokens)
 
 
 def warn_if_delimiter_collision(filename: str, text: str) -> None:
@@ -642,16 +591,16 @@ def cmd_single(args: argparse.Namespace, system: str | None) -> None:
         print(dry_run_report(system, messages))
         return
     try:
-        response_text = call_llm(
+        response_text = call_with_logging(
+            args.command,
             args.provider,
             args.model,
             system,
             messages,
             args.max_tokens,
-            command=args.command,
         )
-    except (httpx.HTTPError, ResponseError):
-        sys.exit(1)  # call_llm already printed the error to stderr
+    except (httpx.HTTPError, llm_config.ResponseError):
+        sys.exit(1)  # the failed call already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_stem = "stdin" if args.filepath == "-" else input_path.stem
     out = write_response(
@@ -684,16 +633,16 @@ def cmd_append(args: argparse.Namespace, system: str | None) -> None:
         print(dry_run_report(system, messages))
         return
     try:
-        response_text = call_llm(
+        response_text = call_with_logging(
+            args.command,
             args.provider,
             args.model,
             system,
             messages,
             args.max_tokens,
-            command=args.command,
         )
-    except (httpx.HTTPError, ResponseError):
-        sys.exit(1)  # call_llm already printed the error to stderr
+    except (httpx.HTTPError, llm_config.ResponseError):
+        sys.exit(1)  # the failed call already printed the error to stderr
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = write_response(
         args.output,
@@ -726,16 +675,16 @@ def run_entries(
             print()
             continue
         try:
-            response_text = call_llm(
+            response_text = call_with_logging(
+                args.command,
                 args.provider,
                 args.model,
                 system,
                 messages,
                 args.max_tokens,
-                command=args.command,
             )
         except httpx.HTTPStatusError as exc:
-            # call_llm already printed the error to stderr.
+            # the failed call already printed the error to stderr.
             if exc.response.status_code in (401, 403):
                 # C14c: auth failure is not per-entry -- every remaining call
                 # would fail identically, one wasted round trip each. Abort.
@@ -746,8 +695,8 @@ def run_entries(
                 sys.exit(1)
             skipped += 1
             continue
-        except (httpx.HTTPError, ResponseError):
-            skipped += 1  # call_llm already printed the error to stderr
+        except (httpx.HTTPError, llm_config.ResponseError):
+            skipped += 1  # the failed call already printed the error to stderr
             continue
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out = write_response(
@@ -836,16 +785,16 @@ def cmd_loop(args: argparse.Namespace, system: str | None) -> None:
                 responses.append(previous_response)
                 continue
             try:
-                response_text = call_llm(
+                response_text = call_with_logging(
+                    args.command,
                     args.provider,
                     args.model,
                     system,
                     messages,
                     args.max_tokens,
-                    command=args.command,
                 )
-            except (httpx.HTTPError, ResponseError):
-                failed = True  # call_llm already printed the error to stderr
+            except (httpx.HTTPError, llm_config.ResponseError):
+                failed = True  # the failed call already printed the error to stderr
                 break
             responses.append(response_text)
             previous_response = response_text
@@ -918,16 +867,16 @@ def cmd_interactive(args: argparse.Namespace, system: str | None) -> None:
                 history = attempt + [{"role": "assistant", "content": "(dry run)"}]
                 continue
             try:
-                response_text = call_llm(
+                response_text = call_with_logging(
+                    args.command,
                     args.provider,
                     args.model,
                     system,
                     attempt,
                     args.max_tokens,
-                    command=args.command,
                 )
-            except (httpx.HTTPError, ResponseError):
-                # call_llm already printed the error to stderr.
+            except (httpx.HTTPError, llm_config.ResponseError):
+                # the failed call already printed the error to stderr.
                 last_failed = text
                 print("(LLM call failed -- press Enter to retry, or type a new prompt)")
                 continue
