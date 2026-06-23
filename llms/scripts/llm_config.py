@@ -13,6 +13,7 @@ llm.py and workbench.py import the module with `import llm_config` and call
 through it as `llm_config.call_llm(...)` / `llm_config.PROVIDERS`.
 """
 
+import json
 import os
 import sys
 
@@ -39,10 +40,25 @@ def anthropic_transform_messages(system: str | None, messages: list[dict]) -> di
     return body
 
 
-def anthropic_extract_response(data: dict) -> str:
-    """Concatenate the text blocks from an Anthropic messages-API response."""
-    return "".join(
+def anthropic_extract_response(data: dict) -> tuple[str, bool, dict]:
+    """Return (text, truncated, usage) from an Anthropic messages-API response.
+
+    Per ADR-12 the text extraction may raise (KeyError/IndexError/TypeError)
+    on an unexpected shape -- call_llm's shape guard catches it. The truncated
+    bool and usage dict must NEVER raise: read with .get chains so a missing
+    field yields None, not an exception.
+    """
+    text = "".join(
         block["text"] for block in data["content"] if block["type"] == "text"
+    )
+    usage = data.get("usage", {})
+    return (
+        text,
+        data.get("stop_reason") == "max_tokens",
+        {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+        },
     )
 
 
@@ -58,9 +74,25 @@ def openai_transform_messages(system: str | None, messages: list[dict]) -> dict:
     return {"messages": messages}
 
 
-def openai_extract_response(data: dict) -> str:
-    """Pull the response text from an OpenAI chat-completions response."""
-    return data["choices"][0]["message"]["content"]
+def openai_extract_response(data: dict) -> tuple[str, bool, dict]:
+    """Return (text, truncated, usage) from an OpenAI chat-completions response.
+
+    A null message.content (content-filter / refusal) is raised as KeyError so
+    call_llm's shape guard surfaces the raw payload. truncated/usage never raise.
+    """
+    choice = data["choices"][0]
+    text = choice["message"]["content"]
+    if text is None:
+        raise KeyError("message.content is null")  # caught by call_llm's shape guard
+    usage = data.get("usage", {})
+    return (
+        text,
+        choice.get("finish_reason") == "length",
+        {
+            "input_tokens": usage.get("prompt_tokens"),
+            "output_tokens": usage.get("completion_tokens"),
+        },
+    )
 
 
 def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
@@ -78,9 +110,24 @@ def gemini_transform_messages(system: str | None, messages: list[dict]) -> dict:
     return {"contents": contents}
 
 
-def gemini_extract_response(data: dict) -> str:
-    """Pull the response text from a Gemini generateContent response."""
-    return data["candidates"][0]["content"]["parts"][0]["text"]
+def gemini_extract_response(data: dict) -> tuple[str, bool, dict]:
+    """Return (text, truncated, usage) from a Gemini generateContent response.
+
+    Safety-blocked responses arrive with no parts; the resulting KeyError is
+    caught by call_llm's shape guard, which prints the raw JSON (including the
+    block reason) instead of tracebacking. truncated/usage never raise.
+    """
+    candidate = data["candidates"][0]
+    text = candidate["content"]["parts"][0]["text"]
+    usage = data.get("usageMetadata", {})
+    return (
+        text,
+        candidate.get("finishReason") == "MAX_TOKENS",
+        {
+            "input_tokens": usage.get("promptTokenCount"),
+            "output_tokens": usage.get("candidatesTokenCount"),
+        },
+    )
 
 
 # To add a new provider: add an entry here following the pattern below.
@@ -151,17 +198,37 @@ PROVIDERS: dict = {
 # --- IO ---
 
 
+class ResponseError(Exception):
+    """Marker for a 2xx response call_llm could not turn into text.
+
+    Raised for non-JSON bodies and for 2xx payloads with an unexpected shape
+    (safety block, null content, API drift). Empty by design (spec: only empty
+    marker exceptions, no behavior-bearing classes); the human-readable detail
+    is already printed to stderr at the raise site. Callers catch this to decide
+    exit-vs-skip without re-formatting the error.
+    """
+
+
 def call_llm(
     provider_name: str,
     model: str | None,
     system: str | None,
     messages: list[dict],
     max_tokens: int = MAX_TOKENS,
-) -> str:
-    """POST messages to the named provider and return the response text.
+) -> tuple[str, bool, dict]:
+    """POST system + messages to the named provider; return (text, truncated, usage).
 
     system is an explicit parameter (ADR-11): each provider transform places it
-    natively. "system" is not a valid role inside messages.
+    natively; "system" is not a valid role inside messages. The return is the
+    (text, truncated, usage) triple (ADR-12): text may have been extracted from
+    a truncated response (truncated=True), and usage carries provider-reported
+    {"input_tokens", "output_tokens"} (either may be None).
+
+    This shared call_llm owns transport and turning the response into the triple,
+    including the shape guard. It deliberately does NOT own caller policy: it does
+    not append the truncation marker to the text, does not write any usage log,
+    and does not decide exit-vs-skip on error. Each tool (llm.py, workbench.py)
+    wraps this and adds its own telemetry and truncation handling.
     """
     provider = PROVIDERS[provider_name]
 
@@ -199,4 +266,25 @@ def call_llm(
         print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
         response.raise_for_status()
 
-    return provider["extract_response"](response.json())
+    try:
+        data = response.json()
+    except ValueError as exc:
+        print(
+            f"Non-JSON response from {provider_name}: {response.text[:2000]}",
+            file=sys.stderr,
+        )
+        raise ResponseError(provider_name) from exc
+
+    try:
+        return provider["extract_response"](data)
+    except (KeyError, IndexError, TypeError) as exc:
+        # A 2xx with an unexpected shape (safety block, null content, API
+        # drift). Surface the raw payload instead of a traceback so the block
+        # reason / drift is visible.
+        print(
+            f"Unexpected response shape from {provider_name} "
+            f"({type(exc).__name__}: {exc}); raw JSON follows:",
+            file=sys.stderr,
+        )
+        print(json.dumps(data, indent=2)[:5000], file=sys.stderr)
+        raise ResponseError(provider_name) from exc
