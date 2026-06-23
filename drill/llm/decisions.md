@@ -1158,3 +1158,124 @@ Guidance for downstream threads: keep non-ASCII test data as \u escapes, not
 literal high bytes, so the source stays valid UTF-8 (and ASCII-only). An
 accent_insensitive bank flag, if ever added, would relax the C-007 contract
 these two tests pin -- update them together if so.
+
+
+C-T2 - Schema migration runner (THREAD-MIGRATE, T2, wave 0).
+
+Builds the forward-only migration mechanism so every later thread can evolve
+drill.db's schema without losing a user's data (the .db file IS their backup).
+Adds _apply_one, run_migrations, the MIGRATIONS registry, the SCHEMA_VERSION
+drift guard, and the MAIN startup wiring. MIGRATIONS ships EMPTY: this thread
+delivers the mechanism, not any migration (the grading-kind/metadata columns
+are D1's job). Backend 84 -> 100 (+16 in tests/test_migrate.py); frontend 75
+unchanged; total 159 -> 175, "ALL GREEN". No endpoint contract, no existing
+schema column, and no LOGIC/HTTP behavior changed.
+
+ADR-021: version mechanism -- KEEP the schema_version table; do NOT switch to
+PRAGMA user_version.
+- [DECIDED] The schema_version table (version, applied) already shipped in
+  C-002 and is read by get_schema_version. We extend that mechanism rather
+  than re-pick. Justification beyond "it already exists": the table keeps one
+  ROW PER applied version with an `applied` ISO-8601 timestamp -- a provenance
+  / audit trail of every schema transition. PRAGMA user_version is a single
+  integer that discards that history. For a single-user tool whose only data
+  copy is the file, the audit trail is worth more than the scalar's simplicity.
+- [REJECTED] PRAGMA user_version. It would mean abandoning a shipped table and
+  re-stamping every existing drill.db, which fights the "do not lose data"
+  requirement for zero gain over the table we already have.
+
+ADR-022: init_db reconciliation -- init_db STAYS the version-1 baseline; the
+runner LAYERS on top (option B).
+- [DECIDED] init_db keeps creating today's schema (CREATE TABLE IF NOT EXISTS)
+  and stamping version 1; the runner applies versions 2..N. Both fresh and
+  existing databases reach the current version by ONE startup path: MAIN calls
+  init_db then run_migrations on the same connection. Fresh -> init_db builds
+  v1, runner advances; existing-at-vN -> init_db is a stamp-once/IF-NOT-EXISTS
+  no-op, runner advances from vN. Migration version numbering is SCHEMA-DRIVEN:
+  the registry must be the gap-free sequence range(2, SCHEMA_VERSION+1), checked
+  at import by _check_migration_version_consistency so the constant and the
+  registry cannot silently drift.
+- [REJECTED] Option A (runner owns everything; migration 1 IS the baseline that
+  creates today's schema, init_db becomes a thin wrapper). Conceptually cleaner
+  -- one expression of schema change -- but it relocates the v1 DDL out of
+  init_db/SCHEMA_STATEMENTS into a migration, a larger diff with more risk to
+  the green baseline for no T2 benefit. Left as a possible future consolidation.
+
+ADR-023: transaction discipline -- the runner drives BEGIN/COMMIT/ROLLBACK
+explicitly. NON-OBVIOUS, do not "simplify" away.
+- [DECIDED] _apply_one issues an explicit BEGIN before the migrate callable and
+  COMMIT/ROLLBACK around it. Reason, verified empirically before coding: under
+  Python's legacy sqlite3 isolation (the default that connect() returns), a DDL
+  statement such as ALTER TABLE is NOT preceded by an implicit transaction, so
+  it autocommits and SURVIVES a later rollback(). Relying on implicit handling
+  would make a half-finished migration permanent -- the opposite of the
+  forward-only, last-good-version guarantee. The explicit BEGIN puts the DDL in
+  a transaction we control. A future thread that "tidies up" by removing the
+  explicit BEGIN/COMMIT, or that switches connect() to isolation_level=None
+  globally (which would change HTTP/LOGIC behavior), reintroduces the bug; the
+  test_run_migrations_stops_at_last_good_version_on_failure case guards it.
+- [DECIDED] Clock stays at the MAIN boundary: run_migrations takes `now` as a
+  parameter and MAIN supplies utc_now_iso(); the DATABASE layer does not read
+  the clock (consistent with the C-002 / item-8 convention; init_db remains the
+  one sanctioned exception for its own stamp).
+
+Out of scope, noted for later: a `description` column on schema_version (so the
+table reads as a full audit log of what each version did) would be ADR-021's
+provenance idea taken further -- but adding it is itself a schema change, i.e. a
+migration, i.e. D1+ territory, not T2's mechanism-only remit.
+
+--- HANDOFF: how D1 (and any later thread) adds a migration ---------------------
+
+To add a schema change, you do exactly three things in drill.py and never touch
+the runner (_apply_one / run_migrations). The runner discovers your migration
+through the MIGRATIONS list; the import-time guard enforces that you did all
+three consistently.
+
+1. Write a migrate function in the DATABASE section. It takes the connection and
+   performs ONLY the schema change -- additive DDL and/or a data backfill. It
+   MUST NOT commit, rollback, or touch schema_version; the runner owns the
+   transaction and stamps the version row for you.
+
+     def _migrate_2_add_grading_kind(connection):
+         """v2: add questions.grading_kind and banks.metadata_extra."""
+         connection.execute(
+             "ALTER TABLE questions ADD COLUMN grading_kind TEXT NOT NULL "
+             "DEFAULT 'exact'"
+         )
+         connection.execute(
+             "ALTER TABLE banks ADD COLUMN metadata_extra TEXT NOT NULL "
+             "DEFAULT '{}'"
+         )
+
+   Use additive changes with NOT NULL DEFAULT so existing rows get a value
+   (SQLite backfills the default). Existing user data must survive -- the .db
+   file is the user's only copy.
+
+2. Append one entry to the MIGRATIONS list, in version order:
+
+     MIGRATIONS: list[tuple[int, str, object]] = [
+         (2, "add questions.grading_kind and banks.metadata_extra",
+          _migrate_2_add_grading_kind),
+     ]
+
+   The version must be the next integer (gap-free from 1: first is 2, then 3,
+   ...). The description is the operator-facing string printed at startup.
+
+3. Bump SCHEMA_VERSION to match the highest migration version:
+
+     SCHEMA_VERSION: int = 2
+
+   If you forget this (or add the migration without it, or vice versa), the
+   import-time _check_migration_version_consistency raises and every test fails
+   at collection -- the drift is caught immediately, not in production.
+
+Then add a DATABASE-tier test in tests/test_migrate.py that runs your migration
+over a temp DB (use the real MIGRATIONS, not an injected list) and asserts the
+new column exists with its default AND that a pre-existing row survived. Run
+bash tests/run.sh; the runner picks up the new test by glob (no run.sh edit).
+Startup will print "drill: applied migration 2 (...)" then "schema migrated
+1 -> 2" the first time each existing drill.db is opened after your change.
+
+That is the whole procedure: write migrate fn, append tuple, bump constant, add
+test. The runner, the transaction safety, the version stamping, and the
+operator message are already handled.

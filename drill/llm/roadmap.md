@@ -110,11 +110,15 @@ placed in the ranking above:
    with the WSGI-over-temp-DB pattern for the backend and the jsdom pattern for
    the frontend, plus a one-line runner. This is what lets every later item be
    refactored fearlessly -- it scores high on FOUND for that reason.
-2. **Schema migration runner (T2, #11).** The `schema_version` table exists but
+2. DONE **Schema migration runner (T2, #11).** The `schema_version` table exists but
    nothing reads it to migrate. Before you add columns (difficulty tuning,
    timing features, SM2 fields) you want a tiny `migrate(conn)` that checks the
    version and applies ordered `ALTER TABLE` steps. Cheap now, painful to
    retrofit after you have real data in `drill.db`.
+   DONE (C-T2, wave 0): forward-only run_migrations + MIGRATIONS registry +
+   schema-driven drift guard + MAIN wiring; init_db stays the v1 baseline and
+   the runner layers v2..N (ADR-021/022/023). Mechanism only, registry ships
+   empty; D1 consumes it. Suite 159 -> 175 green (backend 84 -> 100).
 3. **Assertion / invariant pass (T2, #14).** LOGIC functions already raise
    `ValueError` on violated preconditions; extend that discipline to the
    boundary seams (e.g. assert payload shape at the DATABASE->LOGIC handoff)
