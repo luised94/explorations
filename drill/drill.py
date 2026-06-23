@@ -247,6 +247,66 @@ SCHEMA_STATEMENTS: list[str] = [
 ]
 
 
+# Forward-only schema migrations, in ascending version order. Each entry is
+# (version, description, migrate) where migrate(connection) performs the schema
+# change for that version. The runner (run_migrations) applies every entry whose
+# version is greater than the database's current version, each inside its own
+# all-or-nothing transaction (see _apply_one).
+#
+# This list is the ONE place a schema change is expressed from now on. To add a
+# migration, a later thread appends a single (version, description, migrate)
+# tuple here and bumps SCHEMA_VERSION to match -- it does NOT edit the runner.
+#
+# It is empty in T2 by design: this thread delivers the mechanism, not any
+# migration. Version 1 (today's schema) is produced by init_db, not by an entry
+# here; the first real entry will be version 2 (the next schema-changing thread).
+MIGRATIONS: list[tuple[int, str, object]] = []
+
+
+# Consistency guard, checked at import: the highest migration version must equal
+# SCHEMA_VERSION, so the constant and the registry cannot silently drift. With
+# an empty MIGRATIONS this holds only when SCHEMA_VERSION is the init_db baseline
+# (1); once migrations exist, the top entry's version IS the current version.
+def _check_migration_version_consistency() -> None:
+    """Raise at import if MIGRATIONS and SCHEMA_VERSION disagree.
+
+    Two ways they can drift, both caught here:
+      - a migration is added without bumping SCHEMA_VERSION (top > constant), or
+        SCHEMA_VERSION is bumped without adding the migration (constant > top);
+      - migration versions are not the strictly ascending 2..N that the runner's
+        ordered, gap-free forward walk assumes.
+    """
+    versions = [version for version, _description, _migrate in MIGRATIONS]
+    if versions != sorted(versions) or len(set(versions)) != len(versions):
+        raise RuntimeError(
+            "MIGRATIONS versions must be strictly ascending and unique: "
+            + repr(versions)
+        )
+    # Migrations layer on top of the init_db baseline (version 1): an empty
+    # registry means the DB never advances past 1, so SCHEMA_VERSION must be 1;
+    # a non-empty registry must be the gap-free sequence 2..SCHEMA_VERSION with
+    # its top entry equal to SCHEMA_VERSION. Both arms reduce to: versions ==
+    # range(2, SCHEMA_VERSION + 1). Checking that single equality also catches a
+    # constant bumped without a matching migration (and vice versa), including
+    # the empty-registry case the earlier per-arm form let slip through.
+    expected = list(range(2, SCHEMA_VERSION + 1))
+    if versions != expected:
+        raise RuntimeError(
+            "SCHEMA_VERSION ("
+            + str(SCHEMA_VERSION)
+            + ") and MIGRATIONS disagree: migrations layer on the version-1 "
+            + "init_db baseline, so MIGRATIONS versions must be the gap-free "
+            + "sequence "
+            + repr(expected)
+            + "; got "
+            + repr(versions)
+            + " (bump SCHEMA_VERSION and add the migration together)"
+        )
+
+
+_check_migration_version_consistency()
+
+
 # --- DATABASE ---
 # Functions that take a sqlite3.Connection and return dicts or lists. IO
 # only: no business logic, no HTTP. init_db is the one place in this section

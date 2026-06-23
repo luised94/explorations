@@ -96,3 +96,42 @@ def test_apply_one_failure_rolls_back_ddl_and_version(db):
         "SELECT COUNT(*) AS n FROM schema_version WHERE version = ?", (target,)
     ).fetchone()["n"]
     assert rows == 0
+
+
+def test_shipped_migrations_consistent_with_schema_version(db):
+    # The registry as shipped must satisfy the import-time guard. In T2 it is
+    # empty and SCHEMA_VERSION is the init_db baseline of 1; the guard already
+    # ran at import (load_drill would have raised otherwise), so re-invoking it
+    # here documents the invariant and re-checks it explicitly.
+    m, _conn = db
+    m._check_migration_version_consistency()  # must not raise
+    assert m.MIGRATIONS == []
+    assert m.SCHEMA_VERSION == 1
+
+
+def test_drift_guard_rejects_constant_ahead_of_registry(db):
+    # SCHEMA_VERSION bumped without adding the matching migration -> reject.
+    m, _conn = db
+    m.SCHEMA_VERSION = 2  # constant ahead of an empty registry
+    with pytest.raises(RuntimeError):
+        m._check_migration_version_consistency()
+
+
+def test_drift_guard_rejects_nonascending_versions(db):
+    # Out-of-order / duplicated versions break the runner's ordered walk.
+    m, _conn = db
+    noop = lambda c: None  # noqa: E731 -- trivial stand-in migration
+    m.SCHEMA_VERSION = 3
+    m.MIGRATIONS = [(3, "later", noop), (2, "earlier", noop)]
+    with pytest.raises(RuntimeError):
+        m._check_migration_version_consistency()
+
+
+def test_drift_guard_rejects_gap_from_baseline(db):
+    # Migrations must run gap-free from the version-1 baseline (first is 2).
+    m, _conn = db
+    noop = lambda c: None  # noqa: E731
+    m.SCHEMA_VERSION = 3
+    m.MIGRATIONS = [(3, "skips 2", noop)]  # starts at 3, leaves a gap
+    with pytest.raises(RuntimeError):
+        m._check_migration_version_consistency()
