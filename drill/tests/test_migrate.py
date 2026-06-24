@@ -114,8 +114,12 @@ def test_shipped_migrations_consistent_with_schema_version(db):
 
 def test_drift_guard_rejects_constant_ahead_of_registry(db):
     # SCHEMA_VERSION bumped without adding the matching migration -> reject.
+    # The shipped registry now tops out at v2 (D1), so to be genuinely "ahead"
+    # the constant must exceed the real top entry; computing from the registry
+    # keeps this meaningful as the ceiling rises.
     m, _conn = db
-    m.SCHEMA_VERSION = 2  # constant ahead of an empty registry
+    top = m.MIGRATIONS[-1][0]  # highest shipped migration version
+    m.SCHEMA_VERSION = top + 1  # constant ahead of the registry top
     with pytest.raises(RuntimeError):
         m._check_migration_version_consistency()
 
@@ -156,9 +160,13 @@ def test_run_migrations_empty_registry_is_noop(db):
 
 
 def test_run_migrations_applies_pending_in_order(db):
-    # Two injected migrations layered on the version-1 baseline apply in order,
-    # advance the version to the target, and report what ran.
+    # Two injected migrations layered ABOVE the real schema ceiling apply in
+    # order, advance the version to the target, and report what ran. Versions
+    # are computed from SCHEMA_VERSION (not literals) so this stays pending --
+    # rather than silently no-opping -- as the shipped ceiling rises (D1+).
     m, conn = db
+    base = m.SCHEMA_VERSION  # DB sits here after init_db; inject base+1, base+2
+    v1, v2 = base + 1, base + 2
     calls = []
 
     def mk(tag):
@@ -168,47 +176,52 @@ def test_run_migrations_applies_pending_in_order(db):
 
         return migrate
 
-    injected = [(2, "add two", mk("two")), (3, "add three", mk("three"))]
-    result = m.run_migrations(conn, FIXED_NOW, target_version=3, migrations=injected)
+    injected = [(v1, "add two", mk("two")), (v2, "add three", mk("three"))]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=v2, migrations=injected)
 
     assert calls == ["two", "three"]  # ascending order
-    assert result["from_version"] == 1
-    assert result["to_version"] == 3
-    assert result["applied"] == [(2, "add two"), (3, "add three")]
-    assert m.get_schema_version(conn) == 3
+    assert result["from_version"] == base
+    assert result["to_version"] == v2
+    assert result["applied"] == [(v1, "add two"), (v2, "add three")]
+    assert m.get_schema_version(conn) == v2
 
 
 def test_run_migrations_is_idempotent_on_rerun(db):
     # Running the same set again selects nothing: a safe no-op.
     m, conn = db
-    injected = [(2, "add two", lambda c: c.execute("CREATE TABLE _p2 (id INTEGER)"))]
-    first = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
-    assert first["applied"] == [(2, "add two")]
+    v = m.SCHEMA_VERSION + 1  # one above the real ceiling, so genuinely pending
+    injected = [(v, "add two", lambda c: c.execute("CREATE TABLE _p2 (id INTEGER)"))]
+    first = m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=injected)
+    assert first["applied"] == [(v, "add two")]
 
-    second = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
-    assert second["from_version"] == 2
-    assert second["to_version"] == 2
+    second = m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=injected)
+    assert second["from_version"] == v
+    assert second["to_version"] == v
     assert second["applied"] == []
-    assert m.get_schema_version(conn) == 2
+    assert m.get_schema_version(conn) == v
 
 
 def test_run_migrations_respects_target_version(db):
     # target_version stops the walk short of the latest available migration.
     m, conn = db
+    base = m.SCHEMA_VERSION
+    v1, v2 = base + 1, base + 2
     injected = [
-        (2, "two", lambda c: c.execute("CREATE TABLE _t2 (id INTEGER)")),
-        (3, "three", lambda c: c.execute("CREATE TABLE _t3 (id INTEGER)")),
+        (v1, "two", lambda c: c.execute("CREATE TABLE _t2 (id INTEGER)")),
+        (v2, "three", lambda c: c.execute("CREATE TABLE _t3 (id INTEGER)")),
     ]
-    result = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
-    assert result["to_version"] == 2
-    assert result["applied"] == [(2, "two")]
-    assert m.get_schema_version(conn) == 2
+    result = m.run_migrations(conn, FIXED_NOW, target_version=v1, migrations=injected)
+    assert result["to_version"] == v1
+    assert result["applied"] == [(v1, "two")]
+    assert m.get_schema_version(conn) == v1
 
 
 def test_run_migrations_stops_at_last_good_version_on_failure(db):
     # A failing migration partway through leaves the DB at the last good
     # version, with the earlier migration committed and the later one absent.
     m, conn = db
+    base = m.SCHEMA_VERSION
+    v1, v2, v3 = base + 1, base + 2, base + 3
 
     class Boom(Exception):
         pass
@@ -218,14 +231,15 @@ def test_run_migrations_stops_at_last_good_version_on_failure(db):
 
     def bad(c):
         c.execute("CREATE TABLE _bad (id INTEGER)")  # DDL, then fail
-        raise Boom("migration 3 fails")
+        raise Boom("migration fails")
 
-    injected = [(2, "good", ok), (3, "bad", bad), (4, "never", ok)]
+    injected = [(v1, "good", ok), (v2, "bad", bad), (v3, "never", ok)]
     with pytest.raises(Boom):
-        m.run_migrations(conn, FIXED_NOW, target_version=4, migrations=injected)
+        m.run_migrations(conn, FIXED_NOW, target_version=v3, migrations=injected)
 
-    # Stopped at 2: migration 2 committed, 3 rolled back, 4 never ran.
-    assert m.get_schema_version(conn) == 2
+    # Stopped at v1: the first migration committed, the second rolled back,
+    # the third never ran.
+    assert m.get_schema_version(conn) == v1
     tables = {
         r["name"]
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -289,6 +303,8 @@ def test_rerun_after_failed_migration_recovers_and_advances(db):
     # advances. Proves a rolled-back failure does not poison the connection for
     # a later successful run.
     m, conn = db
+    base = m.SCHEMA_VERSION
+    v = base + 1
 
     class Boom(Exception):
         pass
@@ -297,19 +313,19 @@ def test_rerun_after_failed_migration_recovers_and_advances(db):
         c.execute("CREATE TABLE _recover (id INTEGER)")
         raise Boom("first attempt fails")
 
-    failing = [(2, "attempt", bad)]
+    failing = [(v, "attempt", bad)]
     with pytest.raises(Boom):
-        m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=failing)
-    assert m.get_schema_version(conn) == 1  # held at last good version
+        m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=failing)
+    assert m.get_schema_version(conn) == base  # held at last good version
 
     # Corrected migration, same version, re-run: now it advances cleanly.
     def good(c):
         c.execute("CREATE TABLE _recover (id INTEGER)")
 
-    fixed = [(2, "attempt", good)]
-    result = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=fixed)
-    assert result["applied"] == [(2, "attempt")]
-    assert m.get_schema_version(conn) == 2
+    fixed = [(v, "attempt", good)]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=fixed)
+    assert result["applied"] == [(v, "attempt")]
+    assert m.get_schema_version(conn) == v
     tables = {
         r["name"]
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -336,13 +352,15 @@ def test_existing_user_data_survives_a_migration(db):
     conn.commit()
 
     def add_column(c):
-        # An additive, non-destructive change of the kind D1 will make. T2 owns
-        # no real column; this lives only in the injected test registry.
+        # An additive, non-destructive change of the kind D1 makes. This injected
+        # column (banks.note) is test-only and distinct from the real v2
+        # (questions.metadata); the test runs ONLY this injected registry.
         c.execute("ALTER TABLE banks ADD COLUMN note TEXT NOT NULL DEFAULT ''")
 
-    injected = [(2, "add banks.note", add_column)]
-    result = m.run_migrations(conn, FIXED_NOW, target_version=2, migrations=injected)
-    assert result["to_version"] == 2
+    v = m.SCHEMA_VERSION + 1  # above the real ceiling, so genuinely pending
+    injected = [(v, "add banks.note", add_column)]
+    result = m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=injected)
+    assert result["to_version"] == v
 
     row = conn.execute(
         "SELECT id, name, note FROM banks WHERE id = ?", (bank_id,)
@@ -353,16 +371,17 @@ def test_existing_user_data_survives_a_migration(db):
 
 def test_run_migrations_on_unbaselined_db_treats_current_as_zero(tmp_path):
     # When no baseline is stamped yet (get_schema_version is None), the runner
-    # treats current as 0 for selection. With a v1-baseline-layered registry it
-    # still applies nothing it should not; here an empty registry is a no-op and
-    # from_version is reported as 0.
+    # treats current as 0 for selection and reports from_version as 0. This
+    # isolates that selection rule, so it passes an explicit empty registry:
+    # the raw DB has no tables for the real (D1+) migrations to ALTER, and the
+    # rule under test is independent of what the shipped registry contains.
     m = load_drill()
     dbpath = os.path.join(str(tmp_path), "raw.db")
     m.DATABASE_PATH = dbpath
     conn = m.connect(dbpath)  # NOT init_db'd: schema_version table absent
     try:
         assert m.get_schema_version(conn) is None
-        result = m.run_migrations(conn, FIXED_NOW)
+        result = m.run_migrations(conn, FIXED_NOW, migrations=[])
         assert result["from_version"] == 0
         assert result["to_version"] == 0
         assert result["applied"] == []
