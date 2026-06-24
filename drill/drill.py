@@ -38,6 +38,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import operator
 import os
 import random
 import re
@@ -1082,39 +1083,20 @@ def get_responses_for_stats(
 # or int leaves, allowing nested expressions.
 
 
-def _add(left_value: int, right_value: int) -> int:
-    """Return the sum of two integers."""
-    return left_value + right_value
-
-
-def _subtract(left_value: int, right_value: int) -> int:
-    """Return the difference of two integers."""
-    return left_value - right_value
-
-
-def _multiply(left_value: int, right_value: int) -> int:
-    """Return the product of two integers."""
-    return left_value * right_value
-
-
-def _divide(left_value: int, right_value: int) -> int:
-    """Return the integer quotient of two integers.
-
-    Generation guarantees the dividend is an exact multiple of the divisor
-    (ADR-007), so floor division here is always exact. The divisor is never
-    zero because operand generation draws divisors from a positive range.
-    """
-    return left_value // right_value
-
-
 # Maps an operator symbol to the function that evaluates it. Defined in
 # LOGIC; attached to the operator table below. Keyed by the same symbol
 # string that CONFIG uses, which is the join key between the two layers.
+# The callables are the stdlib `operator` module's binary functions; full
+# namespace, no alias, so the source of each is unambiguous.
 _OPERATOR_EVAL_FUNCTIONS = {
-    "+": _add,
-    "-": _subtract,
-    "*": _multiply,
-    "/": _divide,
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    # Floor division (operator.floordiv) is always EXACT here: generation
+    # guarantees the dividend is an exact multiple of the divisor (ADR-007),
+    # so there is never a remainder to floor away. The divisor is never zero
+    # because operand generation draws divisors from a positive range.
+    "/": operator.floordiv,
 }
 
 
