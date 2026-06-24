@@ -1190,6 +1190,19 @@ def _generate_operands_exponent(
 #   result_constraint -- declared invariant the strategy must uphold, or None.
 #                  "non_negative" (subtraction) bundles ordering + equal
 #                  rejection as one intent.
+#   nestable    -- whether this operator may have SUBTREE children (#5). True
+#                  for the composable operators (+ - *); False for the leaf-only
+#                  operators (/ % ^), whose operands stay integer leaves. NOTE:
+#                  nestable governs whether an operator may have subtree
+#                  CHILDREN; it does NOT govern whether the operator's node may
+#                  itself BE a child -- a / % ^ node is a valid subtree child of
+#                  a composable parent.
+#   precedence  -- explicit integer binding tier (#5): + - => 1, * / % => 2,
+#                  ^ => 3. Compared with < by the renderer to decide
+#                  parenthesization. Represented, not inferred from list order.
+#   associativity -- "left" or "right" (#5): + - * / % are left-associative;
+#                  ^ is right-associative. Drives same-tier wrong-side
+#                  parenthesization in the renderer.
 #   eval_fn     -- stdlib operator callable; full namespace, no alias
 #   operand_strategy -- the generator producing this operator's operand pair
 # Some operators carry a SECOND range as extra record fields read only by their
@@ -1206,6 +1219,9 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity": [0],
         "forbid_identity_referent": "operands",
         "result_constraint": None,
+        "nestable": True,
+        "precedence": 1,
+        "associativity": "left",
         "eval_fn": operator.add,
         "operand_strategy": _generate_operands_standard,
     },
@@ -1220,6 +1236,9 @@ OPERATOR_DEFINITIONS: list[dict] = [
         # One intent: non-negative, non-trivial result. The standard strategy
         # implements both mechanics (order left >= right; reject equal).
         "result_constraint": "non_negative",
+        "nestable": True,
+        "precedence": 1,
+        "associativity": "left",
         "eval_fn": operator.sub,
         "operand_strategy": _generate_operands_standard,
     },
@@ -1232,6 +1251,9 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity": [0, 1],
         "forbid_identity_referent": "operands",
         "result_constraint": None,
+        "nestable": True,
+        "precedence": 2,
+        "associativity": "left",
         "eval_fn": operator.mul,
         "operand_strategy": _generate_operands_standard,
     },
@@ -1248,6 +1270,9 @@ OPERATOR_DEFINITIONS: list[dict] = [
         # of 1 makes x / x, a trivial identity.
         "forbid_identity_referent": "quotient",
         "result_constraint": None,
+        "nestable": False,
+        "precedence": 2,
+        "associativity": "left",
         # Floor division (operator.floordiv) is always EXACT here: the dividend
         # is a guaranteed multiple of the divisor (ADR-007), so there is no
         # remainder to floor away; the divisor is never zero (positive range).
@@ -1269,6 +1294,9 @@ OPERATOR_DEFINITIONS: list[dict] = [
         # Referent is the divisor: a divisor of 1 makes x % 1 == 0 for every x.
         "forbid_identity_referent": "divisor",
         "result_constraint": None,
+        "nestable": False,
+        "precedence": 2,
+        "associativity": "left",
         "eval_fn": operator.mod,
         "operand_strategy": _generate_operands_modulo,
     },
@@ -1286,6 +1314,9 @@ OPERATOR_DEFINITIONS: list[dict] = [
         # Referent is the exponent: x^0 == 1 and x^1 == x are trivial.
         "forbid_identity_referent": "exponent",
         "result_constraint": None,
+        "nestable": False,
+        "precedence": 3,
+        "associativity": "right",
         # Right-associativity (2^2^3) is a #5 concern; the flat v1 generator
         # never associates, so it is a non-issue here.
         "eval_fn": operator.pow,
@@ -1305,6 +1336,9 @@ _OPERATOR_RECORD_REQUIRED_KEYS = frozenset(
         "forbid_identity",
         "forbid_identity_referent",
         "result_constraint",
+        "nestable",
+        "precedence",
+        "associativity",
         "eval_fn",
         "operand_strategy",
     }

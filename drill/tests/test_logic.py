@@ -211,6 +211,60 @@ def test_generate_division_is_always_integral(m):
 
 
 # --------------------------------------------------------------------------
+# operator-record declarative fields -- C-D5a (#5 nesting groundwork)
+# nestable / precedence / associativity are now REQUIRED record keys validated
+# by _build_operator_table. Assert they are present and well-typed for every
+# operator, and that they carry the settled #5 values. Nothing reads these yet
+# (the renderer change is C-D5b, the generator change C-D5c); this pins the
+# data and the validator contract.
+# --------------------------------------------------------------------------
+def test_operator_records_declare_nesting_fields(m):
+    expected = {
+        # symbol: (nestable, precedence, associativity)
+        "+": (True, 1, "left"),
+        "-": (True, 1, "left"),
+        "*": (True, 2, "left"),
+        "/": (False, 2, "left"),
+        "%": (False, 2, "left"),
+        "^": (False, 3, "right"),
+    }
+    for symbol, (nestable, precedence, associativity) in expected.items():
+        record = m.OPERATORS[symbol]
+        # present
+        assert "nestable" in record
+        assert "precedence" in record
+        assert "associativity" in record
+        # well-typed (bool is checked strictly: precedence must not be a bool,
+        # since bool is an int subclass and a stray True would slip through a
+        # bare isinstance(..., int) check)
+        assert isinstance(record["nestable"], bool)
+        assert isinstance(record["precedence"], int) and not isinstance(
+            record["precedence"], bool
+        )
+        assert record["associativity"] in ("left", "right")
+        # carries the settled #5 values
+        assert record["nestable"] is nestable
+        assert record["precedence"] == precedence
+        assert record["associativity"] == associativity
+
+
+def test_operator_record_missing_new_key_fails_table_build(m):
+    # The validator must REQUIRE the new keys: a record missing one fails loudly
+    # at table-build time, the same guard that protects the older required keys.
+    import copy
+
+    incomplete = copy.deepcopy(m.OPERATOR_DEFINITIONS[0])
+    del incomplete["precedence"]
+    original = m.OPERATOR_DEFINITIONS
+    try:
+        m.OPERATOR_DEFINITIONS = [incomplete]
+        with pytest.raises(ValueError):
+            m._build_operator_table()
+    finally:
+        m.OPERATOR_DEFINITIONS = original
+
+
+# --------------------------------------------------------------------------
 # pick_next_question -- avoid-recent policy with safe fallbacks
 # C-012 / ADR-005: v1 is uniformly-random with an avoid-recent window; falls
 # back to the full pool rather than ever failing to return for a non-empty bank.
