@@ -119,6 +119,12 @@ placed in the ranking above:
    schema-driven drift guard + MAIN wiring; init_db stays the v1 baseline and
    the runner layers v2..N (ADR-021/022/023). Mechanism only, registry ships
    empty; D1 consumes it. Suite 159 -> 175 green (backend 84 -> 100).
+   DONE (D1, wave 1): first real consumer -- the v2 migration adds
+   questions.metadata (additive NOT NULL DEFAULT '{}'), surfaced through the
+   readers; runner validated end-to-end. Fixed a latent init_db defect the bump
+   exposed (now stamps BASELINE_SCHEMA_VERSION=1, not the moving SCHEMA_VERSION;
+   ADR-026). grading_kind from the original brief deferred to #6/#7 (ADR-025).
+   Suite 175 -> 177 green (backend 100 -> 102).
 3. **Assertion / invariant pass (T2, #14).** LOGIC functions already raise
    `ValueError` on violated preconditions; extend that discipline to the
    boundary seams (e.g. assert payload shape at the DATABASE->LOGIC handoff)
@@ -194,6 +200,16 @@ but the lowest-effort score in Tier 1 because it means reconciling two schemas
 and two notions of "a review." Sequence it after adaptive selection (#7) exists,
 since SM2 *is* a selection policy -- it should plug into the same seam, not
 bolt on beside it.
+SCHEMA RESERVATION (from D1, ADR-025): the SM2 scheduling fields (ease,
+interval, repetition, next-review) are NOT yet added -- they land here, after
+#7, as their own migration. The grading_kind column from the original D1 brief
+was also deferred to this point: decide then whether a persisted grading axis is
+needed at all, and if so add it WITH the SM2 fields in one migration (it must
+FEED validate_answer's qtype dispatch, never fork it). Meanwhile per-question
+experimental state can live in questions.metadata (the uncommitted hatch D1
+added). The migration mechanism (#11) and a worked example (D1) are in place, so
+adding these is the documented four-step procedure -- mind BASELINE_SCHEMA_VERSION
+(ADR-026) when bumping.
 
 **Phase 5+ -- breadth (new drills) and depth (stats/UX).**
 Add drills cheapest-first: logic (#9) and code (#10) reuse the existing text/MC

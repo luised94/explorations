@@ -1279,3 +1279,99 @@ Startup will print "drill: applied migration 2 (...)" then "schema migrated
 That is the whole procedure: write migrate fn, append tuple, bump constant, add
 test. The runner, the transaction safety, the version stamping, and the
 operator message are already handled.
+
+================================================================================
+D1 (thread-model wave 1): the first real migration -- questions.metadata
+================================================================================
+
+ADR-024: WHICH table gets metadata -- questions.metadata (NOT banks).
+- [DECIDED] D1 adds ONE additive column: questions.metadata TEXT NOT NULL
+  DEFAULT '{}'. banks.metadata ALREADY EXISTS in the v1 baseline
+  (SCHEMA_STATEMENTS); questions had no metadata column, so this fills the real
+  gap. The column is a deliberately UNCOMMITTED structured-extras hatch: later
+  threads (difficulty tuning, SM2 scheduling state, new drill types) can stash
+  per-question state here experimentally before any of them earns a dedicated,
+  typed column. Additive + NOT NULL DEFAULT means every pre-existing row
+  backfills to {} with no data loss (the .db file is the user's only copy).
+- [DECIDED] SURFACING CEILING: metadata is surfaced at the READER level only --
+  _question_row_to_dict parses it to a dict, so get_question / list_questions
+  return it. It is NOT forwarded into build_question_payload's client payload:
+  that allowlist guards the frozen section-6 payload contract (see the C-018b
+  scaffold note in build_question_payload). When a real consumer needs metadata
+  client-side or at grading time, that thread threads it through the payload +
+  validation seam as its own change. "Surface now" therefore means
+  readable-through-the-readers, not load-bearing in the answer hot path.
+- [FINDING] The handoff procedure's worked EXAMPLE (below, "how D1 adds a
+  migration") used banks.metadata_extra -- a column on the wrong table that
+  also duplicates the existing banks.metadata. The PROCEDURE (write fn, append
+  tuple, bump constant, add test) was mechanically correct and followed
+  verbatim; only its illustrative column was wrong. Correct the example for D2+.
+
+ADR-025: grading_kind -- DEFERRED to adaptive selection / SM2 (roadmap #7,
+Phase 4). Not added in D1.
+- [DECIDED] The original D1 brief paired a grading_kind column with metadata.
+  It is intentionally NOT added. Reasoning: grading_kind would be a persisted
+  GRADING-POLICY axis, but its only real consumer is adaptive selection / SM2,
+  which consumes grading RESULTS (a quality grade), not the judging policy --
+  so folding in SM2 does not create a consumer for grading_kind. SM2's actual
+  per-question state is scheduling state (ease, interval, repetition,
+  next-review), a DIFFERENT column set, slated for its own later migration after
+  #7 (roadmap: "SM2 fields" + "reconciling two schemas and two notions of a
+  review"). Adding grading_kind now is speculative: its semantics (new axis vs
+  denormalization of the qtype dispatch) and even its home (questions vs bank vs
+  category) are unsettled, and forward-only migrations make a wrong guess
+  unrollable. The cheapest version of a speculative column is the one not yet
+  added; questions.metadata already provides an uncommitted hatch to prototype
+  in meanwhile.
+- [RECONSIDER WHEN] roadmap #7 (adaptive selection) lands and SM2 (Phase 4)
+  begins. At that point, against a real selection seam and a real caller,
+  decide whether a persisted grading axis is needed at all and what shape it
+  takes; if so, fold it in WITH the SM2 scheduling fields as a single migration.
+  Must NOT fork validate_answer's qtype dispatch -- any such column FEEDS that
+  single dispatch, it does not duplicate it. Flags left in code: see the
+  DEFERRED note in _migrate_2_add_questions_metadata (drill.py) and the roadmap
+  note for #6/#7.
+
+ADR-026: init_db stamps a FIXED baseline (BASELINE_SCHEMA_VERSION = 1), not the
+moving SCHEMA_VERSION. Upholds ADR-022; fixes a latent defect the bump exposed.
+- [DECIDED] init_db stamps BASELINE_SCHEMA_VERSION (1) -- the version of the
+  schema it actually builds (SCHEMA_STATEMENTS) -- as its own named constant,
+  distinct from SCHEMA_VERSION (the current ceiling, reached by baseline +
+  migrations). ADR-022 already required "init_db stamps version 1"; the code had
+  stamped SCHEMA_VERSION, which was equal to 1 only while there were no
+  migrations. The D1 bump to SCHEMA_VERSION = 2 made init_db stamp 2 on a fresh
+  DB, so run_migrations (which applies only versions GREATER than the stamped
+  one) skipped the v2 migration and left fresh installs at version 2 WITHOUT the
+  metadata column -- schema-incoherent, latent until first read. Naming the
+  baseline as a constant makes "init_db builds version 1" explicit and prevents
+  it silently tracking a future bump.
+- [DECIDED] TEST DB HELPER SPLIT. The same coupling meant the shared temp_db
+  helper (init_db only, no migrations) no longer represents "a DB at the current
+  version." Split into two explicitly-named helpers in tests/_support.py:
+  temp_db = the BASELINE DB (for migration tests that drive run_migrations);
+  current_db = init_db + run_migrations to SCHEMA_VERSION (the DB a running app
+  actually has, for reader/endpoint tests that touch migration-added columns).
+  Migration loop tests now key injected versions off the DB's ACTUAL current
+  version (get_schema_version), not SCHEMA_VERSION, so they stay correct and
+  genuinely-pending as the ceiling rises.
+- [SCOPE] This fix + the helper split were outside D1's literal scope list
+  (migration fn / MIGRATIONS / SCHEMA_VERSION / read-path wiring) but necessary
+  for D1 to be correct: without it a fresh install ships broken. Surfaced at
+  runtime by the Step 3 read-path test, not by static review. The general
+  "extract every magic-number version literal into a named constant" pass is a
+  separate later cleanup; D1 extracted only BASELINE_SCHEMA_VERSION, the one the
+  defect forced.
+
+D1 HANDOFF VERDICT (requested by the brief): was the decisions.md "how D1 adds a
+migration" procedure correct as written?
+- The PROCEDURE was mechanically correct and was followed verbatim: write the
+  migrate fn, append one MIGRATIONS tuple in version order, bump SCHEMA_VERSION,
+  add a real-MIGRATIONS test. The import-time guard behaved exactly as promised.
+- Two corrections for D2+: (1) the worked example used banks.metadata_extra --
+  wrong table and a duplicate of the existing banks.metadata; the real D1 gap
+  was questions.metadata (ADR-024). (2) The procedure omitted the init_db
+  baseline-stamp interaction (ADR-026): the FIRST migration to ever bump
+  SCHEMA_VERSION above 1 exposed that init_db stamped the moving constant. D2+
+  is now safe because BASELINE_SCHEMA_VERSION is fixed, but the procedure's
+  closing claim ("the version stamping is already handled") was only true once
+  ADR-026 landed. Update the handoff prose to point at BASELINE_SCHEMA_VERSION.
