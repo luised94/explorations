@@ -59,9 +59,9 @@ except ImportError:  # pragma: no cover - environment setup guard
 # C-006, not here). Operator definitions are intentionally absent from C-002.
 
 # Current schema version. Stamped once into the schema_version table at init.
-# No migration logic runs in v1 (ADR / spec section 5, item 5); the table
-# exists so a future version can detect the schema and apply migrations.
-SCHEMA_VERSION: int = 1
+# v2 (D1) adds questions.metadata via the migration runner; init_db still
+# produces the v1 baseline and run_migrations layers v2..N on top of it.
+SCHEMA_VERSION: int = 2
 
 # Seed categories (spec section 4.1). Inserted once at init if absent.
 # Each entry is (name, description). Config defaults to an empty JSON object
@@ -247,6 +247,35 @@ SCHEMA_STATEMENTS: list[str] = [
 ]
 
 
+def _migrate_2_add_questions_metadata(connection: sqlite3.Connection) -> None:
+    """v2 (D1): add questions.metadata, a per-question structured-extras column.
+
+    Additive, NOT NULL DEFAULT '{}' so every pre-existing row backfills to an
+    empty JSON object with no data loss (the .db file is the user's only copy).
+    The runner owns the transaction and stamps schema_version: this fn performs
+    ONLY the schema change and must not commit, rollback, or touch the version.
+
+    banks.metadata already exists in the v1 baseline; questions had no metadata
+    column, so this fills that gap (ADR-D1). It is a deliberately uncommitted
+    extras hatch: later threads (difficulty tuning, SM2 scheduling state, new
+    drill types) can prototype per-question state here before any of them earns
+    a dedicated, typed column.
+
+    DEFERRED -- grading_kind: the original D1 brief paired a grading_kind column
+    with this one. It is intentionally NOT added here. grading_kind would be a
+    persisted *grading-policy* axis, but its only real consumer is adaptive
+    selection / SM2 (roadmap #7 -> Phase 4), which consumes grading *results*,
+    not policy, and whose own shape is still open ("two notions of a review").
+    Forward-only migrations make a wrong guess unrollable, so the column waits
+    for that real caller. RECONSIDER when #7 lands: decide then whether a
+    grading axis belongs on questions, and fold it in with the SM2 scheduling
+    fields as a single later migration. See llm/decisions.md ADR-D1.
+    """
+    connection.execute(
+        "ALTER TABLE questions ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'"
+    )
+
+
 # Forward-only schema migrations, in ascending version order. Each entry is
 # (version, description, migrate) where migrate(connection) performs the schema
 # change for that version. The runner (run_migrations) applies every entry whose
@@ -257,10 +286,11 @@ SCHEMA_STATEMENTS: list[str] = [
 # migration, a later thread appends a single (version, description, migrate)
 # tuple here and bumps SCHEMA_VERSION to match -- it does NOT edit the runner.
 #
-# It is empty in T2 by design: this thread delivers the mechanism, not any
-# migration. Version 1 (today's schema) is produced by init_db, not by an entry
-# here; the first real entry will be version 2 (the next schema-changing thread).
-MIGRATIONS: list[tuple[int, str, object]] = []
+# v2 (D1) is the first real entry: questions.metadata. Version 1 (today's
+# baseline) is produced by init_db, not by an entry here.
+MIGRATIONS: list[tuple[int, str, object]] = [
+    (2, "add questions.metadata", _migrate_2_add_questions_metadata),
+]
 
 
 # Consistency guard, checked at import: the highest migration version must equal
