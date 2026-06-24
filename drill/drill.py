@@ -137,29 +137,37 @@ QTYPE_ARITHMETIC: str = "arithmetic"
 # symbol here must exist in OPERATOR_CONFIG; C-006 validates this at the
 # time it builds the operator table.
 
+# Shared operand-range defaults, named so the repetition across operators is
+# a declared shared default rather than coincidentally-equal magic numbers.
+# (_min, _max) inclusive. Addition/subtraction draw from the default range;
+# multiplication/division from the narrower multiplicative range (kept small
+# so products and dividends stay UI-tractable).
+_DEFAULT_OPERAND_RANGE = (1, 20)
+_MULTIPLICATIVE_OPERAND_RANGE = (2, 12)
+
 OPERATOR_CONFIG: list[dict] = [
     {
         "symbol": "+",
         "name": "addition",
         "arity": 2,
-        "operand_min": 1,
-        "operand_max": 20,
+        "operand_min": _DEFAULT_OPERAND_RANGE[0],
+        "operand_max": _DEFAULT_OPERAND_RANGE[1],
         "forbid_identity": [0],
     },
     {
         "symbol": "-",
         "name": "subtraction",
         "arity": 2,
-        "operand_min": 1,
-        "operand_max": 20,
+        "operand_min": _DEFAULT_OPERAND_RANGE[0],
+        "operand_max": _DEFAULT_OPERAND_RANGE[1],
         "forbid_identity": [0],
     },
     {
         "symbol": "*",
         "name": "multiplication",
         "arity": 2,
-        "operand_min": 2,
-        "operand_max": 12,
+        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
+        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
         "forbid_identity": [0, 1],
     },
     {
@@ -169,8 +177,8 @@ OPERATOR_CONFIG: list[dict] = [
         # For division the range bounds the divisor and quotient; the
         # dividend is derived as divisor * quotient (ADR-007). Divisor range
         # [2..12] matches the spec; quotient shares the same range.
-        "operand_min": 2,
-        "operand_max": 12,
+        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
+        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
         "forbid_identity": [1],
     },
 ]
