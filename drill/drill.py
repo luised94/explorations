@@ -112,29 +112,21 @@ QTYPES: list[str] = [
 QTYPE_ARITHMETIC: str = "arithmetic"
 
 # C-005: Operator scalar configuration.
-# Per the layering resolution, CONFIG holds only the scalar data describing
-# arithmetic operators. The callables (eval, display, operand generation)
-# and the assembled operator table live in LOGIC (C-006), which reads these
-# constants. Nothing here is a callable.
+# Per the layering resolution, CONFIG holds only the scalar data shared
+# across operators (the operand-range defaults below) and the enabled-symbol
+# list. The per-operator records -- which bind those scalars together with
+# the eval callable and operand strategy -- live as OPERATOR_DEFINITIONS in
+# LOGIC (C-006), because a record carrying callables is not pure scalar data.
 #
-# Each operator's scalar config is a dict of plain data:
-#   symbol     -- the rendered operator string (also the join key that
-#                 LOGIC uses to attach functions and that the enabled list
-#                 references)
-#   name       -- human-readable operator name
-#   arity      -- number of operands (all v1 operators are binary)
-#   operand_min, operand_max -- inclusive range for generated operands;
-#                 interpreted per operator by the C-006 generator (e.g.
-#                 division treats this range as the divisor/quotient range
-#                 and derives the dividend, guaranteeing integer results
-#                 per ADR-007)
-#   forbid_identity -- list of operand values that would make the operation
-#                 a trivial identity and must be rejected at generation time
-#                 (ADR-007: no x+0, x*1, x/1, 0*x, etc.); enforcement is in
-#                 C-006, the values to forbid are scalar config here
+# A single record per operator (OPERATOR_DEFINITIONS) replaced the earlier
+# split across OPERATOR_CONFIG + _OPERATOR_EVAL_FUNCTIONS +
+# _OPERATOR_OPERAND_GENERATORS plus hidden `if symbol == "-"` branches: one
+# operator's definition was scattered across four structures joined by the
+# symbol string as an implicit foreign key. See OPERATOR_DEFINITIONS in LOGIC
+# for the record shape.
 #
-# OPERATOR_SYMBOLS lists which operators are enabled by default. Every
-# symbol here must exist in OPERATOR_CONFIG; C-006 validates this at the
+# OPERATOR_SYMBOLS lists which operators are enabled by default. Every symbol
+# here must have a record in OPERATOR_DEFINITIONS; C-006 validates this at the
 # time it builds the operator table.
 
 # Shared operand-range defaults, named so the repetition across operators is
@@ -145,47 +137,9 @@ QTYPE_ARITHMETIC: str = "arithmetic"
 _DEFAULT_OPERAND_RANGE = (1, 20)
 _MULTIPLICATIVE_OPERAND_RANGE = (2, 12)
 
-OPERATOR_CONFIG: list[dict] = [
-    {
-        "symbol": "+",
-        "name": "addition",
-        "arity": 2,
-        "operand_min": _DEFAULT_OPERAND_RANGE[0],
-        "operand_max": _DEFAULT_OPERAND_RANGE[1],
-        "forbid_identity": [0],
-    },
-    {
-        "symbol": "-",
-        "name": "subtraction",
-        "arity": 2,
-        "operand_min": _DEFAULT_OPERAND_RANGE[0],
-        "operand_max": _DEFAULT_OPERAND_RANGE[1],
-        "forbid_identity": [0],
-    },
-    {
-        "symbol": "*",
-        "name": "multiplication",
-        "arity": 2,
-        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
-        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
-        "forbid_identity": [0, 1],
-    },
-    {
-        "symbol": "/",
-        "name": "division",
-        "arity": 2,
-        # For division the range bounds the divisor and quotient; the
-        # dividend is derived as divisor * quotient (ADR-007). Divisor range
-        # [2..12] matches the spec; quotient shares the same range.
-        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
-        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
-        "forbid_identity": [1],
-    },
-]
-
 # Operators enabled by default, by symbol. Used when a session config does
-# not specify a custom operator set. Every entry must match a symbol in
-# OPERATOR_CONFIG (validated in C-006).
+# not specify a custom operator set. Every entry must match a record in
+# OPERATOR_DEFINITIONS (validated in C-006).
 OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/"]
 
 # Default on-disk database filename. The server may override this at startup.
@@ -1091,21 +1045,13 @@ def get_responses_for_stats(
 # or int leaves, allowing nested expressions.
 
 
-# Maps an operator symbol to the function that evaluates it. Defined in
-# LOGIC; attached to the operator table below. Keyed by the same symbol
-# string that CONFIG uses, which is the join key between the two layers.
-# The callables are the stdlib `operator` module's binary functions; full
-# namespace, no alias, so the source of each is unambiguous.
-_OPERATOR_EVAL_FUNCTIONS = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    # Floor division (operator.floordiv) is always EXACT here: generation
-    # guarantees the dividend is an exact multiple of the divisor (ADR-007),
-    # so there is never a remainder to floor away. The divisor is never zero
-    # because operand generation draws divisors from a positive range.
-    "/": operator.floordiv,
-}
+# Operand-generation strategies. Each takes the operator's record and returns
+# a (left, right) pair. A strategy OWNS its forbidden-identity referent -- i.e.
+# what forbid_identity is checked against -- and declares it via the record's
+# forbid_identity_referent field, so a new operator cannot silently inherit
+# the wrong meaning. (forbid_identity historically meant raw operands for the
+# standard strategy but the derived quotient for division; that ambiguity is
+# now explicit in the record, not implicit in which strategy reads it.)
 
 
 def _generate_operands_standard(
@@ -1113,26 +1059,34 @@ def _generate_operands_standard(
 ) -> tuple[int, int]:
     """Generate a (left, right) operand pair for a non-division operator.
 
-    Draws both operands from the operator's inclusive [operand_min,
-    operand_max] range and rejects pairs that would form a trivial identity
-    (per the operator's forbid_identity list, ADR-007). For subtraction the
-    left operand is forced to be at least the right so the result is never
-    negative. Rejection-resamples until a valid pair is found.
+    Draws both operands from the record's inclusive [operand_min, operand_max]
+    range and rejects pairs whose RAW OPERANDS hit a forbidden-identity value
+    (forbid_identity_referent == "operands", ADR-007).
+
+    When the record declares result_constraint == "non_negative" (subtraction),
+    the strategy enforces that ONE intent with both its mechanics together:
+    it orders the operands so left >= right (result never negative) AND rejects
+    equal operands (x - x = 0 is the trivial result). Declaring the invariant
+    rather than two independent knobs prevents a future editor from setting
+    them inconsistently (e.g. ordering without equal-rejection, leaking 0).
+    Rejection-resamples until a valid pair is found.
     """
     minimum = operator_record["operand_min"]
     maximum = operator_record["operand_max"]
     forbidden = operator_record["forbid_identity"]
+    non_negative = operator_record.get("result_constraint") == "non_negative"
     while True:
         left_value = random.randint(minimum, maximum)
         right_value = random.randint(minimum, maximum)
-        if operator_record["symbol"] == "-" and left_value < right_value:
+        if non_negative and left_value < right_value:
             left_value, right_value = right_value, left_value
-        # Reject if either operand is a forbidden identity value, or if the
-        # two operands are equal in a way that trivializes the result
-        # (e.g. x - x = 0). Equal-operand subtraction is treated as trivial.
+        # Referent is the raw operands: reject if either is a forbidden
+        # identity value.
         if left_value in forbidden or right_value in forbidden:
             continue
-        if operator_record["symbol"] == "-" and left_value == right_value:
+        # The non_negative intent also rejects equal operands, whose result
+        # (0) is the trivial case for subtraction.
+        if non_negative and left_value == right_value:
             continue
         return left_value, right_value
 
@@ -1142,10 +1096,11 @@ def _generate_operands_division(
 ) -> tuple[int, int]:
     """Generate a (dividend, divisor) pair guaranteeing an integer quotient.
 
-    Picks the divisor and quotient from the operator's range, then derives
-    the dividend as divisor * quotient (ADR-007). This guarantees exact
-    division without post-hoc filtering. Rejects quotients in the operator's
-    forbid_identity list (a quotient of 1 makes x / x, a trivial identity).
+    Picks the divisor and quotient from the record's range, then derives the
+    dividend as divisor * quotient (ADR-007). This guarantees exact division
+    without post-hoc filtering. The forbidden-identity referent is the derived
+    QUOTIENT (forbid_identity_referent == "quotient"): a quotient of 1 makes
+    x / x, a trivial identity, so it is rejected.
     """
     minimum = operator_record["operand_min"]
     maximum = operator_record["operand_max"]
@@ -1159,57 +1114,158 @@ def _generate_operands_division(
         return dividend, divisor
 
 
-# Maps an operator symbol to the function that generates its operands.
-# Division has its own derivation; all others share the standard generator.
-_OPERATOR_OPERAND_GENERATORS = {
-    "+": _generate_operands_standard,
-    "-": _generate_operands_standard,
-    "*": _generate_operands_standard,
-    "/": _generate_operands_division,
-}
+# Per-operator records. One record fully defines an operator: the earlier
+# split across OPERATOR_CONFIG + _OPERATOR_EVAL_FUNCTIONS +
+# _OPERATOR_OPERAND_GENERATORS plus hidden `if symbol == "-"` branches is
+# collapsed here, removing the symbol-string-as-foreign-key join.
+#
+# Record fields:
+#   symbol      -- rendered operator string; also the table key
+#   name        -- human-readable operator name
+#   arity       -- operand count (all current operators binary)
+#   operand_min, operand_max -- inclusive operand range (interpreted by the
+#                  strategy; division treats it as the divisor/quotient range)
+#   forbid_identity -- values rejected at generation to avoid trivial results
+#                  (ADR-007)
+#   forbid_identity_referent -- WHAT forbid_identity is checked against:
+#                  "operands" (raw operands) or "quotient" (derived). Each
+#                  strategy declares its own; see strategy docstrings.
+#   result_constraint -- declared invariant the strategy must uphold, or None.
+#                  "non_negative" (subtraction) bundles ordering + equal
+#                  rejection as one intent.
+#   eval_fn     -- stdlib operator callable; full namespace, no alias
+#   operand_strategy -- the generator producing this operator's operand pair
+OPERATOR_DEFINITIONS: list[dict] = [
+    {
+        "symbol": "+",
+        "name": "addition",
+        "arity": 2,
+        "operand_min": _DEFAULT_OPERAND_RANGE[0],
+        "operand_max": _DEFAULT_OPERAND_RANGE[1],
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "eval_fn": operator.add,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "-",
+        "name": "subtraction",
+        "arity": 2,
+        "operand_min": _DEFAULT_OPERAND_RANGE[0],
+        "operand_max": _DEFAULT_OPERAND_RANGE[1],
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        # One intent: non-negative, non-trivial result. The standard strategy
+        # implements both mechanics (order left >= right; reject equal).
+        "result_constraint": "non_negative",
+        "eval_fn": operator.sub,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "*",
+        "name": "multiplication",
+        "arity": 2,
+        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
+        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
+        "forbid_identity": [0, 1],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "eval_fn": operator.mul,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "/",
+        "name": "division",
+        "arity": 2,
+        # The range bounds the divisor and quotient; the dividend is derived
+        # as divisor * quotient (ADR-007). Range [2..12] matches the spec.
+        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
+        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
+        "forbid_identity": [1],
+        # Referent is the derived quotient, not the raw operands: a quotient
+        # of 1 makes x / x, a trivial identity.
+        "forbid_identity_referent": "quotient",
+        "result_constraint": None,
+        # Floor division (operator.floordiv) is always EXACT here: the dividend
+        # is a guaranteed multiple of the divisor (ADR-007), so there is no
+        # remainder to floor away; the divisor is never zero (positive range).
+        "eval_fn": operator.floordiv,
+        "operand_strategy": _generate_operands_division,
+    },
+]
+
+# Required keys every record must carry; _build_operator_table validates
+# completeness against this set rather than re-joining separate structures.
+_OPERATOR_RECORD_REQUIRED_KEYS = frozenset(
+    {
+        "symbol",
+        "name",
+        "arity",
+        "operand_min",
+        "operand_max",
+        "forbid_identity",
+        "forbid_identity_referent",
+        "result_constraint",
+        "eval_fn",
+        "operand_strategy",
+    }
+)
+
+# Known forbid-identity referents; a record declaring anything else is a typo
+# or an unimplemented strategy contract.
+_KNOWN_FORBID_IDENTITY_REFERENTS = frozenset({"operands", "quotient"})
 
 
 def _build_operator_table() -> dict:
-    """Assemble the operator table from CONFIG scalars and LOGIC callables.
+    """Index OPERATOR_DEFINITIONS by symbol, validating record completeness.
 
-    Returns a dict mapping each operator symbol to a dict that merges the
-    scalar config (symbol, name, arity, ranges, forbid_identity) with the
-    operator's eval and operand-generation functions. Validates that every
-    symbol enabled in CONFIG.OPERATOR_SYMBOLS has a corresponding entry in
-    CONFIG.OPERATOR_CONFIG and a registered eval and generator function,
-    raising ValueError at import time if not -- catching typos early rather
-    than at request time.
+    Returns a dict mapping each operator symbol to its record. Because each
+    record is now self-contained, this no longer joins four structures; it
+    validates that every record is COMPLETE (all required keys present, eval_fn
+    and operand_strategy callable, referent known) and that every enabled
+    symbol in OPERATOR_SYMBOLS has a record. Raises ValueError at import time
+    on any failure -- catching typos early rather than at request time.
     """
-    config_by_symbol = {entry["symbol"]: entry for entry in OPERATOR_CONFIG}
+    table: dict = {}
+    for record in OPERATOR_DEFINITIONS:
+        missing = _OPERATOR_RECORD_REQUIRED_KEYS - record.keys()
+        if missing:
+            raise ValueError(
+                "operator record "
+                + repr(record.get("symbol", "<no symbol>"))
+                + " is missing required keys: "
+                + ", ".join(sorted(missing))
+            )
+        symbol = record["symbol"]
+        if not callable(record["eval_fn"]):
+            raise ValueError(
+                "operator record " + repr(symbol) + " has a non-callable eval_fn"
+            )
+        if not callable(record["operand_strategy"]):
+            raise ValueError(
+                "operator record "
+                + repr(symbol)
+                + " has a non-callable operand_strategy"
+            )
+        if record["forbid_identity_referent"] not in _KNOWN_FORBID_IDENTITY_REFERENTS:
+            raise ValueError(
+                "operator record "
+                + repr(symbol)
+                + " has unknown forbid_identity_referent "
+                + repr(record["forbid_identity_referent"])
+            )
+        if symbol in table:
+            raise ValueError("duplicate operator record for symbol " + repr(symbol))
+        table[symbol] = record
 
     for symbol in OPERATOR_SYMBOLS:
-        if symbol not in config_by_symbol:
+        if symbol not in table:
             raise ValueError(
                 "enabled operator symbol "
                 + repr(symbol)
-                + " has no entry in OPERATOR_CONFIG"
+                + " has no record in OPERATOR_DEFINITIONS"
             )
-        if symbol not in _OPERATOR_EVAL_FUNCTIONS:
-            raise ValueError(
-                "operator symbol " + repr(symbol) + " has no eval function"
-            )
-        if symbol not in _OPERATOR_OPERAND_GENERATORS:
-            raise ValueError(
-                "operator symbol " + repr(symbol) + " has no operand generator"
-            )
-
-    table = {}
-    for symbol, entry in config_by_symbol.items():
-        table[symbol] = {
-            "symbol": entry["symbol"],
-            "name": entry["name"],
-            "arity": entry["arity"],
-            "operand_min": entry["operand_min"],
-            "operand_max": entry["operand_max"],
-            "forbid_identity": entry["forbid_identity"],
-            "eval_fn": _OPERATOR_EVAL_FUNCTIONS[symbol],
-            "generate_operands": _OPERATOR_OPERAND_GENERATORS[symbol],
-        }
     return table
 
 
@@ -1247,7 +1303,7 @@ def generate_expression(
         )
     symbol = random.choice(symbols)
     operator_record = OPERATORS[symbol]
-    left_value, right_value = operator_record["generate_operands"](operator_record)
+    left_value, right_value = operator_record["operand_strategy"](operator_record)
     return {"op": symbol, "left": left_value, "right": right_value}
 
 
