@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 from _support import (  # noqa: E402
+    current_db,
     load_drill,
-    temp_db,
     wsgi_get,
     wsgi_post_json,
     wsgi_post_multipart,
@@ -36,7 +36,7 @@ def app_with_data(tmp_path):
     """Module + temp DB seeded for stats endpoint tests. DATABASE_PATH is
     bound to the temp file so the handlers read it."""
     m = load_drill()
-    conn = temp_db(m, tmp_path)
+    conn = current_db(m, tmp_path)
 
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     arith_id = cats["arithmetic"]
@@ -173,7 +173,7 @@ def _post_json(m, path, payload):
 @pytest.fixture
 def app_blank(tmp_path):
     m = load_drill()
-    conn = temp_db(m, tmp_path)
+    conn = current_db(m, tmp_path)
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     conn.close()
     return m, cats
@@ -323,7 +323,7 @@ def app_with_bank(tmp_path):
     non-arithmetic category. Returns (m, category_id, full_bank_id,
     empty_bank_id)."""
     m = load_drill()
-    conn = temp_db(m, tmp_path)
+    conn = current_db(m, tmp_path)
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
     cat_name = next(n for n in cats if n != "arithmetic")

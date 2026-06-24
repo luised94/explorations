@@ -148,11 +148,13 @@ def test_drift_guard_rejects_gap_from_baseline(db):
 
 
 def test_run_migrations_empty_registry_is_noop(db):
-    # The shipped T2 case: DB baselined at 1 by init_db, empty registry, nothing
-    # to do. from == to, no migrations applied, version untouched.
+    # An empty registry has nothing to apply, regardless of the DB's version:
+    # from == to, nothing applied, version untouched. The shipped MIGRATIONS is
+    # non-empty as of D1, so this passes migrations=[] explicitly to test the
+    # empty-registry contract itself (the DB is at the baseline via temp_db).
     m, conn = db
     before = m.get_schema_version(conn)
-    result = m.run_migrations(conn, FIXED_NOW)
+    result = m.run_migrations(conn, FIXED_NOW, migrations=[])
     assert result["from_version"] == before
     assert result["to_version"] == before
     assert result["applied"] == []
@@ -160,12 +162,13 @@ def test_run_migrations_empty_registry_is_noop(db):
 
 
 def test_run_migrations_applies_pending_in_order(db):
-    # Two injected migrations layered ABOVE the real schema ceiling apply in
+    # Two injected migrations layered ABOVE the DB's current version apply in
     # order, advance the version to the target, and report what ran. Versions
-    # are computed from SCHEMA_VERSION (not literals) so this stays pending --
-    # rather than silently no-opping -- as the shipped ceiling rises (D1+).
+    # are computed from the DB's actual version (temp_db is at the baseline),
+    # not a literal or SCHEMA_VERSION, so the injected steps are genuinely
+    # pending regardless of where the baseline/ceiling sit.
     m, conn = db
-    base = m.SCHEMA_VERSION  # DB sits here after init_db; inject base+1, base+2
+    base = m.get_schema_version(conn)  # the DB's current version (baseline)
     v1, v2 = base + 1, base + 2
     calls = []
 
@@ -189,7 +192,7 @@ def test_run_migrations_applies_pending_in_order(db):
 def test_run_migrations_is_idempotent_on_rerun(db):
     # Running the same set again selects nothing: a safe no-op.
     m, conn = db
-    v = m.SCHEMA_VERSION + 1  # one above the real ceiling, so genuinely pending
+    v = m.get_schema_version(conn) + 1  # one above the DB's current version
     injected = [(v, "add two", lambda c: c.execute("CREATE TABLE _p2 (id INTEGER)"))]
     first = m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=injected)
     assert first["applied"] == [(v, "add two")]
@@ -204,7 +207,7 @@ def test_run_migrations_is_idempotent_on_rerun(db):
 def test_run_migrations_respects_target_version(db):
     # target_version stops the walk short of the latest available migration.
     m, conn = db
-    base = m.SCHEMA_VERSION
+    base = m.get_schema_version(conn)
     v1, v2 = base + 1, base + 2
     injected = [
         (v1, "two", lambda c: c.execute("CREATE TABLE _t2 (id INTEGER)")),
@@ -220,7 +223,7 @@ def test_run_migrations_stops_at_last_good_version_on_failure(db):
     # A failing migration partway through leaves the DB at the last good
     # version, with the earlier migration committed and the later one absent.
     m, conn = db
-    base = m.SCHEMA_VERSION
+    base = m.get_schema_version(conn)
     v1, v2, v3 = base + 1, base + 2, base + 3
 
     class Boom(Exception):
@@ -253,8 +256,11 @@ def test_run_migrations_stops_at_last_good_version_on_failure(db):
 
 def test_fresh_db_reaches_current_version_via_startup_sequence(tmp_path):
     # A fresh DB, taken through the exact init_db -> run_migrations sequence
-    # main() uses, lands at SCHEMA_VERSION. With the shipped empty registry the
-    # runner is a no-op and the version is the init_db baseline (1).
+    # main() uses, lands at SCHEMA_VERSION with every migration applied. init_db
+    # stamps the BASELINE (1) and builds the baseline schema; the runner then
+    # advances 1 -> SCHEMA_VERSION, applying the shipped migrations. This is the
+    # regression guard for the defect where init_db stamped SCHEMA_VERSION
+    # directly: a fresh DB then skipped the migrations and lacked their columns.
     m = load_drill()
     dbpath = os.path.join(str(tmp_path), "fresh.db")
     m.DATABASE_PATH = dbpath
@@ -262,25 +268,38 @@ def test_fresh_db_reaches_current_version_via_startup_sequence(tmp_path):
     try:
         m.init_db(conn)
         conn.commit()
+        assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # stamped 1
         result = m.run_migrations(conn, FIXED_NOW)
     finally:
         pass
     assert m.get_schema_version(conn) == m.SCHEMA_VERSION
+    assert result["from_version"] == m.BASELINE_SCHEMA_VERSION
     assert result["to_version"] == m.SCHEMA_VERSION
-    assert result["applied"] == []  # empty registry: nothing to apply
+    # The shipped registry is non-empty (D1+), so the fresh path applies it.
+    assert [v for v, _desc in result["applied"]] == list(
+        range(m.BASELINE_SCHEMA_VERSION + 1, m.SCHEMA_VERSION + 1)
+    )
+    # The proof the migration actually ran on the fresh path: its column exists.
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
+    assert "metadata" in cols
     conn.close()
 
 
 def test_existing_baselined_db_is_untouched_by_startup_sequence(tmp_path):
-    # An existing DB already at the baseline is not re-stamped or advanced when
-    # the startup sequence runs again: init_db is stamp-once, runner is a no-op.
+    # An existing DB already at the CURRENT version is not re-stamped or advanced
+    # when the startup sequence runs again: init_db is stamp-once and the runner
+    # finds nothing pending. temp_db stamps only the baseline (1) and does not
+    # migrate, so we first bring the DB fully current (init_db already ran; apply
+    # the shipped migrations once), then assert the SECOND sequence is a no-op.
     m = load_drill()
-    conn = temp_db(m, tmp_path)  # init_db already ran; DB is at v1
+    conn = temp_db(m, tmp_path)  # init_db ran; DB at the baseline (1)
+    m.run_migrations(conn, FIXED_NOW)  # advance to SCHEMA_VERSION
+    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
     before_rows = conn.execute(
         "SELECT version, applied FROM schema_version ORDER BY version"
     ).fetchall()
 
-    # Re-run the sequence as a restart would.
+    # Re-run the sequence as a restart would: must change nothing.
     m.init_db(conn)
     conn.commit()
     result = m.run_migrations(conn, FIXED_NOW)
@@ -303,7 +322,7 @@ def test_rerun_after_failed_migration_recovers_and_advances(db):
     # advances. Proves a rolled-back failure does not poison the connection for
     # a later successful run.
     m, conn = db
-    base = m.SCHEMA_VERSION
+    base = m.get_schema_version(conn)
     v = base + 1
 
     class Boom(Exception):
@@ -357,7 +376,7 @@ def test_existing_user_data_survives_a_migration(db):
         # (questions.metadata); the test runs ONLY this injected registry.
         c.execute("ALTER TABLE banks ADD COLUMN note TEXT NOT NULL DEFAULT ''")
 
-    v = m.SCHEMA_VERSION + 1  # above the real ceiling, so genuinely pending
+    v = m.get_schema_version(conn) + 1  # one above the DB's current version
     injected = [(v, "add banks.note", add_column)]
     result = m.run_migrations(conn, FIXED_NOW, target_version=v, migrations=injected)
     assert result["to_version"] == v
@@ -369,82 +388,59 @@ def test_existing_user_data_survives_a_migration(db):
     assert row["note"] == ""  # new column present with default
 
 
-def _build_v1_baseline(m, conn):
-    """Reconstruct a genuine version-1 database: the v1 schema, stamped at 1.
+def test_real_v2_migration_adds_questions_metadata_over_existing_rows(db):
+    # D1's deliverable, exercised through the REAL MIGRATIONS (not an injected
+    # list): a baseline database with several pre-existing questions across
+    # multiple qtypes is migrated to the current version; every pre-existing row
+    # backfills to the '{}' default. temp_db (via the db fixture) sits at the
+    # baseline with the migration unapplied -- exactly the pre-migration state.
+    # Seeding MANY rows across qtypes (not one) proves the default applies to
+    # the whole table, not a single row.
+    m, conn = db
+    assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # pre-migration
 
-    temp_db runs init_db, which stamps the live SCHEMA_VERSION (now 2) -- so a
-    temp_db sits at v2 and the real v2 migration would find nothing pending.
-    To exercise the REAL migration end-to-end we need a true v1 baseline: the
-    same SCHEMA_STATEMENTS init_db lays down (which is still the v1 shape --
-    questions has no metadata column; that is exactly what v2 adds), stamped at
-    version 1, with categories seeded so foreign keys resolve.
-    """
-    for statement in m.SCHEMA_STATEMENTS:
-        conn.execute(statement)
-    conn.execute(
-        "INSERT INTO schema_version (version, applied) VALUES (1, ?)",
-        (FIXED_NOW,),
+    # Pre-existing data, seeded BEFORE the migration, spanning qtypes.
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    bank_id = m.insert_bank(
+        conn,
+        category_id=cats["arithmetic"],
+        name="pre-existing bank",
+        source="seed",
+        created=FIXED_NOW,
+        language=None,
     )
-    m.seed_categories(conn)
+    seeded = [
+        {"qtype": m.QTYPE_FREE_RESPONSE, "question": "q-free", "answer": "a"},
+        {"qtype": m.QTYPE_MULTIPLE_CHOICE, "question": "q-mc", "answer": "b"},
+        {"qtype": m.QTYPE_TRANSLATE, "question": "q-tr", "answer": "c"},
+        {"qtype": m.QTYPE_IDENTIFY, "question": "q-id", "answer": "d"},
+    ]
+    m.insert_questions_bulk(conn, bank_id, seeded, FIXED_NOW)
     conn.commit()
 
+    # Sanity: the baseline questions table has no metadata column yet.
+    precols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
+    assert "metadata" not in precols
 
-def test_real_v2_migration_adds_questions_metadata_over_existing_rows(tmp_path):
-    # D1's deliverable, exercised through the REAL MIGRATIONS (not an injected
-    # list): a v1 database with several pre-existing questions across multiple
-    # qtypes is migrated to v2; every pre-existing row backfills to the '{}'
-    # default and the DB reaches version 2. Seeding MANY rows across qtypes
-    # (not one) proves the default applies to the whole table, not a single row.
-    m = load_drill()
-    dbpath = os.path.join(str(tmp_path), "v1.db")
-    m.DATABASE_PATH = dbpath
-    conn = m.connect(dbpath)
-    try:
-        _build_v1_baseline(m, conn)
+    # Run the REAL registry: it must advance the baseline to the current version
+    # via the shipped v2 entry.
+    result = m.run_migrations(conn, FIXED_NOW)
+    assert result["from_version"] == m.BASELINE_SCHEMA_VERSION
+    assert result["to_version"] == m.SCHEMA_VERSION
+    assert (2, "add questions.metadata") in result["applied"]
+    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
 
-        # Pre-existing data, seeded BEFORE the migration, spanning qtypes.
-        cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
-        bank_id = m.insert_bank(
-            conn,
-            category_id=cats["arithmetic"],
-            name="pre-existing bank",
-            source="seed",
-            created=FIXED_NOW,
-            language=None,
-        )
-        seeded = [
-            {"qtype": m.QTYPE_FREE_RESPONSE, "question": "q-free", "answer": "a"},
-            {"qtype": m.QTYPE_MULTIPLE_CHOICE, "question": "q-mc", "answer": "b"},
-            {"qtype": m.QTYPE_TRANSLATE, "question": "q-tr", "answer": "c"},
-            {"qtype": m.QTYPE_IDENTIFY, "question": "q-id", "answer": "d"},
-        ]
-        m.insert_questions_bulk(conn, bank_id, seeded, FIXED_NOW)
-        conn.commit()
+    # The new column exists...
+    postcols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
+    assert "metadata" in postcols
 
-        # Sanity: the v1 questions table has no metadata column yet.
-        precols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
-        assert "metadata" not in precols
-
-        # Run the REAL registry: it must advance 1 -> 2 via the shipped entry.
-        result = m.run_migrations(conn, FIXED_NOW)
-        assert result["from_version"] == 1
-        assert result["to_version"] == 2
-        assert result["applied"] == [(2, "add questions.metadata")]
-        assert m.get_schema_version(conn) == 2
-
-        # The new column exists...
-        postcols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
-        assert "metadata" in postcols
-
-        # ...and EVERY pre-existing row backfilled to the '{}' default, intact.
-        rows = conn.execute(
-            "SELECT question, metadata FROM questions ORDER BY id"
-        ).fetchall()
-        assert len(rows) == len(seeded)  # all rows survived
-        assert {r["question"] for r in rows} == {s["question"] for s in seeded}
-        assert all(r["metadata"] == "{}" for r in rows)  # default on every row
-    finally:
-        conn.close()
+    # ...and EVERY pre-existing row backfilled to the '{}' default, intact.
+    rows = conn.execute(
+        "SELECT question, metadata FROM questions ORDER BY id"
+    ).fetchall()
+    assert len(rows) == len(seeded)  # all rows survived
+    assert {r["question"] for r in rows} == {s["question"] for s in seeded}
+    assert all(r["metadata"] == "{}" for r in rows)  # default on every row
 
 
 def test_run_migrations_on_unbaselined_db_treats_current_as_zero(tmp_path):

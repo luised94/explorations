@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _support import load_drill, temp_db  # noqa: E402
+from _support import current_db, load_drill  # noqa: E402
 
 
 def _iso(dt):
@@ -32,7 +32,7 @@ def seeded(tmp_path):
     Returns (module, conn, ids dict).
     """
     m = load_drill()
-    conn = temp_db(m, tmp_path)
+    conn = current_db(m, tmp_path)
 
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     arith_id = cats["arithmetic"]
@@ -121,3 +121,48 @@ def test_insert_response_elapsed_ms_round_trips_null_and_value(seeded):
     elapsed = sorted(r["elapsed_ms"] for r in rows if r["elapsed_ms"] is not None)
     assert elapsed == [900, 1500, 2200, 4000]
     assert any(r["elapsed_ms"] is None for r in rows)
+
+
+def test_question_metadata_surfaces_through_readers(seeded):
+    # v2/D1 read path: questions.metadata is surfaced (parsed to a dict) by the
+    # canonical reader, so get_question and list_questions return it. A freshly
+    # inserted question carries the '{}' default as {}; a row whose metadata was
+    # written parses back to the stored object. current_db is migrated to
+    # SCHEMA_VERSION, so the column exists here. This covers the reader only --
+    # the client payload (build_question_payload) does not forward metadata (ADR-D1).
+    m, conn, ids = seeded
+    bank_id = m.insert_bank(
+        conn,
+        category_id=ids["arith"],
+        name="meta bank",
+        source="seed",
+        created=_iso(ids["now"]),
+        language=None,
+    )
+    m.insert_questions_bulk(
+        conn,
+        bank_id,
+        [
+            {"qtype": m.QTYPE_FREE_RESPONSE, "question": "default-meta", "answer": "a"},
+            {"qtype": m.QTYPE_FREE_RESPONSE, "question": "set-meta", "answer": "b"},
+        ],
+        _iso(ids["now"]),
+    )
+    conn.commit()
+
+    questions = {q["question"]: q for q in m.list_questions(conn, bank_id)}
+    # Bulk insert uses the v1 column set, so both rows take the '{}' default,
+    # which the reader parses to an empty dict.
+    assert questions["default-meta"]["metadata"] == {}
+    assert questions["set-meta"]["metadata"] == {}
+
+    # A stored (non-default) metadata object round-trips through the reader as
+    # the parsed dict -- the shape a future writer (e.g. SM2 state) would use.
+    target_id = questions["set-meta"]["id"]
+    conn.execute(
+        "UPDATE questions SET metadata = ? WHERE id = ?",
+        ('{"source_tag": "imported", "weight": 3}', target_id),
+    )
+    conn.commit()
+    fetched = m.get_question(conn, target_id)
+    assert fetched["metadata"] == {"source_tag": "imported", "weight": 3}

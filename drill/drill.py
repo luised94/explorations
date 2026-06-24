@@ -58,10 +58,22 @@ except ImportError:  # pragma: no cover - environment setup guard
 # operator-table layering tension: the operator table is built in LOGIC in
 # C-006, not here). Operator definitions are intentionally absent from C-002.
 
-# Current schema version. Stamped once into the schema_version table at init.
-# v2 (D1) adds questions.metadata via the migration runner; init_db still
-# produces the v1 baseline and run_migrations layers v2..N on top of it.
+# Current schema version: the highest version the code knows about, reached by
+# init_db (the baseline) plus every migration in MIGRATIONS. v2 (D1) adds
+# questions.metadata via the runner; init_db builds the baseline and
+# run_migrations layers v2..N on top of it.
 SCHEMA_VERSION: int = 2
+
+# The version init_db itself builds and stamps. init_db lays down the v1-shaped
+# SCHEMA_STATEMENTS, so the baseline IS version 1 -- it must be stamped as 1,
+# NOT as SCHEMA_VERSION, or the runner (which only applies versions GREATER than
+# the stamped one) skips every migration on a fresh DB and leaves it at the
+# baseline schema while claiming the current version. Kept as its own constant,
+# distinct from SCHEMA_VERSION, so the "init_db builds version 1" fact is
+# explicit and cannot silently track a future SCHEMA_VERSION bump (the defect
+# this constant fixes: while the two happened to be equal at v1, init_db stamped
+# SCHEMA_VERSION directly and a bump to 2 made fresh DBs skip the v2 migration).
+BASELINE_SCHEMA_VERSION: int = 1
 
 # Seed categories (spec section 4.1). Inserted once at init if absent.
 # Each entry is (name, description). Config defaults to an empty JSON object
@@ -552,10 +564,10 @@ def init_db(connection: sqlite3.Connection) -> None:
     """Create the schema if needed, stamp the version, and seed categories.
 
     Idempotent and safe to call on every startup. Creates all tables with
-    IF NOT EXISTS, stamps the current SCHEMA_VERSION the first time the
-    database is initialized, and seeds any missing categories. No migration
-    logic runs in v1 (item 5): if the database is already at the current
-    version, the version row is left untouched.
+    IF NOT EXISTS, stamps the BASELINE_SCHEMA_VERSION (1) the first time the
+    database is initialized, and seeds any missing categories. init_db builds
+    only the baseline; the migration runner advances it to SCHEMA_VERSION. If
+    the database already has a version row, it is left untouched (stamp-once).
     """
     for statement in SCHEMA_STATEMENTS:
         connection.execute(statement)
@@ -564,7 +576,7 @@ def init_db(connection: sqlite3.Connection) -> None:
     if existing_version is None:
         connection.execute(
             "INSERT INTO schema_version (version, applied) VALUES (?, ?)",
-            (SCHEMA_VERSION, utc_now_iso()),
+            (BASELINE_SCHEMA_VERSION, utc_now_iso()),
         )
 
     seed_categories(connection)
@@ -631,9 +643,18 @@ def _bank_row_to_dict(row: sqlite3.Row) -> dict:
 def _question_row_to_dict(row: sqlite3.Row) -> dict:
     """Convert a questions row to a plain dict with JSON columns parsed.
 
-    The four array columns become Python lists; scalar and nullable columns
-    pass through unchanged. The result is the canonical question dict shape
-    that LOGIC and HTTP operate on.
+    The four array columns become Python lists; metadata becomes a dict; other
+    scalar and nullable columns pass through unchanged. The result is the
+    canonical question dict shape that LOGIC and HTTP operate on.
+
+    metadata (added in v2/D1) is the per-question structured-extras object,
+    parsed from its JSON text to a dict (default {} for the backfilled rows).
+    It is surfaced at the READER level here so get_question/list_questions
+    return it; it is deliberately NOT forwarded into build_question_payload's
+    client payload (that allowlist guards the frozen section-6 contract). When
+    a real consumer needs it client-side or at grading time -- e.g. SM2 /
+    adaptive selection, roadmap #7 -- that thread threads it through the
+    payload and validation seam. See llm/decisions.md ADR-D1.
     """
     return {
         "id": row["id"],
@@ -647,6 +668,7 @@ def _question_row_to_dict(row: sqlite3.Row) -> dict:
         "media_url": row["media_url"],
         "tags": _load_json(row["tags"], []),
         "difficulty": row["difficulty"],
+        "metadata": _load_json(row["metadata"], {}),
         "created": row["created"],
     }
 

@@ -8,11 +8,17 @@ harnesses (see tests/README-PATTERNS.md, Pattern 1 and Pattern 4):
                          than a copy. Each call is an independent module so a
                          test can rebind DATABASE_PATH without disturbing
                          another.
-  temp_db(m)          -- make a temp SQLite file, point the module's
-                         DATABASE_PATH at it, connect + init_db, return the
-                         open connection. The HTTP handlers read the module
-                         global DATABASE_PATH, so rebinding it here is what
-                         makes WSGI requests hit the temp DB.
+  temp_db(m)          -- make a temp SQLite file at the BASELINE schema
+                         (init_db only, migrations NOT applied), point the
+                         module's DATABASE_PATH at it, return the open
+                         connection. For the migration tests, which drive
+                         run_migrations against a baseline DB.
+  current_db(m)       -- like temp_db but at the CURRENT schema (init_db +
+                         run_migrations to SCHEMA_VERSION): the DB a running
+                         app actually has. For reader/endpoint tests that touch
+                         migration-added columns. The HTTP handlers read the
+                         module global DATABASE_PATH, so rebinding it here is
+                         what makes WSGI requests hit the temp DB.
   wsgi_get(m, path,..)-- drive the Bottle app directly through its WSGI
                          callable: no server, no socket, no network. Returns
                          (status_string, decoded_body).
@@ -48,7 +54,14 @@ _FALLBACK_TMP_DIRS = []
 
 
 def temp_db(m, dir_=None):
-    """Create a temp DB, point m.DATABASE_PATH at it, init schema, return conn.
+    """Create a temp DB at the BASELINE schema (init_db only), return conn.
+
+    init_db lays down the baseline schema and stamps BASELINE_SCHEMA_VERSION; it
+    does NOT run migrations. So this DB sits at the baseline, with pending
+    migrations unapplied -- which is exactly what the migration tests want (a
+    DB to drive run_migrations against). Tests that need a DB at the CURRENT
+    schema (readers/endpoints that touch migration-added columns) want
+    current_db instead.
 
     dir_ -- optional directory to put the DB file in. Pass pytest's tmp_path
             so the file is cleaned up automatically with the test's tmp tree.
@@ -63,6 +76,26 @@ def temp_db(m, dir_=None):
     m.DATABASE_PATH = dbpath
     conn = m.connect(dbpath)
     m.init_db(conn)
+    return conn
+
+
+def current_db(m, dir_=None):
+    """Create a temp DB at the CURRENT schema (init_db + run_migrations), return conn.
+
+    This is the database a running app actually has: init_db builds and stamps
+    the baseline, then run_migrations applies every shipped migration up to
+    SCHEMA_VERSION (the exact sequence main() runs at startup). Use this for any
+    test that reads or writes through the real readers/endpoints, since those
+    touch migration-added columns (e.g. questions.metadata, v2/D1). The clock is
+    injected here the same way MAIN does it, so the DATABASE layer stays
+    clock-free.
+
+    For the baseline-only DB the migration tests drive run_migrations against,
+    use temp_db instead.
+    """
+    conn = temp_db(m, dir_)
+    m.run_migrations(conn, m.utc_now_iso())
+    conn.commit()
     return conn
 
 
