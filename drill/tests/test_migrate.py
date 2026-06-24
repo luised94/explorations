@@ -369,6 +369,84 @@ def test_existing_user_data_survives_a_migration(db):
     assert row["note"] == ""  # new column present with default
 
 
+def _build_v1_baseline(m, conn):
+    """Reconstruct a genuine version-1 database: the v1 schema, stamped at 1.
+
+    temp_db runs init_db, which stamps the live SCHEMA_VERSION (now 2) -- so a
+    temp_db sits at v2 and the real v2 migration would find nothing pending.
+    To exercise the REAL migration end-to-end we need a true v1 baseline: the
+    same SCHEMA_STATEMENTS init_db lays down (which is still the v1 shape --
+    questions has no metadata column; that is exactly what v2 adds), stamped at
+    version 1, with categories seeded so foreign keys resolve.
+    """
+    for statement in m.SCHEMA_STATEMENTS:
+        conn.execute(statement)
+    conn.execute(
+        "INSERT INTO schema_version (version, applied) VALUES (1, ?)",
+        (FIXED_NOW,),
+    )
+    m.seed_categories(conn)
+    conn.commit()
+
+
+def test_real_v2_migration_adds_questions_metadata_over_existing_rows(tmp_path):
+    # D1's deliverable, exercised through the REAL MIGRATIONS (not an injected
+    # list): a v1 database with several pre-existing questions across multiple
+    # qtypes is migrated to v2; every pre-existing row backfills to the '{}'
+    # default and the DB reaches version 2. Seeding MANY rows across qtypes
+    # (not one) proves the default applies to the whole table, not a single row.
+    m = load_drill()
+    dbpath = os.path.join(str(tmp_path), "v1.db")
+    m.DATABASE_PATH = dbpath
+    conn = m.connect(dbpath)
+    try:
+        _build_v1_baseline(m, conn)
+
+        # Pre-existing data, seeded BEFORE the migration, spanning qtypes.
+        cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+        bank_id = m.insert_bank(
+            conn,
+            category_id=cats["arithmetic"],
+            name="pre-existing bank",
+            source="seed",
+            created=FIXED_NOW,
+            language=None,
+        )
+        seeded = [
+            {"qtype": m.QTYPE_FREE_RESPONSE, "question": "q-free", "answer": "a"},
+            {"qtype": m.QTYPE_MULTIPLE_CHOICE, "question": "q-mc", "answer": "b"},
+            {"qtype": m.QTYPE_TRANSLATE, "question": "q-tr", "answer": "c"},
+            {"qtype": m.QTYPE_IDENTIFY, "question": "q-id", "answer": "d"},
+        ]
+        m.insert_questions_bulk(conn, bank_id, seeded, FIXED_NOW)
+        conn.commit()
+
+        # Sanity: the v1 questions table has no metadata column yet.
+        precols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
+        assert "metadata" not in precols
+
+        # Run the REAL registry: it must advance 1 -> 2 via the shipped entry.
+        result = m.run_migrations(conn, FIXED_NOW)
+        assert result["from_version"] == 1
+        assert result["to_version"] == 2
+        assert result["applied"] == [(2, "add questions.metadata")]
+        assert m.get_schema_version(conn) == 2
+
+        # The new column exists...
+        postcols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
+        assert "metadata" in postcols
+
+        # ...and EVERY pre-existing row backfilled to the '{}' default, intact.
+        rows = conn.execute(
+            "SELECT question, metadata FROM questions ORDER BY id"
+        ).fetchall()
+        assert len(rows) == len(seeded)  # all rows survived
+        assert {r["question"] for r in rows} == {s["question"] for s in seeded}
+        assert all(r["metadata"] == "{}" for r in rows)  # default on every row
+    finally:
+        conn.close()
+
+
 def test_run_migrations_on_unbaselined_db_treats_current_as_zero(tmp_path):
     # When no baseline is stamped yet (get_schema_version is None), the runner
     # treats current as 0 for selection and reports from_version as 0. This
