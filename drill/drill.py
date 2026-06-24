@@ -1119,7 +1119,7 @@ _OPERATOR_EVAL_FUNCTIONS = {
 
 
 def _generate_operands_standard(
-    operator: dict,
+    operator_record: dict,
 ) -> tuple[int, int]:
     """Generate a (left, right) operand pair for a non-division operator.
 
@@ -1129,26 +1129,26 @@ def _generate_operands_standard(
     left operand is forced to be at least the right so the result is never
     negative. Rejection-resamples until a valid pair is found.
     """
-    minimum = operator["operand_min"]
-    maximum = operator["operand_max"]
-    forbidden = operator["forbid_identity"]
+    minimum = operator_record["operand_min"]
+    maximum = operator_record["operand_max"]
+    forbidden = operator_record["forbid_identity"]
     while True:
         left_value = random.randint(minimum, maximum)
         right_value = random.randint(minimum, maximum)
-        if operator["symbol"] == "-" and left_value < right_value:
+        if operator_record["symbol"] == "-" and left_value < right_value:
             left_value, right_value = right_value, left_value
         # Reject if either operand is a forbidden identity value, or if the
         # two operands are equal in a way that trivializes the result
         # (e.g. x - x = 0). Equal-operand subtraction is treated as trivial.
         if left_value in forbidden or right_value in forbidden:
             continue
-        if operator["symbol"] == "-" and left_value == right_value:
+        if operator_record["symbol"] == "-" and left_value == right_value:
             continue
         return left_value, right_value
 
 
 def _generate_operands_division(
-    operator: dict,
+    operator_record: dict,
 ) -> tuple[int, int]:
     """Generate a (dividend, divisor) pair guaranteeing an integer quotient.
 
@@ -1157,9 +1157,9 @@ def _generate_operands_division(
     division without post-hoc filtering. Rejects quotients in the operator's
     forbid_identity list (a quotient of 1 makes x / x, a trivial identity).
     """
-    minimum = operator["operand_min"]
-    maximum = operator["operand_max"]
-    forbidden = operator["forbid_identity"]
+    minimum = operator_record["operand_min"]
+    maximum = operator_record["operand_max"]
+    forbidden = operator_record["forbid_identity"]
     while True:
         divisor = random.randint(minimum, maximum)
         quotient = random.randint(minimum, maximum)
@@ -1256,8 +1256,8 @@ def generate_expression(
             + ", ".join(repr(symbol) for symbol in unknown)
         )
     symbol = random.choice(symbols)
-    operator = OPERATORS[symbol]
-    left_value, right_value = operator["generate_operands"](operator)
+    operator_record = OPERATORS[symbol]
+    left_value, right_value = operator_record["generate_operands"](operator_record)
     return {"op": symbol, "left": left_value, "right": right_value}
 
 
@@ -1278,10 +1278,10 @@ def evaluate_expression(node: dict | int) -> int:
         )
     if node["op"] not in OPERATORS:
         raise ValueError("evaluate_expression got unknown operator " + repr(node["op"]))
-    operator = OPERATORS[node["op"]]
+    operator_record = OPERATORS[node["op"]]
     left_value = evaluate_expression(node["left"])
     right_value = evaluate_expression(node["right"])
-    return operator["eval_fn"](left_value, right_value)
+    return operator_record["eval_fn"](left_value, right_value)
 
 
 def render_expression(node: dict | int) -> str:
