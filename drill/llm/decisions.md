@@ -1375,3 +1375,136 @@ migration" procedure correct as written?
   is now safe because BASELINE_SCHEMA_VERSION is fixed, but the procedure's
   closing claim ("the version stamping is already handled") was only true once
   ADR-026 landed. Update the handoff prose to point at BASELINE_SCHEMA_VERSION.
+
+C-D2 - Arithmetic operators: modulo + exponent (#4, implementation thread).
+
+Adds the modulo (%) and exponent (^) operators. Structurally this was a
+refactor + 2 operators, not "add two dict entries": one operator's definition
+had been scattered across OPERATOR_CONFIG + _OPERATOR_EVAL_FUNCTIONS +
+_OPERATOR_OPERAND_GENERATORS plus hidden `if symbol == "-"` branches, joined by
+the symbol string as an implicit foreign key. The refactor (C-D2a..C-D2d2)
+collapsed that into one self-contained record per operator before the two new
+operators were added (C-D2e). No schema change -- #4 is pure LOGIC; the
+migration apparatus stayed dormant. Frontend untouched (question_text renders
+server-side via textContent; operator symbols never reach client logic).
+Backend 102 -> 104 (+2 example tests in test_logic.py; the property test gained
+% / ^ assertions in place); frontend 75 unchanged; total 177 -> 179,
+"ALL GREEN". Commits landed a -> c -> d1 -> d2 -> e -> f (this entry).
+
+ADR-027: operator definition is ONE record per operator (OPERATOR_DEFINITIONS).
+UPHOLDS ADR-007; does not contradict it.
+- [DECIDED] Replaced the four-structure split (OPERATOR_CONFIG +
+  _OPERATOR_EVAL_FUNCTIONS + _OPERATOR_OPERAND_GENERATORS + the `if symbol ==
+  "-"` branches) with a single list of record dicts, each carrying symbol,
+  name, arity, operand range(s), forbid_identity, the eval callable, and the
+  operand strategy. _build_operator_table no longer JOINS four sources keyed by
+  the symbol string; it indexes the records by symbol and validates RECORD
+  COMPLETENESS (required keys present, eval_fn / operand_strategy callable,
+  referent known, no duplicate symbol, every enabled symbol has a record),
+  keeping the loud import-time ValueError guard.
+- [DECIDED] This UPHOLDS ADR-007, which made operand ranges and forbidden
+  identities DATA the enforcement logic reads. ADR-007's parameters were always
+  meant to be data; the four-structure scatter had diluted that by spreading one
+  operator's data across separate dicts joined implicitly. One record per
+  operator is the honest expression of "ranges and identities are data" -- the
+  refactor concentrates ADR-007's data, it does not weaken it. Eval callables
+  are the stdlib `operator` module's binary functions (operator.add / sub / mul
+  / floordiv / mod / pow), full namespace, no alias. _divide's exact-floor
+  rationale (ADR-007 guarantees the dividend is a multiple of the divisor, so //
+  never discards a remainder) is preserved as a comment on the "/" record.
+- [DECIDED] forbid_identity now declares its REFERENT explicitly per record
+  (forbid_identity_referent): "operands" (raw operands -- +, -, *), "quotient"
+  (the derived quotient -- /), "divisor" (modulo), "exponent" (the power). The
+  referent was previously implicit in which strategy read the list (standard
+  checked raw operands; division checked the derived quotient), and the property
+  test hard-coded that split. Adding two operators added two more referents, so
+  the real axis is "forbidden WHAT," not "forbidden values"; each strategy owns
+  and declares its referent so a new operator cannot silently inherit the wrong
+  meaning.
+- [DECIDED] Subtraction's two branches (force left >= right; reject left ==
+  right) became ONE declared intent, result_constraint: "non_negative". They
+  jointly serve a single goal -- non-negative, non-trivial results -- and
+  splitting them into two independent booleans would let a future editor set
+  them inconsistently (order without equal-rejection leaks 0; reject-equal
+  without ordering leaks negatives). The strategy reads the constraint and
+  implements both mechanics together. This supersedes the C-006 [FLAG] phrasing
+  that described two separate generation steps; the invariant is now declared,
+  not the steps.
+
+ADR-028: modulo and exponent operand strategies -- each operator that needs two
+ranges gets its OWN strategy with NAMED ranges; no generic per-operand-range
+override.
+- [DECIDED] Modulo (%): operator.mod. Left operand from the default range
+  (1..20); divisor from a second range (2..12, >= 2) declared as divisor_min /
+  divisor_max on the record. left < divisor IS allowed -- a % b == a is a
+  legitimate, non-trivial case. Forbidden-identity referent is the DIVISOR (a
+  divisor of 1 makes x % 1 == 0 for every x). Strategy
+  _generate_operands_modulo.
+- [DECIDED] Exponent (^): operator.pow. Base from 2..12; the power from its OWN
+  narrow range (_EXPONENT_POWER_RANGE = 2..3) declared as exponent_min /
+  exponent_max on the record. Forbids power 0 and 1 (x^0 == 1, x^1 == x). The
+  narrow power range keeps results integer and UI-tractable (ceiling 12^3 =
+  1728). Strategy _generate_operands_exponent, mirroring the division strategy's
+  two-range shape. Both ranges are plain record fields, hand- or
+  difficulty-adjustable later.
+- [DECIDED] NO generic per-operand-range override field. An earlier draft
+  proposed one on every record as a future hook; it was dropped because (1) it
+  would have had no caller in the commit introducing it (untested by
+  construction); (2) division already solves "two ranges" with its own named
+  strategy, so the honest interface is "exponent gets its own strategy with two
+  named ranges," not a generic indexed override; (3) a generic indexed override
+  repeats the magic-list smell one level up. Each multi-range operator declares
+  its second range as named fields its own strategy reads.
+- [RECONSIDER WHEN] -> #2 (difficulty). See ADR-030.
+
+ADR-029: deferred operators + the "easy operator" gate.
+- [DECIDED] Deferred, with the gate below: true (float) division, GCD / LCM,
+  factorial.
+- [RECONSIDER WHEN] true division: the first feature that genuinely needs
+  non-integer results. Cost then: change evaluate_expression's -> int contract
+  or add a per-operator result_type, plus a real decimal/tolerance policy. The
+  numeric validator already parses floats and supports tolerance, so the
+  validator is NOT the blocker -- the -> int contract and floor-division
+  derivation are.
+- [RECONSIDER WHEN] GCD / LCM: alongside #5 (nested trees). They are FUNCTIONS,
+  not infix operators, so they break render_expression's "left op right"
+  assumption; #5 generalizes the renderer anyway.
+- [RECONSIDER WHEN] factorial: when unary support is otherwise needed. It is
+  UNARY; the table assumes arity 2 (a record field).
+- [NOTE] THE GATE (one sentence): an operator is "easy" -- addable as a record
+  with a strategy -- iff it is binary, integer-in / integer-out with bounded
+  magnitude, and renders infix. Anything failing that test is a structural
+  change, not a record. Modulo and exponent both pass; the three above each fail
+  exactly one clause (float result; not infix; unary).
+
+ADR-030: deferred to #2 (difficulty) -- full per-operand-range generalization
+and the dataclass promotion.
+- [DECIDED] NOT done in #4: (a) Approach B, generalizing per-position operand
+  ranges to ALL operators behind one uniform interface; (b) Option 3, promoting
+  the record dicts to a dataclass / typed structure. #4 kept records as plain
+  dicts and let each multi-range operator name its own second range (ADR-028).
+- [RECONSIDER WHEN] Approach B: when #2 has a REAL consumer that needs
+  per-position ranges across operators (e.g. a difficulty knob that widens every
+  operator's operand range uniformly). Write the caller first; do not generalize
+  ahead of it. Until then the per-strategy named-range pattern is the honest
+  interface.
+- [RECONSIDER WHEN] Option 3 (dataclass): when the record field set stabilizes
+  under #2's additions and the validation in _build_operator_table starts
+  wanting types it currently checks by hand (callable, known referent). A
+  dataclass buys typed fields + construction-time validation; #4's hand-rolled
+  completeness check is the cheaper version while the shape is still moving.
+
+ADR-031: provisional defaults #4 ships that #2 supersedes; exponent
+associativity open for #5.
+- [NOTE] "All six operators enabled, sampled uniformly" (OPERATOR_SYMBOLS =
+  [+, -, *, /, %, ^]; generate_expression picks uniformly at random) is a
+  PROVISIONAL default, not a considered pedagogical choice. #2 (difficulty) owns
+  the real policy -- which operators are enabled and with what weighting -- and
+  supersedes this. A future reader should not mistake the uniform six-way sample
+  for a deliberate curriculum decision.
+- [NOTE] Exponent is RIGHT-associative (2^2^3 = 2^(2^3)), unlike + - * /. The
+  flat #4 generator never associates, so it is a non-issue now. #5 (nested
+  trees) must handle it: a naive renderer/generator will get exponent
+  associativity wrong. render_expression currently parenthesizes any nested dict
+  operand unconditionally (safe but over-parenthesizing); precedence-aware
+  parenthesization is the #5 subtlety. Flagged, not fixed here.
