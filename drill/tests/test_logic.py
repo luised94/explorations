@@ -166,8 +166,20 @@ def test_evaluate_leaf_and_node(m):
     assert m.evaluate_expression({"op": "+", "left": 2, "right": 3}) == 5
 
 
+def test_evaluate_modulo_and_exponent(m):
+    # #4: modulo uses operator.mod, exponent uses operator.pow.
+    assert m.evaluate_expression({"op": "%", "left": 17, "right": 5}) == 2
+    assert m.evaluate_expression({"op": "^", "left": 3, "right": 2}) == 9
+
+
 def test_render_flat_has_no_parentheses(m):
     assert m.render_expression({"op": "+", "left": 6, "right": 7}) == "6 + 7"
+
+
+def test_render_modulo_and_exponent(m):
+    # #4: symbols render infix like the existing operators (server-side only).
+    assert m.render_expression({"op": "%", "left": 17, "right": 5}) == "17 % 5"
+    assert m.render_expression({"op": "^", "left": 3, "right": 2}) == "3 ^ 2"
 
 
 def test_render_nested_parenthesizes_subexpressions(m):
@@ -182,7 +194,10 @@ def test_generate_empty_symbol_set_raises(m):
 
 def test_generate_unknown_symbol_raises(m):
     with pytest.raises(ValueError):
-        m.generate_expression(enabled_symbols=["%"])
+        # "$" is not a defined operator symbol. (Was "%" before #4 enabled
+        # modulo; "%" is a valid operator now, so the sentinel must be a symbol
+        # that genuinely has no record.)
+        m.generate_expression(enabled_symbols=["$"])
 
 
 def test_generate_division_is_always_integral(m):

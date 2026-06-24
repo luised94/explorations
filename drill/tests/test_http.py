@@ -397,7 +397,10 @@ def test_question_missing_category_is_400(app_with_bank):
 # ---- /api/question: arithmetic operator validation -----------------------
 def test_question_arithmetic_unknown_operator_is_400(app_blank):
     m, _ = app_blank
-    status, _ = wsgi_get(m, "/api/question", "category=arithmetic&operators=^")
+    # "$" has no operator record, so restricting to it is a 400. (Was "^"
+    # before #4 enabled exponent; "^" is a valid operator now, so the unknown
+    # sentinel must be a symbol that genuinely has no record.)
+    status, _ = wsgi_get(m, "/api/question", "category=arithmetic&operators=$")
     assert status.startswith("400")
 
 

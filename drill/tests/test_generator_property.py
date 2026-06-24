@@ -57,11 +57,20 @@ def test_generated_expression_holds_invariants(symbols):
     assert isinstance(result, int)
     assert _M.evaluate_expression(node) == result
 
-    # (3) forbidden-identity operands are avoided
+    # (3) forbidden-identity operands are avoided -- checked against each
+    # operator's declared referent (forbid_identity_referent), not always the
+    # raw operands.
     forbidden = _M.OPERATORS[node["op"]]["forbid_identity"]
     if node["op"] == "/":
         # division forbids the QUOTIENT values, not the raw operands
         assert (node["left"] // node["right"]) not in forbidden
+    elif node["op"] == "%":
+        # modulo forbids the DIVISOR (right operand); the left operand is
+        # unconstrained (a % b == a, with a possibly < b, is legitimate)
+        assert node["right"] not in forbidden
+    elif node["op"] == "^":
+        # exponent forbids the EXPONENT (right operand): no x^0, no x^1
+        assert node["right"] not in forbidden
     else:
         assert node["left"] not in forbidden
         assert node["right"] not in forbidden
@@ -74,6 +83,18 @@ def test_generated_expression_holds_invariants(symbols):
     # subtraction never goes negative (the generator orders operands)
     if node["op"] == "-":
         assert result >= 0
+
+    # modulo: non-negative result, equals left % right, with divisor >= 2
+    if node["op"] == "%":
+        assert node["right"] >= 2
+        assert 0 <= result == node["left"] % node["right"]
+
+    # exponent: result >= 1 and magnitude bounded by the narrow power ceiling
+    # (base 2..12, power 2..3 -> at most 12**3)
+    if node["op"] == "^":
+        assert result >= 1
+        assert result == node["left"] ** node["right"]
+        assert result <= 12**3
 
     # (5) renders and round-trips
     text = _M.render_expression(node)

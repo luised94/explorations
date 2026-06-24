@@ -136,11 +136,17 @@ QTYPE_ARITHMETIC: str = "arithmetic"
 # so products and dividends stay UI-tractable).
 _DEFAULT_OPERAND_RANGE = (1, 20)
 _MULTIPLICATIVE_OPERAND_RANGE = (2, 12)
+# Exponent's right operand (the power) draws from its OWN narrow range, kept
+# small so results stay integer and UI-tractable (e.g. 12^3 = 1728 is already
+# near the ceiling of comfortable mental arithmetic). Per the per-operand-range
+# decision, exponent declares its own base + power ranges on its record and its
+# own strategy reads them, rather than a generic indexed override.
+_EXPONENT_POWER_RANGE = (2, 3)
 
 # Operators enabled by default, by symbol. Used when a session config does
 # not specify a custom operator set. Every entry must match a record in
 # OPERATOR_DEFINITIONS (validated in C-006).
-OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/"]
+OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "^"]
 
 # Default on-disk database filename. The server may override this at startup.
 DEFAULT_DATABASE_PATH: str = "drill.db"
@@ -1114,6 +1120,56 @@ def _generate_operands_division(
         return dividend, divisor
 
 
+def _generate_operands_modulo(
+    operator_record: dict,
+) -> tuple[int, int]:
+    """Generate a (left, divisor) pair for modulo.
+
+    The left operand is drawn from the record's [operand_min, operand_max]
+    range; the divisor is drawn from a SECOND range (divisor_min..divisor_max,
+    >= 2) declared on the record. left < divisor IS allowed -- a % b == a is a
+    legitimate non-trivial case. The forbidden-identity referent is the DIVISOR
+    (forbid_identity_referent == "divisor"): a divisor of 1 makes x % 1 == 0
+    for every x, a trivial result, so it is rejected.
+    """
+    left_minimum = operator_record["operand_min"]
+    left_maximum = operator_record["operand_max"]
+    divisor_minimum = operator_record["divisor_min"]
+    divisor_maximum = operator_record["divisor_max"]
+    forbidden = operator_record["forbid_identity"]
+    while True:
+        left_value = random.randint(left_minimum, left_maximum)
+        divisor = random.randint(divisor_minimum, divisor_maximum)
+        if divisor in forbidden:
+            continue
+        return left_value, divisor
+
+
+def _generate_operands_exponent(
+    operator_record: dict,
+) -> tuple[int, int]:
+    """Generate a (base, exponent) pair for exponentiation.
+
+    Mirrors the division strategy's two-range shape: the base is drawn from the
+    record's [operand_min, operand_max] range, and the exponent from a SECOND
+    narrow range (exponent_min..exponent_max) declared on the record, keeping
+    results integer and UI-tractable. The forbidden-identity referent is the
+    EXPONENT (forbid_identity_referent == "exponent"): exponent 0 (x^0 == 1)
+    and exponent 1 (x^1 == x) are trivial, so both are rejected.
+    """
+    base_minimum = operator_record["operand_min"]
+    base_maximum = operator_record["operand_max"]
+    exponent_minimum = operator_record["exponent_min"]
+    exponent_maximum = operator_record["exponent_max"]
+    forbidden = operator_record["forbid_identity"]
+    while True:
+        base = random.randint(base_minimum, base_maximum)
+        exponent = random.randint(exponent_minimum, exponent_maximum)
+        if exponent in forbidden:
+            continue
+        return base, exponent
+
+
 # Per-operator records. One record fully defines an operator: the earlier
 # split across OPERATOR_CONFIG + _OPERATOR_EVAL_FUNCTIONS +
 # _OPERATOR_OPERAND_GENERATORS plus hidden `if symbol == "-"` branches is
@@ -1128,13 +1184,18 @@ def _generate_operands_division(
 #   forbid_identity -- values rejected at generation to avoid trivial results
 #                  (ADR-007)
 #   forbid_identity_referent -- WHAT forbid_identity is checked against:
-#                  "operands" (raw operands) or "quotient" (derived). Each
-#                  strategy declares its own; see strategy docstrings.
+#                  "operands" (raw operands), "quotient" (derived, division),
+#                  "divisor" (modulo), or "exponent" (the power). Each strategy
+#                  declares its own; see strategy docstrings.
 #   result_constraint -- declared invariant the strategy must uphold, or None.
 #                  "non_negative" (subtraction) bundles ordering + equal
 #                  rejection as one intent.
 #   eval_fn     -- stdlib operator callable; full namespace, no alias
 #   operand_strategy -- the generator producing this operator's operand pair
+# Some operators carry a SECOND range as extra record fields read only by their
+# own strategy (not a generic override -- see the per-operand-range decision):
+#   modulo:   divisor_min, divisor_max  (the divisor's range, >= 2)
+#   exponent: exponent_min, exponent_max  (the power's range)
 OPERATOR_DEFINITIONS: list[dict] = [
     {
         "symbol": "+",
@@ -1193,6 +1254,43 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "eval_fn": operator.floordiv,
         "operand_strategy": _generate_operands_division,
     },
+    {
+        "symbol": "%",
+        "name": "modulo",
+        "arity": 2,
+        # Left operand spans the default range; the divisor has its own range
+        # (>= 2) below. left < divisor is allowed -- a % b == a is a valid,
+        # non-trivial case.
+        "operand_min": _DEFAULT_OPERAND_RANGE[0],
+        "operand_max": _DEFAULT_OPERAND_RANGE[1],
+        "divisor_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
+        "divisor_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
+        "forbid_identity": [1],
+        # Referent is the divisor: a divisor of 1 makes x % 1 == 0 for every x.
+        "forbid_identity_referent": "divisor",
+        "result_constraint": None,
+        "eval_fn": operator.mod,
+        "operand_strategy": _generate_operands_modulo,
+    },
+    {
+        "symbol": "^",
+        "name": "exponent",
+        "arity": 2,
+        # Base from the multiplicative range; the power from its own narrow
+        # range (_EXPONENT_POWER_RANGE) below, keeping results UI-tractable.
+        "operand_min": _MULTIPLICATIVE_OPERAND_RANGE[0],
+        "operand_max": _MULTIPLICATIVE_OPERAND_RANGE[1],
+        "exponent_min": _EXPONENT_POWER_RANGE[0],
+        "exponent_max": _EXPONENT_POWER_RANGE[1],
+        "forbid_identity": [0, 1],
+        # Referent is the exponent: x^0 == 1 and x^1 == x are trivial.
+        "forbid_identity_referent": "exponent",
+        "result_constraint": None,
+        # Right-associativity (2^2^3) is a #5 concern; the flat v1 generator
+        # never associates, so it is a non-issue here.
+        "eval_fn": operator.pow,
+        "operand_strategy": _generate_operands_exponent,
+    },
 ]
 
 # Required keys every record must carry; _build_operator_table validates
@@ -1214,7 +1312,9 @@ _OPERATOR_RECORD_REQUIRED_KEYS = frozenset(
 
 # Known forbid-identity referents; a record declaring anything else is a typo
 # or an unimplemented strategy contract.
-_KNOWN_FORBID_IDENTITY_REFERENTS = frozenset({"operands", "quotient"})
+_KNOWN_FORBID_IDENTITY_REFERENTS = frozenset(
+    {"operands", "quotient", "divisor", "exponent"}
+)
 
 
 def _build_operator_table() -> dict:
