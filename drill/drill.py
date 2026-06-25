@@ -173,6 +173,20 @@ _MAX_OPERATOR_DEPTH = 2
 _RECURSE_PROBABILITY = 0.5
 _MAX_GENERATION_ATTEMPTS = 1000
 
+# _MAX_RESULT_VALUE -- optional global ceiling on the evaluated result of EVERY
+# assembled node (not just the root). DEFAULT None == OFF: the feasibility check
+# is a no-op and behavior is identical to the no-ceiling generator. The
+# mechanism ships DARK in #5 so #2 can flip a value with zero plumbing. When
+# set, build_subtree checks value(left) <op> value(right) <= ceiling at node
+# assembly -- both child values are already in hand (bottom-up), so the check is
+# LOCAL: on failure the node's operands are redrawn (counting against
+# _MAX_GENERATION_ATTEMPTS), never the whole tree, co-locating the cost away from
+# the worst case (a root-level whole-tree reject discards the most work exactly
+# when trees are largest). No backtracking / subtree-memoization. ADR frames the
+# ceiling as a DIFFICULTY-relevant knob #2 may turn, not a fixed sanity guard.
+_MAX_RESULT_VALUE = None
+
+
 # Default on-disk database filename. The server may override this at startup.
 DEFAULT_DATABASE_PATH: str = "drill.db"
 
@@ -1467,6 +1481,23 @@ def _build_composable_operand(
     return _draw_composable_leaf(operator_record)
 
 
+def _result_within_ceiling(
+    operator_record: dict, left_value: int, right_value: int
+) -> bool:
+    """Local feasibility check for the optional global result ceiling.
+
+    Returns True (always feasible) when _MAX_RESULT_VALUE is None -- the default,
+    making this a no-op and the generator identical to the no-ceiling version.
+    Otherwise returns whether the node's evaluated result is within the ceiling.
+    Both operand values are passed in (bottom-up, already in hand), so the check
+    is cheap and pure -- it evaluates only THIS node's operator over the two
+    known child values, not the whole subtree again.
+    """
+    if _MAX_RESULT_VALUE is None:
+        return True
+    return operator_record["eval_fn"](left_value, right_value) <= _MAX_RESULT_VALUE
+
+
 def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
     """Build an expression subtree (an internal node) bottom-up.
 
@@ -1511,6 +1542,8 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
             left_value, right_value = operator_record["operand_strategy"](
                 operator_record
             )
+            if not _result_within_ceiling(operator_record, left_value, right_value):
+                continue
             return {"op": symbol, "left": left_value, "right": right_value}
 
         # Composable (+ - *). At the depth floor (remaining_depth <= 1) no
@@ -1520,6 +1553,8 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
             left_value, right_value = operator_record["operand_strategy"](
                 operator_record
             )
+            if not _result_within_ceiling(operator_record, left_value, right_value):
+                continue
             return {"op": symbol, "left": left_value, "right": right_value}
 
         # Budget remains: build each operand independently (subtree or leaf),
@@ -1543,6 +1578,12 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
         # 0 and 1): a * (subtree evaluating to 1) is the trivial identity.
         forbidden = operator_record["forbid_identity"]
         if left_value in forbidden or right_value in forbidden:
+            continue
+
+        # Optional global result ceiling (dark by default): redraw this node's
+        # operands if the assembled result would exceed the ceiling. Local: only
+        # this node's children are discarded, not the whole tree.
+        if not _result_within_ceiling(operator_record, left_value, right_value):
             continue
 
         return {"op": symbol, "left": left, "right": right}

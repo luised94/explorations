@@ -383,6 +383,80 @@ def test_generate_retry_exhaustion_raises(m):
 
 
 # --------------------------------------------------------------------------
+# global result ceiling -- C-D5d (dark mechanism, default OFF)
+# _MAX_RESULT_VALUE is None by default: the local feasibility check at node
+# assembly is a no-op, so behavior is identical to C-D5c. Setting it bounds the
+# evaluated RESULT of every internal node (value(left) <op> value(right) <=
+# ceiling); an infeasible-too-low ceiling exhausts the bounded retry and raises.
+# The ceiling bounds node RESULTS, not input-leaf magnitudes -- division derives
+# a dividend that can exceed the ceiling while the quotient result stays under
+# it -- so this test exercises composable operators (+ - *), where the node
+# result is the natural quantity bounded.
+# --------------------------------------------------------------------------
+def _max_internal_result(m, node):
+    # Max evaluated result over INTERNAL nodes only (a leaf is an input operand,
+    # not the result of an operation).
+    if isinstance(node, int):
+        return None
+    values = [m.evaluate_expression(node)]
+    for child in (node["left"], node["right"]):
+        child_max = _max_internal_result(m, child)
+        if child_max is not None:
+            values.append(child_max)
+    return max(values)
+
+
+def test_result_ceiling_default_off_is_unbounded(m):
+    # Sanity that the default is genuinely OFF: over composable operators some
+    # generated tree's result comfortably exceeds a value a low ceiling would
+    # reject, proving the no-op default is not silently clamping.
+    import random
+
+    assert m._MAX_RESULT_VALUE is None  # the shipped default
+    random.seed(11)
+    biggest = 0
+    for _ in range(500):
+        node = m.generate_expression(enabled_symbols=["+", "-", "*"])
+        biggest = max(biggest, _max_internal_result(m, node))
+    assert biggest > 30  # unbounded by default (a ceiling of 30 would have cut)
+
+
+def test_result_ceiling_bounds_every_node_result(m):
+    # With a low ceiling set, EVERY internal node's evaluated result stays within
+    # it -- including nodes nested under a composable parent.
+    import random
+
+    original = m._MAX_RESULT_VALUE
+    try:
+        m._MAX_RESULT_VALUE = 25
+        random.seed(13)
+        nested_seen = False
+        for _ in range(800):
+            node = m.generate_expression(enabled_symbols=["+", "-", "*"])
+            assert _max_internal_result(m, node) <= 25
+            if _operator_depth(node) > 1:
+                nested_seen = True
+        assert nested_seen  # the ceiling still permits nesting at this bound
+    finally:
+        m._MAX_RESULT_VALUE = original
+
+
+def test_result_ceiling_too_low_raises(m):
+    # An infeasible ceiling (below the smallest possible result for the only
+    # enabled operator) exhausts the bounded retry and raises RuntimeError --
+    # proving the mechanism, not just the default. The smallest non-trivial
+    # addition result is 1 + 2 == 3 (0 is forbidden), so a ceiling of 2 is
+    # unsatisfiable for "+".
+    original = m._MAX_RESULT_VALUE
+    try:
+        m._MAX_RESULT_VALUE = 2
+        with pytest.raises(RuntimeError):
+            m.generate_expression(enabled_symbols=["+"])
+    finally:
+        m._MAX_RESULT_VALUE = original
+
+
+# --------------------------------------------------------------------------
 # operator-record declarative fields -- C-D5a (#5 nesting groundwork)
 # nestable / precedence / associativity are now REQUIRED record keys validated
 # by _build_operator_table. Assert they are present and well-typed for every
