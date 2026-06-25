@@ -1691,3 +1691,126 @@ shape #5 fixed for simplicity, to be widened only when #2 has a concrete caller.
   unary/n-ary (ADR-029); no generic per-operand-range override and a single
   ceiling value, not per-operator (ADR-028/030); pure LOGIC only -- no clock, IO,
   HTTP, schema, or frontend change.
+================================================================================
+ROADMAP #2 -- DIFFICULTY CONTROL (design settled; see handoff-2-to-implementation.md)
+================================================================================
+ADR-038: difficulty model shape -- scalar rung expanding to a PER-OPERATOR
+config (shape C, with the per-operator correction the code forced).
+- [DECIDED] Difficulty is a scalar rung exposed as ?difficulty=, expanded via an
+  overridable DIFFICULTY_RUNGS mapping into PER-OPERATOR structural config
+  (operator depth, recurse probability, each operator's own operand ranges, the
+  result ceiling). Caller sees a scalar; the internal representation is a
+  per-operator vector. generate_expression(difficulty=None) is byte-identical to
+  today (Q6); a rung is an explicit opt-in override.
+- [DECIDED] "Reliably harder" is operationalized PER OPERATOR-MIX. For mixes
+  containing a composable operator (+ - *), difficulty is COORDINATION-driven and
+  the proxy is leaf_count (element-interactivity analog), pinned monotone
+  non-decreasing across rungs by a property test. For all-leaf-only mixes
+  (/ % ^), leaf_count is CONSTANT by construction (they cannot nest), so
+  difficulty is MAGNITUDE-driven (wider per-operator ranges), pinned separately.
+- [REJECTED -- with reason] the first design proposed leaf_count as a SINGLE
+  scalar feature with a UNIFORM operand-range multiplier. Overturned by three
+  converging lenses against the code: (a) generate_expression(['/']) yields
+  leaf_count==2 for 5000/5000 samples -- a point mass, so a uniform monotonicity
+  test is a lie for leaf-only mixes; (b) ranges are per-operator with bespoke
+  fields (divisor_min/max, exponent_min/max, derived dividend), so a uniform
+  multiplier is the generic override ADR-028/030 refused and is incoherent
+  against the data; (c) the atom was ambiguous for #7. Recorded so the
+  implementation thread does not re-derive the dead end.
+- [NOTE -- domain honesty] a higher rung produces reliably harder questions ON
+  AVERAGE WITHIN a mix; it is a heuristic over structural features, NOT a
+  validated measure of cognitive load, and NOT a cardinal scale comparable across
+  mixes. State this in user-facing framing and in #7's consumer.
+- [OPEN -- CRITICAL, decide before C-D2i] ?operators= and ?difficulty= are
+  ORTHOGONAL query params: the user can request any (mix, rung) pair, including
+  division-only at the top rung (where only magnitude moves). The rung number is
+  therefore NOT comparable across operator mixes, yet the per-difficulty stats
+  breakdown (C-D2i) groups arithmetic responses by rung regardless of the mix
+  that was served. Grouping by rung silently compares incomparable buckets (easy
+  all-ops rung 3 vs hard division-only rung 3). RESOLVE before building C-D2i.
+  RECOMMENDED: group the breakdown by leaf_count (the comparable structural fact
+  -- this is precisely why leaf_count is stored, ADR-040), not by rung; OR scope
+  the breakdown to a fixed mix; OR label it explicitly "rung as dialed, not
+  comparable across operator sets." Option (a) makes the stored-fact decision pay
+  off immediately, not only for #7. This is the L6/domain objection resurfacing
+  at the storage+display layer, where ADR-038's generation-layer fix did not
+  reach.
+
+ADR-039: Q2 x Q3 feasible-region resolution -- per-operator range scaling plus a
+difficulty-scaled result ceiling, jointly proven satisfiable.
+- [DECIDED] Difficulty widens operand ranges PER OPERATOR, reading each record's
+  own range fields (Q2): + - from _DEFAULT_OPERAND_RANGE; * / from
+  _MULTIPLICATIVE_OPERAND_RANGE; % also scales its divisor range; ^ scales its
+  base but its power range (_EXPONENT_POWER_RANGE, 2..3) has almost no headroom
+  (12**3 already at the UI ceiling) so a rung likely holds it fixed. NOT a
+  uniform multiplier; NOT a generic indexed override.
+- [DECIDED] the result ceiling is PART of the difficulty model (lower ceiling =
+  easier), turned on per rung from its dark default (ADR-035), NOT a fixed sanity
+  guard. It bounds node RESULTS, not input leaves (ADR-035 precise reading): cap
+  operand magnitude via the RANGES, never via the ceiling.
+- [DECIDED] Q2 and Q3 are ONE feasible-region decision. Each rung's (per-operator
+  ranges, ceiling) pair must be PROVEN jointly satisfiable by a property test,
+  because widening ranges while lowering the ceiling can make generation
+  infeasible -> _MAX_GENERATION_ATTEMPTS exhaustion -> RuntimeError (ADR-036).
+  The division (dividend = divisor*quotient) and exponent mixes are where this
+  bites. The C-D2e commit deliberately observes this RED first (the red is the
+  feasibility proof), then reconciles to green.
+
+ADR-040: storage -- responses.difficulty AND responses.leaf_count (mutable label
+plus non-drifting fact). Opened Q5 because a real consumer (ADR-041) is built in
+the same thread.
+- [DECIDED] ONE additive forward-only migration (v3) adds two nullable INTEGER
+  columns to responses: difficulty (the served rung, a human-facing label) and
+  leaf_count (the served expression's structural ground truth). arithmetic rows
+  get both; non-arithmetic and pre-#2 rows get NULL (unknown, not a default rung
+  -- a backfill value would poison analysis; matches the v2 no-data-loss rule).
+- [DECIDED -- why two columns] a bare rung integer denormalizes a MUTABLE label:
+  re-tuning a rung's config (which monitor-and-adjust invites) silently re-means
+  every historical row. leaf_count is recomputable from question_text and does
+  not drift, so it is the trustworthy axis for analysis; the rung stays for
+  readability. (Nelson/anti-drift lens.)
+- [NOTE -- client-asserted] the round-trip is stateless: difficulty+leaf_count
+  ride the question-payload -> client-echo -> answer-body -> insert_response path
+  (as expected/elapsed_ms already do). The recorded value is therefore
+  CLIENT-ASSERTED, as trustworthy as expected/elapsed_ms already are -- no worse,
+  no better. #7 must know this when it consumes the field.
+- [DECIDED] column on responses, NOT questions: arithmetic is generated with
+  question_id NULL, so it has no questions row and the questions.metadata hatch is
+  unreachable for it; responses has no extras column. Honest recording REQUIRES
+  this migration -- there is no free hatch.
+
+ADR-041: the per-difficulty stats breakdown as the real Q5 consumer.
+- [DECIDED] summarize_stats gains a difficulty breakdown alongside the existing
+  category breakdown, rendered in the existing .stats-breakdown panel,
+  arithmetic-category only (other categories have no difficulty -- do not render
+  empty rows; intended, not a bug).
+- [DECIDED -- extract the implicit] get_responses_for_stats + summarize_stats are
+  about to serve TWO grouping meanings (category AND difficulty/leaf_count) that
+  currently coincide as one. EXTRACT breakdown_by(rows, key_function) and call it
+  twice; do NOT copy-paste the group loop. (commit-planning "name the two
+  meanings into two explicit helpers".) The category breakdown output must be
+  reproduced byte-for-byte by the extracted helper (regression guard).
+- [DECIDED -- live vs durable] this is a DURABLE-history view (summarize_stats /
+  the stats panel), NOT the live in-session stats bar; the two never share a
+  render path (existing convention).
+- [CROSS-REF] the grouping KEY (rung vs leaf_count) is gated by ADR-038's
+  [OPEN -- CRITICAL] item. Resolve that first; the recommended answer (group by
+  leaf_count) makes this breakdown comparable across operator mixes.
+
+ADR-037 DOOR DISPOSITION (as #2 opens them):
+- [CLOSED] D1 (depth as a parameter) -- opened in C-D2b (threaded into
+  build_subtree with its real caller).
+- [CLOSED] D4 (result-ceiling default) -- opened in C-D2e (ADR-039).
+- [CLOSED] D5 (provisional defaults 0.5 / 2) -- re-owned by the rung mapping
+  (Q6); module constants remain the no-parameter fallback.
+- [PARTIAL] D2 (per-position / shape control) -- #2 uses recurse probability only
+  as a per-rung scalar; asymmetric / per-operator SHAPE is NOT added (not needed).
+  D2 stays OPEN for a future thread; #2 did not require it.
+- [STILL DEFERRED] making / % ^ nestable (a generator-capability change, not a
+  difficulty knob; difficulty does not need nested division); the dataclass
+  promotion (ADR-030 -- and #2 ADDS per-operator range fields, so the field set is
+  LESS stable now, keep dicts).
+- [SUPERSEDED/RETAINED] ADR-030's reserved per-operand-range generalization is
+  OPENED in the per-operator shape (Q2), NOT the generic override it refused;
+  ADR-031's provisional-sample note is superseded for the rung-driven path,
+  retained for the default path (Q6).
