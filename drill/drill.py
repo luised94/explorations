@@ -1729,18 +1729,26 @@ def _draw_composable_leaf(operator_record: dict) -> int:
 
 
 def _build_composable_operand(
-    symbols: list[str], remaining_depth: int, operator_record: dict
+    symbols: list[str],
+    remaining_depth: int,
+    operator_record: dict,
+    recurse_probability: float,
 ) -> dict | int:
     """Build ONE operand of a composable node: a subtree or an integer leaf.
 
     With depth budget remaining (remaining_depth >= 2, so a child can be at
-    least a flat node), flip an independent Bernoulli(_RECURSE_PROBABILITY): on
+    least a flat node), flip an independent Bernoulli(recurse_probability): on
     success recurse into build_subtree with the budget decremented; otherwise
     draw an integer leaf. With no budget remaining, always a leaf -- this is the
-    depth floor that bounds operator_depth at _MAX_OPERATOR_DEPTH.
+    depth floor that bounds operator_depth at the caller's depth budget.
+
+    C-D2b: recurse_probability is now a PLAIN-DATA PARAMETER threaded from the
+    caller (generate_expression resolves it from a difficulty rung, or passes the
+    module default _RECURSE_PROBABILITY when difficulty is None). It is passed
+    onward to build_subtree so the whole tree uses one consistent probability.
     """
-    if remaining_depth >= 2 and random.random() < _RECURSE_PROBABILITY:
-        return build_subtree(symbols, remaining_depth - 1)
+    if remaining_depth >= 2 and random.random() < recurse_probability:
+        return build_subtree(symbols, remaining_depth - 1, recurse_probability)
     return _draw_composable_leaf(operator_record)
 
 
@@ -1761,7 +1769,11 @@ def _result_within_ceiling(
     return operator_record["eval_fn"](left_value, right_value) <= _MAX_RESULT_VALUE
 
 
-def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
+def build_subtree(
+    symbols: list[str],
+    remaining_depth: int,
+    recurse_probability: float = _RECURSE_PROBABILITY,
+) -> dict:
     """Build an expression subtree (an internal node) bottom-up.
 
     INTERNAL helper for generate_expression (#5). Calls random.* directly -- no
@@ -1783,6 +1795,17 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
     remaining_depth <= 1 forces a flat node: no operand recurses, reproducing
     the #4 generator exactly. Each redraw counts against _MAX_GENERATION_ATTEMPTS
     and raises RuntimeError on exhaustion rather than looping forever.
+
+    C-D2b (THE WELD): recurse_probability is a PLAIN-DATA PARAMETER (door D1
+    opened with its real caller, generate_expression). It defaults to the module
+    constant _RECURSE_PROBABILITY so existing direct callers and the
+    difficulty=None path are byte-identical to before; a difficulty rung passes
+    the rung's recurse_probability instead. operator_depth is threaded as the
+    EXISTING remaining_depth parameter (generate_expression chooses its starting
+    value from the rung or the module _MAX_OPERATOR_DEPTH). Note: this commit
+    threads ONLY shape (depth + recurse); per-operator operand ranges (C-D2d) and
+    the result ceiling (C-D2e) still come from OPERATOR_DEFINITIONS and the module
+    _MAX_RESULT_VALUE respectively -- they are NOT rung-driven yet.
     """
     attempts = 0
     while True:
@@ -1811,7 +1834,7 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
 
         # Composable (+ - *). At the depth floor (remaining_depth <= 1) no
         # operand may recurse, so use the existing paired strategy verbatim --
-        # this is what makes _MAX_OPERATOR_DEPTH == 1 reproduce flat #4 exactly.
+        # this is what makes operator_depth == 1 reproduce flat #4 exactly.
         if remaining_depth <= 1:
             left_value, right_value = operator_record["operand_strategy"](
                 operator_record
@@ -1821,9 +1844,14 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
             return {"op": symbol, "left": left_value, "right": right_value}
 
         # Budget remains: build each operand independently (subtree or leaf),
-        # then apply the value-based constraints (constraint lifting).
-        left = _build_composable_operand(symbols, remaining_depth, operator_record)
-        right = _build_composable_operand(symbols, remaining_depth, operator_record)
+        # then apply the value-based constraints (constraint lifting). The
+        # per-tree recurse_probability is threaded into each operand build.
+        left = _build_composable_operand(
+            symbols, remaining_depth, operator_record, recurse_probability
+        )
+        right = _build_composable_operand(
+            symbols, remaining_depth, operator_record, recurse_probability
+        )
         left_value = evaluate_expression(left)
         right_value = evaluate_expression(right)
 
@@ -1852,21 +1880,61 @@ def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
         return {"op": symbol, "left": left, "right": right}
 
 
+def _resolve_difficulty_rung(difficulty: int) -> dict:
+    """Resolve a scalar difficulty rung to its DIFFICULTY_RUNGS record (C-D2b).
+
+    Pure lookup by the rung label. Raises ValueError on an unknown rung -- this
+    is a PROGRAMMING-ERROR guard, not user-input handling: the HTTP layer
+    validates ?difficulty= against the known rung range and returns a 400 before
+    calling generate_expression (mirroring how ?operators= is validated against
+    OPERATORS up front). Reaching here with a bad rung therefore means an
+    internal caller passed an out-of-range value, so fail loudly rather than
+    silently falling back to a default rung.
+
+    Returns the full rung record; in C-D2b only operator_depth and
+    recurse_probability are CONSUMED (the shape knobs). operator_ranges and
+    max_result_value are present on the record but not yet applied -- C-D2d and
+    C-D2e wire those.
+    """
+    for rung_record in DIFFICULTY_RUNGS:
+        if rung_record["rung"] == difficulty:
+            return rung_record
+    known = [rung_record["rung"] for rung_record in DIFFICULTY_RUNGS]
+    raise ValueError(
+        "unknown difficulty rung "
+        + repr(difficulty)
+        + "; known rungs are "
+        + repr(known)
+    )
+
+
 def generate_expression(
     enabled_symbols: list[str] | None = None,
+    difficulty: int | None = None,
 ) -> dict:
-    """Generate an arithmetic expression tree, possibly nested (#5).
+    """Generate an arithmetic expression tree, possibly nested (#5, #2).
 
     Picks operators at random from enabled_symbols (defaulting to the module
-    OPERATOR_SYMBOLS) and builds a tree bottom-up via build_subtree, bounded by
-    the module constant _MAX_OPERATOR_DEPTH. Composable operators (+ - *) may
-    have subtree children; leaf-only operators (/ % ^) keep integer leaves.
-    _MAX_OPERATOR_DEPTH == 1 reproduces the flat #4 generator exactly; the
-    default (2) permits one level of nesting. The signature is unchanged from
-    #4: nesting is internal behavior governed by module config, exactly as the
-    operator set is -- no depth parameter is threaded (a difficulty caller in #2
-    will add one). The tree shape feeds evaluate_expression and render_expression
-    unchanged; the rendered string is what gets stored in responses.question_text.
+    OPERATOR_SYMBOLS) and builds a tree bottom-up via build_subtree. Composable
+    operators (+ - *) may have subtree children; leaf-only operators (/ % ^)
+    keep integer leaves.
+
+    DIFFICULTY (C-D2b): difficulty is an optional scalar rung. When None (the
+    default), generation is BYTE-IDENTICAL to before -- it uses the module
+    constants _MAX_OPERATOR_DEPTH and _RECURSE_PROBABILITY, so an existing caller
+    that passes no difficulty (the no-parameter live endpoint path, Q6) sees no
+    behavior change. When a rung is given, it is resolved against DIFFICULTY_RUNGS
+    to per-rung operator_depth and recurse_probability, which are threaded as
+    plain-data parameters into build_subtree (door D1, opened with its real
+    caller per ADR-034). operator_depth == 1 reproduces the flat #4 generator
+    exactly.
+
+    SCOPE NOTE (C-D2b threads SHAPE only): a rung's per-operator operand ranges
+    (C-D2d) and result ceiling (C-D2e) are NOT applied here yet -- operand ranges
+    still come from OPERATOR_DEFINITIONS and the ceiling from the module
+    _MAX_RESULT_VALUE. So at this commit a rung changes tree depth and nesting
+    probability but not operand magnitude or the ceiling. The tree shape feeds
+    evaluate_expression and render_expression unchanged.
     """
     # Distinguish "omitted" (None -> use the default set) from "given but
     # empty" ([] -> an error). Treating [] as falsy and silently falling back
@@ -1885,7 +1953,19 @@ def generate_expression(
             "generate_expression got unknown operator symbols: "
             + ", ".join(repr(symbol) for symbol in unknown)
         )
-    return build_subtree(symbols, _MAX_OPERATOR_DEPTH)
+
+    # difficulty=None: the module-constant defaults, byte-identical to today.
+    # A rung: resolve to its shape knobs (depth + recurse), threaded as plain
+    # data. Ranges/ceiling stay non-rung-driven until C-D2d/C-D2e.
+    if difficulty is None:
+        operator_depth = _MAX_OPERATOR_DEPTH
+        recurse_probability = _RECURSE_PROBABILITY
+    else:
+        rung_record = _resolve_difficulty_rung(difficulty)
+        operator_depth = rung_record["operator_depth"]
+        recurse_probability = rung_record["recurse_probability"]
+
+    return build_subtree(symbols, operator_depth, recurse_probability)
 
 
 def evaluate_expression(node: dict | int) -> int:

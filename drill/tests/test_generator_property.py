@@ -257,3 +257,99 @@ def test_difficulty_rungs_scalar_fields_well_formed():
         assert 0.0 <= rung["recurse_probability"] <= 1.0
         ceiling = rung["max_result_value"]
         assert ceiling is None or (isinstance(ceiling, int) and ceiling > 0)
+
+
+# --- C-D2b: difficulty threads operator_depth + recurse (THE WELD) -----------
+# This commit threads SHAPE knobs (depth + recurse) from a difficulty rung into
+# the generator. The invariant that "leaf_count is the coordination spine" now
+# becomes assertable end-to-end: across ascending rungs, leaf_count is monotone
+# non-decreasing for composable-containing mixes and CONSTANT for leaf-only mixes
+# (S7). Ranges and the ceiling are NOT rung-driven yet (C-D2d/C-D2e), so these
+# tests assert SHAPE only -- no magnitude claim here.
+
+_RUNG_LABELS = [rung["rung"] for rung in _M.DIFFICULTY_RUNGS]
+_SAMPLE_PER_RUNG = 2000  # >= 2000 to catch a ~1-in-500 rung failure (S3)
+
+
+def _mean_leaf_count(mix, difficulty, samples):
+    total = 0
+    for _ in range(samples):
+        node = _M.generate_expression(enabled_symbols=list(mix), difficulty=difficulty)
+        total += _M.leaf_count(node)
+    return total / samples
+
+
+def test_difficulty_none_is_unchanged_default_path():
+    # difficulty=None must use the module constants (byte-identical to pre-#2):
+    # operator_depth bounded by _M._MAX_OPERATOR_DEPTH for every mix.
+    for mix in (["+", "-", "*"], ["/"], ["+", "-", "*", "/", "%", "^"]):
+        for _ in range(500):
+            node = _M.generate_expression(enabled_symbols=mix)  # no difficulty
+            assert 1 <= _operator_depth(node) <= _M._MAX_OPERATOR_DEPTH
+
+
+def test_rung_one_is_flat_for_every_mix():
+    # Rung 1 sets operator_depth 1 / recurse 0 -> flat single-operator node with
+    # two integer leaves, regardless of symbol set (the difficulty-driven flat
+    # anchor, mirroring _MAX_OPERATOR_DEPTH==1, S6).
+    for mix in (["+"], ["+", "-", "*"], ["/", "%", "^"], _ALL_SYMBOLS):
+        for _ in range(500):
+            node = _M.generate_expression(enabled_symbols=mix, difficulty=1)
+            assert _operator_depth(node) == 1
+            assert isinstance(node["left"], int)
+            assert isinstance(node["right"], int)
+            assert _M.leaf_count(node) == 2
+
+
+def test_leaf_count_monotone_for_composable_mixes():
+    # COORDINATION regime (S7): a mix containing a composable operator must have
+    # mean leaf_count non-decreasing across ascending rungs (depth/recurse grow).
+    # Use the mean over a large sample: leaf_count is random per draw, but its
+    # expectation is monotone in the shape knobs. Strictly non-decreasing, with a
+    # tiny tolerance against sampling noise at equal-shape rungs.
+    composable_mixes = [["+", "-", "*"], ["+"], ["+", "-", "*", "/", "%", "^"]]
+    for mix in composable_mixes:
+        means = [_mean_leaf_count(mix, rung, _SAMPLE_PER_RUNG) for rung in _RUNG_LABELS]
+        for earlier, later in zip(means, means[1:]):
+            # later rung's mean leaf_count >= earlier (allow small noise slack)
+            assert later >= earlier - 0.05, (mix, means)
+        # and the top rung is strictly richer than the flat rung 1 (sanity: the
+        # coordination knob actually moved, not merely "did not decrease").
+        assert means[-1] > means[0], (mix, means)
+
+
+def test_leaf_count_constant_for_leaf_only_mixes():
+    # MAGNITUDE regime (S7): leaf-only mixes (/ % ^) cannot nest, so leaf_count is
+    # a CONSTANT point mass (always 2) at EVERY rung. (Magnitude movement is
+    # asserted in C-D2d once ranges are rung-driven; here only the constancy.)
+    for mix in (["/"], ["%"], ["^"], ["/", "%", "^"]):
+        for rung in _RUNG_LABELS:
+            for _ in range(500):
+                node = _M.generate_expression(enabled_symbols=mix, difficulty=rung)
+                assert _M.leaf_count(node) == 2, (mix, rung)
+                assert _operator_depth(node) == 1
+
+
+@settings(max_examples=200, deadline=None)
+@given(symbols=_nonempty_symbol_subsets())
+def test_every_rung_never_raises_and_respects_depth(symbols):
+    # S3 / foreign-oracle re-walk: for every rung and mix, generation never hits
+    # the bounded-retry RuntimeError, and the produced tree's operator_depth is
+    # within the rung's declared operator_depth budget (catches an off-by-one in
+    # the threaded budget). Independent of the production path's own checks.
+    for rung_record in _M.DIFFICULTY_RUNGS:
+        rung = rung_record["rung"]
+        budget = rung_record["operator_depth"]
+        node = _M.generate_expression(enabled_symbols=symbols, difficulty=rung)
+        assert 1 <= _operator_depth(node) <= budget, (symbols, rung)
+        # per-node invariants still hold with the correct referent
+        _assert_node_invariants(node, set(symbols))
+
+
+def test_unknown_rung_raises_value_error():
+    # Out-of-range rung is a programming error (HTTP validates user input first):
+    # fail loudly, do not silently fall back to a default rung.
+    with pytest.raises(ValueError):
+        _M.generate_expression(difficulty=999)
+    with pytest.raises(ValueError):
+        _M.generate_expression(difficulty=0)
