@@ -272,6 +272,47 @@ def test_render_roundtrips_through_evaluate(m):
         assert isinstance(m.evaluate_expression(tree), int)
 
 
+# Trees the #5 GENERATOR never builds (a leaf-only operator with a subtree
+# child: / % ^ are nestable=False, ADR-032). The renderer is nonetheless TOTAL
+# over them -- it parenthesizes by precedence/associativity regardless of which
+# operator owns the subtree. This test locks that totality in: it is the
+# counterpart to the property walk's structural invariant (which pins that the
+# generator never EMITS these). Together they make ADR-033's "renderer is the
+# sole owner of printing, total over well-formed trees" a tested guarantee, so
+# #2 can make / % ^ nestable (ADR-037 deferred door) with ZERO renderer change.
+# If a future contributor "tightens" the renderer to reject these, this test
+# goes red with the reason attached.
+_UNREACHABLE_RENDER_CASES = [
+    # a / (b * c): division over a product subtree. * (prec 2) under / (prec 2,
+    # left-assoc) on the right side -> wrong side -> KEEP.
+    ("div over product", _n("/", 24, _n("*", 2, 3)), "24 / (2 * 3)"),
+    # a / (b + c): + (prec 1) under / (prec 2) -> lower precedence -> KEEP.
+    ("div over sum", _n("/", 30, _n("+", 2, 3)), "30 / (2 + 3)"),
+    # 2 ^ (a + b): + under ^ (prec 3) -> lower precedence -> KEEP.
+    ("pow over sum", _n("^", 2, _n("+", 1, 2)), "2 ^ (1 + 2)"),
+    # (a + b) % c: + under % (prec 2) on the left -> lower precedence -> KEEP.
+    ("mod of sum", _n("%", _n("+", 7, 6), 5), "(7 + 6) % 5"),
+    # a % (b - c): - (prec 1) under % (prec 2) on the right -> KEEP.
+    ("mod over diff", _n("%", 20, _n("-", 9, 2)), "20 % (9 - 2)"),
+    # nested leaf-only under leaf-only: (a ^ b) / c -- ^ (prec 3) under / (prec
+    # 2) on the left -> higher precedence, correct side -> DROP.
+    ("div of power-left", _n("/", _n("^", 2, 3), 4), "2 ^ 3 / 4"),
+]
+
+
+@pytest.mark.parametrize(
+    "label,tree,expected",
+    _UNREACHABLE_RENDER_CASES,
+    ids=[c[0] for c in _UNREACHABLE_RENDER_CASES],
+)
+def test_render_is_total_over_unreachable_trees(m, label, tree, expected):
+    # The renderer must PRINT these (not raise, not reject), and print them
+    # correctly under the same precedence/associativity rule.
+    assert m.render_expression(tree) == expected
+    # and they evaluate like any other well-formed tree
+    assert isinstance(m.evaluate_expression(tree), int)
+
+
 def test_generate_empty_symbol_set_raises(m):
     with pytest.raises(ValueError):
         m.generate_expression(enabled_symbols=[])

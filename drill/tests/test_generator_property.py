@@ -81,6 +81,13 @@ def _assert_node_invariants(node, allowed_symbols):
 
     if op in _LEAF_ONLY:
         # Leaf-only: operands stay integer leaves; invariants are about leaves.
+        # This is also the GENERATOR's structural invariant -- it never BUILDS a
+        # leaf-only node with a subtree child (a / (b * c), 2 ^ (a + b) are
+        # unreachable). nestable governs child-hood of children, not whether the
+        # node may be a child (ADR-032). The renderer is nonetheless total over
+        # such hand-built trees; see test_render_is_total_over_unreachable_trees
+        # in test_logic.py, which pins that totality so #2 can make these
+        # operators nestable with zero renderer change.
         assert isinstance(left, int), node
         assert isinstance(right, int), node
         assert not record["nestable"]
