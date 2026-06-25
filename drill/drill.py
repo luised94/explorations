@@ -2760,9 +2760,17 @@ def get_question_endpoint():
     and returns a question payload the client echoes back to /api/answer.
     Optional query parameter operators is a comma-separated list of operator
     symbols to restrict generation (e.g. operators=+,-); absent means all
-    enabled operators. The payload's qtype is the validator-level
+    enabled operators. Optional query parameter difficulty is a scalar rung
+    (see DIFFICULTY_RUNGS); absent means the no-rung default path (byte-
+    identical to pre-#2). The payload's qtype is the validator-level
     "arithmetic" so /api/answer takes the numeric-comparison branch, and
     question_id is null because generated questions are never stored.
+
+    C-D2c: the arithmetic payload now also carries the SERVED difficulty rung
+    and the generated expression's leaf_count, so the client can echo both back
+    on /api/answer for recording (the capture side is C-D2g, gated on the v3
+    migration C-D2f). difficulty is null on the no-rung path; leaf_count is
+    always present (it is a fact about the served tree regardless of rung).
     """
     category = bottle.request.query.get("category")
     if not category:
@@ -2795,7 +2803,29 @@ def get_question_endpoint():
                 )
             enabled_symbols = requested
 
-        expression = generate_expression(enabled_symbols)
+        # Optional difficulty rung. Absent/empty -> None (the default path).
+        # Present -> must parse to an int that is a KNOWN rung label. We
+        # validate here (user input) and 400 on a bad value, mirroring the
+        # operators= unknown-symbol 400; generate_expression's own ValueError
+        # guard then only ever fires on an internal programming error.
+        difficulty_raw = bottle.request.query.get("difficulty")
+        difficulty = None
+        if difficulty_raw is not None and difficulty_raw != "":
+            try:
+                difficulty = int(difficulty_raw)
+            except ValueError:
+                return _json_error("difficulty must be an integer", status=400)
+            known_rungs = [record["rung"] for record in DIFFICULTY_RUNGS]
+            if difficulty not in known_rungs:
+                return _json_error(
+                    "unknown difficulty rung "
+                    + str(difficulty)
+                    + "; known rungs are "
+                    + ", ".join(str(rung) for rung in known_rungs),
+                    status=400,
+                )
+
+        expression = generate_expression(enabled_symbols, difficulty=difficulty)
         rendered = render_expression(expression)
         result = evaluate_expression(expression)
         return {
@@ -2805,6 +2835,11 @@ def get_question_endpoint():
             "question_id": None,
             "alternatives": None,
             "media_url": None,
+            # C-D2c echo carriers: the served rung (null on the default path)
+            # and the tree's structural leaf_count. The client returns both on
+            # /api/answer; capture into responses is C-D2g (needs the v3 cols).
+            "difficulty": difficulty,
+            "leaf_count": leaf_count(expression),
         }
 
     # Bank-based question path (C-012). For any non-arithmetic category, draw

@@ -413,6 +413,73 @@ def test_question_arithmetic_separators_only_operators_is_400(app_blank):
     assert status.startswith("400")
 
 
+# ---- /api/question: difficulty rung (C-D2c) ------------------------------
+# The HTTP layer parses ?difficulty=, validates it against the known rung
+# labels, threads it to generate_expression, and echoes the served rung plus
+# the expression's leaf_count in the payload so the client can round-trip them
+# to /api/answer. Capture into responses is C-D2g (gated on the v3 migration);
+# here we test only the parse + echo + 400 surface.
+
+
+def test_question_arithmetic_no_difficulty_echoes_null(app_blank):
+    # The default (no-rung) path: difficulty is omitted -> payload difficulty is
+    # null, and leaf_count is still present (a fact about the served tree).
+    m, _ = app_blank
+    status, data = _get_json(m, "/api/question", "category=arithmetic")
+    assert status.startswith("200")
+    assert data["difficulty"] is None
+    assert "leaf_count" in data and isinstance(data["leaf_count"], int)
+    assert data["leaf_count"] >= 2
+
+
+def test_question_arithmetic_valid_difficulty_is_echoed(app_blank):
+    # A known rung is accepted and echoed back verbatim. Rung 1 is flat, so its
+    # leaf_count is exactly 2.
+    m, _ = app_blank
+    status, data = _get_json(m, "/api/question", "category=arithmetic&difficulty=1")
+    assert status.startswith("200")
+    assert data["difficulty"] == 1
+    assert data["leaf_count"] == 2
+
+
+def test_question_arithmetic_top_rung_is_accepted(app_blank):
+    # The highest declared rung is valid (guards an off-by-one in the known-rung
+    # membership check). leaf_count is present and at least the flat minimum.
+    m, _ = app_blank
+    top = m.DIFFICULTY_RUNGS[-1]["rung"]
+    status, data = _get_json(
+        m, "/api/question", "category=arithmetic&difficulty=%d" % top
+    )
+    assert status.startswith("200")
+    assert data["difficulty"] == top
+    assert data["leaf_count"] >= 2
+
+
+def test_question_arithmetic_unknown_difficulty_is_400(app_blank):
+    # A syntactically-valid int that is not a known rung label -> 400 (mirrors
+    # the unknown-operator 400). generate_expression's ValueError guard never
+    # fires for user input because HTTP rejects it first.
+    m, _ = app_blank
+    status, _ = wsgi_get(m, "/api/question", "category=arithmetic&difficulty=999")
+    assert status.startswith("400")
+
+
+def test_question_arithmetic_non_int_difficulty_is_400(app_blank):
+    # A non-integer difficulty -> 400 (not a 500).
+    m, _ = app_blank
+    status, _ = wsgi_get(m, "/api/question", "category=arithmetic&difficulty=hard")
+    assert status.startswith("400")
+
+
+def test_question_arithmetic_empty_difficulty_is_default(app_blank):
+    # difficulty= (present but empty) is treated as omitted -> default path,
+    # difficulty null (mirrors the operators= empty-is-omitted rule).
+    m, _ = app_blank
+    status, data = _get_json(m, "/api/question", "category=arithmetic&difficulty=")
+    assert status.startswith("200")
+    assert data["difficulty"] is None
+
+
 # ---- /api/banks -----------------------------------------------------------
 def test_banks_list_includes_seeded_bank(app_with_bank):
     m, _, full, _ = app_with_bank

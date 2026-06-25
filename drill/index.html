@@ -862,6 +862,11 @@ var state = {
                               bankName} -- the current drill target */
   recentIds: [],           /* C-016: last-RECENT_MAX served bank question ids
                               for the active session (recent= param) */
+  difficulty: null,        /* C-D2c: selected arithmetic difficulty rung, or
+                              null for the default (no-rung) path. No UI control
+                              sets this yet -- the field + query wiring land now
+                              so the rung round-trips end to end; a selector is
+                              a later UI commit. */
   current: null,           /* the question payload now on screen */
   answerStartMark: null,   /* C-018c: performance.now() ms when the current
                               question became answerable; null when not in an
@@ -1289,7 +1294,14 @@ function questionQuery() {
   var sel = state.selection || { categoryName: state.arithmeticCategoryName,
                                   bankId: null };
   if (sel.bankId === null || sel.bankId === undefined) {
-    return "/api/question?category=arithmetic";
+    var arithmetic = "/api/question?category=arithmetic";
+    /* C-D2c: carry the selected difficulty rung when one is set. null means
+       the default path -- omit the param entirely so the request is identical
+       to pre-#2 (the server treats absent difficulty as the no-rung default). */
+    if (state.difficulty !== null && state.difficulty !== undefined) {
+      arithmetic += "&difficulty=" + encodeURIComponent(state.difficulty);
+    }
+    return arithmetic;
   }
   var params = "category=" + encodeURIComponent(sel.categoryName)
              + "&bank_id=" + encodeURIComponent(sel.bankId);
@@ -1608,6 +1620,18 @@ async function gradeAndShow(userInput) {
      only when a valid measurement exists. Collect-only -- no UI uses it yet. */
   if (elapsedMs !== null) {
     body.elapsed_ms = elapsedMs;
+  }
+  /* C-D2c: echo the served difficulty rung and the expression's leaf_count
+     back so the server can record them (capture lands in C-D2g, gated on the
+     v3 migration). Only arithmetic payloads carry these; difficulty may be
+     null on the no-rung path, leaf_count is always present for arithmetic.
+     Echo difficulty even when null so the server sees an explicit value;
+     leaf_count only when the payload actually carried it (bank payloads do
+     not). The server ignores these until C-D2g, so sending them now is
+     forward-compatible. */
+  if (q.leaf_count !== undefined && q.leaf_count !== null) {
+    body.difficulty = (q.difficulty === undefined) ? null : q.difficulty;
+    body.leaf_count = q.leaf_count;
   }
   /* Text qtypes accept also-correct answers; forward them so the server can
      match. multiple_choice ignores alternatives (exact match); arithmetic
