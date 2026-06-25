@@ -1464,22 +1464,55 @@ def evaluate_expression(node: dict | int) -> int:
     return operator_record["eval_fn"](left_value, right_value)
 
 
+def _child_needs_parentheses(parent_record: dict, child: dict | int, side: str) -> bool:
+    """Decide whether a rendered child operand must be parenthesized.
+
+    The renderer is the SOLE owner of correct printing (#5): the tree shape is
+    the grouping truth, and the rendered string must, read under standard
+    precedence and associativity, parse back to THIS tree. evaluate_expression
+    never consults precedence -- a wrong parenthesization silently makes the
+    displayed question and the stored answer disagree.
+
+    A child is wrapped IFF it is an INTERNAL node AND either
+      - its operator binds LESS tightly than the parent
+        (child.precedence < parent.precedence), or
+      - it binds EQUALLY tightly but sits on the associativity-WRONG side:
+        the right child of a left-associative parent, or the left child of a
+        right-associative parent. (On the associativity-correct side, equal
+        precedence needs no parens: a - b + c is (a-b)+c with no wrapping.)
+    An integer leaf is never wrapped.
+    """
+    if not isinstance(child, dict):
+        return False
+    child_record = OPERATORS[child["op"]]
+    if child_record["precedence"] < parent_record["precedence"]:
+        return True
+    if child_record["precedence"] == parent_record["precedence"]:
+        parent_associativity = parent_record["associativity"]
+        wrong_side = "right" if parent_associativity == "left" else "left"
+        if side == wrong_side:
+            return True
+    return False
+
+
 def render_expression(node: dict | int) -> str:
     """Render an expression tree as a human-readable infix string.
 
     Integer leaves render as their digits. Internal nodes render as
-    "left symbol right". Nested internal operands are parenthesized to keep
-    the rendering unambiguous; flat single-operator expressions (the v1
-    case) produce no parentheses. The rendered string is what gets stored
-    in responses.question_text.
+    "left symbol right", with each child parenthesized only when the tree's
+    grouping would otherwise be lost under standard precedence/associativity
+    (see _child_needs_parentheses). A flat single-operator expression (the v1
+    case) has int leaves, so it produces no parentheses. The rendered string is
+    what gets stored in responses.question_text.
     """
     if isinstance(node, int):
         return str(node)
+    parent_record = OPERATORS[node["op"]]
     left_text = render_expression(node["left"])
     right_text = render_expression(node["right"])
-    if isinstance(node["left"], dict):
+    if _child_needs_parentheses(parent_record, node["left"], "left"):
         left_text = "(" + left_text + ")"
-    if isinstance(node["right"], dict):
+    if _child_needs_parentheses(parent_record, node["right"], "right"):
         right_text = "(" + right_text + ")"
     return left_text + " " + node["op"] + " " + right_text
 

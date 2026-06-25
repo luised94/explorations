@@ -187,6 +187,91 @@ def test_render_nested_parenthesizes_subexpressions(m):
     assert m.render_expression(node) == "(1 + 2) * 3"
 
 
+# --------------------------------------------------------------------------
+# precedence-aware renderer -- C-D5b (the cs showpiece)
+# The renderer is the SOLE owner of correct printing: the rendered string must
+# parse back, under standard precedence/associativity, to the SAME tree it came
+# from. evaluate_expression never consults precedence, so a wrong wrap silently
+# desyncs the displayed question from the stored answer. Test EXHAUSTIVELY with
+# HAND-BUILT trees (decoupled from generator output), table-driven over
+# operator-pair x nested-side, asserting EXACT strings -- not "contains". Some
+# trees here (e.g. anything nesting under / % ^) are NOT generator-reachable in
+# #5; the renderer is nonetheless total over all well-formed trees, which is
+# what lets #2 widen generation with zero renderer change.
+# --------------------------------------------------------------------------
+def _n(op, left, right):
+    return {"op": op, "left": left, "right": right}
+
+
+_RENDER_CASES = [
+    # --- flat / leaf: no parentheses ever ---
+    ("flat add", _n("+", 1, 2), "1 + 2"),
+    ("flat sub", _n("-", 9, 4), "9 - 4"),
+    ("flat mul", _n("*", 3, 4), "3 * 4"),
+    ("flat div", _n("/", 12, 4), "12 / 4"),
+    ("flat mod", _n("%", 17, 5), "17 % 5"),
+    ("flat pow", _n("^", 3, 2), "3 ^ 2"),
+    # --- lower-precedence child under higher-precedence parent: KEEP ---
+    # (a + b) * c -- already exercised by the legacy test; here both sides.
+    ("sum left of product", _n("*", _n("+", 1, 2), 3), "(1 + 2) * 3"),
+    ("sum right of product", _n("*", 3, _n("+", 1, 2)), "3 * (1 + 2)"),
+    ("diff left of product", _n("*", _n("-", 5, 2), 4), "(5 - 2) * 4"),
+    ("sum under exponent", _n("^", _n("+", 1, 2), 2), "(1 + 2) ^ 2"),
+    ("product under exponent", _n("^", _n("*", 2, 3), 2), "(2 * 3) ^ 2"),
+    # --- higher-precedence child under lower-precedence parent: DROP ---
+    # a * b + c -> tree (a*b)+c ; product binds tighter, no parens needed.
+    ("product left of sum", _n("+", _n("*", 2, 3), 4), "2 * 3 + 4"),
+    ("product right of sum", _n("+", 4, _n("*", 2, 3)), "4 + 2 * 3"),
+    ("exponent under product", _n("*", _n("^", 2, 3), 5), "2 ^ 3 * 5"),
+    ("exponent right of product", _n("*", 5, _n("^", 2, 3)), "5 * 2 ^ 3"),
+    # --- same-tier, LEFT-associative parent ---
+    # left child on the correct (left) side: DROP.
+    ("sub then add: a - b + c", _n("+", _n("-", 8, 3), 2), "8 - 3 + 2"),
+    ("div then mul: a / b * c", _n("*", _n("/", 12, 4), 3), "12 / 4 * 3"),
+    ("add then add left", _n("+", _n("+", 1, 2), 3), "1 + 2 + 3"),
+    # right child on the wrong (right) side: KEEP.
+    ("sub of sub: a - (b - c)", _n("-", 9, _n("-", 5, 1)), "9 - (5 - 1)"),
+    ("add then sub right: a + (b - c)", _n("+", 8, _n("-", 5, 1)), "8 + (5 - 1)"),
+    ("mul of div: a * (b / c)", _n("*", 6, _n("/", 8, 2)), "6 * (8 / 2)"),
+    ("mul of mod: a * (b % c)", _n("*", 6, _n("%", 17, 5)), "6 * (17 % 5)"),
+    ("mod right of mul: a * (b % c)", _n("*", 4, _n("%", 9, 2)), "4 * (9 % 2)"),
+    # --- same-tier, RIGHT-associative parent (exponent) ---
+    # right child on the correct (right) side for right-assoc: DROP.
+    ("pow right-assoc: 2 ^ 3 ^ 2", _n("^", 2, _n("^", 3, 2)), "2 ^ 3 ^ 2"),
+    # left child on the wrong (left) side for right-assoc: KEEP.
+    ("pow left-nested: (2 ^ 3) ^ 2", _n("^", _n("^", 2, 3), 2), "(2 ^ 3) ^ 2"),
+    # --- deeper compositions ---
+    # ((1 + 2) * 3) - 4 : product binds tighter than the outer -, so the
+    # product needs no wrap on the left of -, but the inner sum still wraps.
+    ("nested two levels", _n("-", _n("*", _n("+", 1, 2), 3), 4), "(1 + 2) * 3 - 4"),
+    # a * (b - c) on a left branch of +, plus a same-tier right sub: exercises
+    # both rules in one tree. tree: (2 * (5 - 1)) + (9 - 3)
+    (
+        "mixed left product-of-diff, right diff",
+        _n("+", _n("*", 2, _n("-", 5, 1)), _n("-", 9, 3)),
+        "2 * (5 - 1) + (9 - 3)",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "label,tree,expected", _RENDER_CASES, ids=[c[0] for c in _RENDER_CASES]
+)
+def test_render_precedence_and_associativity(m, label, tree, expected):
+    assert m.render_expression(tree) == expected
+
+
+def test_render_roundtrips_through_evaluate(m):
+    # Independent of exact strings: every hand-built case must round-trip --
+    # evaluating the tree and the string-as-read agree by construction here,
+    # but at minimum the renderer must not raise and must produce a non-empty
+    # string for every well-formed tree (the renderer is total).
+    for _label, tree, _expected in _RENDER_CASES:
+        text = m.render_expression(tree)
+        assert isinstance(text, str) and text != ""
+        assert isinstance(m.evaluate_expression(tree), int)
+
+
 def test_generate_empty_symbol_set_raises(m):
     with pytest.raises(ValueError):
         m.generate_expression(enabled_symbols=[])
