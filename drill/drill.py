@@ -1734,6 +1734,7 @@ def _build_composable_operand(
     operator_record: dict,
     recurse_probability: float,
     operator_table: dict,
+    max_result_value: int | None,
 ) -> dict | int:
     """Build ONE operand of a composable node: a subtree or an integer leaf.
 
@@ -1744,34 +1745,56 @@ def _build_composable_operand(
     depth floor that bounds operator_depth at the caller's depth budget.
 
     C-D2b: recurse_probability is a PLAIN-DATA PARAMETER threaded from the caller.
-    C-D2d: operator_table is likewise threaded so a recursing subtree draws its
-    own operator from the SAME (possibly rung-scaled) table the parent used.
-    The leaf draw uses operator_record, which the caller already took from that
-    scaled table, so the leaf's magnitude is the rung's -- no table lookup needed
-    here for the leaf case.
+    C-D2d: operator_table is threaded so a recursing subtree draws its own
+    operator from the same (possibly rung-scaled) table the parent used.
+    C-D2e: max_result_value is threaded onward to the recursing build_subtree so
+    the whole tree enforces one consistent ceiling (a leaf never needs the
+    ceiling -- a bare integer leaf is its own value and was drawn within range).
     """
     if remaining_depth >= 2 and random.random() < recurse_probability:
         return build_subtree(
-            symbols, remaining_depth - 1, recurse_probability, operator_table
+            symbols,
+            remaining_depth - 1,
+            recurse_probability,
+            operator_table,
+            max_result_value,
         )
     return _draw_composable_leaf(operator_record)
 
 
 def _result_within_ceiling(
-    operator_record: dict, left_value: int, right_value: int
+    operator_record: dict,
+    left_value: int,
+    right_value: int,
+    max_result_value: int | None,
 ) -> bool:
-    """Local feasibility check for the optional global result ceiling.
+    """Local feasibility check for the optional result ceiling (C-D2e).
 
-    Returns True (always feasible) when _MAX_RESULT_VALUE is None -- the default,
-    making this a no-op and the generator identical to the no-ceiling version.
-    Otherwise returns whether the node's evaluated result is within the ceiling.
-    Both operand values are passed in (bottom-up, already in hand), so the check
-    is cheap and pure -- it evaluates only THIS node's operator over the two
-    known child values, not the whole subtree again.
+    Returns True (always feasible) when max_result_value is None -- the default
+    (difficulty=None and the lower rungs that declare no ceiling), making this a
+    no-op so the generator is identical to the no-ceiling version. Otherwise
+    returns whether THIS node's evaluated result is within the ceiling.
+
+    The check is LOCAL and bottom-up: both operand values are already in hand, so
+    it evaluates only this node's operator over the two known child values, not
+    the whole subtree again. Because a parent only ACCEPTS children whose own
+    results already passed this same check, the local bound transitively bounds
+    every subtree result -- so a tree assembled entirely from accepted nodes has
+    every node result (hence the final result) within the ceiling. ADR-035: the
+    ceiling bounds RESULTS, not leaves; operand magnitude is still governed by the
+    per-operator ranges, so a too-small ceiling makes a node INFEASIBLE (it can
+    never satisfy) rather than merely rare, which the bounded-retry guard turns
+    into a loud RuntimeError instead of an infinite loop.
+
+    C-D2e: max_result_value is now a PLAIN-DATA PARAMETER threaded from the
+    caller (generate_expression passes the rung's max_result_value, or None on
+    the no-rung path), replacing the read of the module-global _MAX_RESULT_VALUE.
+    The module constant remains as the documented dark default but is no longer
+    read here.
     """
-    if _MAX_RESULT_VALUE is None:
+    if max_result_value is None:
         return True
-    return operator_record["eval_fn"](left_value, right_value) <= _MAX_RESULT_VALUE
+    return operator_record["eval_fn"](left_value, right_value) <= max_result_value
 
 
 def build_subtree(
@@ -1779,6 +1802,7 @@ def build_subtree(
     remaining_depth: int,
     recurse_probability: float = _RECURSE_PROBABILITY,
     operator_table: dict | None = None,
+    max_result_value: int | None = None,
 ) -> dict:
     """Build an expression subtree (an internal node) bottom-up.
 
@@ -1816,8 +1840,15 @@ def build_subtree(
     ranges onto a COPY via _apply_rung_ranges and passes that table here, so a
     rung changes operand MAGNITUDE. The table is threaded onward to
     _build_composable_operand so recursing subtrees use the same scaled records.
-    Still NOT wired here: the result ceiling (C-D2e) -- it remains the module
-    _MAX_RESULT_VALUE via _result_within_ceiling until that commit.
+
+    C-D2e: max_result_value is the rung's result ceiling (None -> no ceiling, the
+    default and the lower rungs). Threaded into every _result_within_ceiling call
+    and onward to recursing subtrees. Because the check is local and bottom-up
+    and a parent only accepts ceiling-passing children, the whole tree's results
+    stay within the ceiling. A ceiling too low for an operator's minimum result
+    makes that operator infeasible; the bounded-retry guard then raises
+    RuntimeError rather than looping (the joint (ranges, ceiling) satisfiability
+    is asserted per rung in the C-D2e tests).
     """
     if operator_table is None:
         operator_table = OPERATORS
@@ -1842,7 +1873,9 @@ def build_subtree(
             left_value, right_value = operator_record["operand_strategy"](
                 operator_record
             )
-            if not _result_within_ceiling(operator_record, left_value, right_value):
+            if not _result_within_ceiling(
+                operator_record, left_value, right_value, max_result_value
+            ):
                 continue
             return {"op": symbol, "left": left_value, "right": right_value}
 
@@ -1853,7 +1886,9 @@ def build_subtree(
             left_value, right_value = operator_record["operand_strategy"](
                 operator_record
             )
-            if not _result_within_ceiling(operator_record, left_value, right_value):
+            if not _result_within_ceiling(
+                operator_record, left_value, right_value, max_result_value
+            ):
                 continue
             return {"op": symbol, "left": left_value, "right": right_value}
 
@@ -1866,6 +1901,7 @@ def build_subtree(
             operator_record,
             recurse_probability,
             operator_table,
+            max_result_value,
         )
         right = _build_composable_operand(
             symbols,
@@ -1873,6 +1909,7 @@ def build_subtree(
             operator_record,
             recurse_probability,
             operator_table,
+            max_result_value,
         )
         left_value = evaluate_expression(left)
         right_value = evaluate_expression(right)
@@ -1893,10 +1930,12 @@ def build_subtree(
         if left_value in forbidden or right_value in forbidden:
             continue
 
-        # Optional global result ceiling (dark by default): redraw this node's
-        # operands if the assembled result would exceed the ceiling. Local: only
-        # this node's children are discarded, not the whole tree.
-        if not _result_within_ceiling(operator_record, left_value, right_value):
+        # Optional result ceiling: redraw this node's operands if the assembled
+        # result would exceed the ceiling. Local: only this node's children are
+        # discarded, not the whole tree. None -> no ceiling (the default path).
+        if not _result_within_ceiling(
+            operator_record, left_value, right_value, max_result_value
+        ):
             continue
 
         return {"op": symbol, "left": left, "right": right}
@@ -1991,12 +2030,11 @@ def generate_expression(
     caller per ADR-034). operator_depth == 1 reproduces the flat #4 generator
     exactly.
 
-    SCOPE NOTE (C-D2d wires ranges; ceiling still pending C-D2e): a rung now
-    changes tree depth, nesting probability, AND per-operator operand magnitude
-    (its operator_ranges are overlaid onto a copy of OPERATORS via
-    _apply_rung_ranges). The result ceiling is still the module _MAX_RESULT_VALUE
-    (not yet rung-driven) until C-D2e. The tree shape feeds evaluate_expression
-    and render_expression unchanged.
+    SCOPE NOTE (C-D2e completes the generator response): a rung now changes tree
+    depth, nesting probability, per-operator operand magnitude (C-D2d), AND
+    applies its result ceiling (max_result_value) -- the full generator-side
+    difficulty response. A rung with max_result_value None has no ceiling. The
+    tree shape feeds evaluate_expression and render_expression unchanged.
     """
     # Distinguish "omitted" (None -> use the default set) from "given but
     # empty" ([] -> an error). Treating [] as falsy and silently falling back
@@ -2017,20 +2055,24 @@ def generate_expression(
         )
 
     # difficulty=None: the module-constant defaults, byte-identical to today.
-    # A rung: resolve to its shape knobs (depth + recurse) AND overlay its
-    # per-operator ranges onto a copy of OPERATORS (the magnitude lever, C-D2d).
-    # The ceiling stays non-rung-driven until C-D2e.
+    # A rung: resolve to its shape knobs (depth + recurse), overlay its
+    # per-operator ranges (magnitude, C-D2d), AND apply its result ceiling
+    # (C-D2e). A rung whose max_result_value is None has no ceiling.
     if difficulty is None:
         operator_depth = _MAX_OPERATOR_DEPTH
         recurse_probability = _RECURSE_PROBABILITY
         operator_table = OPERATORS
+        max_result_value = _MAX_RESULT_VALUE
     else:
         rung_record = _resolve_difficulty_rung(difficulty)
         operator_depth = rung_record["operator_depth"]
         recurse_probability = rung_record["recurse_probability"]
         operator_table = _apply_rung_ranges(rung_record, OPERATORS)
+        max_result_value = rung_record["max_result_value"]
 
-    return build_subtree(symbols, operator_depth, recurse_probability, operator_table)
+    return build_subtree(
+        symbols, operator_depth, recurse_probability, operator_table, max_result_value
+    )
 
 
 def evaluate_expression(node: dict | int) -> int:

@@ -439,3 +439,86 @@ def test_difficulty_none_uses_base_operator_table_identity():
     base_plus_max = _M.OPERATORS["+"]["operand_max"]
     biggest = _max_leaf_magnitude(["+"], None, 3000)
     assert biggest <= base_plus_max
+
+
+# --- C-D2e: the result ceiling (joint (ranges, ceiling) satisfiability) ------
+# A rung's max_result_value is now enforced through generation. The check is
+# local and bottom-up, so EVERY node result -- hence the final result -- stays
+# within the ceiling. A ceiling too low for an operator's minimum result makes
+# that operator infeasible, which the bounded-retry guard turns into a loud
+# RuntimeError. These tests pin both: that real rungs are jointly satisfiable
+# (no raise, results bounded), and that an impossible ceiling actually bites
+# (the deliberate-red guard -- this would NOT raise if the ceiling were unwired).
+
+
+def _max_node_result(node):
+    # The largest result of any internal node in the tree (== final result for a
+    # ceiling that bounds every node, but computed independently as a check).
+    biggest = [0]
+
+    def walk(n):
+        if isinstance(n, int):
+            return n
+        left = walk(n["left"])
+        right = walk(n["right"])
+        value = _M.OPERATORS[n["op"]]["eval_fn"](left, right)
+        biggest[0] = max(biggest[0], value)
+        return value
+
+    walk(node)
+    return biggest[0]
+
+
+def test_every_rung_respects_its_result_ceiling():
+    # For each rung over its full operator set: generation never raises, and when
+    # the rung declares a ceiling, every node result (and the final result) is
+    # within it. Rungs with max_result_value None impose no bound (only the
+    # no-raise half applies).
+    for rung_record in _M.DIFFICULTY_RUNGS:
+        rung = rung_record["rung"]
+        ceiling = rung_record["max_result_value"]
+        for _ in range(2000):
+            node = _M.generate_expression(enabled_symbols=_ALL_SYMBOLS, difficulty=rung)
+            if ceiling is not None:
+                assert _max_node_result(node) <= ceiling, (rung, ceiling)
+                assert _M.evaluate_expression(node) <= ceiling, (rung, ceiling)
+
+
+def test_top_rung_ceiling_actually_binds():
+    # The top rung declares a finite ceiling; confirm it is enforced (results are
+    # bounded well below what the unceiled ranges could reach). Guards against a
+    # rung that declares a ceiling the generator silently ignores.
+    top = _M.DIFFICULTY_RUNGS[-1]
+    assert top["max_result_value"] is not None, "this test assumes a top-rung ceiling"
+    ceiling = top["max_result_value"]
+    worst = 0
+    for _ in range(5000):
+        node = _M.generate_expression(
+            enabled_symbols=_ALL_SYMBOLS, difficulty=top["rung"]
+        )
+        worst = max(worst, _M.evaluate_expression(node))
+    assert worst <= ceiling
+
+
+def test_impossible_ceiling_raises_runtime_error():
+    # DELIBERATE-RED guard: a ceiling below an operator's MINIMUM achievable
+    # result makes that operator infeasible; build_subtree must exhaust its
+    # bounded retries and raise RuntimeError rather than loop forever. Using the
+    # top rung's scaled "+" (operand_min >= 10, so min result >= 20) with a
+    # ceiling of 5: every draw is rejected. If the ceiling were not wired through
+    # (the pre-C-D2e state), this would NOT raise -- so this test is exactly the
+    # one that flips from red to green when the ceiling is threaded.
+    scaled = _M._apply_rung_ranges(_M.DIFFICULTY_RUNGS[-1], _M.OPERATORS)
+    with pytest.raises(RuntimeError):
+        # flat "+" node, impossible ceiling 5
+        _M.build_subtree(["+"], 1, 0.0, scaled, 5)
+
+
+def test_none_ceiling_is_a_noop():
+    # max_result_value None means no ceiling: _result_within_ceiling returns True
+    # regardless of magnitude, so a large product is accepted.
+    star = _M.OPERATORS["*"]
+    assert _M._result_within_ceiling(star, 1000, 1000, None) is True
+    # A finite ceiling rejects an over-ceiling result.
+    assert _M._result_within_ceiling(star, 1000, 1000, 100) is False
+    assert _M._result_within_ceiling(star, 3, 3, 100) is True
