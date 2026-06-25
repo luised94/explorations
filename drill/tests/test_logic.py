@@ -296,6 +296,93 @@ def test_generate_division_is_always_integral(m):
 
 
 # --------------------------------------------------------------------------
+# bottom-up nested generation -- C-D5c (#5 spine)
+# Example-based companions to the recursive property walk in
+# test_generator_property.py: pin the depth knob's two reproduction points and
+# show that nesting actually happens at the default. Reproducibility is via
+# seeding the GLOBAL RNG (no seed parameter is threaded -- production is
+# intentionally nondeterministic; tests seed random.seed(N) per the existing
+# pattern).
+# --------------------------------------------------------------------------
+def _operator_depth(node):
+    if isinstance(node, int):
+        return 0
+    return 1 + max(_operator_depth(node["left"]), _operator_depth(node["right"]))
+
+
+def test_generate_depth_one_reproduces_flat(m):
+    # _MAX_OPERATOR_DEPTH == 1 reproduces the flat #4 generator exactly: every
+    # tree is a single operator over two integer leaves.
+    original = m._MAX_OPERATOR_DEPTH
+    try:
+        m._MAX_OPERATOR_DEPTH = 1
+        for _ in range(200):
+            node = m.generate_expression()
+            assert _operator_depth(node) == 1
+            assert isinstance(node["left"], int)
+            assert isinstance(node["right"], int)
+    finally:
+        m._MAX_OPERATOR_DEPTH = original
+
+
+def test_generate_p_recurse_zero_reproduces_flat(m):
+    # _RECURSE_PROBABILITY == 0 also reproduces flat generation even with depth
+    # budget available: no operand is ever chosen to be a subtree.
+    original = m._RECURSE_PROBABILITY
+    try:
+        m._RECURSE_PROBABILITY = 0.0
+        for _ in range(200):
+            node = m.generate_expression(enabled_symbols=["+", "-", "*"])
+            assert _operator_depth(node) == 1
+    finally:
+        m._RECURSE_PROBABILITY = original
+
+
+def test_generate_default_depth_produces_some_nesting(m):
+    # At the provisional defaults (_MAX_OPERATOR_DEPTH == 2, _RECURSE_PROBABILITY
+    # == 0.5) over composable operators, at least some trees nest (depth 2) and
+    # none exceed the depth ceiling. Seeded for determinism.
+    import random
+
+    random.seed(1234)
+    depths = set()
+    for _ in range(500):
+        node = m.generate_expression(enabled_symbols=["+", "-", "*"])
+        d = _operator_depth(node)
+        assert 1 <= d <= m._MAX_OPERATOR_DEPTH
+        depths.add(d)
+    assert 2 in depths  # nesting actually occurs at the default
+
+
+def test_generate_nested_round_trips_value_through_render(m):
+    # The renderer must emit a string that, read under standard precedence and
+    # associativity, parses back to the SAME tree's value. Map ^ -> ** and /
+    # -> // (our division is exact, so // == /), then re-evaluate the rendered
+    # string with Python's grammar and compare to evaluate_expression.
+    import random
+
+    random.seed(2025)
+    for _ in range(500):
+        node = m.generate_expression()
+        expected = m.evaluate_expression(node)
+        rendered = m.render_expression(node)
+        reparsed = eval(rendered.replace("^", "**").replace("/", "//"))
+        assert reparsed == expected, (rendered, reparsed, expected)
+
+
+def test_generate_retry_exhaustion_raises(m):
+    # Bounded retry: when attempts are exhausted, build_subtree raises a clear
+    # RuntimeError rather than hanging. Force it by setting the ceiling to 0.
+    original = m._MAX_GENERATION_ATTEMPTS
+    try:
+        m._MAX_GENERATION_ATTEMPTS = 0
+        with pytest.raises(RuntimeError):
+            m.generate_expression(enabled_symbols=["+"])
+    finally:
+        m._MAX_GENERATION_ATTEMPTS = original
+
+
+# --------------------------------------------------------------------------
 # operator-record declarative fields -- C-D5a (#5 nesting groundwork)
 # nestable / precedence / associativity are now REQUIRED record keys validated
 # by _build_operator_table. Assert they are present and well-typed for every

@@ -148,6 +148,31 @@ _EXPONENT_POWER_RANGE = (2, 3)
 # OPERATOR_DEFINITIONS (validated in C-006).
 OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "^"]
 
+# #5 nested-expression generation config. These are MODULE CONSTANTS, not
+# function parameters: generate_expression's signature does not change (Lens 3/4
+# consensus -- a depth parameter with no concrete caller is speculative; #2 adds
+# the parameter together with its real difficulty caller). They govern nesting
+# the same way OPERATOR_SYMBOLS governs the operator set: module-level data.
+#
+# _MAX_OPERATOR_DEPTH -- ceiling on OPERATOR DEPTH, where a leaf is depth 0 and
+#   an internal node is 1 + max(child depths). A flat single-operator node has
+#   depth 1. _MAX_OPERATOR_DEPTH == 1 reproduces the flat #4 generator EXACTLY
+#   (no operand is ever a subtree); >= 2 permits nesting. Provisional default 2.
+#   Depth is a STRUCTURAL knob, not a difficulty score (2 + 3 + 4 is easier than
+#   7 * 8 yet deeper); #2 owns difficulty and weighs depth among several inputs.
+# _RECURSE_PROBABILITY -- per-operand, independent Bernoulli probability that a
+#   composable operator's operand is itself a subtree (vs an integer leaf), when
+#   depth budget remains. The two operands flip independently; this is NOT a
+#   distribution and need not sum to anything. 0 reproduces flat generation; 1
+#   always recurses until the depth floor forces leaves. Provisional default 0.5.
+# _MAX_GENERATION_ATTEMPTS -- bounded-retry ceiling for the redraw loops. Hitting
+#   it raises RuntimeError (a generation bug signal, matching the generator's
+#   existing "fail loudly" stance), never hangs. Normal generation never nears
+#   it; the property test pins that constraints are satisfiable in practice.
+_MAX_OPERATOR_DEPTH = 2
+_RECURSE_PROBABILITY = 0.5
+_MAX_GENERATION_ATTEMPTS = 1000
+
 # Default on-disk database filename. The server may override this at startup.
 DEFAULT_DATABASE_PATH: str = "drill.db"
 
@@ -1407,16 +1432,137 @@ def _build_operator_table() -> dict:
 OPERATORS: dict = _build_operator_table()
 
 
+def _draw_composable_leaf(operator_record: dict) -> int:
+    """Draw a single integer leaf for a composable operator's operand.
+
+    Bottom-up construction builds each operand of a composable (+ - *) node
+    INDEPENDENTLY, so it needs a single-operand draw rather than the paired
+    leaf strategy (which bakes in ordering/forbid logic for the flat case). The
+    leaf is drawn from the operator's own [operand_min, operand_max] range; the
+    forbidden-identity and ordering rules are applied UNIFORMLY afterward by the
+    caller against the operand's VALUE (a leaf is its own value), so they cover
+    subtree operands too. The composable leaf ranges already start above their
+    forbidden values (+ - from 1, * from 2), so a leaf never hits a forbidden
+    identity on its own -- the value check only ever rejects a SUBTREE operand
+    that happens to evaluate to a forbidden value (e.g. (9 % 3) == 0 under +).
+    """
+    return random.randint(
+        operator_record["operand_min"], operator_record["operand_max"]
+    )
+
+
+def _build_composable_operand(
+    symbols: list[str], remaining_depth: int, operator_record: dict
+) -> dict | int:
+    """Build ONE operand of a composable node: a subtree or an integer leaf.
+
+    With depth budget remaining (remaining_depth >= 2, so a child can be at
+    least a flat node), flip an independent Bernoulli(_RECURSE_PROBABILITY): on
+    success recurse into build_subtree with the budget decremented; otherwise
+    draw an integer leaf. With no budget remaining, always a leaf -- this is the
+    depth floor that bounds operator_depth at _MAX_OPERATOR_DEPTH.
+    """
+    if remaining_depth >= 2 and random.random() < _RECURSE_PROBABILITY:
+        return build_subtree(symbols, remaining_depth - 1)
+    return _draw_composable_leaf(operator_record)
+
+
+def build_subtree(symbols: list[str], remaining_depth: int) -> dict:
+    """Build an expression subtree (an internal node) bottom-up.
+
+    INTERNAL helper for generate_expression (#5). Calls random.* directly -- no
+    rng parameter (threading an rng is speculative seedability; tests seed the
+    global RNG instead). Returns an {op, left, right} node whose operator_depth
+    is at most remaining_depth (>= 1).
+
+    Construction is BOTTOM-UP: for a composable operator (+ - *), each operand
+    is built first (subtree or leaf) so its integer VALUE is known, then the
+    operator's constraints are checked against those values and the node is
+    assembled -- a built subtree is never mutated to fit a parent; on a
+    constraint failure the whole node is redrawn. Leaf-only operators (/ % ^)
+    keep their existing paired leaf strategy unchanged (their invariants are
+    statements about LEAVES -- divisor >= 2, derived quotient, exponent power
+    range -- and must not be lifted to values). A leaf-only operator may still
+    be CHOSEN here (it is a valid subtree child of a composable parent); it just
+    never grows subtree children of its own (nestable=False).
+
+    remaining_depth <= 1 forces a flat node: no operand recurses, reproducing
+    the #4 generator exactly. Each redraw counts against _MAX_GENERATION_ATTEMPTS
+    and raises RuntimeError on exhaustion rather than looping forever.
+    """
+    attempts = 0
+    while True:
+        attempts += 1
+        if attempts > _MAX_GENERATION_ATTEMPTS:
+            raise RuntimeError(
+                "build_subtree exceeded "
+                + str(_MAX_GENERATION_ATTEMPTS)
+                + " attempts; operator constraints appear unsatisfiable for "
+                "symbols " + repr(symbols)
+            )
+        symbol = random.choice(symbols)
+        operator_record = OPERATORS[symbol]
+
+        # Leaf-only (/ % ^): integer leaves via the existing paired strategy,
+        # invariants unchanged. Also the only path when no depth budget remains
+        # for a composable operator (handled below by the leaf-only operand
+        # builder), but a leaf-only operator takes this branch regardless.
+        if not operator_record["nestable"]:
+            left_value, right_value = operator_record["operand_strategy"](
+                operator_record
+            )
+            return {"op": symbol, "left": left_value, "right": right_value}
+
+        # Composable (+ - *). At the depth floor (remaining_depth <= 1) no
+        # operand may recurse, so use the existing paired strategy verbatim --
+        # this is what makes _MAX_OPERATOR_DEPTH == 1 reproduce flat #4 exactly.
+        if remaining_depth <= 1:
+            left_value, right_value = operator_record["operand_strategy"](
+                operator_record
+            )
+            return {"op": symbol, "left": left_value, "right": right_value}
+
+        # Budget remains: build each operand independently (subtree or leaf),
+        # then apply the value-based constraints (constraint lifting).
+        left = _build_composable_operand(symbols, remaining_depth, operator_record)
+        right = _build_composable_operand(symbols, remaining_depth, operator_record)
+        left_value = evaluate_expression(left)
+        right_value = evaluate_expression(right)
+
+        # Subtraction: order by EVALUATED value (left >= right) and reject equal
+        # (result 0 is trivial). Swapping the operand POSITIONS is arrangement,
+        # not mutation of a built node.
+        if operator_record.get("result_constraint") == "non_negative":
+            if left_value < right_value:
+                left, right = right, left
+                left_value, right_value = right_value, left_value
+            if left_value == right_value:
+                continue
+
+        # Forbidden-identity lifted to VALUE for + (forbid 0) and * (forbid
+        # 0 and 1): a * (subtree evaluating to 1) is the trivial identity.
+        forbidden = operator_record["forbid_identity"]
+        if left_value in forbidden or right_value in forbidden:
+            continue
+
+        return {"op": symbol, "left": left, "right": right}
+
+
 def generate_expression(
     enabled_symbols: list[str] | None = None,
 ) -> dict:
-    """Generate a single-operator arithmetic expression tree.
+    """Generate an arithmetic expression tree, possibly nested (#5).
 
-    Picks one operator at random from enabled_symbols (defaulting to
-    CONFIG.OPERATOR_SYMBOLS), generates a valid operand pair for it, and
-    returns an expression tree node. v1 generates flat single-operator
-    expressions (two int leaves); the tree shape supports nesting for a
-    future enhancement without changing the evaluator or renderer.
+    Picks operators at random from enabled_symbols (defaulting to the module
+    OPERATOR_SYMBOLS) and builds a tree bottom-up via build_subtree, bounded by
+    the module constant _MAX_OPERATOR_DEPTH. Composable operators (+ - *) may
+    have subtree children; leaf-only operators (/ % ^) keep integer leaves.
+    _MAX_OPERATOR_DEPTH == 1 reproduces the flat #4 generator exactly; the
+    default (2) permits one level of nesting. The signature is unchanged from
+    #4: nesting is internal behavior governed by module config, exactly as the
+    operator set is -- no depth parameter is threaded (a difficulty caller in #2
+    will add one). The tree shape feeds evaluate_expression and render_expression
+    unchanged; the rendered string is what gets stored in responses.question_text.
     """
     # Distinguish "omitted" (None -> use the default set) from "given but
     # empty" ([] -> an error). Treating [] as falsy and silently falling back
@@ -1435,10 +1581,7 @@ def generate_expression(
             "generate_expression got unknown operator symbols: "
             + ", ".join(repr(symbol) for symbol in unknown)
         )
-    symbol = random.choice(symbols)
-    operator_record = OPERATORS[symbol]
-    left_value, right_value = operator_record["operand_strategy"](operator_record)
-    return {"op": symbol, "left": left_value, "right": right_value}
+    return build_subtree(symbols, _MAX_OPERATOR_DEPTH)
 
 
 def evaluate_expression(node: dict | int) -> int:
