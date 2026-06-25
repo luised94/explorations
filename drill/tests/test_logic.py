@@ -457,6 +457,33 @@ def test_result_ceiling_too_low_raises(m):
 
 
 # --------------------------------------------------------------------------
+# question_text length regression guard -- C-D5e
+# responses.question_text is TEXT NOT NULL (unbounded in SQLite), so nesting
+# violates no schema constraint; this guard is a SANITY bound, not a storage
+# limit. A generated max-depth arithmetic question_text must stay well under a
+# few hundred chars. It catches a renderer/generator regression that blows up
+# output (runaway depth, pathological over-parenthesizing) and doubles as a
+# guard if _MAX_OPERATOR_DEPTH is later cranked high. At the provisional
+# defaults the longest observed output is ~20 chars; 400 is generous headroom.
+# --------------------------------------------------------------------------
+_QUESTION_TEXT_LENGTH_BOUND = 400
+
+
+def test_question_text_stays_under_length_bound(m):
+    import random
+
+    random.seed(404)
+    longest = 0
+    for _ in range(2000):
+        node = m.generate_expression()
+        text = m.render_expression(node)
+        longest = max(longest, len(text))
+        assert len(text) < _QUESTION_TEXT_LENGTH_BOUND, (len(text), text)
+    # the longest sample should be comfortably under the bound, not skating it
+    assert longest < _QUESTION_TEXT_LENGTH_BOUND // 2
+
+
+# --------------------------------------------------------------------------
 # operator-record declarative fields -- C-D5a (#5 nesting groundwork)
 # nestable / precedence / associativity are now REQUIRED record keys validated
 # by _build_operator_table. Assert they are present and well-typed for every
