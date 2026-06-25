@@ -1721,20 +1721,43 @@ config (shape C, with the per-operator correction the code forced).
   AVERAGE WITHIN a mix; it is a heuristic over structural features, NOT a
   validated measure of cognitive load, and NOT a cardinal scale comparable across
   mixes. State this in user-facing framing and in #7's consumer.
-- [OPEN -- CRITICAL, decide before C-D2i] ?operators= and ?difficulty= are
-  ORTHOGONAL query params: the user can request any (mix, rung) pair, including
-  division-only at the top rung (where only magnitude moves). The rung number is
-  therefore NOT comparable across operator mixes, yet the per-difficulty stats
-  breakdown (C-D2i) groups arithmetic responses by rung regardless of the mix
-  that was served. Grouping by rung silently compares incomparable buckets (easy
-  all-ops rung 3 vs hard division-only rung 3). RESOLVE before building C-D2i.
-  RECOMMENDED: group the breakdown by leaf_count (the comparable structural fact
-  -- this is precisely why leaf_count is stored, ADR-040), not by rung; OR scope
-  the breakdown to a fixed mix; OR label it explicitly "rung as dialed, not
-  comparable across operator sets." Option (a) makes the stored-fact decision pay
-  off immediately, not only for #7. This is the L6/domain objection resurfacing
-  at the storage+display layer, where ADR-038's generation-layer fix did not
-  reach.
+- [DECIDED -- S11, resolved before C-D2i] the per-difficulty breakdown GROUPS BY
+  leaf_count, NOT by rung. ?operators= and ?difficulty= are ORTHOGONAL query
+  params: the user can request any (mix, rung) pair, including division-only at
+  the top rung (where leaf_count is pinned at 2 and only magnitude moves). The
+  rung number is therefore NOT comparable across operator mixes, yet C-D2i
+  aggregates arithmetic responses regardless of the mix served. Grouping by rung
+  would silently compare incomparable buckets (easy all-ops rung 3 vs hard
+  division-only rung 3). leaf_count is the comparable structural fact across
+  mixes -- which is precisely why it is stored (ADR-040) -- so grouping by it
+  makes the stored-fact decision pay off immediately, not only for #7. This is
+  the L6/domain objection resurfacing at the storage+display layer, where
+  ADR-038's generation-layer fix (per-mix property tests) did not reach.
+- [ALTERNATIVES CONSIDERED -- recorded, not chosen]
+    (A) FIXED-MIX SCOPING: show the breakdown only for a single chosen operator
+        mix, so rung is comparable within it. Cleanest comparability and lets the
+        breakdown legitimately key on rung. Rejected as the default because it
+        forces the user to pick a mix to see any difficulty stats and hides
+        cross-mix practice entirely; it is strictly NARROWER than leaf_count
+        grouping, which already shows everything and stays comparable. Kept as a
+        future drill-down (a mix filter layered on top), not the v1 surface.
+    (B) RUNG-WITH-DISCLAIMER: group by rung and label the section "rung as
+        dialed, not comparable across operator sets." Most legible as a learning
+        curve when the user drills ONE mix at a time (rung 1: 95% ... rung 4:
+        60% reads directly), and rung is the human-facing label. Rejected as the
+        default because the disclaimer invites exactly the misreading it warns
+        against, and the legibility win only holds for single-mix usage we cannot
+        assume. Note: if real usage turns out to be single-mix-dominant, (B) is
+        the better display -- see the switchability note in ADR-041, which is why
+        the grouping key is built as a swappable pure parameter, not hardcoded.
+- [KNOWN LIMITATION of the chosen key] leaf_count is comparable across mixes but
+  is NOT itself a complete difficulty cardinal: every leaf-only mix collapses to
+  a single leaf_count==2 bucket, so all division/modulo/exponent practice (which
+  differ in real difficulty and in magnitude) shares one row. leaf_count grouping
+  is LESS WRONG than rung, not fully right. The magnitude axis that distinguishes
+  leaf-only operators is captured in the per-operator ranges (ADR-039) and in #7's
+  richer analysis, not in this v1 text breakdown. Documented so a reader does not
+  over-read the single "2 leaves" row.
 
 ADR-039: Q2 x Q3 feasible-region resolution -- per-operator range scaling plus a
 difficulty-scaled result ceiling, jointly proven satisfiable.
@@ -1793,9 +1816,57 @@ ADR-041: the per-difficulty stats breakdown as the real Q5 consumer.
 - [DECIDED -- live vs durable] this is a DURABLE-history view (summarize_stats /
   the stats panel), NOT the live in-session stats bar; the two never share a
   render path (existing convention).
-- [CROSS-REF] the grouping KEY (rung vs leaf_count) is gated by ADR-038's
-  [OPEN -- CRITICAL] item. Resolve that first; the recommended answer (group by
-  leaf_count) makes this breakdown comparable across operator mixes.
+- [CROSS-REF] the grouping KEY (rung vs leaf_count) WAS gated by ADR-038's
+  [OPEN -- CRITICAL] item; now RESOLVED there: group by leaf_count. This
+  breakdown is comparable across operator mixes as a result.
+- [DECIDED -- swappable key seam, so the S11 choice is cheap to revisit] the
+  grouping policy is passed to breakdown_by as PURE PARAMETERS, never hardcoded
+  inside it. Signature:
+      breakdown_by(rows, key_of, label_of, *, include_row=None) -> list[dict]
+  where key_of(row) returns the bucket key (hashable), label_of(row) returns the
+  human label for that key, and the optional include_row(row) predicate filters
+  which rows participate (used to scope the difficulty breakdown to arithmetic
+  rows only). breakdown_by owns ONLY the group/count/accuracy/sort mechanics; the
+  three callables ARE the policy. The category breakdown is then
+      breakdown_by(rows, key_of=lambda r: r["category_id"],
+                          label_of=lambda r: r["category_name"])
+  and the difficulty breakdown is
+      breakdown_by(rows, key_of=lambda r: r["leaf_count"],
+                          label_of=lambda r: str(r["leaf_count"]) + " leaves",
+                          include_row=lambda r: r["category_name"] == "arithmetic"
+                                                and r["leaf_count"] is not None)
+  Because the key is a callable argument, switching S11's decision later is a
+  ONE-LINE change at the call site (swap key_of/label_of), with ZERO change to
+  breakdown_by, to summarize_stats's structure, or to the category-path tests.
+  This mirrors the operator-table pattern (policy as data/callables consumed by a
+  pure mechanism). breakdown_by stays PURE (no IO, no clock, deterministic sort),
+  so it is independently unit-testable and a future caller (#7 adaptive
+  selection, a CLI report, an export) can reuse it with its own key without
+  touching the stats path.
+- [SWITCHABILITY MEASUREMENT -- what each alternative would cost AFTER C-D2i ships
+  with the seam above]
+    -> switch to RUNG-WITH-DISCLAIMER (alt B): change key_of to r["difficulty"]
+       and label_of to "rung " + str(...); add a static disclaimer line in the
+       renderer. Backend: ~2 lines at the call site + 1 render string. Tests: the
+       difficulty-breakdown test expectations change; category tests untouched.
+       No migration (both columns already stored, ADR-040). Est. one small commit.
+    -> switch to FIXED-MIX SCOPING (alt A): key_of stays leaf_count or becomes
+       rung; add a mix selector to the stats request (a new optional query param
+       threaded HTTP -> get_responses_for_stats as an extra filter, or filter in
+       include_row if the served mix is recorded). This one is HEAVIER because the
+       served operator-mix is NOT currently stored on responses -- only difficulty
+       and leaf_count are (ADR-040). Fixed-mix scoping by the EXACT served mix
+       would need either a third migration (responses.operator_set) or to infer
+       the mix from question_text (fragile). So alt A is the only alternative that
+       is NOT a pure-seam swap; it is a schema-touching feature. Recorded here so
+       the cost asymmetry is explicit: leaf_count vs rung is a 1-line swap;
+       fixed-mix is a migration. This asymmetry is itself a reason to default to
+       leaf_count now (keeps the cheap swaps cheap; defers the expensive one until
+       a real need).
+- [NOTE] storing the served operator-mix is deliberately NOT done in #2 (no
+  consumer yet; alt A is not chosen). If a future thread wants per-mix difficulty
+  analysis, that is the migration to add THEN, with its consumer -- same
+  build-the-consumer-with-the-column discipline that opened ADR-040.
 
 ADR-037 DOOR DISPOSITION (as #2 opens them):
 - [CLOSED] D1 (depth as a parameter) -- opened in C-D2b (threaded into
