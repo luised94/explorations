@@ -171,3 +171,89 @@ def test_depth_one_reproduces_flat(symbols):
         assert isinstance(node["right"], int)
     finally:
         _M._MAX_OPERATOR_DEPTH = original
+
+
+# --- C-D2a: leaf_count atom + DIFFICULTY_RUNGS shape -------------------------
+# This commit DEFINES the difficulty atom and the rung-table shape; it does NOT
+# thread anything into the generator yet (that is C-D2b). So these tests pin the
+# pure leaf_count metric and the table's internal consistency, independent of
+# any generation behavior.
+
+
+def test_leaf_count_on_hand_built_trees():
+    # A leaf is 1; a flat node is 2; each nesting level adds the child's leaves.
+    assert _M.leaf_count(7) == 1
+    assert _M.leaf_count({"op": "+", "left": 3, "right": 4}) == 2
+    # depth-2 sum: one operand is itself a flat node -> 3 leaves
+    depth_two = {"op": "+", "left": {"op": "*", "left": 2, "right": 3}, "right": 5}
+    assert _M.leaf_count(depth_two) == 3
+    # both operands nested -> 4 leaves
+    both_nested = {
+        "op": "-",
+        "left": {"op": "+", "left": 1, "right": 2},
+        "right": {"op": "*", "left": 3, "right": 4},
+    }
+    assert _M.leaf_count(both_nested) == 4
+
+
+def test_leaf_count_independent_of_operator_depth_metric():
+    # leaf_count is a function of SHAPE, not of the operator_depth metric: two
+    # trees with the SAME leaf_count can have DIFFERENT operator_depth, and vice
+    # versa. This pins that leaf_count is its own axis (handoff: leaf_count is the
+    # coordination feature, depth is a separate structural knob).
+    # Same leaf_count (3), different depth:
+    balanced_three = {"op": "+", "left": {"op": "*", "left": 2, "right": 3}, "right": 5}
+    # A right-leaning chain also reaching 3 leaves but deeper would need depth 3;
+    # construct one explicitly.
+    chain_three = {
+        "op": "+",
+        "left": 1,
+        "right": {"op": "+", "left": 2, "right": {"op": "+", "left": 3, "right": 4}},
+    }
+    assert _M.leaf_count(balanced_three) == 3
+    assert _M.leaf_count(chain_three) == 4  # different shape -> different count
+    assert _operator_depth(balanced_three) == 2
+    assert _operator_depth(chain_three) == 3
+
+
+def test_leaf_count_rejects_malformed_node():
+    with pytest.raises(ValueError):
+        _M.leaf_count({"left": 1, "right": 2})  # no "op" key
+
+
+def test_difficulty_rungs_labels_ascending_gapfree():
+    labels = [rung["rung"] for rung in _M.DIFFICULTY_RUNGS]
+    assert labels == list(range(1, len(_M.DIFFICULTY_RUNGS) + 1))
+
+
+def test_difficulty_rungs_reference_only_real_operators():
+    # Every operator named in any rung's operator_ranges must be a real operator
+    # with a record in the built OPERATORS table.
+    for rung in _M.DIFFICULTY_RUNGS:
+        for symbol in rung["operator_ranges"]:
+            assert symbol in _M.OPERATORS, (rung["rung"], symbol)
+
+
+def test_difficulty_rungs_field_shape_per_operator():
+    # A rung may only scale range fields the operator's strategy actually reads:
+    # operand_min/max for all; divisor_min/max only for %; exponent_min/max only
+    # for ^. (This mirrors the import-time guard, asserted here for visibility.)
+    allowed = {
+        "+": {"operand_min", "operand_max"},
+        "-": {"operand_min", "operand_max"},
+        "*": {"operand_min", "operand_max"},
+        "/": {"operand_min", "operand_max"},
+        "%": {"operand_min", "operand_max", "divisor_min", "divisor_max"},
+        "^": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+    }
+    for rung in _M.DIFFICULTY_RUNGS:
+        for symbol, ranges in rung["operator_ranges"].items():
+            assert set(ranges.keys()) <= allowed[symbol], (rung["rung"], symbol)
+
+
+def test_difficulty_rungs_scalar_fields_well_formed():
+    for rung in _M.DIFFICULTY_RUNGS:
+        assert isinstance(rung["operator_depth"], int) and rung["operator_depth"] >= 1
+        assert 0.0 <= rung["recurse_probability"] <= 1.0
+        ceiling = rung["max_result_value"]
+        assert ceiling is None or (isinstance(ceiling, int) and ceiling > 0)

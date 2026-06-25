@@ -412,9 +412,7 @@ def resolve_prefix(records: list[dict], search_prefix: str):
     Replaces three copy-pasted resolve blocks in done/retire/edit.
     """
     matches = [
-        record
-        for record in records
-        if record.get("id", "").startswith(search_prefix)
+        record for record in records if record.get("id", "").startswith(search_prefix)
     ]
     if len(matches) == 0:
         return ("not_found",)
@@ -435,7 +433,9 @@ def resolution_error(tag_tuple, search_prefix: str) -> dict:
 # ============================================================================
 # DATA UTILITIES  (pure)
 # ============================================================================
-def generate_id(type_prefix: str, existing_record_ids: list[str], today: date) -> str | None:
+def generate_id(
+    type_prefix: str, existing_record_ids: list[str], today: date
+) -> str | None:
     """Generate the next available ID for a given type prefix and date.
 
     Reads existing_record_ids to find used suffixes for this prefix + date
@@ -1084,9 +1084,7 @@ def transform_edit_prepare(store: dict, arguments: list[str]) -> dict:
     return effects
 
 
-def apply_edit(
-    store: dict, original_id: str, edited_text: str, clock: dict
-) -> dict:
+def apply_edit(store: dict, original_id: str, edited_text: str, clock: dict) -> dict:
     """Validate edited record text and splice it back into the Store. Pure.
 
     Rules: exactly one record; ID unchanged; updated refreshed to today.
@@ -1583,7 +1581,9 @@ def verify_units() -> int:
         if condition:
             print(f"unit: {label} {'.' * max(1, 47 - len(label))} ok")
         else:
-            print(f"unit: {label} {'.' * max(1, 47 - len(label))} FAIL", file=sys.stderr)
+            print(
+                f"unit: {label} {'.' * max(1, 47 - len(label))} FAIL", file=sys.stderr
+            )
             if detail:
                 print(f"  {detail}", file=sys.stderr)
             failures += 1
@@ -1631,7 +1631,9 @@ def verify_units() -> int:
 
     # habit_streak: today counted, gap breaks, empty log
     log = [("2026-06-07", "H1"), ("2026-06-08", "H1"), ("2026-06-09", "H1")]
-    check("streak counts through today", habit_streak("H1", log, fixed_day) == (True, 3))
+    check(
+        "streak counts through today", habit_streak("H1", log, fixed_day) == (True, 3)
+    )
     log = [("2026-06-06", "H1"), ("2026-06-08", "H1")]
     check(
         "streak broken by gap counts back from yesterday",
@@ -1649,14 +1651,18 @@ def verify_units() -> int:
         "partition: retired beats E-prefix",
         partition_file({"id": "E1", "status": "retired"}) == "done",
     )
-    check("partition: event", partition_file({"id": "E1", "status": "active"}) == "calendar")
+    check(
+        "partition: event",
+        partition_file({"id": "E1", "status": "active"}) == "calendar",
+    )
     check("partition: default active", partition_file({"id": "T1"}) == "active")
 
     # parse_iso_date: real, fake, garbage, None
     check("parse_iso_date valid", parse_iso_date("2026-02-28") == date(2026, 2, 28))
     check(
         "parse_iso_date rejects impossible date",
-        parse_iso_date("2026-02-30") is None and parse_iso_date("nope") is None
+        parse_iso_date("2026-02-30") is None
+        and parse_iso_date("nope") is None
         and parse_iso_date(None) is None,
     )
 
@@ -1686,7 +1692,9 @@ def verify_store() -> int:
         if condition:
             print(f"store: {label} {'.' * max(1, 46 - len(label))} ok")
         else:
-            print(f"store: {label} {'.' * max(1, 46 - len(label))} FAIL", file=sys.stderr)
+            print(
+                f"store: {label} {'.' * max(1, 46 - len(label))} FAIL", file=sys.stderr
+            )
             if detail:
                 print(f"  {detail}", file=sys.stderr)
             failures += 1
@@ -1704,12 +1712,22 @@ def verify_store() -> int:
         # commit -> load round trip with repartitioning
         store = {
             "active": [
-                {"id": "T0609a", "type": "task", "summary": "alpha", "status": "active"},
+                {
+                    "id": "T0609a",
+                    "type": "task",
+                    "summary": "alpha",
+                    "status": "active",
+                },
                 # misplaced on purpose: status says done, bucket says active
                 {"id": "T0609b", "type": "task", "summary": "beta", "status": "done"},
             ],
             "calendar": [
-                {"id": "E0609a", "type": "meeting", "summary": "sync", "date": "2026-06-09"},
+                {
+                    "id": "E0609a",
+                    "type": "meeting",
+                    "summary": "sync",
+                    "date": "2026-06-09",
+                },
             ],
             "done": [],
             "habit_log": [("2026-06-09", "H0609a")],
@@ -1727,15 +1745,21 @@ def verify_store() -> int:
             loaded["active"][0] == store["active"][0],
             f"loaded={loaded['active'][0]}",
         )
-        check("habit log round-trips", loaded["habit_log"] == [("2026-06-09", "H0609a")])
+        check(
+            "habit log round-trips", loaded["habit_log"] == [("2026-06-09", "H0609a")]
+        )
 
         # idempotence: committing what was loaded changes nothing
         commit(loaded, paths)
         check("commit is idempotent on its own output", load_store(paths) == loaded)
 
         # no temp droppings left behind
-        leftovers = [p.name for p in Path(temp_dir).iterdir() if p.name.endswith(".tmp")]
-        check("atomic writes leave no .tmp files", leftovers == [], f"found {leftovers}")
+        leftovers = [
+            p.name for p in Path(temp_dir).iterdir() if p.name.endswith(".tmp")
+        ]
+        check(
+            "atomic writes leave no .tmp files", leftovers == [], f"found {leftovers}"
+        )
 
         # malformed habit log lines are skipped, not fatal
         paths["habit_log"].write_text(
@@ -1814,7 +1838,10 @@ def verify_transforms() -> int:
         if condition:
             print(f"transform: {label} {'.' * max(1, 42 - len(label))} ok")
         else:
-            print(f"transform: {label} {'.' * max(1, 42 - len(label))} FAIL", file=sys.stderr)
+            print(
+                f"transform: {label} {'.' * max(1, 42 - len(label))} FAIL",
+                file=sys.stderr,
+            )
             if detail:
                 print(f"  {detail}", file=sys.stderr)
             failures += 1
@@ -2077,8 +2104,16 @@ def verify_transforms() -> int:
     store = make_store()
     check(
         "add: malformed --time rejected",
-        transform_add(store, ["event", "x", "--date", "2026-06-10", "--time", "25:00-26:00"], fixed_clock)["exit"] == 1
-        and transform_add(store, ["event", "x", "--date", "2026-06-10", "--time", "0900"], fixed_clock)["exit"] == 1,
+        transform_add(
+            store,
+            ["event", "x", "--date", "2026-06-10", "--time", "25:00-26:00"],
+            fixed_clock,
+        )["exit"]
+        == 1
+        and transform_add(
+            store, ["event", "x", "--date", "2026-06-10", "--time", "0900"], fixed_clock
+        )["exit"]
+        == 1,
     )
 
     # empty store: views degrade gracefully
@@ -2156,7 +2191,9 @@ def log_usage(logged_command: str, primary_arg: str, elapsed: float, exit_code) 
     log_timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     # SystemExit.code may be None (success) or a string (message); normalize.
     outcome = "ok" if (exit_code == 0 or exit_code is None) else "error"
-    log_line = f"{log_timestamp} {logged_command} {primary_arg} {elapsed:.2f}s {outcome}\n"
+    log_line = (
+        f"{log_timestamp} {logged_command} {primary_arg} {elapsed:.2f}s {outcome}\n"
+    )
     try:
         with open(USAGE_LOG_FILE, "a", encoding="utf-8") as usage_log:
             usage_log.write(log_line)
@@ -2239,9 +2276,7 @@ def main(argv: list[str]) -> int:
                     print(line)
                 edited_text = run_editor_session(prepared["editor"]["text"])
                 if edited_text is None:
-                    print(
-                        "edit discarded: editor exited with error", file=sys.stderr
-                    )
+                    print("edit discarded: editor exited with error", file=sys.stderr)
                     exit_code = 1
                 else:
                     exit_code = execute_effects(

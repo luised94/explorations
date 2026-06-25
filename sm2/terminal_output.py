@@ -450,9 +450,7 @@ def format_metadata_inline(pairs: list[tuple[str, str]]) -> str:
     return " ".join(format_label(name, value) for name, value in pairs)
 
 
-def format_tree(
-    nodes: list[tuple[str, str, str | None]], current: str | None = None
-) -> str:
+def format_tree(nodes: list[tuple[str, str, str | None]], current: str | None = None) -> str:
     """Render a parent/child node list as an indented ASCII tree.
 
     Supports the Phase-2 branching view (see workbench): each node is
