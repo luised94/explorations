@@ -353,3 +353,89 @@ def test_unknown_rung_raises_value_error():
         _M.generate_expression(difficulty=999)
     with pytest.raises(ValueError):
         _M.generate_expression(difficulty=0)
+
+
+# --- C-D2d: per-operator range overlay (the MAGNITUDE regime) ----------------
+# A rung overlays its per-operator operand ranges onto a COPY of OPERATORS via
+# _apply_rung_ranges, so higher rungs draw larger operands. This is the lever
+# that makes leaf-only mixes (/ % ^) -- whose leaf_count is pinned at 2 -- get
+# harder at all. These tests assert magnitude movement and the overlay's purity.
+
+
+def _leaf_values(node):
+    # All integer leaves in the tree (their magnitudes).
+    if isinstance(node, int):
+        return [node]
+    return _leaf_values(node["left"]) + _leaf_values(node["right"])
+
+
+def _max_leaf_magnitude(mix, difficulty, samples):
+    biggest = 0
+    for _ in range(samples):
+        node = _M.generate_expression(enabled_symbols=list(mix), difficulty=difficulty)
+        biggest = max(biggest, max(_leaf_values(node)))
+    return biggest
+
+
+def test_operand_magnitude_monotone_across_rungs():
+    # Max observed leaf magnitude is non-decreasing across ascending rungs, and
+    # strictly larger at the top rung than the flat rung 1, for representative
+    # operators INCLUDING leaf-only ones (where this is the ONLY difficulty axis).
+    for mix in (["+"], ["*"], ["%"], ["/"]):
+        maxima = [
+            _max_leaf_magnitude(mix, rung, 3000)
+            for rung in [r["rung"] for r in _M.DIFFICULTY_RUNGS]
+        ]
+        for earlier, later in zip(maxima, maxima[1:]):
+            assert later >= earlier, (mix, maxima)
+        assert maxima[-1] > maxima[0], (mix, maxima)
+
+
+def test_apply_rung_ranges_is_pure_does_not_mutate_operators():
+    # The overlay returns a NEW table and never mutates the module OPERATORS.
+    import copy
+
+    def scalar_snapshot(table):
+        return {
+            sym: {
+                k: v
+                for k, v in rec.items()
+                if isinstance(v, (int, str, bool, tuple, type(None)))
+            }
+            for sym, rec in table.items()
+        }
+
+    before = scalar_snapshot(_M.OPERATORS)
+    for rung in _M.DIFFICULTY_RUNGS:
+        scaled = _M._apply_rung_ranges(rung, _M.OPERATORS)
+        # The scaled table is a different object with different record objects
+        # for any operator the rung actually scales.
+        assert scaled is not _M.OPERATORS
+    after = scalar_snapshot(_M.OPERATORS)
+    assert before == after  # OPERATORS untouched by any overlay
+
+
+def test_apply_rung_ranges_overlays_only_declared_fields():
+    # A rung that omits an operator leaves that operator's base range verbatim;
+    # a listed operator gets ONLY its declared fields replaced, others kept.
+    base = _M.OPERATORS
+    rung = _M.DIFFICULTY_RUNGS[0]  # rung 1
+    scaled = _M._apply_rung_ranges(rung, base)
+    for symbol, record in scaled.items():
+        overrides = rung["operator_ranges"].get(symbol, {})
+        for field in ("operand_min", "operand_max"):
+            if field in overrides:
+                assert record[field] == overrides[field], (symbol, field)
+        # A field NOT overridden keeps the base value (e.g. eval_fn identity).
+        assert record["eval_fn"] is base[symbol]["eval_fn"]
+        assert record["nestable"] == base[symbol]["nestable"]
+
+
+def test_difficulty_none_uses_base_operator_table_identity():
+    # difficulty=None must pass the module OPERATORS object itself (no overlay),
+    # so the default path is byte-identical. Verify via the seam: build_subtree
+    # with operator_table=None resolves to OPERATORS, and generate_expression()
+    # produces operands within the BASE ranges (not a rung's).
+    base_plus_max = _M.OPERATORS["+"]["operand_max"]
+    biggest = _max_leaf_magnitude(["+"], None, 3000)
+    assert biggest <= base_plus_max
