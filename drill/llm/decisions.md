@@ -1508,3 +1508,186 @@ associativity open for #5.
   associativity wrong. render_expression currently parenthesizes any nested dict
   operand unconditionally (safe but over-parenthesizing); precedence-aware
   parenthesization is the #5 subtlety. Flagged, not fixed here.
+- [CLOSED in #5] Exponent right-associativity is now represented and handled:
+  the "^" record carries associativity "right" and precedence 3, and
+  render_expression's precedence/associativity rule wraps a same-tier child on
+  the associativity-wrong side (the LEFT child of a right-associative parent),
+  so (2 ^ 3) ^ 2 keeps parens while 2 ^ 3 ^ 2 (the right-associative reading)
+  drops them. The "over-parenthesizing" renderer this note describes was
+  replaced. See ADR-033. The generator never BUILDS a ^ with subtree children
+  (^ is leaf-only, ADR-032), so the right-associative case is renderer-reachable
+  only via hand-built trees; the renderer is correct on them regardless.
+
+================================================================================
+## #5  Nested expression trees (the #5 design thread)
+================================================================================
+
+ADR-032: bottom-up construction + the composable / leaf-only split. UPHOLDS
+ADR-027 (records) and ADR-007 (ranges/identities as data); does not contradict
+either.
+- [DECIDED] generate_expression builds trees BOTTOM-UP via an internal helper
+  build_subtree(symbols, remaining_depth): each child is built first, so its
+  integer VALUE is known before the parent operator is chosen or its sibling
+  derived. The parent is chosen/derived to fit the children; a built subtree is
+  NEVER mutated to fit a parent. On a constraint failure the node redraws. This
+  keeps generation a pure transformation -- the only impurity is random.*,
+  identical to the flat #4 generator.
+- [DECIDED] Operators split by ONE declared boolean field on the record,
+  nestable: bool. COMPOSABLE (nestable True: + - *) MAY have subtree children.
+  LEAF-ONLY (nestable False: / % ^) keep integer leaves as their operands.
+- [PRECISE READING -- the most misread point] nestable governs whether an
+  operator may have subtree CHILDREN. It does NOT govern whether an operator's
+  node may itself BE a child. A / % ^ node IS a valid subtree child of a
+  composable parent: (a / b) * c is reachable (the / node is a child of *);
+  a * (b / c) is reachable (renderer parenthesizes the right child); a / (b * c)
+  and 2 ^ (a + b) are NOT reachable (the / and ^ operands stay leaves). These
+  trees are unreachable because the GENERATOR never builds them, not because the
+  renderer cannot print them -- the renderer is total over all well-formed trees
+  (ADR-033), which is what lets #2 widen generation with zero renderer change.
+- [RATIONALE for the split] / % ^ DERIVE one operand from another (division:
+  dividend = divisor * quotient; exponent: narrow power range; modulo: divisor
+  >= 2). A subtree in a derived position would force "derive a compatible
+  sibling from a fixed subtree value" -- sparse-factor failure for division, a
+  magnitude blowup for exponent. + - * have no cross-operand value dependency,
+  so a subtree value slots in cleanly.
+- [DECIDED -- constraint lifting, composable operators only] a constraint stated
+  over leaves generalizes to the same check against evaluate_expression(child):
+  + forbids operand VALUE 0; * forbids VALUES 0 and 1 (a * subtree-evaluating-
+  to-1 is the trivial identity and is rejected); subtraction orders operands by
+  EVALUATED value (left_value >= right_value) and rejects equal values (result 0
+  is trivial). Bottom-up means the child value is already in hand, so the check
+  is cheap and pure. Swapping operand POSITIONS for subtraction is arrangement,
+  not mutation of a built node.
+- [DECIDED -- leaf-only operators keep leaf-based generation UNCHANGED] their
+  invariants remain statements about LEAVES (divisor >= 2, derived quotient,
+  exponent power range). They are NOT lifted to values. A blanket evaluate-and-
+  recheck would corrupt them; the property test dispatches per operator (value
+  for + - *, leaf for / % ^) rather than rechecking uniformly. The composable
+  leaf ranges start above their forbidden values (+ - from 1, * from 2), so a
+  leaf never self-violates; the value check only ever rejects a SUBTREE operand.
+
+ADR-033: precedence + associativity REPRESENTED on the record; the renderer is
+the sole owner of correct printing. Closes ADR-031's exponent item.
+- [DECIDED] Precedence is an explicit integer tier per record, compared with <:
+  + - => 1, * / % => 2, ^ => 3. NOT computed, NOT inferred from list position,
+  NOT a categorical string. Associativity is a declared field: + - * / % "left",
+  ^ "right". This follows the ADR-027 "declared, cannot silently inherit the
+  wrong meaning" pattern.
+- [DECIDED -- the render rule (~8 lines)] when rendering an internal node, wrap
+  a child IFF the child is an internal node AND (child.precedence <
+  parent.precedence) OR (child.precedence == parent.precedence AND the child is
+  on the associativity-WRONG side: the right child of a left-associative parent,
+  or the left child of a right-associative parent). The #4 renderer was the
+  degenerate "wrap every internal child" (keyed on isinstance(child, dict));
+  it was replaced.
+- [WHY CORRECT-CRITICAL] the rendered string IS the question; the answer is
+  computed from the TREE structure (evaluate_expression never consults
+  precedence -- the tree shape is the grouping). The renderer must emit a string
+  that, read under standard precedence/associativity, parses back to THAT tree.
+  A mismatch silently makes the displayed question and the stored answer
+  disagree. Tested exhaustively with HAND-BUILT trees (decoupled from generator
+  output), table-driven over operator-pair x nested-side with exact-string
+  assertions, covering the same-tier traps (a - (b - c) keeps, a - b + c drops,
+  a / b * c drops, a * (b / c) keeps, (a + b) * c keeps, 2 ^ 3 ^ 2 drops vs
+  (2 ^ 3) ^ 2 keeps).
+- [CLOSED] ADR-031's open exponent right-associativity item: ^ is right-
+  associative, represented on the record, handled by the render rule above.
+
+ADR-034: depth is the knob, as a MODULE CONSTANT, and is STRUCTURAL not
+difficulty. Consensus of adversarial Lenses 3 + 4 (write the concrete caller
+first; ADR-028 spirit).
+- [DECIDED] Size is controlled by OPERATOR DEPTH: operator_depth(leaf) = 0,
+  operator_depth(internal) = 1 + max(left, right). A flat single-operator node
+  has depth 1; (a+b)*c has 2. The knob is the module constant _MAX_OPERATOR_DEPTH
+  (>= 1). _MAX_OPERATOR_DEPTH == 1 reproduces the flat #4 generator EXACTLY (an
+  assertable property, tested). Provisional default 2.
+- [DECIDED] Shape control: at each operand position of a composable node with
+  budget remaining, an INDEPENDENT per-operand Bernoulli "subtree or leaf?" with
+  probability _RECURSE_PROBABILITY (a single scalar in [0,1], provisional default
+  0.5; the two operands flip independently and do NOT form a distribution).
+  p == 0 reproduces flat generation; p == 1 recurses until the depth floor forces
+  leaves.
+- [DECIDED -- NOT a function parameter] _MAX_OPERATOR_DEPTH is a module constant,
+  not a parameter on generate_expression. The single caller (the arithmetic
+  endpoint) is generate_expression(enabled_symbols); nothing varies depth. A
+  parameter with only a default and no caller is the speculative interface
+  ADR-028 warns against. #2 (difficulty) adds the parameter TOGETHER WITH its
+  real caller. generate_expression's public signature is UNCHANGED from #4.
+- [DOMAIN NOTE] depth is a STRUCTURAL parameter, ONE input among several #2 will
+  weigh (operator mix, operand magnitude, depth), explicitly NOT a difficulty
+  score: 2 + 3 + 4 (depth 2) is easier than 7 * 8 (depth 1). depth != difficulty.
+
+ADR-035: optional global result ceiling, shipped DARK (default OFF) as a
+difficulty knob, with a LOCAL feasibility check. Resolves Q4's residual.
+- [DECIDED] _MAX_RESULT_VALUE is a module constant, default None == OFF, making
+  the feasibility check a no-op (behavior identical to the no-ceiling generator).
+  The MECHANISM ships even though the default is off so #2 can flip a value with
+  zero plumbing.
+- [DECIDED -- local check, not whole-tree reject] because construction is
+  bottom-up, when assembling a node both child VALUES are in hand, so check
+  value(left) <op> value(right) <= ceiling BEFORE committing the node; on failure
+  redraw the OPERAND (or pick a different operator), not the whole tree. This
+  co-locates the cost away from the worst case (a root-level whole-tree reject
+  discards the most work exactly when trees are largest). NO backtracking /
+  subtree-memoization -- it adds state and fights purity; the local check already
+  gets the win. Each redraw counts against _MAX_GENERATION_ATTEMPTS.
+- [PRECISE READING] the ceiling bounds node RESULTS (value(left) op value(right)),
+  NOT input-leaf magnitudes. Division derives a dividend (divisor * quotient)
+  that can exceed the ceiling while the quotient RESULT stays under it; that is
+  correct and intended. A leaf is an input, not a result.
+- [NOTE] Q4 (exponent magnitude) mostly dissolves under the leaf-only rule: ^ is
+  leaf-only, so no subtree feeds its base or power; the #4 ceiling (base 2..12,
+  power 2..3, max 12**3 = 1728) stands unchanged. The residual -- a composable
+  operator ABOVE leaf-only nodes growing large, e.g. (2^3) * (5^2) -- is what the
+  global ceiling handles when #2 turns it on, NOT a new exponent rule.
+- [FRAMING for #2] the ceiling is a DIFFICULTY-relevant knob #2 may turn, not a
+  fixed sanity guard #2 should leave alone.
+
+ADR-036: bounded retry / fail-loud, and nondeterministic generation with no seed
+parameter.
+- [DECIDED] Bottom-up reject-and-redraw presupposes a draw eventually succeeds;
+  "redraw forever" has no termination proof and nesting compounds it. A generous
+  bounded retry, module constant _MAX_GENERATION_ATTEMPTS (default 1000), counts
+  down per redraw loop and RAISES a clear RuntimeError on exhaustion rather than
+  hanging. Hitting the ceiling is the SIGNAL of a generation bug, not a thing to
+  absorb (matches the generator's existing "fail loudly on unknown symbol"
+  stance). The property test asserts normal generation NEVER raises it (pins
+  "constraints are satisfiable in practice" as a tested property).
+- [DECIDED] Generation is intentionally NONDETERMINISTIC (determinism is a
+  property of evaluate over a fixed tree, not of generate). Production stays
+  nondeterministic; NO seed parameter is threaded (no caller needs it; single-
+  user). Tests achieve reproducibility by seeding the GLOBAL RNG (random.seed(N))
+  per the existing pattern; global-seed tests are order-sensitive if they share
+  process state.
+- [NOTE] The internal helper is build_subtree(symbols, remaining_depth) calling
+  random.* directly -- NO rng parameter (threading an rng is speculative
+  seedability, killed by the same Lens 3 reasoning as the depth parameter).
+- [INCIDENTAL] there is no CONFIG class; the generate_expression docstring's
+  reference to "CONFIG.OPERATOR_SYMBOLS" was STALE and was fixed. The new
+  constants follow the actual module-global pattern, placed beside
+  OPERATOR_SYMBOLS.
+
+ADR-037: DEFERRED doors for #2 -- convenience-not-principle. Each is a value or
+shape #5 fixed for simplicity, to be widened only when #2 has a concrete caller.
+- [RECONSIDER WHEN] per-POSITION subtree control: #5 uses one scalar
+  _RECURSE_PROBABILITY with independent per-operand flips. If #2 wants asymmetric
+  shaping (e.g. recurse left more than right, or per-operator recurse rates), it
+  widens this then -- not before.
+- [RECONSIDER WHEN] making / % ^ NESTABLE: leaf-only is a #5 simplification, not
+  a law. #2 may allow a subtree in a derived position by solving "derive a
+  compatible sibling from a fixed subtree value" (factor-aware division, range-
+  aware exponent). Flip the nestable bool then, with the derivation that makes it
+  feasible.
+- [RECONSIDER WHEN] the result ceiling DEFAULT: _MAX_RESULT_VALUE is None in #5
+  (off). #2 owns turning it on and choosing the value as a difficulty knob
+  (ADR-035).
+- [RECONSIDER WHEN] _RECURSE_PROBABILITY / _MAX_OPERATOR_DEPTH DEFAULTS (0.5 / 2):
+  provisional, like ADR-031's uniform operator sample. #2 owns the real values
+  as part of difficulty policy; a future reader should not mistake them for a
+  deliberate pedagogical choice.
+- [STILL BINDING from the #5 brief] node shape {op, left, right} with int leaves,
+  no dataclass (ADR-030, deferred to #2); operator-record design (ADR-027) --
+  new fields are ADDED to the record, not a new structure; no new operators, no
+  unary/n-ary (ADR-029); no generic per-operand-range override and a single
+  ceiling value, not per-operator (ADR-028/030); pure LOGIC only -- no clock, IO,
+  HTTP, schema, or frontend change.
