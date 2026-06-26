@@ -2652,10 +2652,23 @@ def summarize_stats(rows: list[dict]) -> dict:
                       {category_id, category_name, total, correct, accuracy},
                       ordered by descending total then category name, so the
                       most-practiced category leads
+        difficulty_breakdown -- per-leaf_count breakdown of ARITHMETIC responses
+                      that carry a leaf_count, a list of
+                      {key, label, total, correct, accuracy} where key is the
+                      leaf_count and label is "N leaves", ordered most-practiced
+                      first. Grouped by leaf_count, NOT by the rung label
+                      (ADR-038 S11): the rung is incomparable across operator
+                      mixes (a division-only rung 3 and an all-ops rung 3 differ),
+                      while leaf_count is the comparable structural fact. Empty
+                      when no arithmetic response carries a leaf_count (e.g.
+                      bank-only practice, or all responses pre-#2). The render
+                      layer decides whether to show it (single-bucket suppression
+                      is a display choice, C-D2i-3), exactly as for categories.
 
     The empty case (a fresh database, or a window/filter with no responses)
-    yields total 0, accuracy 0.0, and an empty categories list rather than a
-    division error -- the time-zero case, handled like summarize_correctness.
+    yields total 0, accuracy 0.0, an empty categories list, and an empty
+    difficulty_breakdown rather than a division error -- the time-zero case,
+    handled like summarize_correctness.
 
     elapsed_ms is deliberately IGNORED in v1: timing collection began at C-018c
     but the timing FEATURE (any per-answer or aggregate timing metric) is a
@@ -2699,11 +2712,28 @@ def summarize_stats(rows: list[dict]) -> dict:
     # for malformed data; coerce to "" for a total-safe sort key.)
     categories.sort(key=lambda entry: (-entry["total"], entry["category_name"] or ""))
 
+    # Per-difficulty breakdown, grouped by leaf_count via the breakdown_by seam
+    # (ADR-041). Arithmetic-only and only rows that actually carry a leaf_count
+    # (bank rows, and pre-#2 / no-rung arithmetic rows, are NULL and excluded).
+    # The grouping KEY is leaf_count, not the rung label (S11): leaf_count is the
+    # cross-mix-comparable structural fact. Swapping the key later (e.g. to the
+    # rung) is a one-line change here -- the mechanism is in breakdown_by.
+    difficulty_breakdown = breakdown_by(
+        rows,
+        key_of=lambda row: row.get("leaf_count"),
+        label_of=lambda row: str(row.get("leaf_count")) + " leaves",
+        include_row=lambda row: (
+            row.get("category_name") == "arithmetic"
+            and row.get("leaf_count") is not None
+        ),
+    )
+
     return {
         "total": total,
         "correct": correct_count,
         "accuracy": accuracy,
         "categories": categories,
+        "difficulty_breakdown": difficulty_breakdown,
     }
 
 

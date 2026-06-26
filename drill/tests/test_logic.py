@@ -104,6 +104,7 @@ def test_summarize_stats_empty_is_time_zero(m):
     assert s["total"] == 0
     assert s["accuracy"] == 0.0
     assert s["categories"] == []
+    assert s["difficulty_breakdown"] == []
 
 
 def test_summarize_stats_ignores_elapsed_ms(m):
@@ -220,6 +221,87 @@ def test_breakdown_by_is_order_independent(m):
     a = m.breakdown_by(rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
     b = m.breakdown_by(shuffled, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
     assert a == b
+
+
+# --------------------------------------------------------------------------
+# summarize_stats difficulty_breakdown -- grouped by leaf_count (C-D2i-2, S11)
+# --------------------------------------------------------------------------
+def _arith_rows(*specs):
+    """specs: (leaf_count, correct) for arithmetic responses."""
+    return [
+        {
+            "category_id": 1,
+            "category_name": "arithmetic",
+            "correct": correct,
+            "elapsed_ms": None,
+            "answered": "2026-01-01T00:00:00+00:00",
+            "difficulty": None,  # recording-only; the breakdown ignores it
+            "leaf_count": leaf_count,
+        }
+        for (leaf_count, correct) in specs
+    ]
+
+
+def test_difficulty_breakdown_groups_by_leaf_count(m):
+    rows = _arith_rows((2, True), (2, False), (4, True), (4, True))
+    s = m.summarize_stats(rows)
+    by_key = {entry["key"]: entry for entry in s["difficulty_breakdown"]}
+    assert by_key[2]["total"] == 2 and by_key[2]["correct"] == 1
+    assert by_key[4]["total"] == 2 and by_key[4]["correct"] == 2
+    assert by_key[2]["label"] == "2 leaves"
+    # ordered most-practiced first; equal totals -> label tiebreak ("2" < "4")
+    assert [e["key"] for e in s["difficulty_breakdown"]] == [2, 4]
+
+
+def test_difficulty_breakdown_excludes_null_and_nonarithmetic(m):
+    rows = (
+        _arith_rows((2, True), (3, False))
+        + [
+            # arithmetic but NULL leaf_count (no-rung / pre-#2) -> excluded
+            {
+                "category_id": 1,
+                "category_name": "arithmetic",
+                "correct": True,
+                "elapsed_ms": None,
+                "answered": "2026-01-01T00:00:00+00:00",
+                "difficulty": None,
+                "leaf_count": None,
+            },
+            # non-arithmetic with a leaf_count somehow set -> excluded
+            {
+                "category_id": 2,
+                "category_name": "vocabulary",
+                "correct": True,
+                "elapsed_ms": None,
+                "answered": "2026-01-01T00:00:00+00:00",
+                "difficulty": None,
+                "leaf_count": 2,
+            },
+        ]
+    )
+    s = m.summarize_stats(rows)
+    keys = sorted(e["key"] for e in s["difficulty_breakdown"])
+    assert keys == [2, 3]  # only the two real arithmetic-with-leaf_count rows
+    totals = {e["key"]: e["total"] for e in s["difficulty_breakdown"]}
+    assert totals == {2: 1, 3: 1}
+
+
+def test_difficulty_breakdown_empty_when_no_leaf_counts(m):
+    # All arithmetic but every row NULL leaf_count -> empty breakdown, while the
+    # category summary is still populated (the two are independent).
+    rows = _rows((1, "arithmetic", True, None), (1, "arithmetic", False, None))
+    s = m.summarize_stats(rows)
+    assert s["difficulty_breakdown"] == []
+    assert s["categories"][0]["total"] == 2  # category path unaffected
+
+
+def test_difficulty_breakdown_does_not_disturb_category_summary(m):
+    # Adding leaf_count rows must not change total/correct/accuracy/categories.
+    rows = _arith_rows((2, True), (4, False))
+    s = m.summarize_stats(rows)
+    assert s["total"] == 2 and s["correct"] == 1
+    assert s["categories"][0]["category_name"] == "arithmetic"
+    assert s["categories"][0]["total"] == 2
 
 
 # --------------------------------------------------------------------------

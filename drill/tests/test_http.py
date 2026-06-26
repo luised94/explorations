@@ -96,6 +96,38 @@ def test_stats_all_time(app_with_data):
     assert data["window"]["since"] is None
     assert data["window"]["days"] is None
     assert data["window"]["category_id"] is None
+    # C-D2i-2: the payload carries a difficulty_breakdown list. The seeded rows
+    # have NULL leaf_count, so it is empty here -- but the key is always present.
+    assert data["difficulty_breakdown"] == []
+
+
+def test_stats_difficulty_breakdown_surfaces_leaf_count(app_with_data):
+    # C-D2i-2 end to end: arithmetic responses carrying a leaf_count appear in
+    # the per-difficulty breakdown, grouped by leaf_count. Record a few via the
+    # answer endpoint (the real capture path, C-D2g) so this exercises the full
+    # echo -> capture -> surface -> summarize chain.
+    m, ids = app_with_data
+    _, start = _post_json(m, "/api/session/start", {"category_id": ids["arith"]})
+    sid = start["session_id"]
+    for leaf, ui in ((2, "2"), (2, "9"), (3, "20")):  # 2-leaf: 1 right 1 wrong
+        _post_json(
+            m,
+            "/api/answer",
+            {
+                "session_id": sid,
+                "qtype": "arithmetic",
+                "question_text": "q",
+                "expected": "2" if leaf == 2 else "20",
+                "user_input": ui,
+                "difficulty": 4,
+                "leaf_count": leaf,
+            },
+        )
+    _, data = _get_json(m, "/api/stats")
+    by_key = {e["key"]: e for e in data["difficulty_breakdown"]}
+    assert by_key[2]["total"] == 2 and by_key[2]["correct"] == 1
+    assert by_key[3]["total"] == 1 and by_key[3]["correct"] == 1
+    assert by_key[2]["label"] == "2 leaves"
 
 
 def test_stats_category_filter(app_with_data):
