@@ -1342,10 +1342,15 @@ def get_responses_for_stats(
                        the requested day window; DATABASE never reads the clock.
 
     Each returned dict carries: correct (bool), elapsed_ms (int|None),
-    answered (str), category_id (int), category_name (str). elapsed_ms is
-    SELECTed so the data is available to a future timing feature; v1's
-    summarize_stats ignores it. Ordered by answered DESC, id DESC so the most
-    recent activity leads (the view renders newest-first).
+    answered (str), category_id (int), category_name (str), difficulty
+    (int|None), leaf_count (int|None). elapsed_ms is SELECTed so the data is
+    available to a future timing feature; v1's summarize_stats ignores it.
+    difficulty and leaf_count (the v3 columns, C-D2f/g) are likewise surfaced
+    here so the per-difficulty breakdown (C-D2i) can group on them; summarize_stats
+    does not consume them until that commit. Both are NULL for bank responses,
+    the no-rung arithmetic path, and any row recorded before #2. Ordered by
+    answered DESC, id DESC so the most recent activity leads (the view renders
+    newest-first).
     """
     clauses = []
     params: list[object] = []
@@ -1359,7 +1364,8 @@ def get_responses_for_stats(
 
     cursor = connection.execute(
         "SELECT r.correct AS correct, r.elapsed_ms AS elapsed_ms, "
-        "r.answered AS answered, c.id AS category_id, c.name AS category_name "
+        "r.answered AS answered, r.difficulty AS difficulty, "
+        "r.leaf_count AS leaf_count, c.id AS category_id, c.name AS category_name "
         "FROM responses r "
         "JOIN sessions s ON r.session_id = s.id "
         "JOIN categories c ON s.category_id = c.id"
@@ -1372,6 +1378,8 @@ def get_responses_for_stats(
             "correct": bool(row["correct"]),
             "elapsed_ms": row["elapsed_ms"],
             "answered": row["answered"],
+            "difficulty": row["difficulty"],
+            "leaf_count": row["leaf_count"],
             "category_id": row["category_id"],
             "category_name": row["category_name"],
         }

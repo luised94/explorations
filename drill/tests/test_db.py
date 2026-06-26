@@ -89,6 +89,35 @@ def test_rows_carry_elapsed_ms_and_category_name(seeded):
     assert all("category_name" in r for r in rows)
 
 
+def test_rows_surface_difficulty_and_leaf_count(seeded):
+    # C-D2h: get_responses_for_stats SELECTs and surfaces the v3 columns so the
+    # C-D2i breakdown can group on them. The seeded rows carry NULL (inserted
+    # without these values); a row inserted WITH values surfaces them verbatim.
+    m, conn, ids = seeded
+    # Every seeded row exposes both keys, as NULL.
+    rows = m.get_responses_for_stats(conn)
+    assert all("difficulty" in r and "leaf_count" in r for r in rows)
+    assert all(r["difficulty"] is None and r["leaf_count"] is None for r in rows)
+    # A row recorded with a rung + leaf_count surfaces those values.
+    s = m.start_session(conn, ids["arith"], _iso(ids["now"]))
+    m.insert_response(
+        conn,
+        session_id=s,
+        question_text="(2 + 3) * 4",
+        answer_text="20",
+        user_input="20",
+        correct=True,
+        answered=_iso(ids["now"]),
+        difficulty=4,
+        leaf_count=3,
+    )
+    conn.commit()
+    rows = m.get_responses_for_stats(conn)
+    surfaced = [r for r in rows if r["difficulty"] == 4]
+    assert len(surfaced) == 1
+    assert surfaced[0]["leaf_count"] == 3
+
+
 def test_rows_ordered_newest_first(seeded):
     m, conn, ids = seeded
     rows = m.get_responses_for_stats(conn)
