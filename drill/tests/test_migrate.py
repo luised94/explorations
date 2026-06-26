@@ -99,24 +99,25 @@ def test_apply_one_failure_rolls_back_ddl_and_version(db):
 
 
 def test_shipped_migrations_consistent_with_schema_version(db):
-    # The registry as shipped must satisfy the import-time guard. As of D1 it
-    # holds the single v2 entry (questions.metadata) and SCHEMA_VERSION is 2; the
-    # guard already ran at import (load_drill would have raised otherwise), so
-    # re-invoking it here documents the invariant and re-checks it explicitly.
-    # This asserts the SHIPPED registry, not just the guard, so adding a
-    # migration without updating it (or vice versa) surfaces here as a red.
+    # The registry as shipped must satisfy the import-time guard. As of #2 it
+    # holds v2 (questions.metadata) and v3 (responses difficulty + leaf_count)
+    # and SCHEMA_VERSION is 3; the guard already ran at import (load_drill would
+    # have raised otherwise), so re-invoking it here documents the invariant and
+    # re-checks it explicitly. This asserts the SHIPPED registry, not just the
+    # guard, so adding a migration without bumping the constant (or vice versa)
+    # surfaces here as a red.
     m, _conn = db
     m._check_migration_version_consistency()  # must not raise
-    assert len(m.MIGRATIONS) == 1
-    assert m.MIGRATIONS[0][0] == 2
-    assert m.SCHEMA_VERSION == 2
+    assert len(m.MIGRATIONS) == 2
+    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3]
+    assert m.SCHEMA_VERSION == 3
 
 
 def test_drift_guard_rejects_constant_ahead_of_registry(db):
     # SCHEMA_VERSION bumped without adding the matching migration -> reject.
-    # The shipped registry now tops out at v2 (D1), so to be genuinely "ahead"
-    # the constant must exceed the real top entry; computing from the registry
-    # keeps this meaningful as the ceiling rises.
+    # The shipped registry now tops out at v3 (#2); to be genuinely "ahead" the
+    # constant must exceed the real top entry; computing from the registry keeps
+    # this meaningful as the ceiling rises.
     m, _conn = db
     top = m.MIGRATIONS[-1][0]  # highest shipped migration version
     m.SCHEMA_VERSION = top + 1  # constant ahead of the registry top
@@ -461,3 +462,86 @@ def test_run_migrations_on_unbaselined_db_treats_current_as_zero(tmp_path):
         assert result["applied"] == []
     finally:
         conn.close()
+
+
+def test_real_v3_migration_adds_response_difficulty_over_existing_rows(db):
+    # #2's migration deliverable, exercised through the REAL MIGRATIONS: a
+    # baseline DB with several pre-existing responses is migrated to the current
+    # version; both new columns appear and EVERY pre-existing row backfills to
+    # NULL (the honest "not recorded" value for rows answered before #2). The db
+    # fixture sits at the baseline with the migration unapplied -- the
+    # pre-migration state. Seeding MANY rows proves NULL applies to the whole
+    # table. Capture of real values into these columns is C-D2g, NOT this commit.
+    m, conn = db
+    assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # pre-migration
+
+    # Pre-existing responses, seeded BEFORE the migration. Need a session to own
+    # them (responses.session_id is NOT NULL with a FK to sessions).
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    session_id = m.start_session(
+        conn, category_id=cats["arithmetic"], started=FIXED_NOW
+    )
+    for index in range(4):
+        m.insert_response(
+            conn,
+            session_id=session_id,
+            question_text="%d + %d" % (index, index),
+            answer_text=str(index + index),
+            user_input=str(index + index),
+            correct=True,
+            answered=FIXED_NOW,
+        )
+    conn.commit()
+
+    # Sanity: the baseline responses table has neither new column yet.
+    precols = [r[1] for r in conn.execute("PRAGMA table_info(responses)")]
+    assert "difficulty" not in precols
+    assert "leaf_count" not in precols
+
+    # Run the REAL registry: advance the baseline to the current version, which
+    # now includes the v3 entry.
+    result = m.run_migrations(conn, FIXED_NOW)
+    assert result["from_version"] == m.BASELINE_SCHEMA_VERSION
+    assert result["to_version"] == m.SCHEMA_VERSION
+    assert (3, "add responses.difficulty and leaf_count") in result["applied"]
+    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
+
+    # Both new columns exist...
+    postcols = [r[1] for r in conn.execute("PRAGMA table_info(responses)")]
+    assert "difficulty" in postcols
+    assert "leaf_count" in postcols
+
+    # ...and EVERY pre-existing row backfilled to NULL on both, intact.
+    rows = conn.execute(
+        "SELECT question_text, difficulty, leaf_count FROM responses ORDER BY id"
+    ).fetchall()
+    assert len(rows) == 4  # all rows survived
+    assert all(r["difficulty"] is None for r in rows)
+    assert all(r["leaf_count"] is None for r in rows)
+
+
+def test_v3_columns_are_nullable(db):
+    # Confirm the columns accept NULL explicitly (the elapsed_ms precedent): a
+    # row inserted after the migration without these values stores NULL, not a
+    # numeric default. insert_response does not yet write them (that is C-D2g);
+    # here we just prove the schema permits NULL.
+    m, conn = db
+    m.run_migrations(conn, FIXED_NOW)
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    session_id = m.start_session(
+        conn, category_id=cats["arithmetic"], started=FIXED_NOW
+    )
+    response_id = m.insert_response(
+        conn,
+        session_id=session_id,
+        question_text="2 + 2",
+        answer_text="4",
+        user_input="4",
+        correct=True,
+        answered=FIXED_NOW,
+    )
+    row = conn.execute(
+        "SELECT difficulty, leaf_count FROM responses WHERE id = ?", (response_id,)
+    ).fetchone()
+    assert row["difficulty"] is None
+    assert row["leaf_count"] is None

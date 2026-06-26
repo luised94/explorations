@@ -63,7 +63,7 @@ except ImportError:  # pragma: no cover - environment setup guard
 # init_db (the baseline) plus every migration in MIGRATIONS. v2 (D1) adds
 # questions.metadata via the runner; init_db builds the baseline and
 # run_migrations layers v2..N on top of it.
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 
 # The version init_db itself builds and stamps. init_db lays down the v1-shaped
 # SCHEMA_STATEMENTS, so the baseline IS version 1 -- it must be stamped as 1,
@@ -559,6 +559,38 @@ def _migrate_2_add_questions_metadata(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_3_add_response_difficulty(connection: sqlite3.Connection) -> None:
+    """v3 (#2): add responses.difficulty and responses.leaf_count.
+
+    Two NULLABLE INTEGER columns recording, per answered arithmetic question,
+    the difficulty rung served and the generated expression's leaf_count. Both
+    follow the elapsed_ms precedent (a nullable collected-but-optional column on
+    responses): additive, NULL-by-default, so every pre-existing row backfills to
+    NULL with no data loss (the .db file is the user's only copy). The runner
+    owns the transaction and stamps schema_version; this fn performs ONLY the
+    schema change and must not commit, rollback, or touch the version.
+
+    Why NULLABLE and not NOT NULL DEFAULT: these facts only exist for arithmetic
+    responses generated under the #2 difficulty path. Bank-question responses and
+    every response recorded before this migration have no rung and no expression
+    tree, so NULL is the honest "not applicable / not recorded" value -- a numeric
+    default (e.g. 0) would be a fake rung and a fake leaf count that the stats
+    breakdown (C-D2i) would then have to special-case anyway.
+
+    Why TWO columns (the questions.metadata hatch is NOT used): arithmetic
+    responses carry question_id NULL (generated questions are never stored), so
+    there is no questions row to hang metadata on -- the uncommitted extras hatch
+    is unreachable for exactly the rows that need these facts. Honest recording
+    therefore requires real columns on responses (ADR-040). difficulty is the
+    served rung (mutable label -- re-means if a later thread retunes the rung
+    table); leaf_count is the NON-DRIFTING structural fact (recomputable from
+    question_text by re-parsing), which is why the C-D2i breakdown groups by it
+    (ADR-038 S11 resolution) rather than by the rung.
+    """
+    connection.execute("ALTER TABLE responses ADD COLUMN difficulty INTEGER")
+    connection.execute("ALTER TABLE responses ADD COLUMN leaf_count INTEGER")
+
+
 # Forward-only schema migrations, in ascending version order. Each entry is
 # (version, description, migrate) where migrate(connection) performs the schema
 # change for that version. The runner (run_migrations) applies every entry whose
@@ -570,9 +602,13 @@ def _migrate_2_add_questions_metadata(connection: sqlite3.Connection) -> None:
 # tuple here and bumps SCHEMA_VERSION to match -- it does NOT edit the runner.
 #
 # v2 (D1) is the first real entry: questions.metadata. Version 1 (today's
-# baseline) is produced by init_db, not by an entry here.
+# baseline) is produced by init_db, not by an entry here. v3 (#2) adds the
+# responses difficulty + leaf_count columns; it is added together with the
+# SCHEMA_VERSION bump to 3 so the import-time consistency guard stays satisfied
+# (adding one without the other raises -- the guard-weld).
 MIGRATIONS: list[tuple[int, str, object]] = [
     (2, "add questions.metadata", _migrate_2_add_questions_metadata),
+    (3, "add responses.difficulty and leaf_count", _migrate_3_add_response_difficulty),
 ]
 
 
