@@ -185,6 +185,74 @@ async function boot(statsNext, opts) {
     dom.window.close();
   }
 
+  /* -- Test 7: per-difficulty breakdown renders (C-D2i-3) ---------------- */
+  console.log("Test 7: By difficulty breakdown");
+  {
+    const summary = {
+      total: 5, correct: 3, accuracy: 0.6,
+      categories: [{ category_id: 1, category_name: "arithmetic", total: 5, correct: 3, accuracy: 0.6 }],
+      difficulty_breakdown: [
+        { key: 2, label: "2 leaves", total: 3, correct: 2, accuracy: 2 / 3 },
+        { key: 4, label: "4 leaves", total: 2, correct: 1, accuracy: 0.5 }
+      ],
+      window: { category_id: null, days: null, since: null }
+    };
+    const { dom } = await boot(summary);
+    const doc = dom.window.document;
+    doc.getElementById("stats-toggle").click();
+    await tick(50);
+    const text = doc.getElementById("stats-panel").textContent;
+    check("has 'By difficulty' title", text.indexOf("By difficulty") !== -1, text);
+    check("lists 2 leaves bucket", text.indexOf("2 leaves") !== -1);
+    check("lists 4 leaves bucket", text.indexOf("4 leaves") !== -1);
+    /* single category, so 'By category' is suppressed but 'By difficulty' is not */
+    check("By category suppressed for single category", text.indexOf("By category") === -1);
+    dom.window.close();
+  }
+
+  /* -- Test 8: single difficulty bucket is suppressed -------------------- */
+  console.log("Test 8: single difficulty bucket suppressed");
+  {
+    const summary = {
+      total: 3, correct: 3, accuracy: 1.0,
+      categories: [{ category_id: 1, category_name: "arithmetic", total: 3, correct: 3, accuracy: 1.0 }],
+      difficulty_breakdown: [
+        { key: 2, label: "2 leaves", total: 3, correct: 3, accuracy: 1.0 }
+      ],
+      window: { category_id: null, days: null, since: null }
+    };
+    const { dom } = await boot(summary);
+    const doc = dom.window.document;
+    doc.getElementById("stats-toggle").click();
+    await tick(50);
+    const text = doc.getElementById("stats-panel").textContent;
+    check("By difficulty suppressed for single bucket", text.indexOf("By difficulty") === -1, text);
+    dom.window.close();
+  }
+
+  /* -- Test 9: absent difficulty_breakdown is harmless ------------------- */
+  console.log("Test 9: missing difficulty_breakdown");
+  {
+    /* An older-shaped summary with no difficulty_breakdown key must not throw
+       and must simply omit the section (the render guards with || []). */
+    const summary = {
+      total: 4, correct: 4, accuracy: 1.0,
+      categories: [
+        { category_id: 1, category_name: "arithmetic", total: 2, correct: 2, accuracy: 1.0 },
+        { category_id: 2, category_name: "vocabulary", total: 2, correct: 2, accuracy: 1.0 }
+      ],
+      window: { category_id: null, days: null, since: null }
+    };
+    const { dom } = await boot(summary);
+    const doc = dom.window.document;
+    doc.getElementById("stats-toggle").click();
+    await tick(50);
+    const text = doc.getElementById("stats-panel").textContent;
+    check("renders without difficulty_breakdown key", text.indexOf("By category") !== -1, text);
+    check("no By difficulty when key absent", text.indexOf("By difficulty") === -1);
+    dom.window.close();
+  }
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail === 0 ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(2); });

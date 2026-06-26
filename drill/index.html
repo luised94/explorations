@@ -2300,6 +2300,39 @@ function renderStatsPanel(summary) {
     });
     el.statsPanel.appendChild(breakdown);
   }
+
+  /* Per-difficulty breakdown (C-D2i-3): grouped by leaf_count on the server
+     (S11 -- leaf_count is comparable across operator mixes, the rung is not).
+     Mirrors the category rule: skip when there is 0 or 1 bucket (a single
+     bucket adds no comparison over the overall line). Only arithmetic responses
+     carrying a leaf_count appear here, so this section is naturally absent for
+     bank-only practice or pre-#2 data. The server supplies the label ("N
+     leaves"); the client just renders it. */
+  var difficulty = summary.difficulty_breakdown || [];
+  if (difficulty.length > 1) {
+    var diffBreakdown = document.createElement("div");
+    diffBreakdown.className = "stats-breakdown";
+    var diffTitle = document.createElement("div");
+    diffTitle.className = "stats-breakdown-title";
+    diffTitle.textContent = "By difficulty";
+    diffBreakdown.appendChild(diffTitle);
+
+    difficulty.forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "stats-row";
+      var name = document.createElement("span");
+      name.className = "stats-cat";
+      name.textContent = entry.label || "(unknown)";
+      var figs = document.createElement("span");
+      figs.className = "stats-figs";
+      figs.textContent = entry.total + " answered, "
+        + Math.round((entry.accuracy || 0) * 100) + "%";
+      row.appendChild(name);
+      row.appendChild(figs);
+      diffBreakdown.appendChild(row);
+    });
+    el.statsPanel.appendChild(diffBreakdown);
+  }
 }
 
 /* A stacked figure (big value over a muted label) for the overall row. */
