@@ -1885,3 +1885,86 @@ ADR-037 DOOR DISPOSITION (as #2 opens them):
   OPENED in the per-operator shape (Q2), NOT the generic override it refused;
   ADR-031's provisional-sample note is superseded for the rung-driven path,
   retained for the default path (Q6).
+
+================================================================================
+## #2  Difficulty control -- AS-BUILT (the #2 implementation thread)
+================================================================================
+The #2 design (ADR-038..041 above, the S11 resolution, and the ADR-037 door
+disposition) was implemented across C-D2a..C-D2i. This section records what
+ACTUALLY shipped, the deviations from the plan, and the one piece deliberately
+left for a follow-on thread. The design ADRs are not re-litigated here; this is
+the build record.
+
+ADR-042: the generator difficulty seam is FOUR plain-data parameters threaded
+  through one path, not a config object or a strategy hierarchy. generate_expression
+  gained a single scalar `difficulty` rung; internally it resolves the rung
+  (_resolve_difficulty_rung) and threads FOUR plain values into build_subtree:
+  operator_depth and recurse_probability (C-D2b, the weld), an operator_table
+  scaled per-rung (C-D2d), and max_result_value (C-D2e). Each was added WITH its
+  consumer, never speculatively (ADR-034's door discipline). difficulty=None is
+  byte-identical to the pre-#2 path: it passes the module constants
+  (_MAX_OPERATOR_DEPTH, _RECURSE_PROBABILITY, OPERATORS, _MAX_RESULT_VALUE), so
+  #4/#5's behavior and #5's dark-ceiling tests are preserved unchanged. The
+  module constants remain as the documented no-rung fallback; the rung table is
+  the difficulty-driven path. This UPHOLDS ADR-038 (scalar in, per-operator
+  expansion inside) and is the concrete shape of "shape C".
+
+ADR-043: per-rung range overlay is PURE and COPY-ON-WRITE (_apply_rung_ranges).
+  A rung's operator_ranges are overlaid onto a COPY of OPERATORS, field-level,
+  never mutating the module-global table (proven by test: OPERATORS is byte-
+  identical after generating thousands of trees across every rung). An operator
+  a rung omits keeps its base range; a field a rung omits keeps its base value.
+  This is why difficulty is request-scoped and safe under concurrency, and why
+  the leaf-only operators (/ % ^) -- whose leaf_count is pinned at 2 -- still get
+  harder: their MAGNITUDE moves via the overlay even though their SHAPE cannot
+  (the S7 two-regime split, now enforced by tests: leaf_count monotone for
+  composable-containing mixes, magnitude monotone for leaf-only mixes).
+
+ADR-044: the result ceiling is enforced LOCALLY and proven JOINTLY SATISFIABLE.
+  _result_within_ceiling checks only THIS node's result against the rung ceiling
+  (max_result_value threaded as a parameter, replacing the module-global read).
+  Because a parent accepts only ceiling-passing children, the local check
+  transitively bounds every node result and the final result (no whole-subtree
+  re-evaluation). The rung-4 ceiling (100000) was PROBED jointly satisfiable with
+  rung-4's ranges before shipping (worst observed result ~99.8k over 30k trees,
+  zero RuntimeErrors). The deliberate-red guard from the plan ships GREEN as a
+  test (test_impossible_ceiling_raises_runtime_error): an impossible ceiling
+  makes an operator infeasible and the bounded-retry guard raises rather than
+  loops -- the test passes BECAUSE the ceiling is wired, and would flip red if it
+  were ever unwired. No rung shipped red.
+
+ADR-045: HTTP validates difficulty INBOUND, records it TRUSTED-BUT-TYPED.
+  The question endpoint validates ?difficulty= against the known rung labels and
+  400s on a bad value (mirroring the ?operators= unknown-symbol 400), so
+  generate_expression's ValueError rung guard only ever fires on an internal
+  programming error. post_answer, by contrast, records the echoed difficulty +
+  leaf_count after a TYPE check only (_optional_int -> 400 on non-int), NOT a
+  rung-range check: this is a recording field for a single-user local tool, the
+  outbound path already validated the rung, and the C-D2i breakdown groups by
+  leaf_count (not the rung label), so re-policing inbound would add a second
+  rung-range source of truth for no benefit. Honest recording of what the client
+  claimed is the chosen contract.
+
+ADR-046: the breakdown grouping mechanism is the PURE breakdown_by seam, with the
+  S11 key as a CALLABLE argument (delivers on ADR-041's switchability promise).
+  breakdown_by(rows, key_of, label_of, *, include_row) owns only the group/count/
+  accuracy/sort mechanics; the grouping POLICY is the three callables. The
+  per-difficulty breakdown passes key_of=leaf_count, label_of="N leaves",
+  include_row=arithmetic-with-leaf_count (the S11 resolution: leaf_count is
+  comparable across operator mixes, the rung is not). Switching the S11 key to
+  the rung is a one-line change at the summarize_stats call site, zero change to
+  breakdown_by or the category path -- the switchability ADR-041 designed, now
+  real. The category breakdown was LEFT on its existing inline loop (not
+  refactored onto breakdown_by): the refactor was optional, carried regression
+  risk on a shipped path, and bought nothing #2 needed. Recorded as a deliberate
+  non-change, available to a future cleanup.
+
+ADR-047 [OPEN -- handed off]: NO UI CONTROL sets the difficulty rung yet.
+  state.difficulty exists in the client (default null) and round-trips end to
+  end -- questionQuery() appends &difficulty= when set, the payload echoes it,
+  post_answer records it -- but nothing in the UI SETS it, so in shipped form the
+  rung is always null (the default path) unless a caller pokes state.difficulty.
+  This was the deliberate C-D2c scope boundary: the carrier wiring is #2's
+  concern, a selector is a UI commit. The full backend + data path is proven and
+  green; only the control surface is absent. This is the single remaining piece
+  of #2 and is handed off (see handoff-2-implementation-to-ui).
