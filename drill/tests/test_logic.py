@@ -128,6 +128,101 @@ def test_summarize_stats_is_order_independent(m):
 
 
 # --------------------------------------------------------------------------
+# breakdown_by -- the pure grouping seam (C-D2i-1, ADR-041)
+# --------------------------------------------------------------------------
+def _bd_rows(*specs):
+    """specs: (key, label_source, correct) -> rows carrying a generic key field."""
+    return [
+        {"grp": key, "name": label, "correct": correct}
+        for (key, label, correct) in specs
+    ]
+
+
+def test_breakdown_by_groups_and_counts(m):
+    rows = _bd_rows(
+        ("a", "Alpha", True),
+        ("a", "Alpha", False),
+        ("b", "Beta", True),
+    )
+    out = m.breakdown_by(
+        rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
+    )
+    by_key = {entry["key"]: entry for entry in out}
+    assert by_key["a"]["total"] == 2 and by_key["a"]["correct"] == 1
+    assert abs(by_key["a"]["accuracy"] - 0.5) < 1e-9
+    assert by_key["b"]["total"] == 1 and by_key["b"]["accuracy"] == 1.0
+    assert by_key["a"]["label"] == "Alpha"
+
+
+def test_breakdown_by_orders_most_practiced_first(m):
+    rows = _bd_rows(
+        ("b", "Beta", True),
+        ("a", "Alpha", True),
+        ("a", "Alpha", False),
+        ("a", "Alpha", True),
+    )
+    out = m.breakdown_by(
+        rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
+    )
+    assert out[0]["key"] == "a"  # 3 beats 1
+    assert out[0]["total"] == 3
+
+
+def test_breakdown_by_label_tiebreak_is_deterministic(m):
+    # Equal totals -> sorted by label, regardless of input order.
+    rows = _bd_rows(("z", "Zeta", True), ("a", "Alpha", True))
+    out = m.breakdown_by(
+        rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
+    )
+    assert [e["label"] for e in out] == ["Alpha", "Zeta"]
+
+
+def test_breakdown_by_include_row_filters(m):
+    rows = [
+        {"grp": 2, "correct": True, "keep": True},
+        {"grp": 2, "correct": False, "keep": True},
+        {"grp": 9, "correct": True, "keep": False},  # filtered out
+    ]
+    out = m.breakdown_by(
+        rows,
+        key_of=lambda r: r["grp"],
+        label_of=lambda r: str(r["grp"]),
+        include_row=lambda r: r["keep"],
+    )
+    assert len(out) == 1
+    assert out[0]["key"] == 2 and out[0]["total"] == 2
+
+
+def test_breakdown_by_empty_is_empty_list(m):
+    assert m.breakdown_by([], key_of=lambda r: r["x"], label_of=lambda r: "") == []
+    # All rows filtered out also yields an empty list (not an error).
+    rows = [{"grp": 1, "correct": True}]
+    out = m.breakdown_by(
+        rows,
+        key_of=lambda r: r["grp"],
+        label_of=lambda r: "x",
+        include_row=lambda r: False,
+    )
+    assert out == []
+
+
+def test_breakdown_by_is_order_independent(m):
+    import random
+
+    rows = _bd_rows(
+        ("a", "Alpha", True),
+        ("a", "Alpha", False),
+        ("b", "Beta", True),
+        ("c", "Gamma", True),
+    )
+    shuffled = rows[:]
+    random.Random(11).shuffle(shuffled)
+    a = m.breakdown_by(rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
+    b = m.breakdown_by(shuffled, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
+    assert a == b
+
+
+# --------------------------------------------------------------------------
 # validate_answer -- dispatch by qtype, plus the unknown-qtype guarantee
 # --------------------------------------------------------------------------
 def test_validate_arithmetic_numeric_within_tolerance(m):

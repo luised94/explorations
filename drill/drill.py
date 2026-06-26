@@ -2567,6 +2567,76 @@ def summarize_correctness(correctness: list[bool]) -> dict:
     }
 
 
+def breakdown_by(
+    rows: list[dict],
+    key_of,
+    label_of,
+    *,
+    include_row=None,
+) -> list[dict]:
+    """Group response rows into a sorted accuracy breakdown by an arbitrary key.
+
+    The pure grouping mechanism behind the stats breakdowns (ADR-041). The
+    grouping POLICY is supplied entirely as callables, so the same function backs
+    the per-category breakdown and the per-difficulty breakdown, and a future
+    consumer (#7 adaptive selection, a CLI report, an export) can reuse it with
+    its own key without touching this function or summarize_stats:
+
+        key_of(row)      -> the bucket key (any hashable). Rows with the same key
+                            are grouped together.
+        label_of(row)    -> the human-facing label for that key. Read from the
+                            FIRST row seen for each key (labels are a function of
+                            the key, so any row in the bucket gives the same one).
+        include_row(row) -> optional predicate; when given, only rows for which it
+                            returns truthy participate (e.g. arithmetic-only, or
+                            "leaf_count is not None"). None means include all.
+
+    Each returned bucket is {key, label, total, correct, accuracy}. Buckets are
+    sorted by descending total then label (a stable, deterministic tiebreak), so
+    the most-practiced bucket leads regardless of input or dict order -- the same
+    ordering rule the category breakdown uses. accuracy is correct/total, or 0.0
+    for an empty bucket (which cannot arise here, but keeps the rule total-safe).
+
+    PURE: no IO, no clock, no randomness; the same rows and callables always
+    produce the same list. This is why the S11 grouping-key choice (leaf_count
+    vs rung) is a one-line swap at the call site -- the mechanism is fixed and
+    the key is data passed in (ADR-041 switchability note).
+    """
+    grouped: dict = {}
+    order: list = []  # first-seen order, only for stable grouping of the keys
+    for row in rows:
+        if include_row is not None and not include_row(row):
+            continue
+        key = key_of(row)
+        bucket = grouped.get(key)
+        if bucket is None:
+            bucket = {
+                "key": key,
+                "label": label_of(row),
+                "total": 0,
+                "correct": 0,
+            }
+            grouped[key] = bucket
+            order.append(key)
+        bucket["total"] += 1
+        if row.get("correct"):
+            bucket["correct"] += 1
+
+    buckets = []
+    for key in order:
+        bucket = grouped[key]
+        bucket_total = bucket["total"]
+        bucket["accuracy"] = (
+            (bucket["correct"] / bucket_total) if bucket_total > 0 else 0.0
+        )
+        buckets.append(bucket)
+
+    # Most-practiced first; label as a stable tiebreak. label may be non-string
+    # for some keys, so coerce to str for a total-safe comparison.
+    buckets.sort(key=lambda entry: (-entry["total"], str(entry["label"])))
+    return buckets
+
+
 def summarize_stats(rows: list[dict]) -> dict:
     """Summarize durable cross-session stats for the stats view (C-019a).
 
