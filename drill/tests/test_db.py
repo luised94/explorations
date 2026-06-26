@@ -166,3 +166,45 @@ def test_question_metadata_surfaces_through_readers(seeded):
     conn.commit()
     fetched = m.get_question(conn, target_id)
     assert fetched["metadata"] == {"source_tag": "imported", "weight": 3}
+
+
+def test_insert_response_difficulty_leaf_count_round_trip(seeded):
+    # C-D2g: insert_response persists difficulty and leaf_count to the v3 columns
+    # (C-D2f); both default to NULL when omitted. Read the responses table
+    # directly here -- get_responses_for_stats does not surface these columns
+    # until C-D2h, so testing through it would be premature.
+    m, conn, ids = seeded
+    s = m.start_session(conn, ids["arith"], _iso(ids["now"]))
+    # explicit values
+    with_vals = m.insert_response(
+        conn,
+        session_id=s,
+        question_text="(2 + 3) * 4",
+        answer_text="20",
+        user_input="20",
+        correct=True,
+        answered=_iso(ids["now"]),
+        difficulty=4,
+        leaf_count=3,
+    )
+    # omitted -> NULL (the bank / no-rung default)
+    without_vals = m.insert_response(
+        conn,
+        session_id=s,
+        question_text="7",
+        answer_text="7",
+        user_input="7",
+        correct=True,
+        answered=_iso(ids["now"]),
+    )
+    conn.commit()
+    row_with = conn.execute(
+        "SELECT difficulty, leaf_count FROM responses WHERE id = ?", (with_vals,)
+    ).fetchone()
+    assert row_with["difficulty"] == 4
+    assert row_with["leaf_count"] == 3
+    row_without = conn.execute(
+        "SELECT difficulty, leaf_count FROM responses WHERE id = ?", (without_vals,)
+    ).fetchone()
+    assert row_without["difficulty"] is None
+    assert row_without["leaf_count"] is None

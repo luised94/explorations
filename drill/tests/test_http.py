@@ -289,6 +289,104 @@ def test_answer_unknown_session_is_400_integrity(app_blank):
     assert "error" in data
 
 
+# ---- /api/answer: difficulty + leaf_count capture (C-D2g) ----------------
+# post_answer reads the difficulty + leaf_count the client echoes from the
+# served question payload (C-D2c) and records them on the v3 responses columns
+# (C-D2f). Malformed values are a 400 (the _optional_int contract); omitted
+# values store NULL. We read the row back through a fresh connection on the same
+# DATABASE_PATH the app used.
+
+
+def _last_response_row(m):
+    conn = m.connect(m.DATABASE_PATH)
+    try:
+        return conn.execute(
+            "SELECT difficulty, leaf_count FROM responses ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def test_answer_captures_difficulty_and_leaf_count(app_blank):
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    status, _ = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": start["session_id"],
+            "qtype": "arithmetic",
+            "question_text": "(2 + 3) * 4",
+            "expected": "20",
+            "user_input": "20",
+            "difficulty": 4,
+            "leaf_count": 3,
+        },
+    )
+    assert status.startswith("200")
+    row = _last_response_row(m)
+    assert row["difficulty"] == 4
+    assert row["leaf_count"] == 3
+
+
+def test_answer_omitted_difficulty_stores_null(app_blank):
+    # No difficulty/leaf_count echoed (e.g. a bank answer, or the no-rung path
+    # where the client omits them) -> NULL columns, not a default or an error.
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    status, _ = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": start["session_id"],
+            "qtype": "arithmetic",
+            "question_text": "6 + 7",
+            "expected": "13",
+            "user_input": "13",
+        },
+    )
+    assert status.startswith("200")
+    row = _last_response_row(m)
+    assert row["difficulty"] is None
+    assert row["leaf_count"] is None
+
+
+def test_answer_non_int_difficulty_is_400(app_blank):
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    status, _ = wsgi_post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": start["session_id"],
+            "qtype": "arithmetic",
+            "question_text": "6 + 7",
+            "expected": "13",
+            "user_input": "13",
+            "difficulty": "hard",
+        },
+    )
+    assert status.startswith("400")
+
+
+def test_answer_non_int_leaf_count_is_400(app_blank):
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    status, _ = wsgi_post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": start["session_id"],
+            "qtype": "arithmetic",
+            "question_text": "6 + 7",
+            "expected": "13",
+            "user_input": "13",
+            "leaf_count": "two",
+        },
+    )
+    assert status.startswith("400")
+
+
 # ---- /api/session/end -----------------------------------------------------
 def test_session_end_real_session_returns_true(app_blank):
     m, cats = app_blank

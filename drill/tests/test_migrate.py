@@ -475,21 +475,31 @@ def test_real_v3_migration_adds_response_difficulty_over_existing_rows(db):
     m, conn = db
     assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # pre-migration
 
-    # Pre-existing responses, seeded BEFORE the migration. Need a session to own
-    # them (responses.session_id is NOT NULL with a FK to sessions).
+    # Pre-existing responses, seeded BEFORE the migration. We insert with a RAW
+    # baseline-column INSERT rather than insert_response: as of C-D2g
+    # insert_response writes the v3 difficulty/leaf_count columns, which do not
+    # exist at the pre-migration baseline -- so the seed must use only the v1
+    # columns to reproduce a genuinely pre-v3 row.
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     session_id = m.start_session(
         conn, category_id=cats["arithmetic"], started=FIXED_NOW
     )
     for index in range(4):
-        m.insert_response(
-            conn,
-            session_id=session_id,
-            question_text="%d + %d" % (index, index),
-            answer_text=str(index + index),
-            user_input=str(index + index),
-            correct=True,
-            answered=FIXED_NOW,
+        conn.execute(
+            "INSERT INTO responses "
+            "(session_id, question_id, question_text, answer_text, user_input, "
+            "correct, elapsed_ms, answered) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                None,
+                "%d + %d" % (index, index),
+                str(index + index),
+                str(index + index),
+                1,
+                None,
+                FIXED_NOW,
+            ),
         )
     conn.commit()
 

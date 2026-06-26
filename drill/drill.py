@@ -1247,6 +1247,8 @@ def insert_response(
     answered: str,
     question_id: int | None = None,
     elapsed_ms: int | None = None,
+    difficulty: int | None = None,
+    leaf_count: int | None = None,
 ) -> int:
     """Insert a response row and return its new id.
 
@@ -1256,12 +1258,18 @@ def insert_response(
     correct bool is stored as INTEGER 0/1. answered is an ISO 8601 string
     supplied by the caller. elapsed_ms is optional (column reserved for the
     future timed-rounds feature).
+
+    C-D2g: difficulty and leaf_count are optional (the v3 columns, C-D2f). Both
+    default to None -- the honest "not applicable / not recorded" value for bank
+    responses, the no-rung arithmetic path, and any caller that does not supply
+    them. They are written verbatim; the HTTP layer (post_answer) is responsible
+    for validating the echoed values before passing them here.
     """
     cursor = connection.execute(
         "INSERT INTO responses "
         "(session_id, question_id, question_text, answer_text, user_input, "
-        "correct, elapsed_ms, answered) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "correct, elapsed_ms, answered, difficulty, leaf_count) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             session_id,
             question_id,
@@ -1271,6 +1279,8 @@ def insert_response(
             1 if correct else 0,
             elapsed_ms,
             answered,
+            difficulty,
+            leaf_count,
         ),
     )
     connection.commit()
@@ -3049,6 +3059,10 @@ def post_answer():
         alternatives  (list, optional)  also-acceptable answers (text qtypes)
         question_id   (int, optional)   NULL for generated arithmetic
         elapsed_ms    (int, optional)   reserved for future timed rounds
+        difficulty    (int, optional)   served rung echoed from the question
+                                        payload; NULL for bank/no-rung (C-D2g)
+        leaf_count    (int, optional)   expression leaf_count echoed from the
+                                        question payload; NULL for non-arithmetic
         tolerance     (float, optional) numeric tolerance for arithmetic
     Returns {"correct": bool, "expected": str, "user_input": str,
     "session_stats": {total, correct, accuracy, streak}} so the client can
@@ -3065,6 +3079,16 @@ def post_answer():
         session_id = _require_int(body.get("session_id"), "session_id")
         question_id = _optional_int(body.get("question_id"), "question_id")
         elapsed_ms = _optional_int(body.get("elapsed_ms"), "elapsed_ms")
+        # C-D2g: capture the rung + leaf_count the client echoes from the served
+        # question payload (C-D2c). Type-checked as optional ints (malformed ->
+        # 400), then recorded verbatim. We do NOT reject an out-of-range rung
+        # here: the question endpoint already validated ?difficulty= on the way
+        # out, and this field is recording-only (the C-D2i breakdown groups by
+        # leaf_count, not the rung label). Honestly storing what the client
+        # claimed is the right behavior for this single-user local tool; over-
+        # policing the echo would add a second rung-range source of truth.
+        difficulty = _optional_int(body.get("difficulty"), "difficulty")
+        leaf_count = _optional_int(body.get("leaf_count"), "leaf_count")
     except _BadParameter as bad:
         return _json_error(bad.message, status=400)
 
@@ -3094,6 +3118,8 @@ def post_answer():
             answered=utc_now_iso(),
             question_id=question_id,
             elapsed_ms=elapsed_ms,
+            difficulty=difficulty,
+            leaf_count=leaf_count,
         )
         # Tack the running session stats onto the response so the UI updates
         # its stats bar without a separate GET /api/stats call per question

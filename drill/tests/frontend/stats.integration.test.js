@@ -29,6 +29,10 @@ spec = importlib.util.spec_from_file_location("d","drill.py")
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 m.DATABASE_PATH = ${JSON.stringify(dbpath)}
 conn = m.connect(m.DATABASE_PATH); m.init_db(conn)
+# Advance to the current schema before inserting: as of C-D2g insert_response
+# writes the v3 difficulty/leaf_count columns, absent from the v1 init_db
+# baseline. Mirrors the real startup sequence (init_db -> run_migrations).
+m.run_migrations(conn, datetime.now(timezone.utc).isoformat())
 cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
 now = datetime.now(timezone.utc)
 recent = now - timedelta(days=1); old = now - timedelta(days=20)
