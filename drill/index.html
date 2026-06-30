@@ -525,6 +525,11 @@
     flex-direction: column;
     gap: 0.75rem;
   }
+  /* The panel sets display:flex, which overrides the UA [hidden]{display:none}
+     default -- so toggling the hidden attribute alone left it visible (the
+     "import won't close" bug). Every other toggleable element in this file
+     carries this explicit guard; the import panel was the one that missed it. */
+  .import-panel[hidden] { display: none; }
   .import-field { display: flex; flex-direction: column; gap: 0.3rem; }
   .import-field label {
     font-size: 0.68rem;
@@ -2235,7 +2240,7 @@ function buildImportPanel() {
     "Each record needs question and answer. Optional: qtype "
     + "(free_response, multiple_choice, translate, identify; default "
     + "free_response), alternatives, distractors, hints, tags, media_url, "
-    + "difficulty (1-5). JSONL: one JSON object per line. CSV: a header row; "
+    + "difficulty (1-4). JSONL: one JSON object per line. CSV: a header row; "
     + "array cells are pipe-separated."));
   el.importPanel.appendChild(help);
 
