@@ -309,6 +309,18 @@
     max-width: 30rem;
   }
 
+  /* Active-rung indicator (C-2U-c): a quiet badge under the prompt naming
+     the difficulty being drilled. Only rendered for a non-default rung. */
+  .active-rung {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+  .active-rung[hidden] { display: none; }
+
   /* TTS speaker (C-018a): a quiet, secondary control under the prompt. Muted
      by default, brightening toward the focus cyan on hover/focus -- it should
      read as an aid, not compete with the expression or the answer input. */
@@ -797,6 +809,12 @@
     <section class="stage">
       <div class="expression" id="expression" aria-live="polite">--</div>
 
+      <!-- Active-rung indicator (C-2U-c): shows which difficulty is being
+           drilled, but only when a non-default rung is active, so the
+           default path stays uncluttered. Read-only; derived from the
+           served payload's difficulty (no extra fetch). -->
+      <div class="active-rung" id="active-rung" aria-live="polite" hidden></div>
+
       <!-- TTS speaker (C-018a): click to hear the prompt read aloud. Shown
            only for language questions (translate/identify) on a bank that
            carries a language code, and only when SpeechSynthesis exists.
@@ -923,10 +941,11 @@ var state = {
   recentIds: [],           /* C-016: last-RECENT_MAX served bank question ids
                               for the active session (recent= param) */
   difficulty: null,        /* C-D2c: selected arithmetic difficulty rung, or
-                              null for the default (no-rung) path. No UI control
-                              sets this yet -- the field + query wiring land now
-                              so the rung round-trips end to end; a selector is
-                              a later UI commit. */
+                              null for the default (no-rung) path. The C-2U-b
+                              selector sets this; null is the default path. */
+  rungLabels: {},          /* C-2U-c: rung number -> composed descriptor,
+                              filled by populateDifficulty so the active-rung
+                              badge can name the served rung without a refetch. */
   current: null,           /* the question payload now on screen */
   answerStartMark: null,   /* C-018c: performance.now() ms when the current
                               question became answerable; null when not in an
@@ -960,6 +979,7 @@ var el = {
   bank:      document.getElementById("bank"),
   difficulty: document.getElementById("difficulty"),
   difficultyNote: document.getElementById("difficulty-note"),
+  activeRung: document.getElementById("active-rung"),
   answerRow: document.getElementById("answer-row"),
   choices:   document.getElementById("choices"),
   speaker:   document.getElementById("speaker")
@@ -1528,6 +1548,24 @@ function updateSpeakerVisibility() {
 /* Render a question payload onto the stage. Text qtypes (arithmetic and
    free_response/translate/identify) use the text input; multiple_choice
    swaps in the choices list. Long bank prose gets the smaller .prose size. */
+/* Show or hide the active-rung badge (C-2U-c). The served payload echoes the
+   difficulty rung it was generated at (null on the default path). When a rung
+   is present, name it using the cached descriptor (falling back to "Rung N"
+   if the label cache is somehow empty); otherwise hide the badge so the
+   default path stays uncluttered. Read-only; no fetch -- the rung is already
+   in the payload. Bank questions carry no difficulty, so they hide it too. */
+function updateActiveRung(payload) {
+  var rung = (payload && payload.difficulty !== undefined)
+    ? payload.difficulty : null;
+  if (rung === null || rung === undefined) {
+    el.activeRung.hidden = true;
+    el.activeRung.textContent = "";
+    return;
+  }
+  el.activeRung.textContent = state.rungLabels[rung] || ("Rung " + rung);
+  el.activeRung.hidden = false;
+}
+
 function renderQuestion(payload) {
   el.expression.textContent = payload.question_text;
   var isArithmetic = payload.qtype === "arithmetic";
@@ -1535,6 +1573,9 @@ function renderQuestion(payload) {
 
   /* C-018a: show the speaker for language prompts on a language bank. */
   updateSpeakerVisibility();
+
+  /* C-2U-c: name the active rung under the prompt (non-default rungs only). */
+  updateActiveRung(payload);
 
   if (payload.qtype === "multiple_choice") {
     el.answerRow.hidden = true;
@@ -1990,9 +2031,11 @@ async function populateDifficulty() {
   try {
     var data = await apiGet("/api/difficulty-rungs");
     (data.rungs || []).forEach(function (record) {
+      var label = difficultyLabel(record);
+      state.rungLabels[record.rung] = label; /* C-2U-c: for the active badge */
       var option = document.createElement("option");
       option.value = String(record.rung);
-      option.textContent = difficultyLabel(record);
+      option.textContent = label;
       el.difficulty.appendChild(option);
     });
   } catch (error) {

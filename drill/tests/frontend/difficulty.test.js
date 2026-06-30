@@ -32,7 +32,13 @@ function fetchStub(){
       {rung:3,operator_depth:2,recurse_probability:0.7,max_result_value:null},
       {rung:4,operator_depth:3,recurse_probability:0.7,max_result_value:100000}
     ]});
-    if(url.indexOf("/api/question")===0)return j({qtype:"arithmetic",question_text:"6 + 7",expected:"13",question_id:null,alternatives:null,media_url:null,difficulty:null,leaf_count:2});
+    if(url.indexOf("/api/question")===0){
+      /* C-2U-c: echo the served rung so the active-rung badge can render.
+         Parse it out of the URL the client built from state.difficulty. */
+      var m=url.match(/[?&]difficulty=(\d+)/);
+      var served=m?parseInt(m[1],10):null;
+      return j({qtype:"arithmetic",question_text:"6 + 7",expected:"13",question_id:null,alternatives:null,media_url:null,difficulty:served,leaf_count:2});
+    }
     if(url==="/api/answer")return j({correct:true,expected:"13",user_input:"13",session_stats:{total:1,correct:1,accuracy:1.0,streak:1}});
     return j({error:"x"},false,404);
   };
@@ -62,6 +68,9 @@ function fetchStub(){
   ck("state.difficulty starts null",win.state.difficulty===null);
   const qBefore=calls.filter(c=>c.url.indexOf("/api/question")===0).pop();
   ck("default question URL omits difficulty",qBefore&&qBefore.url.indexOf("difficulty=")===-1);
+  // --- C-2U-c: active-rung badge hidden on the default path ---
+  const badge=doc.getElementById("active-rung");
+  ck("active-rung badge hidden on default path",badge.hidden===true);
 
   // --- picking a rung sets state + next question URL carries it ---
   const answersBefore=calls.filter(c=>c.url==="/api/answer").length;
@@ -73,6 +82,9 @@ function fetchStub(){
   ck("next question URL carries difficulty=3",qAfter&&qAfter.url.indexOf("difficulty=3")!==-1);
   ck("difficulty change recorded NO answer (stats-safe discard)",
      calls.filter(c=>c.url==="/api/answer").length===answersBefore);
+  // --- C-2U-c: badge now shows the served rung's descriptor ---
+  ck("active-rung badge visible for a non-default rung",badge.hidden===false);
+  ck("active-rung badge names rung 3",badge.textContent.indexOf("Rung 3")===0);
 
   // --- "Default" clears it ---
   diff.value="";
@@ -81,6 +93,8 @@ function fetchStub(){
   ck("Default clears state.difficulty to null",win.state.difficulty===null);
   const qDefault=calls.filter(c=>c.url.indexOf("/api/question")===0).pop();
   ck("Default question URL omits difficulty again",qDefault&&qDefault.url.indexOf("difficulty=")===-1);
+  // --- C-2U-c: badge hidden again on returning to default ---
+  ck("active-rung badge hidden again on Default",badge.hidden===true);
 
   // --- non-arithmetic gating: control disabled, rung cleared ---
   diff.value="2";
