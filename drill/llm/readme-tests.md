@@ -1,8 +1,14 @@
-# Harvested test harnesses (source material for C-020)
+# Harvested test harnesses (HISTORICAL -- source material for C-020)
+
+[HISTORICAL] The permanent test suite now EXISTS (roadmap #8 / C-020, landed):
+tests/ with the by-concern backend split and the jsdom frontend suites, 311
+green, glob-discovered by tests/run.sh. This file is kept as a record of where
+those harnesses came from -- it is NOT pending work. See llm/STATUS.md for live
+test status.
 
 These are the actual test harnesses written during commits C-018a..C-019b this
 session, recovered before the container reset so the THREAD-TEST (C-020) work
-has real, working code to formalize from -- not a reconstruction from memory.
+had real, working code to formalize from -- not a reconstruction from memory.
 
 All six run green as of harvest: 108 assertions total
 (C-018a 21, C-018c 19, C-019b 23, C-019a 33, smoke 6, integration 6).

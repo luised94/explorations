@@ -2016,3 +2016,30 @@ ADR-047 [CLOSED -- C-2U-a..d, the UI selector thread]: the rung selector
     rung; the generator, schema, stats reader, and breakdown were untouched.
   - Suite 282 -> 311 green (backend 196 -> 197; frontend 86 -> 114: + difficulty
     20, + import 8). Clean-room verified at the pinned SHA per commit.
+
+ADR-048 [DECIDED -- C-2U-docs/Phase A]: single-source status in STATUS.md and
+  adopt CODING_CONVENTIONS.md.
+  - PROBLEM: project status (what is done, the baseline, the green count) was
+    duplicated across roadmap.md, knowledge-capture.md, and thread-launch-kit.md,
+    and drifted -- stale line counts, "Wave 0 start now" after those threads
+    landed, "only the generator is flat" after #5 made it recurse. Discipline
+    against drift had failed repeatedly; per the project's own Nelson principle,
+    make it structural.
+  - DECISION: llm/STATUS.md is the SINGLE source of truth for live status. All
+    other docs LINK to it and carry at most convenience snapshots that defer to
+    it. When status changes, STATUS.md is edited; the plans/conventions/rationale
+    docs are not touched for status.
+  - DECISION: llm/CODING_CONVENTIONS.md is the enforceable coding standard,
+    adapted from TigerStyle (TigerBeetle) and NASA's Power of Ten. Structured as
+    shared -> Python -> JS. Deliberate DEVIATIONS from the source guides, recorded
+    there: recursion IS allowed where the problem is naturally recursive (the
+    expression trees), and there is NO hard function-length ceiling -- both source
+    rules are static-bound/screen-real-estate heuristics that do not fit this
+    Python+JS tool. The spirit (safety > performance > DX, explicit limits,
+    validate-at-boundary, great names, programmer-error-only assertions) is kept.
+  - ENFORCEMENT today is review + the suite; the modularization thread will add
+    AST/lint guards (boundary purity, naming/idiom) so conventions become checks,
+    not reminders. Recorded as the standing answer to "any convention that keeps
+    getting missed becomes a check."
+  - This is the bulk of roadmap #20 (docstring/status-drift cleanup); the ADR
+    index remains outstanding. Docs-only; suite unchanged at 311 green.

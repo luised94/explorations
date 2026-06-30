@@ -53,28 +53,30 @@ ASCII only, consistent with the project.
 
 ## 2. Launch order (topological waves)
 
-Computed from the dependency DAG (dependency_plan.mermaid). Threads in the same
+Live status (what is actually done) lives in llm/STATUS.md; the DONE/WIP/PART
+markers below are a convenience snapshot -- if they disagree with STATUS.md,
+STATUS.md wins. Computed from the dependency DAG (dependency_plan.mermaid). Threads in the same
 wave have no dependency on each other and can run in parallel. A thread unlocks
 when every thread feeding it has landed.
 
 ```
 Wave 0 (start now, fully parallel):
   DONE THREAD-TEST     tests + safety net      (T1)   <- do this one FIRST of the wave
-  THREAD-MIGRATE  migration runner         (T2)
-  THREAD-DOCS     docstring/ADR cleanup    (T3)
-  THREAD-ARITH    arithmetic operators     (A1)  (can start; A2 waits on TEST)
+  DONE THREAD-MIGRATE  migration runner         (T2)
+  WIP  THREAD-DOCS     docstring/ADR cleanup    (T3)  (STATUS.md + conventions done; ADR index left)
+  DONE THREAD-ARITH    arithmetic operators     (A1)  (#4 operators landed)
   THREAD-REVIEW   mistake-review at run end(X1)
   THREAD-GRID     minimal mastery grid     (X2)
 
 Wave 1 (unlocks after its dep lands):
-  THREAD-ARITH    nested generator (A2)         needs TEST(T1) + A1
-  THREAD-MODEL    grading-kind + metadata (D1)  needs MIGRATE(T2)
-  THREAD-MODFE    frontend ES modules (M2)      needs TEST(T1)
+  DONE THREAD-ARITH    nested generator (A2)         (#5 -- generate_expression recurses)
+  PART THREAD-MODEL    grading-kind + metadata (D1)  (metadata column added v2; grading-kind seam still open)
+  THREAD-MODFE    frontend ES modules (M2)      needs TEST(T1)  <- the modularization milestone (Phase B)
 
 Wave 2:
-  THREAD-ARITH    difficulty mapping (A3)       needs A2
+  DONE THREAD-ARITH    difficulty mapping (A3)       (#2 -- DIFFICULTY_RUNGS + UI selector, C-D2/C-2U)
   THREAD-LOGICDR  logic drill (X3)              needs MODEL(D1)
-  THREAD-CODEDR   code drill (X4)               needs MODEL(D1)
+  THREAD-CODEDR   code drill (X4)              needs MODEL(D1)
 
 Wave 3:
   THREAD-MODBE    backend package (M1)          needs TEST(T1); soft-prefers A3
@@ -112,6 +114,10 @@ modularize earlier, you can, as long as the tests exist.
 
 Each prompt is self-contained. Attach the listed files, paste the prompt. Every
 prompt assumes the Reusable Context Block is already in your preferences.
+
+ALWAYS attach llm/STATUS.md (the live state) and llm/CODING_CONVENTIONS.md (the
+coding standard) to EVERY thread, in addition to each thread's listed files.
+They are omitted from the per-thread lists below only to avoid repetition.
 
 Commit-ID scheme for the next phase (continue the C-0xx line, new range to keep
 threads from colliding): tests C-020, migrate C-021, docs C-022, arithmetic

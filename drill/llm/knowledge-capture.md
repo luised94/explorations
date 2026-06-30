@@ -102,6 +102,17 @@ ASCII only.
   non-spec decisions and flags per commit, tagged [DECIDED]/[NOTE]/[FIX]/[OPEN].
   Version-stamp status lines ([v7], [v8], ...) and mark superseded notes rather
   than deleting history.
+- Live project STATUS (what is done, what is next, the baseline + green count)
+  lives in llm/STATUS.md and NOWHERE else: roadmap.md, knowledge-capture.md, the
+  launch kit, and the handoffs LINK to it rather than restating it. When status
+  changes, edit STATUS.md only. (This is the anti-drift discipline made
+  structural -- duplicated status is what kept going stale.)
+- Code follows llm/CODING_CONVENTIONS.md (TigerStyle/NASA-adapted: full
+  descriptive names, no abbreviations bar noun-like domain terms, standard
+  control flow, explicit limits, validate-at-boundary, assertions for
+  programmer-error invariants only; recursion allowed where natural; no
+  function-length ceiling). New code conforms; touched code is brought into
+  conformance as it is touched.
 - Stale status comments that a commit's existence invalidates ARE corrected in
   that commit (in scope); stale comments unrelated to the commit are flagged in
   DECISIONS but left untouched (out of scope). Hold this line explicitly.
@@ -155,9 +166,11 @@ ASCII only.
   never copy/restate them (Nelson). Structure each module read -> explain
   (Feynman) -> extend (effortful retrieval).
 - When extending arithmetic: operators are pure data additions (near-zero risk);
-  the generator generalization is the real cs work (evaluator/renderer already
-  recurse -- only the generator is flat); difficulty is a pure params mapping on
-  top. Use property-based tests for generator invariants.
+  the generator generalization is the real cs work. [v-2U: this is now DONE (#5)
+  -- generate_expression recurses over operator trees; evaluator, renderer, AND
+  generator all recurse, depth 1 reproducing the old flat form. The "only the
+  generator is flat" note that used to live here is obsolete.] Difficulty is a
+  pure params mapping on top. Use property-based tests for generator invariants.
 - When doing a comment-only/docs commit: prove inertness by AST-equality against
   the prior file (only docstrings/comments may differ).
 - When a change is frontend-only or backend-only: prove the other half is
@@ -178,14 +191,16 @@ ASCII only.
   lines, sections CONFIG/DATABASE/LOGIC/HTTP/MAIN). Frontend index.html (~2380
   lines, one script block pre-modularization). Sample banks: trivia CSV,
   vocabulary JSONL.
-- Status at archive: initial plan complete (C-001..C-019b). MAIN pulled forward
-  to C-013a; MC layout fix C-016a; TTS split C-018a/b/c; stats split C-019a/b.
-  Backend can return to frozen now that C-019a landed.
+- Status: see llm/STATUS.md, the single source of truth for what is done and
+  what is next (this CONTEXT section deliberately does NOT restate live status,
+  to stop the drift that kept recurring). At time of writing: roadmap #2/#4/#5/
+  #8/#11 done, #20 in progress (this doc cleanup), modularization (#1) next.
 - Architecture is genuinely extension-ready and this was verified, not assumed:
   operator table is data-driven (add dicts); pick_next_question is a single
   swappable selection seam; questions.difficulty and responses.elapsed_ms columns
-  exist; expression evaluator and renderer already recurse over nested trees
-  (only the generator is flat); server host is env-overridable (DRILL_HOST);
+  exist; expression evaluator, renderer, AND generator now all recurse over
+  nested trees (the generator was generalized in #5; depth 1 is the flat form);
+  server host is env-overridable (DRILL_HOST);
   sessions.config and banks.metadata are unused '{}' JSON slots ready for use;
   LOGIC verified to have zero DB/bottle references.
 - Known gaps / next-phase foundations [MOSTLY CLOSED since archive, v-2U]: the

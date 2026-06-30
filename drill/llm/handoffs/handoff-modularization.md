@@ -48,12 +48,19 @@ extraction. Do not let it sprawl into feature work.
 2. ATTACH TO THIS THREAD
 ================================================================================
 - drill.py and index.html (the two files being split).
+- llm/STATUS.md -- the live state, baseline SHA, and the 311 green count to
+  verify against. The single source of truth; read it first.
+- llm/CODING_CONVENTIONS.md -- the coding standard (TigerStyle/NASA-adapted) the
+  split must conform to as it touches each module. Folding the style pass into
+  each extraction is an explicit goal of this thread.
 - llm/roadmap.md -- Section 3/4 ALREADY contains the modularization plan (the
   target file set, why it is low-risk here, the sequencing rationale). READ IT;
   this handoff links to it rather than restating it (Nelson/anti-drift).
 - llm/knowledge-capture.md -- the CONSTRAINTS (layering invariant, import
   direction), CONVENTIONS (backend/frontend file layout already specified), and
-  the [v-2U] notes (the run.sh papercut to fix here, the jsdom cascade rule).
+  the [v-2U] notes (the jsdom cascade rule; NOTE the run.sh papercut is already
+  fixed in C-2U-e -- frontend tests glob-discover, so new test files are
+  zero-config).
 - llm/decisions.md -- the layering and boundary ADRs; append new ADRs for the
   split decisions AFTER the code lands (the project lands ADRs after code).
 - llm/spec.md -- the architecture/data-model record.
@@ -72,11 +79,10 @@ Two extractions, mirroring the existing one-way section boundaries:
   is unusually low-risk BECAUSE the sections already hold a strict one-way
   boundary (verified, not assumed -- LOGIC has zero db/bottle references).
 
-FOLD IN (small, belongs with this thread because the test layout is on the
-table): fix tests/run.sh to DISCOVER frontend tests via a glob over
-tests/frontend/*.test.js with a leading-underscore skip convention, replacing
-the hand-maintained explicit list. ~3 lines; see knowledge-capture [v-2U]. Do
-this EARLY so the rest of the thread's new test files are zero-config.
+ALREADY DONE (C-2U-e, before this thread): tests/run.sh DISCOVERS frontend tests
+via a glob over tests/frontend/*.test.js with a leading-underscore skip
+convention, replacing the hand-maintained list. So adding a test in this thread
+is zero-config -- no run.sh edit needed per new test file.
 
 ================================================================================
 4. DECISIONS TO MAKE UP FRONT (before extracting)
@@ -119,7 +125,7 @@ this EARLY so the rest of the thread's new test files are zero-config.
 - index.html loads ES modules; drill.py is a package; behavior is identical and
   the full suite is green at >= 311 (the same tests, possibly + the new boundary
   -purity guard and the run.sh glob).
-- run.sh discovers frontend tests by glob; adding a test is zero-config.
+- run.sh already discovers frontend tests by glob (C-2U-e); keep it that way.
 - New ADRs record the split decisions (D-MOD-1..4 as resolved), landed after the
   code. roadmap.md #1 marked DONE (the item-8 / item-2 precedent).
 - Everything delivered as clean-room-verified patches.

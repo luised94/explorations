@@ -10,6 +10,11 @@ ASCII only. Single-user assumption preserved throughout: nothing below
 introduces concurrency, auth, or multi-tenant concerns unless explicitly noted
 as out of scope.
 
+This file is the PLAN and its rationale. For live status (what is done, what is
+next, the current baseline and green count), see llm/STATUS.md -- the single
+source of truth. The DONE markers in the tables below are a convenience; if they
+disagree with STATUS.md, STATUS.md wins.
+
 ---
 
 ## 1. How the ranking was built
@@ -74,7 +79,7 @@ defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 | 17 | Structured logging + error-envelope audit | 3.12 |
 | 18 | Timing stats (compute / display `elapsed_ms`) | 3.12 |
 | 19 | Stats depth: most-missed, over-time, per-bank | 3.08 |
-| 20 | Module docstring / status-drift cleanup + ADR index | 3.04 |
+| 20 | Module docstring / status-drift cleanup + ADR index | 3.04 | WIP (STATUS.md + conventions done; ADR index left)
 | 21 | Alphabet / romanization drill | 3.04 |
 | 22 | Grammar exercises (fill-in / reorder) | 3.04 |
 | 23 | Trivia importers (OpenTriviaDB/QA, FreebaseQA) | 2.86 |
