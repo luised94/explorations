@@ -579,6 +579,51 @@
     outline-offset: 2px;
   }
 
+  /* ---- Difficulty selector (C-2U-b) -----------------------------------
+     Same visual language as the category/bank selectors. Always in the
+     layout; disabled (not hidden) for non-arithmetic categories so the
+     affordance stays visible. The [hidden] guard is carried explicitly
+     because the note sets display:flex-context children -- mirror the
+     pattern every other toggleable element in this file uses. */
+  .difficulty-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .difficulty-selector label {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .difficulty-selector select {
+    appearance: none;
+    background: var(--ground-soft);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.7rem;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  .difficulty-selector select:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* Disabled state (non-arithmetic): dim it and drop the pointer cursor so
+     it reads as inert rather than broken. */
+  .difficulty-selector select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .difficulty-note {
+    font-size: 0.72rem;
+    color: var(--muted-dim);
+    margin: 0;
+  }
+  .difficulty-note[hidden] { display: none; }
+
   /* ---- Multiple-choice options (C-016) --------------------------------
      Rendered in place of the answer input for multiple_choice questions.
      Each option is a full-width choice button; clicking submits that text. */
@@ -708,6 +753,21 @@
     <div class="bank-selector" id="bank-selector" hidden>
       <label for="bank">Bank</label>
       <select id="bank" aria-label="Bank"></select>
+    </div>
+
+    <!-- Difficulty selector (C-2U-b): arithmetic-only. Populated from
+         GET /api/difficulty-rungs; "Default" (value "") is null = the
+         pre-#2 unparameterized path. Stays in the layout for every
+         category (no jarring reflow): for non-arithmetic categories the
+         control is disabled and a note explains why, rather than hidden,
+         so the affordance stays visible and comprehensible. Choosing a
+         rung sets state.difficulty and re-fetches immediately. -->
+    <div class="difficulty-selector" id="difficulty-selector">
+      <label for="difficulty">Difficulty</label>
+      <select id="difficulty" aria-label="Difficulty"></select>
+      <p class="difficulty-note" id="difficulty-note" hidden>
+        Difficulty applies to arithmetic.
+      </p>
     </div>
 
     <!-- Stats bar: always visible, fed only by session_stats from the
@@ -898,6 +958,8 @@ var el = {
   statsPanel: document.getElementById("stats-panel"),
   bankSelector: document.getElementById("bank-selector"),
   bank:      document.getElementById("bank"),
+  difficulty: document.getElementById("difficulty"),
+  difficultyNote: document.getElementById("difficulty-note"),
   answerRow: document.getElementById("answer-row"),
   choices:   document.getElementById("choices"),
   speaker:   document.getElementById("speaker")
@@ -1898,6 +1960,76 @@ function findCategory(id) {
   return null;
 }
 
+/* Compose the human descriptor for a rung from its structural facts
+   (C-2U-b). The server returns facts, not prose (GET /api/difficulty-rungs);
+   the client owns the wording so presentation stays in the presentation
+   layer while the server stays the source of truth for what rungs exist.
+   Reads operator_depth, recurse_probability, and max_result_value to give a
+   sense of what the rung drills. Example: "Rung 2 - nested, to any size". */
+function difficultyLabel(record) {
+  var shape = (record.recurse_probability > 0) ? "nested" : "flat";
+  var ceiling = (record.max_result_value === null
+                 || record.max_result_value === undefined)
+    ? "any size"
+    : "to " + record.max_result_value;
+  return "Rung " + record.rung + " - " + shape + ", " + ceiling;
+}
+
+/* Populate the difficulty selector from GET /api/difficulty-rungs (C-2U-b).
+   The first option is "Default" (value "" = null), which keeps the
+   unparameterized pre-#2 path. Each rung option carries its numeric rung as
+   the value and a composed descriptor as the text. A fetch failure is
+   non-fatal: the selector keeps just "Default", so difficulty silently
+   stays at the default path rather than breaking the page. */
+async function populateDifficulty() {
+  el.difficulty.textContent = "";
+  var defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Default";
+  el.difficulty.appendChild(defaultOption);
+  try {
+    var data = await apiGet("/api/difficulty-rungs");
+    (data.rungs || []).forEach(function (record) {
+      var option = document.createElement("option");
+      option.value = String(record.rung);
+      option.textContent = difficultyLabel(record);
+      el.difficulty.appendChild(option);
+    });
+  } catch (error) {
+    /* Leave just "Default"; the default drill path is unaffected. */
+  }
+}
+
+/* Gate the difficulty control to arithmetic (C-2U-b). Difficulty is
+   meaningless for bank questions (they carry no rung), so for non-arithmetic
+   categories the control is DISABLED and a note explains why -- it stays in
+   the layout (no reflow) and visible (the affordance is comprehensible)
+   rather than vanishing. Switching away from arithmetic also resets the
+   selection back to Default and clears state.difficulty, so a stale rung
+   never rides into a category that ignores it. */
+function applyDifficultyGating(categoryName) {
+  var isArithmetic = (categoryName === "arithmetic");
+  el.difficulty.disabled = !isArithmetic;
+  el.difficultyNote.hidden = isArithmetic;
+  if (!isArithmetic) {
+    el.difficulty.value = "";
+    state.difficulty = null;
+  }
+}
+
+/* Changing the difficulty rung (C-2U-b): set state.difficulty (null for
+   "Default") and re-fetch the next question immediately so the choice takes
+   effect now. questionQuery() already serializes state.difficulty, so the
+   only action needed is triggering a fresh question. The current on-screen
+   question is discarded; this is stats-safe because loadQuestion() writes
+   nothing -- a response row is only ever recorded on /api/answer when the
+   user actually answers (submitAnswer/submitChoice), never on a re-fetch. */
+async function onDifficultyChange() {
+  var raw = el.difficulty.value;
+  state.difficulty = (raw === "") ? null : parseInt(raw, 10);
+  await loadQuestion();
+}
+
 /* Selecting a category: arithmetic hides the bank selector and drills
    immediately (its run auto-starts, as before). A bank category reveals the
    bank selector populated with that category's banks and waits for a bank
@@ -1907,6 +2039,7 @@ function onCategoryChange() {
   if (!category) {
     return;
   }
+  applyDifficultyGating(category.name);
   if (category.name === "arithmetic") {
     el.bankSelector.hidden = true;
     switchSelection({
@@ -2384,6 +2517,7 @@ async function boot() {
   el.answer.addEventListener("input", onAnswerInput);
   el.category.addEventListener("change", onCategoryChange);
   el.bank.addEventListener("change", onBankChange);
+  el.difficulty.addEventListener("change", onDifficultyChange);
   el.importToggle.addEventListener("click", onImportToggle);
   el.statsToggle.addEventListener("click", onStatsToggle);
   el.speaker.addEventListener("click", onSpeakerClick);
@@ -2411,6 +2545,11 @@ async function boot() {
        Set the selection explicitly so startSession targets arithmetic. */
     el.category.value = String(state.arithmeticCategoryId);
     el.bankSelector.hidden = true;
+    /* Populate the difficulty selector (arithmetic-only) and gate it for the
+       default arithmetic selection: enabled, note hidden. A populate failure
+       is non-fatal (the control keeps just "Default"). */
+    await populateDifficulty();
+    applyDifficultyGating(state.arithmeticCategoryName);
     state.selection = {
       categoryId: state.arithmeticCategoryId,
       categoryName: state.arithmeticCategoryName,

@@ -85,7 +85,7 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
   echo "        Install via nvm: nvm install 20 && nvm use 20, then: npm install jsdom --no-save"
   fail=1
 else
-  for t in drill.test.js speech.test.js timing.test.js stats.test.js stats.integration.test.js; do
+  for t in drill.test.js speech.test.js timing.test.js stats.test.js stats.integration.test.js difficulty.test.js; do
     echo "-- $t"
     node "$TESTS_DIR/frontend/$t" || fail=1
   done
