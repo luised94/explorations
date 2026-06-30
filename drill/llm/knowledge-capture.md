@@ -122,6 +122,20 @@ ASCII only.
   share a render path (the stats bar vs. the stats view rule).
 - Toggleable UI elements with an explicit display need the [hidden]{display:none}
   guard, folded into the commit that introduces them (the documented gotcha).
+  [v-2U: this was VIOLATED -- the import panel shipped without it and silently
+  would not close; caught and fixed in C-2U-d. Proof that the convention is
+  right and that disciplinary conventions still get missed. A lint/grep check
+  "every .X{display:...} toggleable rule has a matching .X[hidden]" would make
+  it structural rather than disciplinary -- a candidate for the modularization
+  thread, where the CSS is on the table.]
+- A read endpoint that feeds a UI control returns STRUCTURAL FACTS, not
+  user-facing copy: the server owns what exists and its shape, the client
+  composes the human label from those facts. (C-2U: /api/difficulty-rungs
+  returns {rung, depth, recurse, ceiling}; index.html builds "Rung N - nested,
+  to CEILING".) Keeps presentation in the presentation layer and stops the two
+  sides re-encoding each other's domain; also means the label can change without
+  a server deploy. Prefer this over an endpoint that invents a label field the
+  underlying config does not have.
 - Deferred-but-real future paths are recorded as inert comment-block scaffolds at
   the site they would live, explaining what/why/how-deferred (the C-018b pattern).
 
@@ -174,11 +188,28 @@ ASCII only.
   (only the generator is flat); server host is env-overridable (DRILL_HOST);
   sessions.config and banks.metadata are unused '{}' JSON slots ready for use;
   LOGIC verified to have zero DB/bottle references.
-- Known gaps / next-phase foundations: no checked-in tests (harnesses were
-  written and discarded each commit -- recover them); schema_version table exists
-  but no migration runner reads it; questions table has NO metadata column (banks
-  do) -- adding it is one ALTER, gated on the migration runner; one stale drill.py
-  header line ("MAIN/stats arrive with C-019") fixed in C-019a.
+- Known gaps / next-phase foundations [MOSTLY CLOSED since archive, v-2U]: the
+  three foundational gaps recorded at archive are now closed -- checked-in tests
+  exist (the tests/ suite, 311 green; #8 done); the migration runner reads
+  schema_version and applies ordered forward-only ALTERs (run_migrations +
+  MIGRATIONS registry + import-time consistency guard; #11 done); and
+  questions.metadata was added by the v2 migration (no longer a gap). The one
+  stale drill.py header line ("MAIN/stats arrive with C-019") was fixed in
+  C-019a. Remaining real gap: qtype still conflates prompt-kind with
+  grading-kind (the data-model finding below), unaddressed.
+- [v-2U] tests/run.sh discovers frontend tests via an EXPLICIT hand-maintained
+  list (for t in drill.test.js speech.test.js ...), not a glob. Every new test
+  file must be added to that list or it silently does not run -- a real papercut
+  hit twice this thread (difficulty.test.js, import.test.js). Fix deferred to the
+  modularization thread (where the test layout is on the table): replace the list
+  with a glob over tests/frontend/*.test.js and a simple skip convention
+  (leading-underscore files do not run) so adding a test is zero-config. Low
+  risk, ~3 lines; deferred only to avoid test-infra surgery on a feature branch.
+- [v-2U] roadmap #2 (difficulty control) is COMPLETE end to end as of C-2U-a..d:
+  backend+data path (C-D2a..i) plus the UI selector, active-rung badge, and
+  arithmetic-only gating. ADR-047 closed. Suite at 311 green (backend 197,
+  frontend 114). The next core-thread step is modularization (#1 by score,
+  sequenced after the arithmetic round per the score-vs-sequence criterion).
 - Data-model finding: every drill type projects onto the general
   prompt->answer(+alternatives,distractors,hints,media,tags,difficulty) record
   EXCEPT geography point-on-map (spatial answer). The real axis is grading kind
@@ -232,6 +263,15 @@ ASCII only.
     sendBeacon, control performance.now via Object.defineProperty (jsdom's is a
     read-only getter), assert against DOM structure not concatenated textContent.
     (test_c018a/c.js, test_c019b.js are templates.)
+    [v-2U: jsdom does NOT model the CSS cascade for [hidden] vs an explicit
+    display rule -- it reports getComputedStyle().display === "none" for a hidden
+    element whether or not the .X[hidden]{display:none} guard exists. So a
+    "computed display" assertion CANNOT catch a missing-guard visibility bug; it
+    passes either way. To test a cascade-dependent visibility fix, assert the
+    STYLESHEET RULE is present (collect <style> textContent, regex the rule),
+    which is the actual fix and is verified to fail without it. General rule:
+    jsdom tests assert structure, attributes, and stylesheet text -- never
+    cascade-resolved visual layout.]
   - Integration: drive the real frontend (jsdom) against the real backend handler
     (child-process WSGI over a seeded temp DB). (test_c019_integration.js.)
   - Inertness proof: ast.parse both file versions, strip the module docstring,

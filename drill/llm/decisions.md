@@ -1968,3 +1968,51 @@ ADR-047 [OPEN -- handed off]: NO UI CONTROL sets the difficulty rung yet.
   concern, a selector is a UI commit. The full backend + data path is proven and
   green; only the control surface is absent. This is the single remaining piece
   of #2 and is handed off (see handoff-2-implementation-to-ui).
+
+ADR-047 [CLOSED -- C-2U-a..d, the UI selector thread]: the rung selector
+  shipped; roadmap #2 (difficulty control) is now COMPLETE end to end. As-built:
+  - C-2U-a: GET /api/difficulty-rungs, a pure read of DIFFICULTY_RUNGS. The
+    D-UI-1 decision (handoff section 5) was resolved to the read-endpoint
+    option so the client does not re-encode the rung set. DEVIATION FROM THE
+    HANDOFF SHAPE, recorded: the endpoint returns the rung's STRUCTURAL FACTS
+    ({rung, operator_depth, recurse_probability, max_result_value}), NOT a
+    server-invented {rung, label}. The rung records carry no label field, so a
+    label would have to be fabricated server-side; instead the server stays the
+    source of truth for what rungs exist and their shape, and the CLIENT composes
+    the human descriptor. This keeps user-facing copy in the presentation layer
+    and neither side re-encodes the other's domain -- a cleaner split than the
+    handoff's suggested shape, made deliberately and noted here.
+  - C-2U-b: the <select> (D-UI-2 = select, per recommendation), first option
+    "Default" (value "" = null = the byte-identical pre-#2 path), rung options
+    valued by rung number, descriptor composed client-side from the endpoint
+    facts ("Rung N - flat|nested, any size|to CEILING"). Change -> set
+    state.difficulty -> re-fetch immediately (apply-now, the user's call).
+    Arithmetic-only gating: for non-arithmetic categories the control is
+    DISABLED with an explanatory note rather than hidden, so the affordance
+    stays visible and comprehensible (the user's "make the invisible visible"
+    steer); switching away from arithmetic also resets to Default and clears
+    state.difficulty so a stale rung never rides into a category that ignores it.
+    D-UI-3 = NO persistence across reloads (per recommendation): the app has no
+    client storage and a lone persisted setting would break the "reload is a
+    clean slate" model shared by category/bank/session; a deliberate choice, not
+    an oversight. If persistence is ever wanted it should be an app-wide feature
+    (selection + difficulty together), not smuggled in via this control.
+  - C-2U-c: a read-only active-rung badge under the prompt, shown only for a
+    non-default rung (the default path stays uncluttered), text from the served
+    payload's echoed difficulty via a state.rungLabels cache (no extra fetch).
+  - C-2U-d: a folded-in fix for the import panel not closing -- .import-panel set
+    display:flex, which overrides the UA [hidden]{display:none}, and it was the
+    LONE toggleable element missing the [hidden] guard the knowledge-capture
+    CONVENTIONS already mandate. Added the guard; corrected the stale import-help
+    "(1-5)" difficulty range to "(1-4)". This is the documented gotcha being
+    enforced after the fact, not a new lesson.
+  - STATS-SAFETY of apply-now, verified and pinned by test: a difficulty change
+    re-fetches via loadQuestion(), which writes NOTHING; a response row is only
+    ever recorded on /api/answer (submitAnswer/submitChoice) when the user
+    actually answers. Discarding an on-screen question costs no stats. The
+    fetch path and the record path were never braided.
+  - GUARDRAILS held: difficulty=None/absent stays byte-identical to pre-#2 (the
+    default URL omits &difficulty=, pinned by test); bank questions carry no
+    rung; the generator, schema, stats reader, and breakdown were untouched.
+  - Suite 282 -> 311 green (backend 196 -> 197; frontend 86 -> 114: + difficulty
+    20, + import 8). Clean-room verified at the pinned SHA per commit.

@@ -46,10 +46,10 @@ defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 | # | Item | Score |
 |--:|------|------:|
 | 1 | Modularize: extract JS into modules, split Python into packages | 4.56 |
-| 2 | Extend arithmetic: difficulty control (digits / #operations / operator set) | 4.50 |
+| 2 | Extend arithmetic: difficulty control (digits / #operations / operator set) | 4.50 | DONE
 | 3 | Study curriculum derived from the codebase | 4.44 |
-| 4 | Extend arithmetic: more operators (exponent, modulo, ...) | 4.32 |
-| 5 | Generalize expression generation (nested multi-operator trees) | 4.32 |
+| 4 | Extend arithmetic: more operators (exponent, modulo, ...) | 4.32 | DONE
+| 5 | Generalize expression generation (nested multi-operator trees) | 4.32 | DONE
 | 6 | Consolidate the SM2 spaced-repetition engine | 4.04 |
 | 7 | Adaptive question selection (swap `pick_next_question`) | 3.98 |
 | 8 | Automated test suite checked into the repo | 3.94 | DONE
@@ -60,7 +60,7 @@ defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 
 | # | Item | Score |
 |--:|------|------:|
-| 11 | Schema migration runner (version-aware ALTER sequence) | 3.58 |
+| 11 | Schema migration runner (version-aware ALTER sequence) | 3.58 | DONE
 | 12 | Typing / text-entry speed drill | 3.50 |
 | 13 | Timed-round / speed-drill mode (uses `elapsed_ms`) | 3.50 |
 | 14 | Assertion / invariant pass (boundary + pre/postconditions) | 3.44 |
@@ -110,7 +110,7 @@ placed in the ranking above:
    with the WSGI-over-temp-DB pattern for the backend and the jsdom pattern for
    the frontend, plus a one-line runner. This is what lets every later item be
    refactored fearlessly -- it scores high on FOUND for that reason.
-2. DONE **Schema migration runner (T2, #11).** The `schema_version` table exists but
+2. **Schema migration runner (T2, #11). [DONE]** The `schema_version` table exists but
    nothing reads it to migrate. Before you add columns (difficulty tuning,
    timing features, SM2 fields) you want a tiny `migrate(conn)` that checks the
    version and applies ordered `ALTER TABLE` steps. Cheap now, painful to
@@ -154,12 +154,12 @@ maintainability risk, which is exactly why modularization is ranked #1.
 The ranking tells you what is valuable; this tells you what order avoids
 rework. Dependencies matter more than raw score for the first moves.
 
-**Phase 0 -- lock the foundation (do before anything else).**
-Test suite done.
-Test suite (#8) and the migration runner (#11) first, even though #11 is
-Tier 2. Reason: every Tier 1 feature either changes the generator/selection
-logic (wants tests) or adds columns (wants migrations). Spend the small upfront
-cost so the rest is safe. Pair this with the docstring/ADR cleanup (#20) since
+**Phase 0 -- lock the foundation (do before anything else). [DONE]**
+Test suite (#8) and the migration runner (#11) -- both now complete. The
+reason they came first: every Tier 1 feature either changes the generator/
+selection logic (wants tests) or adds columns (wants migrations). The small
+upfront cost was spent so the rest is safe. Pair this with the docstring/ADR
+cleanup (#20) since
 you will be touching headers anyway.
 
 **Phase 1 -- arithmetic depth (your top content priority).**
