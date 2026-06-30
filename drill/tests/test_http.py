@@ -172,6 +172,28 @@ def test_stats_empty_category_is_200_zeros(app_with_data):
     assert data["total"] == 0
 
 
+# ---- /api/difficulty-rungs: the rung list read endpoint (C-2U-a) ----------
+def test_difficulty_rungs_endpoint_lists_config(app_with_data):
+    m, _ = app_with_data
+    status, data = _get_json(m, "/api/difficulty-rungs")
+    assert status.startswith("200")
+    rungs = data["rungs"]
+    # One entry per configured rung, in the same ascending order, each
+    # carrying the structural facts the client composes its label from.
+    assert [r["rung"] for r in rungs] == [c["rung"] for c in m.DIFFICULTY_RUNGS]
+    for got, conf in zip(rungs, m.DIFFICULTY_RUNGS):
+        assert got["operator_depth"] == conf["operator_depth"]
+        assert got["recurse_probability"] == conf["recurse_probability"]
+        assert got["max_result_value"] == conf["max_result_value"]
+        # Pure read: no operator_ranges leak, no label invented server-side.
+        assert set(got.keys()) == {
+            "rung",
+            "operator_depth",
+            "recurse_probability",
+            "max_result_value",
+        }
+
+
 # ---- /api/question: boundary payload shape -------------------------------
 def test_question_payload_shape_for_arithmetic(app_with_data):
     m, _ = app_with_data

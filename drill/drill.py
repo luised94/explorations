@@ -3370,6 +3370,38 @@ def get_stats():
     return summary
 
 
+@app.get("/api/difficulty-rungs")
+def get_difficulty_rungs():
+    """List the arithmetic difficulty rungs the client can offer (C-2U-a).
+
+    A pure read of the DIFFICULTY_RUNGS config: no query params, no DB, no
+    writes. It exists so the UI selector populates from the server's rung
+    table rather than re-encoding the rung set in the client -- if the table
+    grows or a rung's shape changes, the selector tracks it automatically
+    (the D-UI-1 decision).
+
+    Each entry carries the rung's STRUCTURAL FACTS, not a human label: the
+    server owns what rungs exist and their shape; the client composes the
+    user-facing descriptor from these fields. max_result_value is the
+    per-rung result ceiling (null when a rung leaves the ceiling dark,
+    ADR-039/044). Returns:
+        {"rungs": [{"rung", "operator_depth", "recurse_probability",
+                    "max_result_value"}, ...]}
+    in ascending rung order (DIFFICULTY_RUNGS is validated gap-free ascending
+    at import by _check_difficulty_rungs_consistency).
+    """
+    rungs = [
+        {
+            "rung": record["rung"],
+            "operator_depth": record["operator_depth"],
+            "recurse_probability": record["recurse_probability"],
+            "max_result_value": record["max_result_value"],
+        }
+        for record in DIFFICULTY_RUNGS
+    ]
+    return {"rungs": rungs}
+
+
 @app.post("/api/banks/import")
 def post_banks_import():
     """Import a JSONL or CSV question bank into a new bank.

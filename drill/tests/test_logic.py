@@ -145,9 +145,7 @@ def test_breakdown_by_groups_and_counts(m):
         ("a", "Alpha", False),
         ("b", "Beta", True),
     )
-    out = m.breakdown_by(
-        rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
-    )
+    out = m.breakdown_by(rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
     by_key = {entry["key"]: entry for entry in out}
     assert by_key["a"]["total"] == 2 and by_key["a"]["correct"] == 1
     assert abs(by_key["a"]["accuracy"] - 0.5) < 1e-9
@@ -162,9 +160,7 @@ def test_breakdown_by_orders_most_practiced_first(m):
         ("a", "Alpha", False),
         ("a", "Alpha", True),
     )
-    out = m.breakdown_by(
-        rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
-    )
+    out = m.breakdown_by(rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
     assert out[0]["key"] == "a"  # 3 beats 1
     assert out[0]["total"] == 3
 
@@ -172,9 +168,7 @@ def test_breakdown_by_orders_most_practiced_first(m):
 def test_breakdown_by_label_tiebreak_is_deterministic(m):
     # Equal totals -> sorted by label, regardless of input order.
     rows = _bd_rows(("z", "Zeta", True), ("a", "Alpha", True))
-    out = m.breakdown_by(
-        rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
-    )
+    out = m.breakdown_by(rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
     assert [e["label"] for e in out] == ["Alpha", "Zeta"]
 
 
@@ -219,7 +213,9 @@ def test_breakdown_by_is_order_independent(m):
     shuffled = rows[:]
     random.Random(11).shuffle(shuffled)
     a = m.breakdown_by(rows, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
-    b = m.breakdown_by(shuffled, key_of=lambda r: r["grp"], label_of=lambda r: r["name"])
+    b = m.breakdown_by(
+        shuffled, key_of=lambda r: r["grp"], label_of=lambda r: r["name"]
+    )
     assert a == b
 
 
@@ -254,31 +250,28 @@ def test_difficulty_breakdown_groups_by_leaf_count(m):
 
 
 def test_difficulty_breakdown_excludes_null_and_nonarithmetic(m):
-    rows = (
-        _arith_rows((2, True), (3, False))
-        + [
-            # arithmetic but NULL leaf_count (no-rung / pre-#2) -> excluded
-            {
-                "category_id": 1,
-                "category_name": "arithmetic",
-                "correct": True,
-                "elapsed_ms": None,
-                "answered": "2026-01-01T00:00:00+00:00",
-                "difficulty": None,
-                "leaf_count": None,
-            },
-            # non-arithmetic with a leaf_count somehow set -> excluded
-            {
-                "category_id": 2,
-                "category_name": "vocabulary",
-                "correct": True,
-                "elapsed_ms": None,
-                "answered": "2026-01-01T00:00:00+00:00",
-                "difficulty": None,
-                "leaf_count": 2,
-            },
-        ]
-    )
+    rows = _arith_rows((2, True), (3, False)) + [
+        # arithmetic but NULL leaf_count (no-rung / pre-#2) -> excluded
+        {
+            "category_id": 1,
+            "category_name": "arithmetic",
+            "correct": True,
+            "elapsed_ms": None,
+            "answered": "2026-01-01T00:00:00+00:00",
+            "difficulty": None,
+            "leaf_count": None,
+        },
+        # non-arithmetic with a leaf_count somehow set -> excluded
+        {
+            "category_id": 2,
+            "category_name": "vocabulary",
+            "correct": True,
+            "elapsed_ms": None,
+            "answered": "2026-01-01T00:00:00+00:00",
+            "difficulty": None,
+            "leaf_count": 2,
+        },
+    ]
     s = m.summarize_stats(rows)
     keys = sorted(e["key"] for e in s["difficulty_breakdown"])
     assert keys == [2, 3]  # only the two real arithmetic-with-leaf_count rows
