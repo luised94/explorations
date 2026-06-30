@@ -85,7 +85,29 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
   echo "        Install via nvm: nvm install 20 && nvm use 20, then: npm install jsdom --no-save"
   fail=1
 else
-  for t in drill.test.js speech.test.js timing.test.js stats.test.js stats.integration.test.js difficulty.test.js import.test.js; do
+  # Discover frontend tests by glob rather than a hand-maintained list, so a
+  # new tests/frontend/*.test.js file runs automatically (the explicit list was
+  # a papercut: a forgotten entry meant a test silently never ran). Convention:
+  # a leading-underscore file (_foo.test.js) is SKIPPED -- use it to park a
+  # work-in-progress or intentionally-disabled test without deleting it. Files
+  # are run in sorted order for a deterministic, stable report; the tests are
+  # independent (each boots its own jsdom), so order does not affect results.
+  shopt -s nullglob
+  frontend_tests=()
+  for t in "$TESTS_DIR"/frontend/*.test.js; do
+    base="$(basename "$t")"
+    case "$base" in
+      _*) echo "-- SKIP $base (leading underscore)"; continue ;;
+    esac
+    frontend_tests+=("$base")
+  done
+  shopt -u nullglob
+  if [ "${#frontend_tests[@]}" -eq 0 ]; then
+    echo "  ERROR: no frontend *.test.js files found in $TESTS_DIR/frontend" >&2
+    fail=1
+  fi
+  IFS=$'\n' frontend_tests=($(printf '%s\n' "${frontend_tests[@]}" | sort)); unset IFS
+  for t in "${frontend_tests[@]}"; do
     echo "-- $t"
     node "$TESTS_DIR/frontend/$t" || fail=1
   done
