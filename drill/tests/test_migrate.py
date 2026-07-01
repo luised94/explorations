@@ -22,7 +22,13 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _support import load_drill, temp_db  # noqa: E402
+from _support import load_config, load_db, temp_db  # noqa: E402
+
+
+# CONFIG scalars/QTYPE names come from config directly (D-4: a test reads a
+# config value from config, not from db's incidental re-export). One shared
+# module object is fine -- these are immutable constants.
+CFG = load_config()
 
 
 # A fixed timestamp string standing in for the injected clock read. The runner
@@ -34,7 +40,7 @@ FIXED_NOW = "2026-01-01T00:00:00+00:00"
 @pytest.fixture
 def db(tmp_path):
     """A fresh module + temp DB at the current (init_db) schema version."""
-    m = load_drill()
+    m = load_db()
     conn = temp_db(m, tmp_path)
     yield m, conn
     conn.close()
@@ -110,7 +116,7 @@ def test_shipped_migrations_consistent_with_schema_version(db):
     m._check_migration_version_consistency()  # must not raise
     assert len(m.MIGRATIONS) == 2
     assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3]
-    assert m.SCHEMA_VERSION == 3
+    assert CFG.SCHEMA_VERSION == 3
 
 
 def test_drift_guard_rejects_constant_ahead_of_registry(db):
@@ -262,23 +268,22 @@ def test_fresh_db_reaches_current_version_via_startup_sequence(tmp_path):
     # advances 1 -> SCHEMA_VERSION, applying the shipped migrations. This is the
     # regression guard for the defect where init_db stamped SCHEMA_VERSION
     # directly: a fresh DB then skipped the migrations and lacked their columns.
-    m = load_drill()
+    m = load_db()
     dbpath = os.path.join(str(tmp_path), "fresh.db")
-    m.DATABASE_PATH = dbpath
     conn = m.connect(dbpath)
     try:
         m.init_db(conn)
         conn.commit()
-        assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # stamped 1
+        assert m.get_schema_version(conn) == CFG.BASELINE_SCHEMA_VERSION  # stamped 1
         result = m.run_migrations(conn, FIXED_NOW)
     finally:
         pass
-    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
-    assert result["from_version"] == m.BASELINE_SCHEMA_VERSION
-    assert result["to_version"] == m.SCHEMA_VERSION
+    assert m.get_schema_version(conn) == CFG.SCHEMA_VERSION
+    assert result["from_version"] == CFG.BASELINE_SCHEMA_VERSION
+    assert result["to_version"] == CFG.SCHEMA_VERSION
     # The shipped registry is non-empty (D1+), so the fresh path applies it.
     assert [v for v, _desc in result["applied"]] == list(
-        range(m.BASELINE_SCHEMA_VERSION + 1, m.SCHEMA_VERSION + 1)
+        range(CFG.BASELINE_SCHEMA_VERSION + 1, CFG.SCHEMA_VERSION + 1)
     )
     # The proof the migration actually ran on the fresh path: its column exists.
     cols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
@@ -292,10 +297,10 @@ def test_existing_baselined_db_is_untouched_by_startup_sequence(tmp_path):
     # finds nothing pending. temp_db stamps only the baseline (1) and does not
     # migrate, so we first bring the DB fully current (init_db already ran; apply
     # the shipped migrations once), then assert the SECOND sequence is a no-op.
-    m = load_drill()
+    m = load_db()
     conn = temp_db(m, tmp_path)  # init_db ran; DB at the baseline (1)
     m.run_migrations(conn, FIXED_NOW)  # advance to SCHEMA_VERSION
-    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
+    assert m.get_schema_version(conn) == CFG.SCHEMA_VERSION
     before_rows = conn.execute(
         "SELECT version, applied FROM schema_version ORDER BY version"
     ).fetchall()
@@ -310,7 +315,7 @@ def test_existing_baselined_db_is_untouched_by_startup_sequence(tmp_path):
     ).fetchall()
     assert [tuple(r) for r in after_rows] == [tuple(r) for r in before_rows]
     assert result["applied"] == []
-    assert result["from_version"] == result["to_version"] == m.SCHEMA_VERSION
+    assert result["from_version"] == result["to_version"] == CFG.SCHEMA_VERSION
     conn.close()
 
 
@@ -398,7 +403,7 @@ def test_real_v2_migration_adds_questions_metadata_over_existing_rows(db):
     # Seeding MANY rows across qtypes (not one) proves the default applies to
     # the whole table, not a single row.
     m, conn = db
-    assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # pre-migration
+    assert m.get_schema_version(conn) == CFG.BASELINE_SCHEMA_VERSION  # pre-migration
 
     # Pre-existing data, seeded BEFORE the migration, spanning qtypes.
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
@@ -411,10 +416,10 @@ def test_real_v2_migration_adds_questions_metadata_over_existing_rows(db):
         language=None,
     )
     seeded = [
-        {"qtype": m.QTYPE_FREE_RESPONSE, "question": "q-free", "answer": "a"},
-        {"qtype": m.QTYPE_MULTIPLE_CHOICE, "question": "q-mc", "answer": "b"},
-        {"qtype": m.QTYPE_TRANSLATE, "question": "q-tr", "answer": "c"},
-        {"qtype": m.QTYPE_IDENTIFY, "question": "q-id", "answer": "d"},
+        {"qtype": CFG.QTYPE_FREE_RESPONSE, "question": "q-free", "answer": "a"},
+        {"qtype": CFG.QTYPE_MULTIPLE_CHOICE, "question": "q-mc", "answer": "b"},
+        {"qtype": CFG.QTYPE_TRANSLATE, "question": "q-tr", "answer": "c"},
+        {"qtype": CFG.QTYPE_IDENTIFY, "question": "q-id", "answer": "d"},
     ]
     m.insert_questions_bulk(conn, bank_id, seeded, FIXED_NOW)
     conn.commit()
@@ -426,10 +431,10 @@ def test_real_v2_migration_adds_questions_metadata_over_existing_rows(db):
     # Run the REAL registry: it must advance the baseline to the current version
     # via the shipped v2 entry.
     result = m.run_migrations(conn, FIXED_NOW)
-    assert result["from_version"] == m.BASELINE_SCHEMA_VERSION
-    assert result["to_version"] == m.SCHEMA_VERSION
+    assert result["from_version"] == CFG.BASELINE_SCHEMA_VERSION
+    assert result["to_version"] == CFG.SCHEMA_VERSION
     assert (2, "add questions.metadata") in result["applied"]
-    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
+    assert m.get_schema_version(conn) == CFG.SCHEMA_VERSION
 
     # The new column exists...
     postcols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
@@ -450,9 +455,8 @@ def test_run_migrations_on_unbaselined_db_treats_current_as_zero(tmp_path):
     # isolates that selection rule, so it passes an explicit empty registry:
     # the raw DB has no tables for the real (D1+) migrations to ALTER, and the
     # rule under test is independent of what the shipped registry contains.
-    m = load_drill()
+    m = load_db()
     dbpath = os.path.join(str(tmp_path), "raw.db")
-    m.DATABASE_PATH = dbpath
     conn = m.connect(dbpath)  # NOT init_db'd: schema_version table absent
     try:
         assert m.get_schema_version(conn) is None
@@ -473,7 +477,7 @@ def test_real_v3_migration_adds_response_difficulty_over_existing_rows(db):
     # pre-migration state. Seeding MANY rows proves NULL applies to the whole
     # table. Capture of real values into these columns is C-D2g, NOT this commit.
     m, conn = db
-    assert m.get_schema_version(conn) == m.BASELINE_SCHEMA_VERSION  # pre-migration
+    assert m.get_schema_version(conn) == CFG.BASELINE_SCHEMA_VERSION  # pre-migration
 
     # Pre-existing responses, seeded BEFORE the migration. We insert with a RAW
     # baseline-column INSERT rather than insert_response: as of C-D2g
@@ -511,10 +515,10 @@ def test_real_v3_migration_adds_response_difficulty_over_existing_rows(db):
     # Run the REAL registry: advance the baseline to the current version, which
     # now includes the v3 entry.
     result = m.run_migrations(conn, FIXED_NOW)
-    assert result["from_version"] == m.BASELINE_SCHEMA_VERSION
-    assert result["to_version"] == m.SCHEMA_VERSION
+    assert result["from_version"] == CFG.BASELINE_SCHEMA_VERSION
+    assert result["to_version"] == CFG.SCHEMA_VERSION
     assert (3, "add responses.difficulty and leaf_count") in result["applied"]
-    assert m.get_schema_version(conn) == m.SCHEMA_VERSION
+    assert m.get_schema_version(conn) == CFG.SCHEMA_VERSION
 
     # Both new columns exist...
     postcols = [r[1] for r in conn.execute("PRAGMA table_info(responses)")]

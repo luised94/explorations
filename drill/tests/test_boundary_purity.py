@@ -108,7 +108,9 @@ LAYER_MODULES = {
 
 
 def _existing_layer_modules():
-    return {path: layer for path, layer in LAYER_MODULES.items() if os.path.exists(path)}
+    return {
+        path: layer for path, layer in LAYER_MODULES.items() if os.path.exists(path)
+    }
 
 
 def _read(path=DRILL):
@@ -319,9 +321,28 @@ def drill_tree(drill_source):
 @pytest.fixture(scope="module")
 def bounds(drill_source):
     b = _section_bounds(drill_source)
-    assert [name for name, _ in b] == ["CONFIG", "DATABASE", "LOGIC", "HTTP", "MAIN"], (
-        "expected the five section banners in order; found %r" % (b,)
+    present = [name for name, _ in b]
+    # As layers are extracted into their own modules, their banner leaves
+    # drill.py. What remains must (a) be a subsequence of the canonical order and
+    # (b) exactly account for the layers NOT yet extracted: every canonical layer
+    # is either still a drill.py banner or an existing layer module (config.py,
+    # db.py, ...). CONFIG is special-cased: its banner lingers over the config
+    # IMPORT block in drill.py even though config.py exists, so it may appear in
+    # both. This lets the guard stay green across each incremental D-phase cut
+    # without a hardcoded five-banner list.
+    canonical = ["CONFIG", "DATABASE", "LOGIC", "HTTP", "MAIN"]
+    assert present == [x for x in canonical if x in present], (
+        "banners out of canonical order: %r" % (present,)
     )
+    extracted = set(_existing_layer_modules().values())
+    for layer in canonical:
+        if layer == "MAIN":
+            continue  # MAIN is drill.py itself; no separate module, banner optional
+        in_banner = layer in present
+        in_module = layer in extracted
+        assert in_banner or in_module, (
+            "layer %s is neither a drill.py banner nor an extracted module" % layer
+        )
     return b
 
 
@@ -385,7 +406,11 @@ def test_backend_dag_has_no_upstack_edges(drill_tree, symbols):
                 tl = symbols[t][0]
                 if tl != owner_layer:
                     edges[(owner_layer, tl)] += 1
-    upstack = {pair: c for pair, c in edges.items() if LAYER_RANK[pair[0]] < LAYER_RANK[pair[1]]}
+    upstack = {
+        pair: c
+        for pair, c in edges.items()
+        if LAYER_RANK[pair[0]] < LAYER_RANK[pair[1]]
+    }
     assert upstack == {}, "up-stack references within drill.py: %r" % (upstack,)
 
 
@@ -429,26 +454,27 @@ def test_guard_reddens_on_injected_clock_in_logic(drill_source, bounds):
 
 
 def test_guard_reddens_on_injected_upstack_reference(drill_source, bounds):
-    """A DB function reaching UP to a LOGIC symbol must redden the reference
-    check. Inject a genuine module-level LOGIC name into a DB function body."""
+    """A LOGIC function reaching UP to an HTTP symbol must redden the reference
+    check. (Originally injected a DB->LOGIC edge; DB moved to db.py in D2, so
+    this now uses a LOGIC->HTTP pair that still lives in the drill.py residual.)"""
     lines = drill_source.splitlines()
     target = None
     for i, line in enumerate(lines):
-        if line.startswith("def get_session("):  # a DATABASE reader
+        if line.startswith("def normalize_text("):  # a LOGIC function
             target = i
             break
-    assert target is not None, "get_session not found -- update the injection"
+    assert target is not None, "normalize_text not found -- update the injection"
     insert_at = target
     while not lines[insert_at].rstrip().endswith(":"):
         insert_at += 1
     insert_at += 1
-    # render_expression is a LOGIC function; referencing it from DB is up-stack.
-    inject = ["    _ = render_expression"]
+    # serve_index is an HTTP route handler; referencing it from LOGIC is up-stack.
+    inject = ["    _ = serve_index"]
     injected = "\n".join(lines[:insert_at] + inject + lines[insert_at:])
     tree = ast.parse(injected)
     symbols = _top_level_symbols(tree, bounds)
     violations = _reference_violations(tree, symbols)
-    assert any("get_session" in v and "render_expression" in v for v in violations), (
-        "the guard failed to catch an up-stack reference injected into a DB "
+    assert any("normalize_text" in v and "serve_index" in v for v in violations), (
+        "the guard failed to catch an up-stack reference injected into a LOGIC "
         "function (found: %r)" % (violations,)
     )

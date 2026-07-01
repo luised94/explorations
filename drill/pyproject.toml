@@ -25,9 +25,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 # Backend modules (roadmap #1 modularization): drill.py is the thin MAIN
-# composition root; config.py is the CONFIG leaf extracted in D1. Later cuts
-# (db/logic/http) add their modules here as they land.
-include = ["drill.py", "config.py", "index.html"]
+# composition root; config.py is the CONFIG leaf (D1); db.py is the DATABASE
+# layer (D2). Later cuts (logic/http) add their modules here as they land.
+include = ["drill.py", "config.py", "db.py", "index.html"]
 
 [dependency-groups]
 test = ["pytest>=8", "hypothesis>=6"]

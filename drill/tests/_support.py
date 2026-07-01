@@ -37,8 +37,43 @@ import uuid
 
 
 def load_drill(path="drill.py"):
-    """Load drill.py from disk as a fresh, uniquely-named module object."""
+    """Load drill.py from disk as a fresh, uniquely-named module object.
+
+    drill.py is the thin MAIN composition root + not-yet-extracted layers (HTTP,
+    LOGIC). It re-exports the db/config names it imports, so the WSGI-driving
+    helpers below (which need connect/init_db/run_migrations and the HTTP-layer
+    DATABASE_PATH global) all resolve on this module. Backend tests that exercise
+    a specific extracted layer import that layer directly instead -- e.g.
+    test_db uses load_db() (D-MOD-3 / D-4: tests import the submodule they
+    exercise)."""
     name = "drill_under_test_" + uuid.uuid4().hex
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_db(path="db.py"):
+    """Load db.py from disk as a fresh, uniquely-named module object (D2).
+
+    The DATABASE layer extracted in D2. Backend tests that exercise DB functions
+    directly (test_db) load this rather than the whole drill.py, per D-4. Because
+    db imports config, config.py must be importable from the cwd -- conftest
+    chdirs to PROJECT_ROOT, so it is."""
+    name = "db_under_test_" + uuid.uuid4().hex
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_config(path="config.py"):
+    """Load config.py from disk as a fresh, uniquely-named module object (D1).
+
+    The CONFIG leaf. Tests read scalars/QTYPE names/etc. from here directly
+    rather than via whichever higher layer happens to re-export them, per D-4
+    (a test gets a config value from config, not from db's incidental import)."""
+    name = "config_under_test_" + uuid.uuid4().hex
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -73,7 +108,12 @@ def temp_db(m, dir_=None):
         dir_ = tempfile.mkdtemp()
         _FALLBACK_TMP_DIRS.append(dir_)
     dbpath = os.path.join(str(dir_), "drill.db")
-    m.DATABASE_PATH = dbpath
+    # DATABASE_PATH is the HTTP-layer request-path global (drill.py). When the
+    # caller passes the drill module (WSGI tests), rebind it so handlers open the
+    # temp DB. When the caller passes the db module (pure db tests, D-4), db has
+    # no such global and needs none -- the conn is used directly.
+    if hasattr(m, "DATABASE_PATH"):
+        m.DATABASE_PATH = dbpath
     conn = m.connect(dbpath)
     m.init_db(conn)
     return conn

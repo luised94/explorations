@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _support import current_db, load_drill  # noqa: E402
+from _support import current_db, load_db  # noqa: E402
 
 
 def _iso(dt):
@@ -31,7 +31,7 @@ def seeded(tmp_path):
     Second category: 1 recent correct.
     Returns (module, conn, ids dict).
     """
-    m = load_drill()
+    m = load_db()
     conn = current_db(m, tmp_path)
 
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
