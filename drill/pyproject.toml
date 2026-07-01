@@ -29,3 +29,46 @@ include = ["drill.py", "index.html"]
 
 [dependency-groups]
 test = ["pytest>=8", "hypothesis>=6"]
+
+# ---------------------------------------------------------------------------
+# C0.2 -- lint/format authority for the modularization (ADR-050, dual guard).
+#
+# `uv format` (ruff's formatter) OWNS formatting from here on. Because layout is
+# now mechanical, the per-module "style" pass in the backend split shrinks to
+# naming + docstrings + assert-splits only (S9: Python has zero naming debt, so
+# those passes collapse into their cut).
+#
+# Import DIRECTION is enforced declaratively with flake8-tidy-imports banned-api
+# + per-file-ignores. This is the DECLARATIVE half of the dual guard; the
+# call-level purity half is tests/test_boundary_purity.py (C0.1), which catches
+# what an import ban cannot (a function-local `import datetime` in LOGIC -- S4).
+#
+# PRE-SPLIT STATE: the backend is still the single module drill.py, so the bans
+# below match nothing yet -- the config is INERT but LANDS THE POLICY AS DATA so
+# the D-phase cuts inherit enforcement the moment each submodule appears. The
+# banned import paths assume the package layout `drill/{config,db,logic,http}.py`
+# (config<-db<-logic<-http; main wires). If D2 resolves D-MOD-3 to a different
+# layout (e.g. a flat top-level module set rather than a `drill.` package), the
+# path STRINGS here are updated in that same cut to match; the RULE does not
+# change. The prototype for this mechanism is recorded in S4 (logic importing db
+# FAILS; http importing db PASSES via the per-file relaxation).
+[tool.ruff.lint]
+select = ["TID"]  # flake8-tidy-imports: the import-direction family.
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# LOWER layers must never import HIGHER ones. Banning the higher-layer modules
+# outright makes any up-stack import a TID251 error; the per-file-ignores below
+# re-open exactly the legal down-stack edges.
+"drill.db".msg = "layering: only http/main may import db (config<-db<-logic<-http)."
+"drill.logic".msg = "layering: only http may import logic (config<-db<-logic<-http)."
+"drill.http".msg = "layering: nothing imports http; only main wires it."
+
+[tool.ruff.lint.per-file-ignores]
+# Re-open the legal edges (TID251 is the banned-api code):
+#   http.py may import db + logic; main.py may import db + http; db/logic may
+#   import config (config is never banned, so needs no relaxation).
+"drill/http.py" = ["TID251"]
+"drill/main.py" = ["TID251"]
+# The guard test and support harness deliberately name every layer (to parse /
+# drive them); they are not production import edges.
+"tests/*.py" = ["TID251"]
