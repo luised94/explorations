@@ -976,56 +976,67 @@ var ZERO_STATS = { total: 0, correct: 0, accuracy: 0.0, streak: 0 };
    moving the getElementById calls later is unobservable. This is the S3-mandated
    adjustment that unblocks every later frontend module (option b).
 
-   EL_IDS maps each logical name to its element id -- plain data, one place. The
-   ownership registry with owner tags (ADR-051) layers onto this map in C0.3b. */
-var EL_IDS = {
-  category: "category",
-  expression: "expression",
-  answer: "answer",
-  action: "action",
-  feedback: "feedback",
-  note: "note",
-  statTotal: "stat-total",
-  statAccuracy: "stat-accuracy",
-  statStreak: "stat-streak",
-  streakPips: "streak-pips",
-  sessionControls: "session-controls",
-  runLog: "run-log",
-  runLogList: "run-log-list",
-  answerHint: "answer-hint",
-  importToggle: "import-toggle",
-  importPanel: "import-panel",
-  statsToggle: "stats-toggle",
-  statsPanel: "stats-panel",
-  bankSelector: "bank-selector",
-  bank: "bank",
-  difficulty: "difficulty",
-  difficultyNote: "difficulty-note",
-  activeRung: "active-rung",
-  answerRow: "answer-row",
-  choices: "choices",
-  speaker: "speaker"
+/* EL_REGISTRY is the single DOM-node registry (ADR-051): each logical name maps
+   to {id, owner}, where `owner` names the frontend module that will own that
+   node's lifecycle after the thread-two cutover. The owner tags are INERT here
+   -- nothing reads them until the E10 ownership guard (a scope-aware test that
+   asserts each getElementById id is referenced only by its owning module). They
+   are recorded now, on the still-authoritative inline script, so the cutover
+   inherits a complete, single-source ownership map with no ID rename.
+
+   Owner assignment is by node LIFECYCLE (who renders/controls the node), not by
+   every reader. A few nodes are touched by several functions across modules;
+   the owner is the controller (e.g. #answer/#expression -> drill, the selectors
+   -> boot, #note -> stage's setNote, the stats figures -> stats). Any tag the
+   E10 guard later finds wrong reddens the suite and is corrected there. */
+var EL_REGISTRY = {
+  category: { id: "category", owner: "boot" },
+  expression: { id: "expression", owner: "drill" },
+  answer: { id: "answer", owner: "drill" },
+  action: { id: "action", owner: "drill" },
+  feedback: { id: "feedback", owner: "drill" },
+  note: { id: "note", owner: "stage" },
+  statTotal: { id: "stat-total", owner: "stats" },
+  statAccuracy: { id: "stat-accuracy", owner: "stats" },
+  statStreak: { id: "stat-streak", owner: "stats" },
+  streakPips: { id: "streak-pips", owner: "stats" },
+  sessionControls: { id: "session-controls", owner: "session" },
+  runLog: { id: "run-log", owner: "stats" },
+  runLogList: { id: "run-log-list", owner: "stats" },
+  answerHint: { id: "answer-hint", owner: "stage" },
+  importToggle: { id: "import-toggle", owner: "boot" },
+  importPanel: { id: "import-panel", owner: "boot" },
+  statsToggle: { id: "stats-toggle", owner: "stats" },
+  statsPanel: { id: "stats-panel", owner: "stats" },
+  bankSelector: { id: "bank-selector", owner: "boot" },
+  bank: { id: "bank", owner: "boot" },
+  difficulty: { id: "difficulty", owner: "boot" },
+  difficultyNote: { id: "difficulty-note", owner: "boot" },
+  activeRung: { id: "active-rung", owner: "drill" },
+  answerRow: { id: "answer-row", owner: "drill" },
+  choices: { id: "choices", owner: "drill" },
+  speaker: { id: "speaker", owner: "speech" }
 };
 
 /* Build the accessor: one memoizing getter per logical name. First read of
    el.<name> resolves getElementById(id) and caches it; later reads return the
    cache. Same read syntax (el.answer), same node, later timing. */
-var el = (function buildEl(ids) {
+var el = (function buildEl(registry) {
   var target = {};
   var cache = {};
-  Object.keys(ids).forEach(function (name) {
+  Object.keys(registry).forEach(function (name) {
     Object.defineProperty(target, name, {
       enumerable: true,
       get: function () {
         if (!(name in cache)) {
-          cache[name] = document.getElementById(ids[name]);
+          cache[name] = document.getElementById(registry[name].id);
         }
         return cache[name];
       }
     });
   });
   return target;
-})(EL_IDS);
+})(EL_REGISTRY);
 
 /* ---- API helpers ------------------------------------------------------ */
 
