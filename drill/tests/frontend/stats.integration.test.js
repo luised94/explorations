@@ -25,23 +25,31 @@ const dbpath = path.join(tmp, "drill.db");
 const pyDriver = `
 import importlib.util, json, io, sys
 from datetime import datetime, timedelta, timezone
-spec = importlib.util.spec_from_file_location("d","drill.py")
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-m.DATABASE_PATH = ${JSON.stringify(dbpath)}
-conn = m.connect(m.DATABASE_PATH); m.init_db(conn)
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    return mod
+# Post-modularization the backend is split: DB setup lives in db.py, the app +
+# DATABASE_PATH live in http_layer.py. Load each from its own module (D-4: use
+# the submodule you exercise). http_layer's route handlers read its own
+# DATABASE_PATH global, so we rebind it on the http module.
+db = _load("db", "db.py")
+h = _load("http_layer", "http_layer.py")
+h.DATABASE_PATH = ${JSON.stringify(dbpath)}
+conn = db.connect(h.DATABASE_PATH); db.init_db(conn)
 # Advance to the current schema before inserting: as of C-D2g insert_response
 # writes the v3 difficulty/leaf_count columns, absent from the v1 init_db
 # baseline. Mirrors the real startup sequence (init_db -> run_migrations).
-m.run_migrations(conn, datetime.now(timezone.utc).isoformat())
-cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+db.run_migrations(conn, datetime.now(timezone.utc).isoformat())
+cats = {c["name"]: c["id"] for c in db.list_categories(conn)}
 now = datetime.now(timezone.utc)
 recent = now - timedelta(days=1); old = now - timedelta(days=20)
-s = m.start_session(conn, cats["arithmetic"], now.isoformat())
+s = db.start_session(conn, cats["arithmetic"], now.isoformat())
 for i in range(6):  # 6 recent: 5 correct
-    m.insert_response(conn, session_id=s, question_text="q", answer_text="a",
+    db.insert_response(conn, session_id=s, question_text="q", answer_text="a",
         user_input=("a" if i < 5 else "x"), correct=(i < 5),
         answered=recent.isoformat(), question_id=None, elapsed_ms=1000+i)
-m.insert_response(conn, session_id=s, question_text="old", answer_text="a",
+db.insert_response(conn, session_id=s, question_text="old", answer_text="a",
     user_input="a", correct=True, answered=old.isoformat(),
     question_id=None, elapsed_ms=999)
 conn.commit(); conn.close()
@@ -52,7 +60,7 @@ def call(qs):
            "SERVER_NAME":"t","SERVER_PORT":"80","wsgi.input":io.BytesIO(),
            "wsgi.errors":sys.stderr,"wsgi.url_scheme":"http"}
     def sr(status, headers, exc_info=None): cap["s"]=status
-    body=b"".join(m.app(env, sr)); return cap["s"], body.decode()
+    body=b"".join(h.app(env, sr)); return cap["s"], body.decode()
 
 s1,b1 = call("")
 s7,b7 = call("days=7")

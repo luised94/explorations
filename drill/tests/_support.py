@@ -67,6 +67,21 @@ def load_db(path="db.py"):
     return module
 
 
+def load_http(path="http_layer.py"):
+    """Load http_layer.py from disk as a fresh, uniquely-named module object (D4).
+
+    The HTTP layer (the Bottle app + routes + request helpers). HTTP tests drive
+    it through its WSGI callable (m.app) and rebind m.DATABASE_PATH at a temp DB,
+    per D-4. Module named http_layer, not http, to avoid shadowing the stdlib
+    http package that bottle imports. Because http_layer imports config/db/logic,
+    those must be importable from the cwd -- conftest chdirs to PROJECT_ROOT."""
+    name = "http_layer_under_test_" + uuid.uuid4().hex
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_logic(path="logic.py"):
     """Load logic.py from disk as a fresh, uniquely-named module object (D3).
 
@@ -122,14 +137,19 @@ def temp_db(m, dir_=None):
         dir_ = tempfile.mkdtemp()
         _FALLBACK_TMP_DIRS.append(dir_)
     dbpath = os.path.join(str(dir_), "drill.db")
-    # DATABASE_PATH is the HTTP-layer request-path global (drill.py). When the
-    # caller passes the drill module (WSGI tests), rebind it so handlers open the
-    # temp DB. When the caller passes the db module (pure db tests, D-4), db has
-    # no such global and needs none -- the conn is used directly.
+    # Set up the DB file itself through the DATABASE layer (connect + init_db are
+    # db's, not http's -- an HTTP module has connect via its route imports but not
+    # init_db, which is a startup concern). When m IS the db module (test_db /
+    # test_migrate), this is the same object; when m is http (test_http), we load
+    # db here for the baseline build.
+    setup = m if hasattr(m, "init_db") else load_db()
+    # DATABASE_PATH is the HTTP-layer request-path global: when the caller passes
+    # the http module (WSGI tests), rebind it so the route handlers open the temp
+    # DB. Modules without it (db) use the returned conn directly and need none.
     if hasattr(m, "DATABASE_PATH"):
         m.DATABASE_PATH = dbpath
-    conn = m.connect(dbpath)
-    m.init_db(conn)
+    conn = setup.connect(dbpath)
+    setup.init_db(conn)
     return conn
 
 
@@ -148,7 +168,10 @@ def current_db(m, dir_=None):
     use temp_db instead.
     """
     conn = temp_db(m, dir_)
-    m.run_migrations(conn, m.utc_now_iso())
+    # run_migrations + the clock read are DATABASE/startup concerns; resolve them
+    # from db (same object when m is db; a fresh db load when m is http).
+    setup = m if hasattr(m, "run_migrations") else load_db()
+    setup.run_migrations(conn, setup.utc_now_iso())
     conn.commit()
     return conn
 

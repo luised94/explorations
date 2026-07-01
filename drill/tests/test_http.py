@@ -20,7 +20,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 from _support import (  # noqa: E402
     current_db,
-    load_drill,
+    load_http,
     wsgi_get,
     wsgi_post_json,
     wsgi_post_multipart,
@@ -35,7 +35,7 @@ def _iso(dt):
 def app_with_data(tmp_path):
     """Module + temp DB seeded for stats endpoint tests. DATABASE_PATH is
     bound to the temp file so the handlers read it."""
-    m = load_drill()
+    m = load_http()
     conn = current_db(m, tmp_path)
 
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
@@ -226,7 +226,7 @@ def _post_json(m, path, payload):
 # returned for building valid/invalid foreign keys.
 @pytest.fixture
 def app_blank(tmp_path):
-    m = load_drill()
+    m = load_http()
     conn = current_db(m, tmp_path)
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     conn.close()
@@ -474,7 +474,7 @@ def app_with_bank(tmp_path):
     """A module + temp DB carrying one populated bank and one empty bank in a
     non-arithmetic category. Returns (m, category_id, full_bank_id,
     empty_bank_id)."""
-    m = load_drill()
+    m = load_http()
     conn = current_db(m, tmp_path)
     cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
     cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
