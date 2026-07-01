@@ -170,6 +170,52 @@ S9  NAMING DEBT IS TINY AND ONE-SIDED (census for the per-module style pass).
     hold sel/cat (session, boot, stats).
 
 ================================================================================
+S10  EXECUTION-SURFACED MEMBERSHIP FACTS (C0.1 guard, thread one) -- for D1/D2
+================================================================================
+The C0.1 boundary-purity guard, run on the monolith, surfaced two symbols whose
+physical section does NOT match their true layer. Both must be honored by the
+D-phase cuts; the guard encodes them today via a small LAYER_OVERRIDES table so
+the clean file stays green. Neither is a redesign; both are membership calls.
+
+S10a  MIGRATION FUNCTIONS ARE DATABASE, NOT CONFIG (contradicts the R-plan D1
+      line "config gets MIGRATIONS"). _migrate_2_add_questions_metadata and
+      _migrate_3_add_response_difficulty call connection.execute (DDL) -- pure
+      DB operations that merely SIT in the CONFIG region for readability next to
+      SCHEMA_VERSION. RESOLUTION (low complexity, no signature change): move the
+      two functions, the MIGRATIONS registry, and _check_migration_version_
+      consistency (+ its import-time call) into db.py as one cohesive unit ("the
+      one place a schema change is expressed"); keep the SCHEMA_VERSION scalar in
+      config.py. The version-consistency guard reads SCHEMA_VERSION from config
+      (legal down-stack). run_migrations ALREADY injects `migrations=` and `now=`
+      (clock stays out of DB), so nothing about the call path changes -- this is
+      pure relocation. D1 puts SCHEMA_VERSION in config; D2 takes the migration
+      unit.
+
+S10b  THE OPERATOR TABLE IS CALLABLE-BEARING -> LOGIC, NOT CONFIG (refines the
+      R-plan D1 line "config gets OPERATOR_DEFINITIONS"). OPERATOR_DEFINITIONS
+      records carry eval_fn / operand_strategy CALLABLES (phase0.md already noted
+      "a record carrying callables is not pure scalar data"). _build_operator_
+      table + its validation constants (_OPERATOR_RECORD_REQUIRED_KEYS,
+      _KNOWN_FORBID_IDENTITY_REFERENTS) are pure validation; every consumer
+      (generate/evaluate/render/_child_needs_parentheses + one HTTP reader) is
+      already LOGIC/HTTP. TWO options for D1, decision deferred to D1:
+        (1) SIMPLEST: the whole operator system (DEFINITIONS, _build_operator_
+            table, OPERATORS, the two validation constants) is LOGIC; config
+            keeps only OPERATOR_SYMBOLS (strings) and the operand-range scalars.
+            Zero new cross-edges (consumers are already logic). Matches "records
+            carry callables => not config".
+        (2) PARAMETERIZE (the "pass the data in" idea): make the builder pure of
+            its inputs -- OPERATORS = _build_operator_table(OPERATOR_DEFINITIONS,
+            OPERATOR_SYMBOLS) -- so the definitions are explicit data. Cleaner
+            signature, but the definitions STILL carry callables, so it does not
+            by itself make them config; it is a nice refinement that can fold
+            INTO option (1). Recommendation: option (1), optionally with (2)'s
+            signature tidy as a tiny same-cut refactor.
+      Either way, the guard's current stance (operator system in LOGIC by
+      physical position, no override needed for it) is already correct; only the
+      migration functions needed an override entry.
+
+================================================================================
 HOW THE NEXT THREAD USES THIS
 ================================================================================
 1. clone-and-verify at the (new) baseline SHA (fill BASELINE_TOTAL from STATUS).
