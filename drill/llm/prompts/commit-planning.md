@@ -60,7 +60,17 @@ STEP 4 -- TOPOLOGICAL SORT
 --------------------------------------------------------------------------------
 Order so every commit lands green (or with a deliberate, noted red). Output the
 ordered list; for each: id, classification, files touched, the one-line goal,
-and what proves it green.
+what proves it green, and the CO-LOAD SET (below).
+
+CO-LOAD SET (context budget -- the LLM-execution axis). For each commit, the
+minimal set of files that must be in context TOGETHER to execute it correctly
+(the file(s) edited + the source region being moved + the test that proves it +
+the conventions it must honor). A commit whose co-load set is too large to hold
+in one comfortable working context is an OPUS-BY-CONTEXT even if it is one
+coherent movement -- split it, or sequence it so the set shrinks (e.g. extract a
+dependency first so the dependent commit need not re-load it). This
+operationalizes "keep commits at or below sonnet complexity": complexity is
+measured by the co-load set, not just line count.
 
 --------------------------------------------------------------------------------
 "LET IT GO RED" (a deliberate tool, not sloppiness)
