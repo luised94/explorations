@@ -27,7 +27,11 @@ BASELINE
   from tests/frontend/*.test.js (leading-underscore files are skipped).
 - The baseline SHA for the NEXT thread is whatever this docs work lands at on
   main; a launch message pins it explicitly. Verify the clone matches before any
-  work, and confirm 311 green on a clean clone before building.
+  work. NOTE: the "311 green" figures in this BASELINE block are the PRE-
+  modularization baseline. Thread one (backend split) is done; the baseline for
+  THREAD TWO is 317 green (backend 203, frontend 114) at the tip of thread one --
+  confirm 317 on a clean clone before frontend work. See the Phase B thread-one
+  marker below and llm/handoffs/2-to-frontend-cutover.md.
 
 ================================================================================
 DONE (roadmap items and the commit arc)
@@ -74,7 +78,22 @@ is split around a quality pass:
 - Phase A (current): foundation cleanup -- glob test discovery (done, C-2U-e),
   STATUS.md, CODING_CONVENTIONS.md, and drift reconciliation. Then archive the
   thread.
-- Phase B: modularization (#1) -- extract index.html into ES modules
+- Phase B: modularization (#1).
+  ** THREAD ONE DONE (Phase 0 guards + lazy-el + BACKEND split). ** Commits
+  C-MOD-C0.1..C0.3b, S10, D1..D4b. drill.py is now a 156-line MAIN composition
+  root; config.py <- db.py <- logic.py <- http_layer.py is a verified one-way DAG
+  (zero up-stack edges; nothing imports http_layer but drill). Suite 311 -> 317
+  green (backend 197 -> 203 = the boundary-purity guard; frontend 114 unchanged).
+  NEW BASELINE for thread two is the tip of thread one. Two plan-text deviations,
+  detailed in llm/handoffs/2-to-frontend-cutover.md (F-1/F-2): the HTTP module is
+  http_layer.py not http.py (a top-level http.py shadows the stdlib http package
+  bottle imports); and the layout is flat top-level modules with thin-drill.py-
+  as-MAIN (D-1), not a drill/ package -- so the plan's D5 "cut main.py" is
+  satisfied-by-D4b (drill.py IS main; the drill:main entry point resolves).
+  THREAD TWO (frontend build-alongside + atomic cutover + close-out) is NEXT;
+  see llm/handoffs/2-to-frontend-cutover.md.
+  The plan text below describes the whole of #1 and is preserved as reference.
+- Phase B (plan text, as designed): extract index.html into ES modules
   (state/api/drill/session/stats/speech/timing/boot) and split drill.py into a
   package (config/db/logic/http/main), mirroring the existing one-way section
   boundaries. Behavior-preserving. FOLD the mechanical style sweep into each

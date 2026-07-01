@@ -2107,7 +2107,7 @@ ADR-051 [DECIDED -- C-MOD-design + C-MOD-review; judgment J1 CONFIRMED with a
     window); this window is named in the commit plan so no green-claim overstates
     enforcement.
 
-ADR-052 [DECIDED, pending plan-review -- C-MOD-design, judgment J2]: frontend
+ADR-052 [DECIDED -- C-MOD-design + C-MOD-review, judgment J2]: frontend
   strategy is R1 duplicate-then-delete with a single atomic cutover.
   - PROBLEM: all 7 frontend tests share the classic-script global-leak harness
     (spike S5); flipping the tag to type=module breaks them ALL at once, so the
