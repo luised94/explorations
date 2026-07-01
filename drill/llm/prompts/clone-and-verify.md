@@ -5,6 +5,13 @@ Report results back to me at each numbered step before proceeding.
    - REPO_URL : <https://github.com/YOURUSER/YOURREPO.git>   (public, read-only)
    - BRANCH   : <BRANCH>
    - SHA      : <FULL-40-CHAR-SHA>      (not a prefix -- exact match required)
+   - BASELINE_TOTAL    : <N>            (expected green assertion count at SHA)
+   - BASELINE_BREAKDOWN : <e.g. backend 197 / frontend 114 (drill 10 / speech 21
+                          / timing 19 / stats 30 / stats.integration 6 /
+                          difficulty 20 / import 8)>
+   These are FILLED IN PER THREAD (from STATUS.md), not hardcoded in this prompt,
+   so the prompt never goes stale and can be applied by hand or compiled by a
+   small script that substitutes the values.
    You have NO push credentials: do not push, open PRs, or modify the remote
    in any way.
 
@@ -28,12 +35,12 @@ Report results back to me at each numbered step before proceeding.
    - uv sync --group test
    - npm install jsdom --no-save          (needs Node 18+; verify `node -v`)
    - bash tests/run.sh
-   Expected baseline: 159 assertions green -- backend 84 (logic 35, http 40,
-   db 7, property 2), frontend 75 (6/21/19/23/6), ending "ALL GREEN".
-   If the baseline is NOT 159 green on a clean clone at the verified SHA, STOP
-   and report what failed -- including collection/import/syntax errors, which
-   count as red even though pytest reports "errors" not "failures." That is a
-   problem with the STARTING STATE (a bug in the pinned commit), not something
+   Expected baseline: BASELINE_TOTAL green (see BASELINE_BREAKDOWN in step 0),
+   ending "ALL GREEN".
+   If the baseline does NOT match BASELINE_TOTAL on a clean clone at the verified
+   SHA, STOP and report what failed -- including collection/import/syntax errors,
+   which count as red even though pytest reports "errors" not "failures." That is
+   a problem with the STARTING STATE (a bug in the pinned commit), not something
    to work around or patch silently. Wait for my go-ahead.
    PORTABILITY: tests/run.sh and helpers assume bash. If a command of mine
    uses bash-only syntax (e.g. ${PIPESTATUS[...]}), invoke it with `bash`, not
