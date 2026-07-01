@@ -188,6 +188,11 @@ sections already have a strict one-way dependency boundary. This is #1 on the
 ranking but sequenced second on purpose: doing it after a round of arithmetic
 work means you modularize code you understand cold, and the seams will be
 obvious. It also directly serves your "understand how concerns separate" goal.
+DESIGN + SPIKES COMPLETE (C-MOD-design): see llm/roadmap-1-modularization-
+findings.md and llm/roadmap-1-modularization-commit-plan.md, and decisions.md
+ADR-049..052. Implementation (adversarial-review -> commit-planning ->
+plan-review -> execute) is handed to a separate thread; the SHA/baseline for it
+are in STATUS.md.
 
 **Phase 3 -- the study curriculum (capstone of the learning goal).**
 Once the code is modular, the codebase becomes the textbook: a guided

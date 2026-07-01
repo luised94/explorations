@@ -81,6 +81,20 @@ is split around a quality pass:
   module extraction (apply CODING_CONVENTIONS.md to the code being touched), and
   add AST/lint guards (boundary purity; naming/idiom checks) so the conventions
   become structural rather than disciplinary. See handoff-modularization.md.
+  DESIGN + SPIKES DONE (C-MOD-design): the design is worked out and the risky
+  assumptions are measured. Read these before implementing:
+    - llm/roadmap-1-modularization-findings.md -- spikes S1-S5 as facts vs
+      judgments (jsdom does not run type=module -> tests use option b; backend
+      is a clean one-way DAG; el must go lazy; guards proven both directions;
+      the 7 frontend tests share a global-leak harness -> one atomic cutover).
+    - llm/roadmap-1-modularization-commit-plan.md -- the design-stage commit
+      plan (NOT yet adversarially reviewed or topo-sorted; that is the
+      implementation thread's first action).
+    - decisions.md ADR-049..052 -- the design decisions (facts DECIDED;
+      judgments DECIDED-pending-plan-review).
+  Also landed this design thread: new/updated workflow prompts (adversarial-
+  review lenses, spike-and-verify, plan-review, commit-planning co-load set,
+  clone-and-verify parameterized baseline).
 - Phase C: residual cross-module style sweep (whatever Phase B's per-module
   passes did not reach), then resume feature development on the roadmap's Tier-1
   remainder (curriculum #3, etc.).
