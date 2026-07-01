@@ -128,6 +128,48 @@ DEFERRED (recorded here so the plan does not silently drop them)
   gets ~90% of the decomplection without the paradigm cost.
 
 ================================================================================
+C-MOD-REVIEW ADDENDA (facts measured during adversarial-review + plan-review +
+one new spike; the design's judgments survived, refined -- see ADR-051/052/053)
+================================================================================
+S6  THE FRONTEND HAS A REAL drill<->session CYCLE (not in the original design).
+    Measured, comments stripped: drill.loadQuestion -> session.startSession +
+    renderSessionUI; drill.gradeAndShow -> session.recordStats + renderSessionUI;
+    session.onStartSession/onRestartSession -> drill.loadQuestion (these handlers
+    are wired INSIDE renderSessionControls, so they are session-owned, not boot).
+    The cycle is inherent to the domain (loading a question auto-starts a
+    session; grading records to it). It does NOT dissolve by extracting shared
+    helpers. Resolution: ADR-053 Option A (accept it) + a pure-relocation
+    stage.js that thins the session-side edge down to just loadQuestion.
+
+S7  THE CYCLE RESOLVES GREEN UNDER OPTION (b) -- SPIKED. Real Node v22 + jsdom,
+    option-(b) harness, both import orders: 7/7 and 3/3 green. DURABLE MECHANISM:
+    cross-cycle calls to HOISTED function declarations work at module-eval time;
+    a cycle breaks ONLY if a module reads another's const/arrow export at eval
+    time (proven RED via TDZ -- the both-directions check). The real script has
+    ZERO module-level eval-time cross-references (only the boot-guard calling
+    boot), so the "no eval-time cross-module use" condition holds across the
+    WHOLE surface, not just the DOM (F2 generalizes). This is the cheapest
+    knowledge the modularization bought; it is a candidate for knowledge-capture
+    as a general ESM fact.
+
+S8  ANALYZER FALSE POSITIVES, AGAIN (the S2 lesson, reconfirmed twice). A naive
+    call-graph pass reported a speech->boot edge that was the word "isDrillable"
+    inside a COMMENT; a naive el.<key> scan matched sel.bankId / label.className /
+    el.importPanel.textContent. CONSEQUENCE for the J1 ownership guard: it MUST
+    be scope-aware / symbol-based (strip comments, ignore member chains on other
+    objects), never a substring grep -- exactly the discipline ADR-050 forced on
+    the backend AST guard.
+
+S9  NAMING DEBT IS TINY AND ONE-SIDED (census for the per-module style pass).
+    Python (drill.py): ZERO abbreviation violations -- backend style commits are
+    near-empty, so they COLLAPSE into their cut unless the check finds something
+    (decision: no ceremony commits). Frontend: only two real abbreviations --
+    `sel` (21 uses, local for state.selection) and a `cat` local (createElement
+    span; the .run-cat/.stats-cat CSS class names are HTML identifiers and stay).
+    The JS naming pass is small and lands in the style half of the modules that
+    hold sel/cat (session, boot, stats).
+
+================================================================================
 HOW THE NEXT THREAD USES THIS
 ================================================================================
 1. clone-and-verify at the (new) baseline SHA (fill BASELINE_TOTAL from STATUS).

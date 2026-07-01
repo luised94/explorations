@@ -81,18 +81,26 @@ is split around a quality pass:
   module extraction (apply CODING_CONVENTIONS.md to the code being touched), and
   add AST/lint guards (boundary purity; naming/idiom checks) so the conventions
   become structural rather than disciplinary. See handoff-modularization.md.
-  DESIGN + SPIKES DONE (C-MOD-design): the design is worked out and the risky
-  assumptions are measured. Read these before implementing:
-    - llm/roadmap-1-modularization-findings.md -- spikes S1-S5 as facts vs
-      judgments (jsdom does not run type=module -> tests use option b; backend
-      is a clean one-way DAG; el must go lazy; guards proven both directions;
-      the 7 frontend tests share a global-leak harness -> one atomic cutover).
-    - llm/roadmap-1-modularization-commit-plan.md -- the design-stage commit
-      plan (NOT yet adversarially reviewed or topo-sorted; that is the
-      implementation thread's first action).
-    - decisions.md ADR-049..052 -- the design decisions (facts DECIDED;
-      judgments DECIDED-pending-plan-review).
-  Also landed this design thread: new/updated workflow prompts (adversarial-
+  DESIGN + SPIKES DONE (C-MOD-design); PLAN REVIEWED (C-MOD-review): the design
+  survived adversarial-review and the sorted plan survived plan-review; the
+  commit list is classified, topologically sorted, and thread-split. Read these
+  before implementing:
+    - llm/roadmap-1-modularization-findings.md -- spikes S1-S5 (design) + S6-S9
+      (review addenda: the measured drill<->session cycle; the cycle resolves
+      green under option (b) with the hoisting-vs-TDZ mechanism; reconfirmed
+      analyzer false positives; naming debt is tiny and JS-only).
+    - llm/roadmap-1-modularization-commit-plan.md -- SECTION R is the executable
+      plan (classified/sorted/thread-split). The draft C/D/E below it is design
+      rationale, superseded by R for sequencing.
+    - decisions.md ADR-049..053 -- ADR-049/050 facts; ADR-051 (ownership registry,
+      relabelled from "quarantine") + ADR-052 (R1) now DECIDED (pending status
+      resolved by the review); ADR-053 NEW (accept the drill<->session cycle,
+      Option A, + the pure-relocation stage.js).
+  THREAD SPLIT: thread one = Phase 0 (guards + lazy-el) + backend (config, db,
+  logic, http split in two, main); thread two = frontend build-alongside +
+  atomic cutover + close-out. Zero dependency edges cross the seam; the cutover
+  stays whole in thread two.
+  Also landed this design arc: new/updated workflow prompts (adversarial-
   review lenses, spike-and-verify, plan-review, commit-planning co-load set,
   clone-and-verify parameterized baseline).
 - Phase C: residual cross-module style sweep (whatever Phase B's per-module

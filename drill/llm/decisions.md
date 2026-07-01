@@ -2079,19 +2079,33 @@ ADR-050 [DECIDED -- C-MOD-design, spike S2/S4]: layering guards are data-driven
   - Backend split is a PURE TRANSCRIPTION: spike found ZERO forward cross-section
     references (clean one-way DAG). This FACT is settled.
 
-ADR-051 [DECIDED, pending plan-review -- C-MOD-design, judgment J1]: DOM node
-  ownership via a REGISTRY WITH OWNER TAGS, not module-prefixed IDs.
-  - PROBLEM: the frontend has no DOM-access quarantine; a top-level `el` object
-    caches 156 nodes and every feature reads it. Modularization needs a single,
-    checkable owner for each node, and el must become lazy (ADR-049 import-time
-    rule) regardless.
+ADR-051 [DECIDED -- C-MOD-design + C-MOD-review; judgment J1 CONFIRMED with a
+  relabel]: DOM node OWNERSHIP REGISTRY with owner tags, not module-prefixed IDs.
+  - PROBLEM: a top-level `el` object caches the DOM nodes (28 registry entries;
+    ~149 real el.<key> read sites) and every feature reads it. Modularization
+    needs a single, checkable owner for each node, and el must become lazy
+    (ADR-049 import-time rule) regardless.
   - DECISION: keep el AS the single registry, add owner tags (logicalName ->
     {id, owner}); a test asserts each getElementById id is owned by the
     referencing module. No codebase-wide ID rename; a stale registry reddens the
     suite (auto-enforced). Alternative (prefix-in-ID) rejected: it forces a
     rename and merely relocates drift into the ID string.
-  - This is a JUDGMENT: the design adversarial-review / plan-review may revisit
-    it. Recorded as recommended, not immovable.
+  - RELABEL (adversarial-review, dependency-quarantine lens): this is a node-
+    OWNERSHIP registry, NOT a DOM quarantine. It fences node LOOKUP (which module
+    may reference node X), not DOM MUTATION. Mutation stays smeared across ~48
+    createElement sites plus every .textContent/.hidden/.disabled write. The
+    later thin DOM seam (setText/show/hide/makeButton -- DEFERRED) is what closes
+    that gap, and the owner tags are exactly the data that seam will consume. So
+    the registry is an honest stepping-stone, not the quarantine itself; do not
+    claim the DOM is fenced when only lookup is.
+  - GUARD REQUIREMENT (plan-review + a reproduced false positive): the ownership
+    test MUST be scope-aware / symbol-based, never a substring grep. A naive
+    `el\.\w+` scan matched sel.bankId, label.className, and el.importPanel.
+    textContent -- the same false-positive class ADR-050 forced the backend AST
+    guard to avoid. The guard is intended-not-enforced from the first frontend
+    extraction until the E10 cutover (the inline script is authoritative in that
+    window); this window is named in the commit plan so no green-claim overstates
+    enforcement.
 
 ADR-052 [DECIDED, pending plan-review -- C-MOD-design, judgment J2]: frontend
   strategy is R1 duplicate-then-delete with a single atomic cutover.
@@ -2113,3 +2127,41 @@ ADR-052 [DECIDED, pending plan-review -- C-MOD-design, judgment J2]: frontend
     bulk-import bounding gets an inert scaffold-comment when the split touches
     the import code.
   - This is a JUDGMENT: open to plan-review. Docs-only; suite unchanged at 311.
+  - PLAN-REVIEW OUTCOME [C-MOD-review]: J2 CONFIRMED. R1 stands (R2's dual-load
+    is a complection). Two refinements landed, neither reaching the design:
+    * THE drill<->session CYCLE (measured, not in the original design): the
+      frontend has a real bidirectional edge -- drill.loadQuestion/gradeAndShow
+      call session.startSession/recordStats/renderSessionUI, while session's
+      onStartSession/onRestartSession (wired inside renderSessionControls, so
+      session-owned) call drill.loadQuestion. Decision ADR-053 (Option A: accept
+      the cycle) + the stage relocation below.
+    * R1 WIRING RULE (clarified): extracted modules are proven in ISOLATION by
+      their own option-(b) tests and cross-import ONLY at the E10 cutover. This
+      is what "duplicate-then-delete" means and it dissolves the extraction-order
+      question -- no module imports another until every module exists.
+
+ADR-053 [DECIDED -- C-MOD-review, spike-verified]: accept the drill<->session
+  circular import (Option A), with a pure-relocation stage.js to thin it.
+  - PROBLEM: drill and session are mutually dependent (above). Dependencies-first
+    extraction is impossible for this pair.
+  - OPTIONS: (A) accept the cycle, rely on ES-module cycle semantics; (B) extract
+    a designed `phase` seam to break it -- rejected as a rewrite needing its own
+    design pass; (C) merge drill+session -- rejected as oversized (session 28
+    state/19 el + drill 38 state/51 el reads exceed one comfortable co-load).
+  - DECISION: Option A. SPIKE-VERIFIED against real Node v22 + jsdom via the
+    option-(b) harness: the drill<->session cycle resolves GREEN for BOTH import
+    orders (7/7 and 3/3). MECHANISM (the durable fact): cross-cycle calls to
+    HOISTED function declarations work even at module-eval time; a cycle breaks
+    only if a module reads another's const/arrow export at eval time (proven RED
+    via TDZ -- the spike's both-directions check). The real script has ZERO
+    module-level eval-time cross-references (the sole module-scope statement is
+    the boot-guard calling boot), so F2 holds across the whole surface, not just
+    the DOM. Option A is therefore safe; the cutover needs no cycle-breaking.
+  - RELOCATION (pure, folded into the frontend extraction): move drill-stage
+    teardown + shared notification helpers (clearChoices, clearFeedback,
+    clearAnd, setNote, setAnswerHint, clearAnswerHint) into stage.js, which both
+    drill and session depend on ONE-WAY. This shrinks session->drill to the
+    single honest loadQuestion edge (the cycle stays, but thin). It is
+    relocation, not rewrite -- no logic added -- so it honors "a cut is a cut".
+    One stage.js (not a stage/notify split): six small related DOM-write helpers
+    are one coherent concern.

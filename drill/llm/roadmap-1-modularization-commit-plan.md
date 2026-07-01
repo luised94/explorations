@@ -1,11 +1,113 @@
 # Roadmap #1 Modularization -- Commit-by-Commit Plan (design artifact)
 
-STATUS: DESIGN. No code landed yet. This is the plan to execute, grounded in
-the spike battery run this thread (results below). ASCII only. Single-user.
+STATUS: REVIEWED (C-MOD-review) -- adversarial-review + plan-review complete;
+classified, topologically sorted, thread-split confirmed against the measured
+DAG. No code landed yet. Section R below is the EXECUTABLE plan and supersedes
+the draft sequencing in C/D/E, which is retained as design rationale. ASCII
+only. Single-user.
 
-Baseline verified: SHA 72b52ad6452a7b79654460ce5fe4c5c12649b315, 311 green
-(backend 197, frontend 114). Every commit below states before/after counts and
-re-verifies in a fresh clone. Delivery is git-apply-able patches; no push.
+Baseline verified: SHA 6e5850bd1e183d01ad8d023c5fecb6a7facd540e, 311 green
+(backend 197, frontend 114). (Design-stage spikes S1-S5 ran at the earlier
+72b52ad SHA; re-verified 311 at 6e5850bd.) Every commit states before/after
+counts and re-verifies in a fresh clone. Delivery is git-apply-able patches; no
+push. NOTE: baseline here resolved jsdom 29.1.1 (design pinned 26.1.1); F1
+(no type=module execution) and S7 (cycle resolves green) held on both -- the
+clean room records whichever jsdom it resolves and re-confirms F1 if a new major.
+
+================================================================================
+R. REVIEWED + SORTED PLAN (the executable list -- supersedes C/D/E sequencing)
+================================================================================
+Legend: type = HAIKU/SONNET/OPUS; each row states the goal, what proves it
+green, and the CO-LOAD SET. "cut" = relocation + import/export plumbing only;
+"style" = naming (sel/cat on the JS side; Python is already clean) + docstrings
++ assert-splits (uv format owns formatting). Backend style commits COLLAPSE into
+their cut unless the naming/docstring check finds something (decision: no
+ceremony commits). Frontend modules cross-import ONLY at the E10 cutover (the R1
+wiring rule); each E*a is proven in ISOLATION by its own option-(b) test, so
+Phase-2 counts are stated as "311 held + 1 new module test", not hard totals.
+
+--- THREAD ONE: Phase 0 (guards + data) + Phase 1 (backend) --------------------
+Clean seam: zero dependency edges cross to the frontend modules.
+
+  C0.1  SONNET  AST boundary-purity guard on the MONOLITH (scope-aware,
+                symbol-based, policy table). Green on clean drill.py; RED on an
+                injected datetime.now() in LOGIC. 311 -> 312.
+                Co-load: drill.py, new tests/test_boundary_purity.py, conventions.
+  C0.2  HAIKU   ruff import-direction config (TID251 banned-api + per-file-
+                ignores) + adopt `uv format` as formatter. Inert pre-split.
+                312 unchanged. Co-load: pyproject.toml.
+  C0.3  SONNET  make `el` LAZY + registry with owner tags (DATA). Inline script
+                stays authoritative; 311/312 stay green. Highest Phase-0 blast
+                radius (28 nodes / ~149 reads) -- sequenced before any extraction.
+                This is an ADJUSTMENT (eager->lazy timing), not pure relocation;
+                the suite is the guard. Co-load: index.html, frontend tests.
+  D1    SONNET  cut config.py (scalars, QTYPES, DIFFICULTY_RUNGS, SCHEMA_*,
+                MIGRATIONS, OPERATOR_DEFINITIONS). Leaf. Co-load: CONFIG region,
+                config.py, smoke import test. (style collapses -- Python clean.)
+  D2    SONNET  cut db.py (connect, migrations, CRUD, row readers, utc_now_iso;
+                imports config). Co-load: DB region, config.py, test_db.py.
+  D3    SONNET  cut logic.py (generators, evaluator, validate, parse, summaries,
+                payload build; imports config). Purity guard now per-file
+                enforceable. Co-load: LOGIC region, config.py, test_logic.py.
+  D4a   SONNET  cut http.py PART A: request-helper preamble (_json_error,
+                _integrity_message, _request_json, _BadParameter, _require_int,
+                _optional_int), app object, + simple read routes (/, categories,
+                banks, difficulty-rungs). Imports db+logic.
+  D4b   SONNET  cut http.py PART B: heavy routes (question, answer, stats,
+                session/start, session/end, banks/import). Split from D4a to keep
+                each co-load set <= sonnet (region is 638 lines / 10 routes).
+                Co-load (each): the half being cut, db.py, logic.py, test_http.py.
+  D5    HAIKU   cut main.py (entrypoint/bootstrap; imports db+http).
+                Co-load: MAIN region, db.py, http.py.
+  (Backend style: emitted as a separate HAIKU only if the check finds naming/
+   docstring work; expected empty -- Python has zero abbreviation debt, S9.)
+
+--- THREAD TWO: Phase 2 (frontend build-alongside) + cutover + close-out -------
+The atomic cutover (E10) stays WHOLLY in this thread. Launch context inherits
+the C0.1 scope-aware AST guard as the template for E10's ownership guard, and a
+note to re-confirm F1 against the clean room's jsdom.
+
+  E1    SONNET  state.js (STREAK_PIPS_MAX, RECENT_MAX, ZERO_STATS, state). Clean
+                leaf (S3). Proven by a new option-(b) test.
+  E2    SONNET  api.js (apiGet/apiPost/readJson). NOTE: two raw fetch sites
+                (endSessionOnUnload keepalive, onImportSubmit multipart) stay
+                out of the seam by design -- api is a ~90% seam, flagged.
+  E3    HAIKU   timing.js (nowMs -> performance.now wrapper).
+  E4    SONNET  stage.js -- THE RELOCATION (ADR-053): clearChoices, clearFeedback,
+                clearAnd + shared setNote, setAnswerHint, clearAnswerHint. One
+                module (not stage/notify split). Pure relocation, no logic added.
+                Thins session->drill to the single loadQuestion edge.
+  E5    SONNET  speech.js (speak/cancelSpeech/language/visibility; imports state,
+                stage). The speechSynthesis quarantine.
+  E6    SONNET  stats.js (renderStats/pips/run log/figure/stats panel). `cat`
+                local rename in the style half.
+  E7    SONNET  session.js (transitions + session UI + on*Session handlers;
+                imports state, stage, api, stats). `sel`->`selection` in style.
+  E8    SONNET  drill.js (question render/answer/feedback/phase machine; the thin
+                cycle with session). Largest frontend co-load even after E4.
+  E9    SONNET  boot.js (static wiring, category/bank/difficulty selectors,
+                import panel, boot). `sel`->`selection` in style.
+  E10   ATOMIC  CUTOVER (the one deliberate "let it go red", kept mechanical by
+                R1): flip <script> to type=module src=boot.js; delete inline
+                script; migrate the 7 original tests to option (b); land the
+                frontend ownership guard (scope-aware per ADR-051/S8) + the
+                "no DOM access at import time" AST guard. All modules cross-import
+                here for the first time (S7 proved the wired cycle resolves).
+                Proves: 7 migrated tests + all E* module tests green; >= 311.
+  F1-F3 close-out: as-built ADRs (D-MOD resolved; ADR-051/052/053 already
+                recorded); STATUS.md/roadmap.md(#1 DONE)/knowledge-capture.md
+                (S7 ESM fact); CODING_CONVENTIONS HTML/CSS section.
+
+THREAD SPLIT rationale (plan-review lens 5, CONFIRMED not assumed): backend and
+frontend share zero dependency edges (different languages/files), so the seam
+crosses nothing; E10 (the only atomic, straddle-risk commit) is wholly inside
+thread two. The one cross-thread item is a KNOWLEDGE handoff (the AST guard
+pattern), not a code dependency.
+
+================================================================================
+(Below: original DESIGN-stage rationale. Superseded by R for sequencing; kept
+for the reasoning behind each choice.)
+================================================================================
 
 ================================================================================
 A. WHAT THE SPIKES ESTABLISHED (facts the plan rests on)

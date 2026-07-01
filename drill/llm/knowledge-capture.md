@@ -287,6 +287,16 @@ ASCII only.
     which is the actual fix and is verified to fail without it. General rule:
     jsdom tests assert structure, attributes, and stylesheet text -- never
     cascade-resolved visual layout.]
+    [v-MOD: ES-MODULE CIRCULAR IMPORTS resolve GREEN when no cross-module symbol
+    is USED at module-eval time -- calls to HOISTED function declarations across
+    a cycle work even during eval, and only a const/arrow export READ at eval
+    time breaks (TDZ: "Cannot access X before initialization"). Spiked against
+    real Node v22 via the option-(b) harness (jsdom outside-only + globals +
+    dynamic import), both import orders green. Consequence for this project's
+    modularization: the drill<->session cycle is safe because every function is a
+    `function` declaration and nothing reads another module at eval time. General
+    rule for a no-build ESM codebase: keep all module-level cross-references
+    inside function bodies, never at top level, and a cycle is harmless.]
   - Integration: drive the real frontend (jsdom) against the real backend handler
     (child-process WSGI over a seeded temp DB). (test_c019_integration.js.)
   - Inertness proof: ast.parse both file versions, strip the module docstring,
