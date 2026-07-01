@@ -2043,3 +2043,73 @@ ADR-048 [DECIDED -- C-2U-docs/Phase A]: single-source status in STATUS.md and
     getting missed becomes a check."
   - This is the bulk of roadmap #20 (docstring/status-drift cleanup); the ADR
     index remains outstanding. Docs-only; suite unchanged at 311 green.
+
+ADR-049 [DECIDED -- C-MOD-design, spike S1/S1b/S1c]: frontend tests import
+  modules directly (option b), not via jsdom page execution.
+  - PROBLEM: after modularization the page uses <script type=module>. Spiked
+    against the real jsdom (26.1.1): jsdom does NOT execute module scripts at
+    all (inline or external src) -- classic scripts do run. So a test cannot
+    let jsdom run the modular page and read leaked globals.
+  - DECISION: tests build the DOM with jsdom runScripts:"outside-only", publish
+    window+document as globals BEFORE import, then import the real ES module via
+    Node's loader and drive it -- the frontend mirror of the backend
+    load_drill() pattern. Fits a plain .test.js (async IIFE + dynamic import());
+    the run.sh glob discovers it with no run.sh change.
+  - CONSEQUENCE (minted rule): modules touch the DOM only INSIDE functions,
+    never at import time (import-time getElementById throws under option b and
+    is fragile in-browser). Enforceable by AST guard.
+  - This FACT is settled (measured), not a preference.
+
+ADR-050 [DECIDED -- C-MOD-design, spike S2/S4]: layering guards are data-driven
+  and DUAL (ruff imports + AST calls).
+  - PROBLEM: the layering invariant (config<-db<-logic<-http; nothing imports
+    http; LOGIC touches no db/clock/bottle) is the POINT of the split and must
+    become a check, not a reminder (ADR-048's "conventions become checks").
+  - DECISION: enforce with BOTH, each policy expressed as DATA:
+      * ruff flake8-tidy-imports banned-api + per-file-ignores -- import
+        direction, declarative in pyproject.toml, pairs with `uv format`.
+      * a scope-aware AST purity test (policy as a table) -- call-level purity,
+        because a FUNCTION-LOCAL import dodges a module-level import ban (proven
+        by injection: only the AST call-check caught an injected datetime.now in
+        LOGIC). The AST test is GREEN on clean code and RED on the injection.
+  - CONSEQUENCE: the AST checker must be scope-aware (ignore params/locals) and
+    assign layer by SYMBOL/file, not by line range -- the naive version produced
+    3 false positives on the clean file. Guards land in the suite (portable to
+    the clean-room clone), not only in a local hook.
+  - Backend split is a PURE TRANSCRIPTION: spike found ZERO forward cross-section
+    references (clean one-way DAG). This FACT is settled.
+
+ADR-051 [DECIDED, pending plan-review -- C-MOD-design, judgment J1]: DOM node
+  ownership via a REGISTRY WITH OWNER TAGS, not module-prefixed IDs.
+  - PROBLEM: the frontend has no DOM-access quarantine; a top-level `el` object
+    caches 156 nodes and every feature reads it. Modularization needs a single,
+    checkable owner for each node, and el must become lazy (ADR-049 import-time
+    rule) regardless.
+  - DECISION: keep el AS the single registry, add owner tags (logicalName ->
+    {id, owner}); a test asserts each getElementById id is owned by the
+    referencing module. No codebase-wide ID rename; a stale registry reddens the
+    suite (auto-enforced). Alternative (prefix-in-ID) rejected: it forces a
+    rename and merely relocates drift into the ID string.
+  - This is a JUDGMENT: the design adversarial-review / plan-review may revisit
+    it. Recorded as recommended, not immovable.
+
+ADR-052 [DECIDED, pending plan-review -- C-MOD-design, judgment J2]: frontend
+  strategy is R1 duplicate-then-delete with a single atomic cutover.
+  - PROBLEM: all 7 frontend tests share the classic-script global-leak harness
+    (spike S5); flipping the tag to type=module breaks them ALL at once, so the
+    harness migration is not naively incremental.
+  - DECISION: build each ES module ALONGSIDE the untouched inline script, prove
+    each with a new option-(b) test; the old 7 tests keep passing against the
+    inline script until ONE cutover commit flips the tag, deletes the inline
+    script, migrates the 7 tests, and lands the frontend guards. R2 (dual-load
+    modules also as classic window-assigning scripts) rejected: dual-mode is a
+    complection and risks divergence. The cutover is the one unavoidably-atomic,
+    non-small commit; a candidate for the "let it go red" tool, kept mechanical
+    (delete+rewire+migrate) because every module is already green via new tests
+    before it lands.
+  - DEFERRED (recorded, not done here): the thin DOM seam (Eskil quarantine --
+    setText/show/hide wrappers making [hidden] impossible-to-violate) is a
+    SEPARATE post-modularization item (it rewrites 156 sites, not relocation);
+    bulk-import bounding gets an inert scaffold-comment when the split touches
+    the import code.
+  - This is a JUDGMENT: open to plan-review. Docs-only; suite unchanged at 311.
