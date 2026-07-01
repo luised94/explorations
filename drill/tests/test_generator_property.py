@@ -37,9 +37,9 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _support import load_drill  # noqa: E402
+from _support import load_logic  # noqa: E402
 
-_M = load_drill()
+_M = load_logic()
 _ALL_SYMBOLS = list(_M.OPERATOR_SYMBOLS)
 _COMPOSABLE = {"+", "-", "*"}
 _LEAF_ONLY = {"/", "%", "^"}

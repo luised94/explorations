@@ -418,19 +418,22 @@ def test_backend_dag_has_no_upstack_edges(drill_tree, symbols):
 # RED on injection -- the other direction (S4). A guard that cannot fail is
 # not a guard; prove it reddens on a clock read planted in a LOGIC function.
 # --------------------------------------------------------------------------
-def _inject_clock_into_a_logic_function(source):
-    """Return source with `datetime.now(timezone.utc)` planted as the first
-    statement of the LOGIC function validate_answer, via a FUNCTION-LOCAL
-    import so a module-level import ban would miss it (S4)."""
+def _inject_clock_into_logic_module():
+    """Return (source, path, funcname) for logic.py with a function-local clock
+    read planted as the first statement of a real LOGIC function. Uses a local
+    import so a module-level import ban would miss it (S4). Operates on the
+    extracted logic.py -- the layer's real home post-D3."""
+    path = "logic.py"
+    with open(path, "r", encoding="utf-8") as handle:
+        source = handle.read()
     lines = source.splitlines()
+    funcname = "evaluate_expression"
     target = None
     for i, line in enumerate(lines):
-        if line.startswith("def validate_answer("):
+        if line.startswith("def " + funcname + "("):
             target = i
             break
-    assert target is not None, "validate_answer not found -- update the injection"
-    # find the line after the def (and its possible multi-line signature) where
-    # the body begins; insert an indented local import + clock call there.
+    assert target is not None, funcname + " not found in logic.py -- update injection"
     insert_at = target
     while not lines[insert_at].rstrip().endswith(":"):
         insert_at += 1
@@ -439,42 +442,44 @@ def _inject_clock_into_a_logic_function(source):
         "    import datetime as _injected_dt",
         "    _ = _injected_dt.datetime.now()",
     ]
-    return "\n".join(lines[:insert_at] + inject + lines[insert_at:])
+    return "\n".join(lines[:insert_at] + inject + lines[insert_at:]), funcname
 
 
-def test_guard_reddens_on_injected_clock_in_logic(drill_source, bounds):
-    injected = _inject_clock_into_a_logic_function(drill_source)
+def test_guard_reddens_on_injected_clock_in_logic():
+    """Clock read planted in a real logic.py LOGIC function must redden the
+    purity check -- proving per-file purity enforcement on the extracted layer
+    (S4). A guard that cannot fail is not a guard."""
+    injected, funcname = _inject_clock_into_logic_module()
     tree = ast.parse(injected)
-    symbols = _top_level_symbols(tree, bounds)
+    # In the extracted module every top-level symbol is that module's layer.
+    symbols = {nm: ("LOGIC", node) for node in tree.body for nm in _defined_names(node)}
     violations = _purity_violations(tree, symbols)
-    assert any("validate_answer" in v and "now()" in v for v in violations), (
-        "the guard failed to catch a clock read injected into a LOGIC "
-        "function -- it would pass anything (found: %r)" % (violations,)
+    assert any(funcname in v and "now()" in v for v in violations), (
+        "the guard failed to catch a clock read injected into a LOGIC function "
+        "-- it would pass anything (found: %r)" % (violations,)
     )
 
 
-def test_guard_reddens_on_injected_upstack_reference(drill_source, bounds):
-    """A LOGIC function reaching UP to an HTTP symbol must redden the reference
-    check. (Originally injected a DB->LOGIC edge; DB moved to db.py in D2, so
-    this now uses a LOGIC->HTTP pair that still lives in the drill.py residual.)"""
-    lines = drill_source.splitlines()
-    target = None
-    for i, line in enumerate(lines):
-        if line.startswith("def normalize_text("):  # a LOGIC function
-            target = i
-            break
-    assert target is not None, "normalize_text not found -- update the injection"
-    insert_at = target
-    while not lines[insert_at].rstrip().endswith(":"):
-        insert_at += 1
-    insert_at += 1
-    # serve_index is an HTTP route handler; referencing it from LOGIC is up-stack.
-    inject = ["    _ = serve_index"]
-    injected = "\n".join(lines[:insert_at] + inject + lines[insert_at:])
-    tree = ast.parse(injected)
-    symbols = _top_level_symbols(tree, bounds)
-    violations = _reference_violations(tree, symbols)
-    assert any("normalize_text" in v and "serve_index" in v for v in violations), (
-        "the guard failed to catch an up-stack reference injected into a LOGIC "
-        "function (found: %r)" % (violations,)
+def test_guard_reddens_on_injected_upstack_import():
+    """An up-stack MODULE import planted in a lower layer must redden the
+    import-direction check -- the durable file-level analog of the old
+    bare-name up-stack proof (which depended on two layers sharing drill.py;
+    they no longer do). Inject `import db` into the config.py leaf."""
+    path = "config.py"
+    assert os.path.exists(path), "config.py must exist for this proof"
+    with open(path, "r", encoding="utf-8") as handle:
+        original = handle.read()
+    # Only proceed if db.py exists to be the illegal (higher-layer) target.
+    if not os.path.exists("db.py"):
+        pytest.skip("db.py not extracted yet; up-stack import proof N/A")
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("import db  # INJECTED up-stack import\n" + original)
+        violations = _import_direction_violations()
+    finally:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(original)
+    assert any("config.py" in v and "db.py" in v for v in violations), (
+        "the guard failed to catch an up-stack module import injected into the "
+        "config leaf (found: %r)" % (violations,)
     )

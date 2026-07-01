@@ -67,6 +67,20 @@ def load_db(path="db.py"):
     return module
 
 
+def load_logic(path="logic.py"):
+    """Load logic.py from disk as a fresh, uniquely-named module object (D3).
+
+    The LOGIC layer (pure functions). D3a extracted the arithmetic-engine half;
+    D3b adds the general-logic half. Tests exercising LOGIC load this per D-4.
+    Because logic imports config, config.py must be importable from the cwd --
+    conftest chdirs to PROJECT_ROOT, so it is."""
+    name = "logic_under_test_" + uuid.uuid4().hex
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_config(path="config.py"):
     """Load config.py from disk as a fresh, uniquely-named module object (D1).
 

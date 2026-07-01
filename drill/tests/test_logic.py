@@ -28,12 +28,17 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _support import load_drill  # noqa: E402
+from _support import load_logic  # noqa: E402
 
 
 @pytest.fixture(scope="module")
 def m():
-    return load_drill()
+    # D3: the entire LOGIC layer (arithmetic engine + general logic) lives in
+    # logic.py. Tests read config scalars (QTYPE_*, _MAX_*, _RECURSE_PROBABILITY)
+    # through logic's re-exports, and state-mutating tests rebind logic's own
+    # module globals (which the arithmetic functions read), so a single handle
+    # suffices. (D-4: tests import the submodule they exercise.)
+    return load_logic()
 
 
 # --------------------------------------------------------------------------
