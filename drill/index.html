@@ -961,34 +961,71 @@ var state = {
 
 var ZERO_STATS = { total: 0, correct: 0, accuracy: 0.0, streak: 0 };
 
-var el = {
-  category:  document.getElementById("category"),
-  expression: document.getElementById("expression"),
-  answer:    document.getElementById("answer"),
-  action:    document.getElementById("action"),
-  feedback:  document.getElementById("feedback"),
-  note:      document.getElementById("note"),
-  statTotal: document.getElementById("stat-total"),
-  statAccuracy: document.getElementById("stat-accuracy"),
-  statStreak: document.getElementById("stat-streak"),
-  streakPips: document.getElementById("streak-pips"),
-  sessionControls: document.getElementById("session-controls"),
-  runLog:    document.getElementById("run-log"),
-  runLogList: document.getElementById("run-log-list"),
-  answerHint: document.getElementById("answer-hint"),
-  importToggle: document.getElementById("import-toggle"),
-  importPanel: document.getElementById("import-panel"),
-  statsToggle: document.getElementById("stats-toggle"),
-  statsPanel: document.getElementById("stats-panel"),
-  bankSelector: document.getElementById("bank-selector"),
-  bank:      document.getElementById("bank"),
-  difficulty: document.getElementById("difficulty"),
-  difficultyNote: document.getElementById("difficulty-note"),
-  activeRung: document.getElementById("active-rung"),
-  answerRow: document.getElementById("answer-row"),
-  choices:   document.getElementById("choices"),
-  speaker:   document.getElementById("speaker")
+/* ---- el: lazy DOM-node accessor (C0.3a) --------------------------------
+
+   `el.answer` still returns the #answer node, exactly as before, but resolution
+   is now LAZY: getElementById runs on FIRST access, not at script-eval time,
+   and the result is memoized so each node is looked up at most once (matching
+   the old "resolve once" semantics -- the old object resolved all 26 at eval).
+
+   Why lazy: a module that caches nodes at IMPORT/eval time is fragile (module
+   scripts defer past parse) and un-importable under the option-(b) test harness
+   (it throws unless a DOM pre-exists). Deferring resolution to first use removes
+   that coupling with zero behavior change here: no el.<key> is read at
+   script-eval time (all 156 reads sit inside functions that run after boot), so
+   moving the getElementById calls later is unobservable. This is the S3-mandated
+   adjustment that unblocks every later frontend module (option b).
+
+   EL_IDS maps each logical name to its element id -- plain data, one place. The
+   ownership registry with owner tags (ADR-051) layers onto this map in C0.3b. */
+var EL_IDS = {
+  category: "category",
+  expression: "expression",
+  answer: "answer",
+  action: "action",
+  feedback: "feedback",
+  note: "note",
+  statTotal: "stat-total",
+  statAccuracy: "stat-accuracy",
+  statStreak: "stat-streak",
+  streakPips: "streak-pips",
+  sessionControls: "session-controls",
+  runLog: "run-log",
+  runLogList: "run-log-list",
+  answerHint: "answer-hint",
+  importToggle: "import-toggle",
+  importPanel: "import-panel",
+  statsToggle: "stats-toggle",
+  statsPanel: "stats-panel",
+  bankSelector: "bank-selector",
+  bank: "bank",
+  difficulty: "difficulty",
+  difficultyNote: "difficulty-note",
+  activeRung: "active-rung",
+  answerRow: "answer-row",
+  choices: "choices",
+  speaker: "speaker"
 };
+
+/* Build the accessor: one memoizing getter per logical name. First read of
+   el.<name> resolves getElementById(id) and caches it; later reads return the
+   cache. Same read syntax (el.answer), same node, later timing. */
+var el = (function buildEl(ids) {
+  var target = {};
+  var cache = {};
+  Object.keys(ids).forEach(function (name) {
+    Object.defineProperty(target, name, {
+      enumerable: true,
+      get: function () {
+        if (!(name in cache)) {
+          cache[name] = document.getElementById(ids[name]);
+        }
+        return cache[name];
+      }
+    });
+  });
+  return target;
+})(EL_IDS);
 
 /* ---- API helpers ------------------------------------------------------ */
 
