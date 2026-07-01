@@ -25,10 +25,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 # Backend modules (roadmap #1 modularization): drill.py is the thin MAIN
-# composition root + HTTP layer; config.py is the CONFIG leaf (D1); db.py is the
-# DATABASE layer (D2); logic.py is the LOGIC layer (D3, arithmetic engine +
-# general logic). The final cut (http) will move HTTP out of drill.py.
-include = ["drill.py", "config.py", "db.py", "logic.py", "index.html"]
+# composition root + (until D4b) the route handlers; config.py CONFIG leaf (D1);
+# db.py DATABASE (D2); logic.py LOGIC (D3); http_layer.py the HTTP request-helper
+# preamble (D4a; named http_layer to avoid shadowing the stdlib http package).
+include = ["drill.py", "config.py", "db.py", "logic.py", "http_layer.py", "index.html"]
 
 [dependency-groups]
 test = ["pytest>=8", "hypothesis>=6"]
@@ -64,13 +64,15 @@ select = ["TID"]  # flake8-tidy-imports: the import-direction family.
 # re-open exactly the legal down-stack edges.
 "drill.db".msg = "layering: only http/main may import db (config<-db<-logic<-http)."
 "drill.logic".msg = "layering: only http may import logic (config<-db<-logic<-http)."
-"drill.http".msg = "layering: nothing imports http; only main wires it."
+"drill.http_layer".msg = "layering: nothing imports http; only main wires it."
 
 [tool.ruff.lint.per-file-ignores]
 # Re-open the legal edges (TID251 is the banned-api code):
-#   http.py may import db + logic; main.py may import db + http; db/logic may
-#   import config (config is never banned, so needs no relaxation).
-"drill/http.py" = ["TID251"]
+#   http_layer.py may import db + logic; main.py may import db + http_layer;
+#   db/logic may import config (config is never banned, so needs no relaxation).
+#   (The HTTP module is named http_layer, not http, to avoid shadowing the
+#   stdlib http package that bottle imports.)
+"drill/http_layer.py" = ["TID251"]
 "drill/main.py" = ["TID251"]
 # The guard test and support harness deliberately name every layer (to parse /
 # drive them); they are not production import edges.

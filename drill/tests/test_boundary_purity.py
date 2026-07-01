@@ -101,9 +101,10 @@ LAYER_MODULES = {
     "config.py": "CONFIG",
     "db.py": "DATABASE",
     "logic.py": "LOGIC",
-    "http.py": "HTTP",
+    "http_layer.py": "HTTP",
     # drill.py is the MAIN composition root + not-yet-extracted remainder; it is
     # allowed to import every lower layer, so it is handled specially (no ban).
+    # Named http_layer (not http) to avoid shadowing the stdlib http package.
 }
 
 
