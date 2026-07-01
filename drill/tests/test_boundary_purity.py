@@ -89,6 +89,27 @@ FORBIDDEN_CALLS = {
 # clock" plus the MAIN startup injection.
 CLOCK_ALLOWED_SYMBOLS = frozenset({"utc_now_iso", "init_db"})
 
+# Extracted layer modules -> their layer. As the D-phase cuts progress, each
+# layer moves from the drill.py monolith into its own top-level module (thin
+# drill.py stays the MAIN composition root -- D-MOD-3). The guard checks the
+# monolith regions for symbols not yet extracted AND the cross-file import
+# direction for modules that exist. This is the handoff-named evolution: "post-
+# split the guard's layer-of-symbol switches from line-range to the file it
+# lives in". Only files that exist are analyzed, so the guard stays green
+# through each incremental cut.
+LAYER_MODULES = {
+    "config.py": "CONFIG",
+    "db.py": "DATABASE",
+    "logic.py": "LOGIC",
+    "http.py": "HTTP",
+    # drill.py is the MAIN composition root + not-yet-extracted remainder; it is
+    # allowed to import every lower layer, so it is handled specially (no ban).
+}
+
+
+def _existing_layer_modules():
+    return {path: layer for path, layer in LAYER_MODULES.items() if os.path.exists(path)}
+
 
 def _read(path=DRILL):
     with open(path, "r", encoding="utf-8") as handle:
@@ -114,19 +135,23 @@ def _layer_of_line(bounds, lineno):
     return layer
 
 
+def _defined_names(node):
+    """Top-level names a statement binds (def/class name, assignment targets)."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [node.name]
+    if isinstance(node, ast.Assign):
+        return [t.id for t in node.targets if isinstance(t, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return [node.target.id]
+    return []
+
+
 def _top_level_symbols(tree, bounds):
     """Map top-level symbol name -> (layer, defining_node). Layer is the section
     the symbol is DEFINED in (by symbol, not by reference site)."""
     symbols = {}
     for node in tree.body:
-        names = []
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names = [node.name]
-        elif isinstance(node, ast.Assign):
-            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names = [node.target.id]
-        for name in names:
+        for name in _defined_names(node):
             layer = LAYER_OVERRIDES.get(name, _layer_of_line(bounds, node.lineno))
             symbols[name] = (layer, node)
     return symbols
@@ -242,6 +267,41 @@ def _purity_violations(tree, symbols):
     return violations
 
 
+def _import_direction_violations():
+    """Every cross-layer MODULE import that points UP the stack. This is the
+    file-level analog of _reference_violations: once a layer lives in its own
+    module, an illegal edge shows up as `import <higher-layer-module>` rather
+    than a bare-name reference. drill.py (MAIN composition root) is exempt -- it
+    legally imports every lower layer. Only modules that exist are checked, so
+    the guard stays green through each incremental D-phase cut.
+
+    This is the AST twin of the C0.2 ruff banned-api rule (declarative import
+    ban): the ruff config catches it at lint time, this catches it in the suite
+    (portable to the clean-room clone), and neither depends on the other."""
+    existing = _existing_layer_modules()
+    violations = []
+    for path, layer in existing.items():
+        with open(path, "r", encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            for name in names:
+                module_file = name.split(".")[0] + ".py"
+                target_layer = LAYER_MODULES.get(module_file)
+                if target_layer is None:
+                    continue  # stdlib / third-party / drill itself
+                if LAYER_RANK[target_layer] > LAYER_RANK[layer]:
+                    violations.append(
+                        "%s (%s) imports %s (%s) up-stack at line %d"
+                        % (path, layer, module_file, target_layer, node.lineno)
+                    )
+    return violations
+
+
 # --------------------------------------------------------------------------
 # Fixtures: parse the real file once.
 # --------------------------------------------------------------------------
@@ -280,14 +340,36 @@ def test_no_upstack_references(drill_tree, symbols):
 
 
 def test_logic_and_config_are_pure(drill_tree, symbols):
-    """LOGIC and CONFIG read no clock and touch no DB (call-level, S4)."""
+    """LOGIC and CONFIG read no clock and touch no DB (call-level, S4). Covers
+    the drill.py residual AND every extracted layer module that exists, so a cut
+    that drags a clock/DB call into config.py or logic.py reddens immediately."""
     violations = _purity_violations(drill_tree, symbols)
+    for path, layer in _existing_layer_modules().items():
+        with open(path, "r", encoding="utf-8") as handle:
+            mod_tree = ast.parse(handle.read())
+        # In an extracted module every top-level symbol IS that module's layer.
+        mod_symbols = {}
+        for node in mod_tree.body:
+            for nm in _defined_names(node):
+                mod_symbols[nm] = (layer, node)
+        violations.extend(_purity_violations(mod_tree, mod_symbols))
     assert violations == [], "purity violations found:\n  " + "\n  ".join(violations)
 
 
-def test_measured_dag_matches_S2(drill_tree, symbols):
-    """Pin the DAG shape so a future edit that adds a NEW legal-direction edge
-    into a layer is at least visible in the diff. This mirrors the S2 census."""
+def test_no_upstack_module_imports():
+    """No extracted layer module imports a higher layer (the file-level DAG).
+    drill.py (MAIN root) is exempt. Complements the C0.2 ruff banned-api rule."""
+    violations = _import_direction_violations()
+    assert violations == [], "up-stack module imports:\n  " + "\n  ".join(violations)
+
+
+def test_backend_dag_has_no_upstack_edges(drill_tree, symbols):
+    """The backend is a one-way DAG (S2). Within the drill.py residual, no
+    bare-name reference points up-stack; the count of any surviving cross-layer
+    edge is not pinned (extraction legitimately drains the monolith's internal
+    edges into cross-file imports, checked by test_no_upstack_module_imports).
+    This replaces the monolith-era headline-count pin, which no longer holds
+    once layers split into their own files."""
     from collections import Counter
 
     edges = Counter()
@@ -303,16 +385,8 @@ def test_measured_dag_matches_S2(drill_tree, symbols):
                 tl = symbols[t][0]
                 if tl != owner_layer:
                     edges[(owner_layer, tl)] += 1
-    # Only DOWN-stack edges may exist, and the three heaviest are S2's headline
-    # figures. Exact counts are asserted loosely (>=) so a benign refactor that
-    # adds one more legal call does not redden the guard; the up-stack test is
-    # the hard invariant.
-    assert all(LAYER_RANK[a] > LAYER_RANK[b] for (a, b) in edges), (
-        "an up-stack edge slipped through: %r" % (dict(edges),)
-    )
-    assert edges[("HTTP", "DATABASE")] >= 20
-    assert edges[("LOGIC", "CONFIG")] >= 15
-    assert edges[("HTTP", "LOGIC")] >= 10
+    upstack = {pair: c for pair, c in edges.items() if LAYER_RANK[pair[0]] < LAYER_RANK[pair[1]]}
+    assert upstack == {}, "up-stack references within drill.py: %r" % (upstack,)
 
 
 # --------------------------------------------------------------------------
