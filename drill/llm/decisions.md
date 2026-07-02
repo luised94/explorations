@@ -2106,6 +2106,44 @@ ADR-051 [DECIDED -- C-MOD-design + C-MOD-review; judgment J1 CONFIRMED with a
     extraction until the E10 cutover (the inline script is authoritative in that
     window); this window is named in the commit plan so no green-claim overstates
     enforcement.
+  - ADDENDUM [thread two, pre-E1 -- E10 guard assertion semantics]: attributing
+    all 158 real el.<key> lookups in the shipped inline script to their enclosing
+    module found 13 GENUINE cross-owner reads that are correct by design (stage
+    reads drill's choices/feedback; drill reads speech's speaker + stage's
+    answerHint; session reads stats' streakPips; boot reaches action/answer/
+    speaker/statsToggle for static wiring). So the literal reading "only the
+    owner module may reference node X" is WRONG -- it would redden all 13. The
+    E10 guard therefore asserts FOUR data-driven, scope-aware checks, not one:
+      (A) REGISTRY INTEGRITY: each EL_REGISTRY entry has a unique id + non-empty
+          owner in the known-module set; no two logical names share an id; no
+          dead keys. This is the "stale registry reddens the suite" property.
+      (B) OWNER-DECLARES: each node's owner module itself references the node
+          (an owner that never touches its node is mis-assigned).
+      (C) CROSS-OWNER ALLOWLIST (the check with teeth): any lookup of node X by
+          a non-owner module must appear in an explicit CROSS_OWNER_READS policy
+          table (the 13 edges are its initial rows; the stage<->drill rows are
+          removed by the E4 decision below). A NEW undeclared cross-owner read
+          reddens -- forcing a conscious review decision, the frontend analog of
+          the backend legal-backward-edge census.
+      (D) NO DOM AT IMPORT TIME (ADR-049 rule): no module-scope getElementById /
+          el.<key> / document.* outside a function body.
+    RED-proofs (mirror C0.1's inject/parse/assert/restore): (1) inject an
+    undeclared cross-owner read (el.statsPanel into a speech fn) -> C reddens;
+    (2) inject a module-scope document.getElementById -> D reddens.
+    IMPLEMENTATION SURFACE [decided]: JS + acorn in a .test.js (glob-discovered),
+    NOT Python AST in pytest. Rationale: colocates with the option-(b) frontend
+    harness, uses the acorn already present via jsdom's dependency tree (zero new
+    deps), and the backend already owns the Python-side guard. Scope-aware parse
+    is mandatory (S8): strip comments, resolve the receiver so member chains on
+    non-el objects -- sel.bankId, label.className, el.importPanel.textContent --
+    are not counted; never a substring grep.
+  - ADDENDUM [thread two, pre-E1 -- E4 owner-tag decision]: clearChoices /
+    clearFeedback relocate INTO stage.js at E4 (ADR-053). When they do, the
+    owner tags for `choices` and `feedback` FLIP drill->stage (the module that
+    manipulates a node owns it), rather than leaving them drill-owned with stage
+    allowlisted. This shrinks the CROSS_OWNER_READS table and keeps ownership
+    honest. E4's cut carries the two owner-tag edits; the E10 guard's initial
+    allowlist is written WITHOUT the stage<->drill rows accordingly.
 
 ADR-052 [DECIDED -- C-MOD-design + C-MOD-review, judgment J2]: frontend
   strategy is R1 duplicate-then-delete with a single atomic cutover.
