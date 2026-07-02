@@ -9,7 +9,7 @@ made structural: when status changes, edit THIS file only.
 
 ASCII only. Single-user assumption holds throughout.
 
-Last updated: end of the UI-selector thread (C-2U-a..e + docs).
+Last updated: mid-THREAD TWO (frontend E1-E9 extracted; E10 cutover is next).
 
 ================================================================================
 BASELINE
@@ -32,6 +32,10 @@ BASELINE
   THREAD TWO is 317 green (backend 203, frontend 114) at the tip of thread one --
   confirm 317 on a clean clone before frontend work. See the Phase B thread-one
   marker below and llm/handoffs/2-to-frontend-cutover.md.
+  UPDATE (mid-thread-two): frontend modules E1-E9 are now extracted and green.
+  Suite is 528 green (backend 203 unchanged; frontend 114 original classic +
+  211 across ten new *.module.test.js). The baseline for the E10 cutover is the
+  tip of thread two (C-MOD-E8, boot); see llm/handoffs/3-to-E10-cutover.md.
 
 ================================================================================
 DONE (roadmap items and the commit arc)
@@ -92,6 +96,22 @@ is split around a quality pass:
   satisfied-by-D4b (drill.py IS main; the drill:main entry point resolves).
   THREAD TWO (frontend build-alongside + atomic cutover + close-out) is NEXT;
   see llm/handoffs/2-to-frontend-cutover.md.
+  ** THREAD TWO IN PROGRESS (frontend build-alongside). ** Commits C-MOD-E1..E8
+  (+ C-MOD-E-naming). All ten frontend modules are extracted as clean ES modules
+  and proven in isolation by option-(b) tests, WITHOUT touching index.html (R1
+  duplicate-then-delete): state, api, timing (leaves); el (shared DOM leaf, an
+  as-built module the plan did not enumerate); stage (ADR-053 relocation);
+  speech; stats; session + drill (the ADR-053 cycle, landed as one commit); boot
+  (entry module, top of the DAG). Suite 317 -> 528 green (frontend 114 classic
+  unchanged + 211 new module asserts; backend 203 unchanged). The inline script
+  in index.html is STILL authoritative and all 7 classic frontend tests still
+  pass against it. The ONLY remaining frontend commit is E10, the atomic
+  cutover, which is handed off fresh: llm/handoffs/3-to-E10-cutover.md.
+  As-built deviations recorded there and in decisions.md: el.js is a 10th module;
+  speech imports state+el (not state+stage); session imports speech+drill beyond
+  the plan's list; the E4 owner-flip was reversed (choices/feedback stay drill-
+  owned); the E10 guard is JS/acorn with a four-check design + a named boot-guard
+  exemption to check D.
   The plan text below describes the whole of #1 and is preserved as reference.
 - Phase B (plan text, as designed): extract index.html into ES modules
   (state/api/drill/session/stats/speech/timing/boot) and split drill.py into a
