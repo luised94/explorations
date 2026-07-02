@@ -2126,10 +2126,28 @@ ADR-051 [DECIDED -- C-MOD-design + C-MOD-review; judgment J1 CONFIRMED with a
           reddens -- forcing a conscious review decision, the frontend analog of
           the backend legal-backward-edge census.
       (D) NO DOM AT IMPORT TIME (ADR-049 rule): no module-scope getElementById /
-          el.<key> / document.* outside a function body.
+          el.<key> / document.* outside a function body -- with ONE named
+          exemption: boot.js's boot-guard. boot.js is the entry module and its
+          sole module-scope statement is the boot-guard (S7: "the only
+          module-level eval-time statement"), an `if (document.readyState...)`
+          that CALLS the hoisted boot() (deferred via DOMContentLoaded, or
+          immediately if the DOM is ready). This is how the app starts once
+          loaded via <script type=module src=boot.js>, and it is a faithful
+          relocation of the inline script's guard (E4-decision reversal
+          precedent: verbatim relocation beats purity-driven restructuring; and
+          the backend LAYER_OVERRIDES precedent shows one named exemption is how
+          this codebase handles a single legitimate exception). So check D's
+          allowlist carries exactly one entry: boot.js's readyState guard. Every
+          OTHER module (and any other module-scope document.* in boot.js) still
+          reddens. CONSEQUENCE for option-(b) TESTS: importing boot.js runs the
+          guard -> boot() at import, so boot.module.test.js must publish a full
+          DOM fixture + fetch/navigator stubs BEFORE importing; the import IS the
+          boot() integration act (boot is the entry point, so an integration
+          test is the honest shape).
     RED-proofs (mirror C0.1's inject/parse/assert/restore): (1) inject an
     undeclared cross-owner read (el.statsPanel into a speech fn) -> C reddens;
-    (2) inject a module-scope document.getElementById -> D reddens.
+    (2) inject a module-scope document.getElementById -> D reddens (into a
+    NON-boot module, so the boot-guard exemption does not mask it).
     IMPLEMENTATION SURFACE [decided]: JS + acorn in a .test.js (glob-discovered),
     NOT Python AST in pytest. Rationale: colocates with the option-(b) frontend
     harness, uses the acorn already present via jsdom's dependency tree (zero new
