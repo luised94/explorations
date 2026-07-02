@@ -2144,6 +2144,22 @@ ADR-051 [DECIDED -- C-MOD-design + C-MOD-review; judgment J1 CONFIRMED with a
     allowlisted. This shrinks the CROSS_OWNER_READS table and keeps ownership
     honest. E4's cut carries the two owner-tag edits; the E10 guard's initial
     allowlist is written WITHOUT the stage<->drill rows accordingly.
+  - SUPERSEDED [thread two, at E4 -- reversal after write-site enumeration]:
+    the flip above is REVERSED; `choices` and `feedback` STAY drill-owned. The
+    flip's premise ("the module that manipulates the node owns it" => stage) is
+    contradicted by the code: enumerating every write site, drill remains the
+    DOMINANT manipulator of both nodes after E4 -- el.choices is written by
+    drill's renderChoices/markChoices/setChoicesDisabled (7 sites) vs stage's
+    clearChoices (2); el.feedback by drill's showFeedback (4) vs stage's
+    clearAnd/clearFeedback (3). Both modules touch both nodes regardless, so the
+    flip does not remove a cross-owner edge -- it only reverses its direction,
+    and flipping to stage makes the MAJORITY writer (drill) the cross-owner,
+    inverting "owner = primary manipulator" and LENGTHENING the allowlist. So:
+    keep owner=drill for both; stage's three teardown verbs (clearChoices,
+    clearFeedback, clearAnd) become CROSS_OWNER_READS rows at E10 instead.
+    Consequence: E4 is a pure code relocation touching NO index.html (consistent
+    with E1-E3 and R1); the tags are inert today (nothing reads .owner, no guard
+    exists pre-E10), so timing of the tag choice has zero behavior/test effect.
 
 ADR-052 [DECIDED -- C-MOD-design + C-MOD-review, judgment J2]: frontend
   strategy is R1 duplicate-then-delete with a single atomic cutover.
