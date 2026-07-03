@@ -181,6 +181,7 @@ DATABASE_PATH = DEFAULT_DATABASE_PATH
 @app.get("/")
 def serve_index():
     """Serve the single-page frontend (index.html). [stub -> C-013]"""
+    print("drill: serving index.html (browser will now fetch the ES modules)")
     return bottle.static_file("index.html", root=_MODULE_DIRECTORY)
 
 

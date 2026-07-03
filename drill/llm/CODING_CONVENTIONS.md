@@ -142,6 +142,14 @@ HOW THIS IS CHECKED
 ================================================================================
 - Today: by review and by the test suite (every commit ships a real test and
   reports the green count, not just the banner).
+- RUNTIME VERIFICATION: green tests + a followed spec are NOT sufficient for
+  changes to how code loads, packages, starts, routes, or crosses the
+  client/server boundary. For those, smoke-test the REAL path end to end before
+  "done" (start the server, open the URL, confirm every asset the page pulls
+  returns 2xx with the right content type). This convention exists because the
+  E10 cutover shipped 555 green tests and still broke the app -- the tests
+  bypassed the one path the cutover changed. See llm/verification-practices.md
+  for the failure, the practice, and a cutover/load-path checklist.
 - Planned (modularization thread): AST-level guards that make the conventions
   structural rather than disciplinary -- a boundary-purity check (no
   bottle/connection/clock Call nodes inside LOGIC), and where expressible, a

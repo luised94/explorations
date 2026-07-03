@@ -142,12 +142,22 @@ def main() -> None:
     else:
         print("drill: schema up to date (version " + str(result["to_version"]) + ")")
 
-    # Friendly startup line so the operator knows the exact URL to open.
+    # Friendly startup line so the operator knows the exact URL to open, plus a
+    # short note on what to expect. The server is PASSIVE: at startup it only
+    # initializes the DB, registers routes, and listens -- no application code
+    # runs yet. The app "starts" on the CLIENT's timeline: opening the URL serves
+    # index.html, which loads <script type="module" src="boot.js">; the browser
+    # then fetches the module graph and calls boot(). So the lines below print
+    # only once a browser connects -- silence here is normal, not a stall.
     # (Bottle also prints its own banner.)
-    print(
-        "drill: serving on http://" + host + ":" + str(port) + "/"
-        " (database: " + database_path + ")"
-    )
+    url = "http://" + host + ":" + str(port) + "/"
+    print("drill: serving on " + url + " (database: " + database_path + ")")
+    print("drill: ready and listening. The app runs when a browser opens the URL")
+    print("drill:   -- it will fetch index.html, then the ES modules (boot.js and")
+    print("drill:   its imports), then call boot(). Watch for 'serving module ...'")
+    print("drill:   lines below once you connect; if you open the URL and see NO")
+    print("drill:   such lines, the page could not load its scripts (check the")
+    print("drill:   browser Network/Console tabs).")
 
     http_layer.app.run(host=host, port=port)
 
