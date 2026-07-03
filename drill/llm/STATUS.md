@@ -109,6 +109,13 @@ CURRENT PLAN (post-reassessment):
   exist), with two quick wins folded in (timing-stats is a stats.js render
   addition against elapsed_ms already collected; the ADR index is the last WIP
   cleanup item). Cashes in the modularization; a safe re-warm-up.
+  SCOPED + REVIEWED: the workflow prompts NARROWED this to ONE real feature
+  (surface stored hints -- questions carry a hints list the payload never
+  forwards) + two quick wins. Per-question-language-in-payload was DEMOTED (it
+  is redundant with the client-side C-018a bank lookup; no consumer). The
+  executable commit plan is llm/thread-N-vocab-plan.md (sort: hints -> timing
+  stats -> ADR index, lead-with-meatier per user steer). Demoted/deferred vocab
+  ideas live in llm/vocab-language-futures.md.
 - Thread N+1: SM2 consolidation (roadmap #6) + adaptive selection (#7). Its own
   focused, schema-invasive thread; both plug the pure swappable pick_next_question
   seam. The SM2 scheduling-fields migration (reserved in ADR-025) lands here.
@@ -118,7 +125,10 @@ CURRENT PLAN (post-reassessment):
 - PARALLEL (ongoing): Study curriculum (roadmap #3) + the JS/Python/HTML/CSS
   coding-conventions formalization. Runs alongside the feature threads, auditing
   each thread's fresh code (per-file audit + encapsulation pass); it is the
-  comprehension throttle, NOT a standalone phase. See CODING_CONVENTIONS.md.
+  comprehension throttle, NOT a standalone phase. Operating doc:
+  llm/study-curriculum-and-conventions.md (audit axes, the semantics-vs-
+  conventions split, the drafted encapsulation rule + its first-pass audit
+  result). See also CODING_CONVENTIONS.md.
 
 The baseline SHA for Thread N is whatever this reassessment docs commit lands at
 on main; a launch message pins it. Verify the clone matches before any work.
