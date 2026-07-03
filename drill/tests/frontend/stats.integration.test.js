@@ -1,24 +1,24 @@
 "use strict";
-/* C-019a <-> C-019b integration: drive the real index.html stats view against
-   the REAL drill.py /api/stats handler (run as a child process serving the
-   WSGI app over a temp DB with seeded responses). Confirms the view renders
-   actual backend output, not just a stubbed shape. */
+/* stats.integration.test.js -- MIGRATED to option (b) at the E10 cutover.
+ *
+ * The fuller-page-flow integration (ADR-051 named this the "genuinely different
+ * path" kept as-is at the cutover): drive the REAL stats view against the REAL
+ * drill.py /api/stats handler (run in a child python process serving the WSGI
+ * app over a temp DB with seeded responses). Confirms the view renders actual
+ * backend output, not just a stubbed shape.
+ *
+ * The Python driver (seed DB, call the real handler, print JSON) is UNCHANGED
+ * from the classic test. Only the frontend half migrates: instead of loading
+ * the inline index.html under runScripts:"dangerously" and clicking the leaked
+ * page, it imports the real module graph via boot.js and clicks the boot-wired
+ * stats-toggle -- the same disclosure path, now module-backed. */
 const fs = require("fs");
-const { execFileSync, spawn } = require("child_process");
-const { JSDOM } = require("jsdom");
+const { execFileSync } = require("child_process");
 const path = require("path");
 const os = require("os");
+const { makeDom, installFetch, installDefaultFetch, importModule, resetState, tick, makeChecker } = require("./_harness.js");
 
-let pass = 0, fail = 0;
-function check(name, cond, extra) {
-  if (cond) { pass++; console.log("  ok  - " + name); }
-  else { fail++; console.log("  FAIL- " + name + (extra ? "  [" + extra + "]" : "")); }
-}
-async function tick(ms) { return new Promise(r => setTimeout(r, ms || 30)); }
-
-/* Seed a temp DB via a short python script using the real module, then return
-   the computed /api/stats payloads by calling the real handler over WSGI in
-   python and printing JSON. We capture two payloads: all-time and days=7. */
+/* ---- Seed a temp DB + compute the two real /api/stats payloads ---------- */
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "c019int-"));
 const dbpath = path.join(tmp, "drill.db");
 
@@ -29,17 +29,10 @@ def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     return mod
-# Post-modularization the backend is split: DB setup lives in db.py, the app +
-# DATABASE_PATH live in http_layer.py. Load each from its own module (D-4: use
-# the submodule you exercise). http_layer's route handlers read its own
-# DATABASE_PATH global, so we rebind it on the http module.
 db = _load("db", "db.py")
 h = _load("http_layer", "http_layer.py")
 h.DATABASE_PATH = ${JSON.stringify(dbpath)}
 conn = db.connect(h.DATABASE_PATH); db.init_db(conn)
-# Advance to the current schema before inserting: as of C-D2g insert_response
-# writes the v3 difficulty/leaf_count columns, absent from the v1 init_db
-# baseline. Mirrors the real startup sequence (init_db -> run_migrations).
 db.run_migrations(conn, datetime.now(timezone.utc).isoformat())
 cats = {c["name"]: c["id"] for c in db.list_categories(conn)}
 now = datetime.now(timezone.utc)
@@ -67,79 +60,69 @@ s7,b7 = call("days=7")
 print(json.dumps({"all":{"status":s1,"body":b1},"d7":{"status":s7,"body":b7}}))
 `;
 
-// Project root holding drill.py + index.html. Defaults to two levels up
-// (tests/frontend/ -> project root); override with PROJECT_ROOT for other
-// layouts. The pyDriver loads drill.py relative to this cwd.
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, "..", "..");
-// The Python interpreter to spawn. Default to bare "python3" so the test runs
-// standalone, but allow run.sh to inject "uv run python3" so the child resolves
-// bottle from the project venv (the system python3 has no bottle). Split on
-// spaces: PYTHON_CMD="uv run python3" -> argv ["uv","run","python3"].
 const PYTHON_CMD = (process.env.PYTHON_CMD || "python3").split(" ");
 const pyExe = PYTHON_CMD[0];
-const pyPrefix = PYTHON_CMD.slice(1);   // e.g. ["run","python3"]
-const out = execFileSync(pyExe, [...pyPrefix, "-c", pyDriver],
-  { cwd: PROJECT_ROOT, encoding: "utf8" });
+const pyPrefix = PYTHON_CMD.slice(1);
+const out = execFileSync(pyExe, [...pyPrefix, "-c", pyDriver], { cwd: PROJECT_ROOT, encoding: "utf8" });
 const payloads = JSON.parse(out.trim().split("\n").pop());
 const allSummary = JSON.parse(payloads.all.body);
 const d7Summary = JSON.parse(payloads.d7.body);
 console.log("real backend all-time:", JSON.stringify(allSummary));
 console.log("real backend days=7 :", JSON.stringify(d7Summary));
 
-const html = fs.readFileSync(path.join(PROJECT_ROOT, "index.html"), "utf8");
-
-function makeBackend(statsBody) {
+/* ---- Frontend backend stub: categories/banks for boot + programmable stats -- */
+function makeBackend(statsRef) {
   return async function (url) {
-    const j = (o, ok = true, s = 200) => ({ ok, status: s,
-      async json() { return o; }, async text() { return JSON.stringify(o); } });
-    if (url === "/api/categories")
-      return j({ categories: [{ id: 1, name: "arithmetic", description: "", config: {} }] });
+    const j = (o, ok = true, s = 200) => ({ ok, status: s, async json() { return o; }, async text() { return JSON.stringify(o); } });
+    if (url === "/api/categories") return j({ categories: [{ id: 1, name: "arithmetic", description: "", config: {} }] });
     if (url === "/api/banks") return j({ banks: [] });
+    if (url === "/api/difficulty-rungs") return j({ rungs: [] });
     if (url === "/api/session/start") return j({ session_id: 1 });
-    if (url.indexOf("/api/question") === 0)
-      return j({ qtype: "arithmetic", question_text: "1 + 1", expected: "2",
-                 question_id: null, alternatives: null, media_url: null });
-    if (url === "/api/stats") return j(statsBody);
+    if (url.indexOf("/api/question") === 0) return j({ qtype: "arithmetic", question_text: "1 + 1", expected: "2", question_id: null, alternatives: null, media_url: null });
+    if (url === "/api/stats") return j(statsRef.summary);
     return j({ error: "x" }, false, 404);
   };
 }
 
-async function run(summary) {
-  const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true,
-    beforeParse(win) {
-      win.fetch = makeBackend(summary);
-      win.navigator.sendBeacon = () => true;
-      win.SpeechSynthesisUtterance = function (t) { this.text = t; };
-      win.speechSynthesis = { speak() {}, cancel() {} };
-    } });
-  await tick(120);
-  const doc = dom.window.document;
-  doc.getElementById("stats-toggle").click();
-  await tick(50);
-  const panel = doc.getElementById("stats-panel");
-  const figs = {};
-  panel.querySelectorAll(".stats-overall .stats-figure").forEach(function (f) {
-    figs[f.querySelector("span").textContent] = f.querySelector("b").textContent;
-  });
-  dom.window.close();
-  return figs;
-}
+(async () => {
+  const c = makeChecker();
+  const { window: win, document: doc } = makeDom({});
+  installDefaultFetch(win);
+  const boot = await importModule("boot.js");
+  const { state } = await importModule("state.js");
+  const statsRef = { summary: null };
+  installFetch(win, makeBackend(statsRef));
 
-(async function () {
+  /* Open the panel against a given (real) summary and read the overall figures. */
+  async function render(summary) {
+    statsRef.summary = summary;
+    const toggle = doc.getElementById("stats-toggle");
+    const panel = doc.getElementById("stats-panel");
+    toggle.setAttribute("aria-expanded", "false");
+    panel.hidden = true;
+    panel.textContent = "";
+    resetState(state);
+    await boot.boot();
+    await tick(100);
+    toggle.click();
+    await tick(60);
+    const figs = {};
+    panel.querySelectorAll(".stats-overall .stats-figure").forEach(f => { figs[f.querySelector("span").textContent] = f.querySelector("b").textContent; });
+    return figs;
+  }
+
   console.log("Render real all-time payload:");
-  const figsAll = await run(allSummary);
-  check("all-time total 7 (6 recent + 1 old)", figsAll["answered"] === "7", JSON.stringify(figsAll));
-  check("all-time correct 6", figsAll["correct"] === "6", JSON.stringify(figsAll));
-  /* 6/7 = 85.7% -> rounds to 86%. */
-  check("all-time accuracy 86%", figsAll["accuracy"] === "86%", JSON.stringify(figsAll));
+  const figsAll = await render(allSummary);
+  c.ck("all-time total 7 (6 recent + 1 old)", figsAll["answered"] === "7", JSON.stringify(figsAll));
+  c.ck("all-time correct 6", figsAll["correct"] === "6", JSON.stringify(figsAll));
+  c.ck("all-time accuracy 86%", figsAll["accuracy"] === "86%", JSON.stringify(figsAll));
 
   console.log("Render real days=7 payload (old row excluded):");
-  const figs7 = await run(d7Summary);
-  check("days=7 total 6", figs7["answered"] === "6", JSON.stringify(figs7));
-  check("days=7 correct 5", figs7["correct"] === "5", JSON.stringify(figs7));
-  /* 5/6 = 83.3% -> 83%. */
-  check("days=7 accuracy 83%", figs7["accuracy"] === "83%", JSON.stringify(figs7));
+  const figs7 = await render(d7Summary);
+  c.ck("days=7 total 6", figs7["answered"] === "6", JSON.stringify(figs7));
+  c.ck("days=7 correct 5", figs7["correct"] === "5", JSON.stringify(figs7));
+  c.ck("days=7 accuracy 83%", figs7["accuracy"] === "83%", JSON.stringify(figs7));
 
-  console.log("\n" + pass + " passed, " + fail + " failed");
-  process.exit(fail === 0 ? 0 : 1);
+  c.done();
 })().catch(e => { console.error(e); process.exit(2); });

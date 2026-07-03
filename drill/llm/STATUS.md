@@ -9,7 +9,7 @@ made structural: when status changes, edit THIS file only.
 
 ASCII only. Single-user assumption holds throughout.
 
-Last updated: mid-THREAD TWO (frontend E1-E9 extracted; E10 cutover is next).
+Last updated: THREAD THREE complete -- E10 cutover landed; roadmap #1 DONE.
 
 ================================================================================
 BASELINE
@@ -36,6 +36,26 @@ BASELINE
   Suite is 528 green (backend 203 unchanged; frontend 114 original classic +
   211 across ten new *.module.test.js). The baseline for the E10 cutover is the
   tip of thread two (C-MOD-E8, boot); see llm/handoffs/3-to-E10-cutover.md.
+  UPDATE (THREAD THREE, C-MOD-E10 -- roadmap #1 DONE): the atomic cutover landed.
+  index.html now carries a single <script type="module" src="boot.js"> and NO
+  inline JS (was ~2620 lines; now ~908). Suite is 539 green (backend 203
+  unchanged; frontend 336). Frontend composition: 211 across the ten
+  *.module.test.js + 114 across the SEVEN classic tests migrated in place to
+  option (b) (belt-and-suspenders per ADR-051 option i -- every classic assert
+  kept) + 11 in the new ownership.guard.test.js. As-built notes:
+    - TEN frontend modules (state, el, api, timing, stage, speech, stats,
+      session, drill, boot); the as-built DAG is in handoffs/3-to-E10-cutover.md
+      Section 0 and dependency-plan.mermaid.
+    - The E10 cutover surfaced + fixed TWO latent missing-import bugs the inline
+      shared scope had masked: boot.js called endSession() and drill.js called
+      onEndSession() without importing them from session.js. Both now imported.
+    - The ownership guard (ADR-051) is ENFORCED as of this commit: four scope-
+      aware acorn checks (registry integrity; owner-declares; cross-owner
+      allowlist of 9 re-derived edges; no-DOM-at-import with boot's readyState
+      guard the sole exemption) + RED-proofs. acorn is a NEW test-only dep --
+      NOT on jsdom 29.1.1's tree here, contradicting the pre-E1 "zero new deps"
+      assumption. Install BOTH in ONE command: `npm install jsdom acorn
+      --no-save` (two separate --no-save installs prune each other).
 
 ================================================================================
 DONE (roadmap items and the commit arc)

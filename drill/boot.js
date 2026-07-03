@@ -40,10 +40,19 @@ import { apiGet, readJson } from "./api.js";
 import { setNote } from "./stage.js";
 import { onStatsToggle } from "./stats.js";
 import { onSpeakerClick } from "./speech.js";
-import { renderSessionUI, endSessionOnUnload } from "./session.js";
+import { renderSessionUI, endSessionOnUnload, endSession } from "./session.js";
 import {
   onAction, onAnswerKey, onAnswerInput, onDocumentKey, loadQuestion
 } from "./drill.js";
+
+/* Module-load trace: if you see this in the console the whole ES module graph
+   fetched and evaluated. If the page is inert and this line is ABSENT, the
+   browser could not load a module (commonly a 404 on a .js file -- check the
+   Network tab; the backend must serve each module, see http_layer serve_module)
+   or a MIME/type=module error. This is a console.* call, not DOM access, so it
+   is a module-scope statement the ADR-051 guard permits (only DOM-at-import is
+   fenced). */
+console.info("drill: modules loaded (boot.js evaluated)");
 
 /* ---- Drillability gate ------------------------------------------------
    A category is drillable if it is arithmetic OR it has at least one bank.
@@ -466,6 +475,7 @@ export async function refreshCategories() {
 }
 
 export async function boot() {
+  console.info("drill: boot() wiring listeners");
   el.action.addEventListener("click", onAction);
   el.answer.addEventListener("keydown", onAnswerKey);
   el.answer.addEventListener("input", onAnswerInput);
@@ -512,7 +522,9 @@ export async function boot() {
     };
     renderSessionUI(); /* show controls/zeroed bar before the first answer */
     await loadQuestion();
+    console.info("drill: boot() complete -- app is live");
   } catch (error) {
+    console.error("drill: boot() failed:", error);
     setNote(error.message, true);
   }
 }

@@ -37,7 +37,7 @@ import {
   cancelSpeech, updateSpeakerVisibility, setSpeakerSpeaking
 } from "./speech.js";
 import { nowMs } from "./timing.js";
-import { startSession, recordStats, renderSessionUI } from "./session.js";
+import { startSession, recordStats, renderSessionUI, onEndSession } from "./session.js";
 
 export async function loadQuestion() {
   state.phase = "loading";

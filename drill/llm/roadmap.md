@@ -193,6 +193,14 @@ findings.md and llm/roadmap-1-modularization-commit-plan.md, and decisions.md
 ADR-049..052. Implementation (adversarial-review -> commit-planning ->
 plan-review -> execute) is handed to a separate thread; the SHA/baseline for it
 are in STATUS.md.
+DONE (C-MOD-E10, roadmap #1 COMPLETE): both tiers are modular. Backend split
+into config.py/db.py/logic.py/http_layer.py + drill.py (thread one). Frontend
+extracted into TEN ES modules (state, el, api, timing, stage, speech, stats,
+session, drill, boot) loaded via a single `<script type="module" src="boot.js">`
+-- no build step, the "vanilla, no framework" property preserved. The E10 atomic
+cutover flipped the tag, deleted the inline script, migrated the 7 classic tests
+to option (b), and landed the enforced ownership guard (ADR-051). Suite 539
+green. As-built details in STATUS.md and llm/handoffs/3-to-E10-cutover.md.
 
 **Phase 3 -- the study curriculum (capstone of the learning goal).**
 Once the code is modular, the codebase becomes the textbook: a guided

@@ -12,7 +12,10 @@
 #
 # Requires from the project root:
 #   - python3 with: bottle, pytest, hypothesis
-#   - node with jsdom resolvable (npm install jsdom --no-save)
+#   - node with jsdom + acorn resolvable. Install BOTH in ONE command:
+#         npm install jsdom acorn --no-save
+#     (two separate --no-save installs prune each other; acorn is used by the
+#      E10 ownership guard and is NOT on jsdom 29.x's tree.)
 set -u
 
 RUN_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -82,7 +85,7 @@ fi
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
 if [ "$NODE_MAJOR" -lt 18 ]; then
   echo "  SKIP: Node 18+ required for jsdom (found $(node --version 2>/dev/null || echo 'no node'))."
-  echo "        Install via nvm: nvm install 20 && nvm use 20, then: npm install jsdom --no-save"
+  echo "        Install via nvm: nvm install 20 && nvm use 20, then: npm install jsdom acorn --no-save"
   fail=1
 else
   # Discover frontend tests by glob rather than a hand-maintained list, so a

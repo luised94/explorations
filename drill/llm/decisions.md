@@ -2178,6 +2178,32 @@ ADR-051 [DECIDED -- C-MOD-design + C-MOD-review; judgment J1 CONFIRMED with a
     Consequence: E4 is a pure code relocation touching NO index.html (consistent
     with E1-E3 and R1); the tags are inert today (nothing reads .owner, no guard
     exists pre-E10), so timing of the tag choice has zero behavior/test effect.
+  - ADDENDUM [thread three, C-MOD-E10 -- AS-BUILT, guard now ENFORCED]: the
+    "intended-not-enforced" window (line ~2105) is CLOSED. The guard is live as
+    tests/frontend/ownership.guard.test.js: four scope-aware acorn checks (A
+    registry integrity, B owner-declares, C cross-owner allowlist, D no-DOM-at-
+    import with boot's readyState guard the sole exemption) + RED-proofs (inject
+    an undeclared cross-owner read -> C reddens; inject a module-scope
+    getElementById into a NON-boot module -> D reddens; and an extra module-scope
+    getElementById in boot still reddens, proving the exemption is tight). AS-BUILT
+    corrections to this ADR's pre-E1 numbers:
+      * CROSS_OWNER_READS is 9 edges, NOT 13. Re-deriving attribution against the
+        SHIPPED modules (the addendum warned "recompute, do not trust the old
+        count blindly") yields: action->boot, answer->boot, answerHint->drill,
+        choices->stage, feedback->stage, speaker->boot, speaker->drill,
+        statsToggle->boot, streakPips->session. The drop from 13 is functions
+        landing in their real homes during E1-E9. The stage->drill teardown reads
+        (choices, feedback) are present per the E4 REVERSAL (stay drill-owned;
+        stage's clearChoices/clearFeedback are the allowlisted cross-owner reads).
+      * IMPLEMENTATION SURFACE dep correction: acorn is NOT on jsdom 29.1.1's
+        dependency tree here, so the "zero new deps" claim does not hold. acorn is
+        a test-only dep; install with `npm install jsdom acorn --no-save` (one
+        command -- separate --no-save installs prune each other).
+      * The guard also asserts NO STALE allowlist rows (every CROSS_OWNER_READS
+        row is actually exercised), so the policy cannot rot as functions move.
+    Separately, the cutover surfaced + fixed two latent missing-import bugs masked
+    by the inline shared scope (boot.js->endSession, drill.js->onEndSession, from
+    session.js); see knowledge-capture v-MOD-E10 and STATUS.md.
 
 ADR-052 [DECIDED -- C-MOD-design + C-MOD-review, judgment J2]: frontend
   strategy is R1 duplicate-then-delete with a single atomic cutover.

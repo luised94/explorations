@@ -20,11 +20,15 @@ Add a test dependency group to `pyproject.toml`:
 
     uv sync --group test
 
-## Node test dep (frontend, jsdom)
+## Node test deps (frontend: jsdom + acorn)
 
-From the project root:
+From the project root, install BOTH in ONE command:
 
-    npm install jsdom --no-save
+    npm install jsdom acorn --no-save
+
+(Two separate `--no-save` installs prune each other -- the second removes the
+first as extraneous. jsdom powers the option-(b) frontend tests; acorn powers
+the E10 ownership guard and is NOT on jsdom 29.x's dependency tree.)
 
 ## Run
 

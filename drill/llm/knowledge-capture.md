@@ -297,6 +297,31 @@ ASCII only.
     `function` declaration and nothing reads another module at eval time. General
     rule for a no-build ESM codebase: keep all module-level cross-references
     inside function bodies, never at top level, and a cycle is harmless.]
+    [v-MOD-E10: the S7 ESM fact CONFIRMED as-built at the cutover -- the wired
+    drill<->session cycle resolves green with all ten modules cross-importing for
+    real (not just the spike). Two corollary lessons the cutover taught:
+    (1) SHARED INLINE SCOPE HIDES MISSING IMPORTS. Functions that resolved as
+    globals in the one inline <script> can be CALLED by a module that never
+    imports them; nothing complains until the modules run for real. E10 surfaced
+    two (boot.js->endSession, drill.js->onEndSession, both from session.js). A
+    scope-aware acorn cross-reference scan (called identifier exported elsewhere,
+    not imported, not local => missing import) catches these cheaply; run it as a
+    cutover pre-check. (2) OPTION-(b) TEST ISOLATION with per-process module
+    singletons: modules cache by resolved URL per `node` process, and a bust
+    token on the ENTRY does NOT bust its internal `import "./x.js"` (that resolves
+    unbusted), so per-scenario cache-busting causes instance divergence (boot
+    mutates the unbusted `state` while the test reads a busted one). The faithful
+    multi-scenario pattern is: import ONCE unbusted, then reset the state
+    singleton's fields + re-run boot.boot() per scenario, and also reset any
+    DOM-carried open/close flags (e.g. stats-toggle aria-expanded) since one
+    persistent fixture replaces the classic fresh-JSDOM-per-scenario. Also:
+    nowMs() reads the BARE global performance, which under the harness is Node's
+    global.performance, NOT window.performance -- patch the global.]
+    [v-MOD-E10 guard: acorn is NOT on jsdom 29.1.1's dependency tree (the pre-E1
+    "acorn is already on disk via jsdom, zero new deps" assumption was wrong for
+    this Node/jsdom pairing). It is now a test-only dep. Install jsdom AND acorn
+    in a SINGLE `npm install jsdom acorn --no-save` -- two separate --no-save
+    installs prune each other (the second removes the first as extraneous).]
   - Integration: drive the real frontend (jsdom) against the real backend handler
     (child-process WSGI over a seeded temp DB). (test_c019_integration.js.)
   - Inertness proof: ast.parse both file versions, strip the module docstring,

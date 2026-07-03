@@ -1,194 +1,155 @@
 "use strict";
-/* C-019b contract test: the stats view disclosure. Verifies open fetches
-   /api/stats and renders overall + per-category breakdown; the empty/time-zero
-   state; close tears the panel down; a single-category summary skips the
-   breakdown; the window echo renders for a filtered view; a fetch error shows
-   a note; and the panel is independent of the live stats bar. */
-const fs = require("fs");
-const { JSDOM } = require("jsdom");
-const html = fs.readFileSync("index.html", "utf8");
+/* stats.test.js -- MIGRATED to option (b) at the E10 cutover (was the C-019b
+ * contract test driving the real inline page via a stats-toggle click).
+ *
+ * The stats view disclosure: open fetches /api/stats and renders overall +
+ * per-category breakdown; empty/time-zero state; close tears down; single-
+ * category summary skips the breakdown; per-difficulty breakdown + suppression;
+ * window echo for a filtered view; a fetch error shows a note; independence from
+ * the live stats bar. Drives the real module graph via boot.js and the boot-
+ * wired stats-toggle, resetting the state singleton + re-booting per scenario
+ * so each gets a clean panel and its own programmable /api/stats payload. */
+const { makeDom, installFetch, installDefaultFetch, importModule, resetState, tick, makeChecker } = require("./_harness.js");
 
-let pass = 0, fail = 0;
-function check(name, cond, extra) {
-  if (cond) { pass++; console.log("  ok  - " + name); }
-  else { fail++; console.log("  FAIL- " + name + (extra ? "  [" + extra + "]" : "")); }
-}
-async function tick(ms) { return new Promise(r => setTimeout(r, ms || 30)); }
-
-/* Backend stub: categories + banks for boot, plus a programmable /api/stats
-   response (statsState.next) and a flag to fail the stats call. */
-function makeBackend(statsState) {
+function makeBackend(ss) {
   return async function (url) {
-    const j = (o, ok = true, s = 200) => ({
-      ok, status: s, async json() { return o; }, async text() { return JSON.stringify(o); }
-    });
-    if (url === "/api/categories")
-      return j({ categories: [{ id: 1, name: "arithmetic", description: "", config: {} },
-                               { id: 2, name: "vocabulary", description: "", config: {} }] });
+    const j = (o, ok = true, s = 200) => ({ ok, status: s, async json() { return o; }, async text() { return JSON.stringify(o); } });
+    if (url === "/api/categories") return j({ categories: [{ id: 1, name: "arithmetic", description: "", config: {} }, { id: 2, name: "vocabulary", description: "", config: {} }] });
     if (url === "/api/banks") return j({ banks: [] });
+    if (url === "/api/difficulty-rungs") return j({ rungs: [] });
     if (url === "/api/session/start") return j({ session_id: 1 });
     if (url === "/api/session/end") return j({ ended: true });
-    if (url.indexOf("/api/question") === 0)
-      return j({ qtype: "arithmetic", question_text: "1 + 1", expected: "2",
-                 question_id: null, alternatives: null, media_url: null });
-    if (url === "/api/answer")
-      return j({ correct: true, expected: "2", user_input: "2",
-                 session_stats: { total: 1, correct: 1, accuracy: 1.0, streak: 1 } });
+    if (url.indexOf("/api/question") === 0) return j({ qtype: "arithmetic", question_text: "1 + 1", expected: "2", question_id: null, alternatives: null, media_url: null });
+    if (url === "/api/answer") return j({ correct: true, expected: "2", user_input: "2", session_stats: { total: 1, correct: 1, accuracy: 1.0, streak: 1 } });
     if (url === "/api/stats") {
-      if (statsState.fail) return j({ error: "stats boom" }, false, 500);
-      return j(statsState.next);
+      if (ss.fail) return j({ error: "stats boom" }, false, 500);
+      return j(ss.next);
     }
     return j({ error: "unexpected " + url }, false, 404);
   };
 }
 
-async function boot(statsNext, opts) {
-  const statsState = { next: statsNext, fail: !!(opts && opts.fail) };
-  const dom = new JSDOM(html, {
-    runScripts: "dangerously", pretendToBeVisual: true,
-    beforeParse(win) {
-      win.fetch = makeBackend(statsState);
-      win.navigator.sendBeacon = () => true;
-      win.SpeechSynthesisUtterance = function (t) { this.text = t; this.lang = ""; };
-      win.speechSynthesis = { speak() {}, cancel() {} };
-    }
-  });
-  await tick(120);
-  return { dom, statsState };
-}
+(async () => {
+  const c = makeChecker();
+  const { window: win, document: doc } = makeDom({});
+  installDefaultFetch(win);
+  const boot = await importModule("boot.js");
+  const { state } = await importModule("state.js");
 
-(async function () {
+  const ss = { next: null, fail: false };
+  installFetch(win, makeBackend(ss));
+
+  /* Reset + re-boot; set the stats payload for the upcoming open. The DOM
+     persists across scenarios (one fixture), so reset the panel/toggle DOM the
+     way a fresh JSDOM did classically -- onStatsToggle reads open-state off the
+     toggle's aria-expanded, so a stale "true" from a prior scenario would make
+     the next click CLOSE instead of open. */
+  async function scenario(statsNext, opts) {
+    ss.next = statsNext;
+    ss.fail = !!(opts && opts.fail);
+    const toggle = doc.getElementById("stats-toggle");
+    const panel = doc.getElementById("stats-panel");
+    toggle.setAttribute("aria-expanded", "false");
+    panel.hidden = true;
+    panel.textContent = "";
+    resetState(state);
+    await boot.boot();
+    await tick(100);
+  }
+
   /* -- Test 1: open renders overall + breakdown -------------------------- */
   console.log("Test 1: open fetches and renders");
   {
-    const summary = {
+    await scenario({
       total: 10, correct: 8, accuracy: 0.8,
       categories: [
         { category_id: 1, category_name: "arithmetic", total: 7, correct: 6, accuracy: 6 / 7 },
         { category_id: 2, category_name: "vocabulary", total: 3, correct: 2, accuracy: 2 / 3 }
       ],
       window: { category_id: null, days: null, since: null }
-    };
-    const { dom } = await boot(summary);
-    const win = dom.window, doc = win.document;
+    });
     const toggle = doc.getElementById("stats-toggle");
     const panel = doc.getElementById("stats-panel");
-    check("panel hidden initially", panel.hidden === true);
+    c.ck("panel hidden initially", panel.hidden === true);
     toggle.click();
     await tick(50);
-    check("panel shown after open", panel.hidden === false);
-    check("aria-expanded true", toggle.getAttribute("aria-expanded") === "true");
+    c.ck("panel shown after open", panel.hidden === false);
+    c.ck("aria-expanded true", toggle.getAttribute("aria-expanded") === "true");
     const text = panel.textContent;
-    /* Assert against the structured figures (textContent concatenates without
-       spaces, so check the .stats-figure elements directly). */
-    const figs = panel.querySelectorAll(".stats-overall .stats-figure");
     const figMap = {};
-    figs.forEach(function (f) {
-      figMap[f.querySelector("span").textContent] = f.querySelector("b").textContent;
-    });
-    check("shows total 10 (answered)", figMap["answered"] === "10", JSON.stringify(figMap));
-    check("shows accuracy 80%", figMap["accuracy"] === "80%", JSON.stringify(figMap));
-    check("shows correct 8", figMap["correct"] === "8", JSON.stringify(figMap));
-    check("breakdown lists arithmetic", text.indexOf("arithmetic") !== -1);
-    check("breakdown lists vocabulary", text.indexOf("vocabulary") !== -1);
-    check("breakdown has By category title", text.indexOf("By category") !== -1);
-    /* No window note for an unfiltered view. */
-    check("no window note when unfiltered",
-          panel.querySelector(".stats-window") === null);
-    /* Independent of the live bar: top bar still shows session stats (0/--). */
-    check("live stats bar untouched (separate source)",
-          doc.getElementById("stat-total").textContent === "0",
-          doc.getElementById("stat-total").textContent);
-    dom.window.close();
+    panel.querySelectorAll(".stats-overall .stats-figure").forEach(f => { figMap[f.querySelector("span").textContent] = f.querySelector("b").textContent; });
+    c.ck("shows total 10 (answered)", figMap["answered"] === "10", JSON.stringify(figMap));
+    c.ck("shows accuracy 80%", figMap["accuracy"] === "80%", JSON.stringify(figMap));
+    c.ck("shows correct 8", figMap["correct"] === "8", JSON.stringify(figMap));
+    c.ck("breakdown lists arithmetic", text.indexOf("arithmetic") !== -1);
+    c.ck("breakdown lists vocabulary", text.indexOf("vocabulary") !== -1);
+    c.ck("breakdown has By category title", text.indexOf("By category") !== -1);
+    c.ck("no window note when unfiltered", panel.querySelector(".stats-window") === null);
+    c.ck("live stats bar untouched (separate source)", doc.getElementById("stat-total").textContent === "0", doc.getElementById("stat-total").textContent);
   }
 
   /* -- Test 2: empty/time-zero state ------------------------------------- */
   console.log("Test 2: empty state");
   {
-    const summary = { total: 0, correct: 0, accuracy: 0.0, categories: [],
-                      window: { category_id: null, days: null, since: null } };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    await scenario({ total: 0, correct: 0, accuracy: 0.0, categories: [], window: { category_id: null, days: null, since: null } });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const text = doc.getElementById("stats-panel").textContent;
-    check("empty note shown", text.toLowerCase().indexOf("no answers recorded") !== -1, text);
-    check("no breakdown rows when empty",
-          doc.getElementById("stats-panel").querySelector(".stats-row") === null);
-    dom.window.close();
+    c.ck("empty note shown", text.toLowerCase().indexOf("no answers recorded") !== -1, text);
+    c.ck("no breakdown rows when empty", doc.getElementById("stats-panel").querySelector(".stats-row") === null);
   }
 
   /* -- Test 3: close tears down ------------------------------------------ */
   console.log("Test 3: close tears down");
   {
-    const summary = { total: 3, correct: 3, accuracy: 1.0,
-      categories: [{ category_id: 1, category_name: "arithmetic", total: 3, correct: 3, accuracy: 1.0 }],
-      window: { category_id: null, days: null, since: null } };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    await scenario({ total: 3, correct: 3, accuracy: 1.0, categories: [{ category_id: 1, category_name: "arithmetic", total: 3, correct: 3, accuracy: 1.0 }], window: { category_id: null, days: null, since: null } });
     const toggle = doc.getElementById("stats-toggle");
     const panel = doc.getElementById("stats-panel");
     toggle.click(); await tick(50);
-    check("open populated panel", panel.textContent.length > 0);
+    c.ck("open populated panel", panel.textContent.length > 0);
     toggle.click(); await tick(20);
-    check("panel hidden after close", panel.hidden === true);
-    check("panel emptied after close", panel.textContent === "");
-    check("aria-expanded false after close", toggle.getAttribute("aria-expanded") === "false");
-    dom.window.close();
+    c.ck("panel hidden after close", panel.hidden === true);
+    c.ck("panel emptied after close", panel.textContent === "");
+    c.ck("aria-expanded false after close", toggle.getAttribute("aria-expanded") === "false");
   }
 
   /* -- Test 4: single category skips breakdown --------------------------- */
   console.log("Test 4: single category, no breakdown");
   {
-    const summary = { total: 5, correct: 4, accuracy: 0.8,
-      categories: [{ category_id: 1, category_name: "arithmetic", total: 5, correct: 4, accuracy: 0.8 }],
-      window: { category_id: null, days: null, since: null } };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    await scenario({ total: 5, correct: 4, accuracy: 0.8, categories: [{ category_id: 1, category_name: "arithmetic", total: 5, correct: 4, accuracy: 0.8 }], window: { category_id: null, days: null, since: null } });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const panel = doc.getElementById("stats-panel");
-    check("overall shown for single category", panel.textContent.indexOf("80%") !== -1);
-    check("no 'By category' for single category",
-          panel.textContent.indexOf("By category") === -1);
-    dom.window.close();
+    c.ck("overall shown for single category", panel.textContent.indexOf("80%") !== -1);
+    c.ck("no 'By category' for single category", panel.textContent.indexOf("By category") === -1);
   }
 
   /* -- Test 5: window echo for a filtered view --------------------------- */
   console.log("Test 5: window echo");
   {
-    const summary = { total: 4, correct: 4, accuracy: 1.0,
-      categories: [{ category_id: 2, category_name: "vocabulary", total: 4, correct: 4, accuracy: 1.0 }],
-      window: { category_id: 2, days: 7, since: "2024-01-01T00:00:00+00:00" } };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    await scenario({ total: 4, correct: 4, accuracy: 1.0, categories: [{ category_id: 2, category_name: "vocabulary", total: 4, correct: 4, accuracy: 1.0 }], window: { category_id: 2, days: 7, since: "2024-01-01T00:00:00+00:00" } });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const winNote = doc.getElementById("stats-panel").querySelector(".stats-window");
-    check("window note present when filtered", winNote !== null);
-    check("window note names last 7 days", winNote && winNote.textContent.indexOf("last 7 days") !== -1,
-          winNote && winNote.textContent);
-    check("window note names category", winNote && winNote.textContent.indexOf("vocabulary") !== -1,
-          winNote && winNote.textContent);
-    dom.window.close();
+    c.ck("window note present when filtered", winNote !== null);
+    c.ck("window note names last 7 days", winNote && winNote.textContent.indexOf("last 7 days") !== -1, winNote && winNote.textContent);
+    c.ck("window note names category", winNote && winNote.textContent.indexOf("vocabulary") !== -1, winNote && winNote.textContent);
   }
 
   /* -- Test 6: fetch error shows a note ---------------------------------- */
   console.log("Test 6: fetch error");
   {
-    const { dom } = await boot(null, { fail: true });
-    const doc = dom.window.document;
+    await scenario(null, { fail: true });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const text = doc.getElementById("stats-panel").textContent;
-    check("error note shown", text.toLowerCase().indexOf("could not load stats") !== -1, text);
-    dom.window.close();
+    c.ck("error note shown", text.toLowerCase().indexOf("could not load stats") !== -1, text);
   }
 
   /* -- Test 7: per-difficulty breakdown renders (C-D2i-3) ---------------- */
   console.log("Test 7: By difficulty breakdown");
   {
-    const summary = {
+    await scenario({
       total: 5, correct: 3, accuracy: 0.6,
       categories: [{ category_id: 1, category_name: "arithmetic", total: 5, correct: 3, accuracy: 0.6 }],
       difficulty_breakdown: [
@@ -196,63 +157,48 @@ async function boot(statsNext, opts) {
         { key: 4, label: "4 leaves", total: 2, correct: 1, accuracy: 0.5 }
       ],
       window: { category_id: null, days: null, since: null }
-    };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const text = doc.getElementById("stats-panel").textContent;
-    check("has 'By difficulty' title", text.indexOf("By difficulty") !== -1, text);
-    check("lists 2 leaves bucket", text.indexOf("2 leaves") !== -1);
-    check("lists 4 leaves bucket", text.indexOf("4 leaves") !== -1);
-    /* single category, so 'By category' is suppressed but 'By difficulty' is not */
-    check("By category suppressed for single category", text.indexOf("By category") === -1);
-    dom.window.close();
+    c.ck("has 'By difficulty' title", text.indexOf("By difficulty") !== -1, text);
+    c.ck("lists 2 leaves bucket", text.indexOf("2 leaves") !== -1);
+    c.ck("lists 4 leaves bucket", text.indexOf("4 leaves") !== -1);
+    c.ck("By category suppressed for single category", text.indexOf("By category") === -1);
   }
 
   /* -- Test 8: single difficulty bucket is suppressed -------------------- */
   console.log("Test 8: single difficulty bucket suppressed");
   {
-    const summary = {
+    await scenario({
       total: 3, correct: 3, accuracy: 1.0,
       categories: [{ category_id: 1, category_name: "arithmetic", total: 3, correct: 3, accuracy: 1.0 }],
-      difficulty_breakdown: [
-        { key: 2, label: "2 leaves", total: 3, correct: 3, accuracy: 1.0 }
-      ],
+      difficulty_breakdown: [{ key: 2, label: "2 leaves", total: 3, correct: 3, accuracy: 1.0 }],
       window: { category_id: null, days: null, since: null }
-    };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const text = doc.getElementById("stats-panel").textContent;
-    check("By difficulty suppressed for single bucket", text.indexOf("By difficulty") === -1, text);
-    dom.window.close();
+    c.ck("By difficulty suppressed for single bucket", text.indexOf("By difficulty") === -1, text);
   }
 
   /* -- Test 9: absent difficulty_breakdown is harmless ------------------- */
   console.log("Test 9: missing difficulty_breakdown");
   {
-    /* An older-shaped summary with no difficulty_breakdown key must not throw
-       and must simply omit the section (the render guards with || []). */
-    const summary = {
+    await scenario({
       total: 4, correct: 4, accuracy: 1.0,
       categories: [
         { category_id: 1, category_name: "arithmetic", total: 2, correct: 2, accuracy: 1.0 },
         { category_id: 2, category_name: "vocabulary", total: 2, correct: 2, accuracy: 1.0 }
       ],
       window: { category_id: null, days: null, since: null }
-    };
-    const { dom } = await boot(summary);
-    const doc = dom.window.document;
+    });
     doc.getElementById("stats-toggle").click();
     await tick(50);
     const text = doc.getElementById("stats-panel").textContent;
-    check("renders without difficulty_breakdown key", text.indexOf("By category") !== -1, text);
-    check("no By difficulty when key absent", text.indexOf("By difficulty") === -1);
-    dom.window.close();
+    c.ck("renders without difficulty_breakdown key", text.indexOf("By category") !== -1, text);
+    c.ck("no By difficulty when key absent", text.indexOf("By difficulty") === -1);
   }
 
-  console.log("\n" + pass + " passed, " + fail + " failed");
-  process.exit(fail === 0 ? 0 : 1);
+  c.done();
 })().catch(e => { console.error(e); process.exit(2); });

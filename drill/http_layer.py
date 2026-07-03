@@ -184,6 +184,33 @@ def serve_index():
     return bottle.static_file("index.html", root=_MODULE_DIRECTORY)
 
 
+# The frontend ES modules loaded by index.html's <script type="module"
+# src="boot.js">. Before the E10 cutover all JS was inline in index.html and
+# needed no route; after the split the browser fetches each module over HTTP, so
+# they must be served with a JavaScript MIME type (browsers reject type=module
+# scripts served as anything else). Scoped to the known module set so nothing
+# else in the module directory is ever served; static_file also guards against
+# path traversal via its root check. C-MOD-E10.
+_FRONTEND_MODULES = frozenset([
+    "state.js", "el.js", "api.js", "timing.js", "stage.js",
+    "speech.js", "stats.js", "session.js", "drill.js", "boot.js",
+])
+
+
+@app.get("/<filename:re:[A-Za-z0-9_-]+\\.js>")
+def serve_module(filename):
+    """Serve a frontend ES module by filename (E10 cutover).
+
+    Only the ten known modules are served, with a JavaScript content type so the
+    browser will evaluate them as ES modules. Anything else -> 404.
+    """
+    if filename not in _FRONTEND_MODULES:
+        return bottle.HTTPError(404, "Not found")
+    print("drill: serving module " + filename)
+    return bottle.static_file(filename, root=_MODULE_DIRECTORY,
+                              mimetype="text/javascript")
+
+
 @app.get("/api/categories")
 def get_categories():
     """List all categories as JSON.

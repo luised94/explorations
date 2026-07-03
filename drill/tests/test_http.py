@@ -10,7 +10,9 @@ What is NOT tested here: Bottle's routing internals. We test our handlers and
 the JSON contracts they emit.
 """
 
+import io
 import json
+import re
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -722,3 +724,86 @@ def test_import_malformed_jsonl_is_400(app_blank):
     )
     assert status.startswith("400")
     assert "error" in json.loads(data)
+
+
+# ---- Frontend ES module serving (C-MOD-E10 cutover) -----------------------
+# After the E10 cutover index.html is a single <script type="module"
+# src="boot.js">; the browser then fetches each module over HTTP. These tests
+# guard the route that serves them -- the gap that made the page render but sit
+# inert (boot.js 404 -> no modules load -> nothing wired) when it was missing.
+
+_FRONTEND_MODULE_FILES = [
+    "state.js", "el.js", "api.js", "timing.js", "stage.js",
+    "speech.js", "stats.js", "session.js", "drill.js", "boot.js",
+]
+
+
+def _wsgi_get_with_headers(m, path):
+    """GET path, returning (status, headers_dict, body_bytes). Local to these
+    tests because the shared wsgi_get helper does not surface headers, and the
+    Content-Type is the whole point here (browsers reject type=module scripts
+    served with a non-JavaScript MIME)."""
+    captured = {}
+    environ = {
+        "REQUEST_METHOD": "GET",
+        "PATH_INFO": path,
+        "QUERY_STRING": "",
+        "SERVER_NAME": "test",
+        "SERVER_PORT": "80",
+        "wsgi.input": io.BytesIO(),
+        "wsgi.errors": sys.stderr,
+        "wsgi.url_scheme": "http",
+    }
+
+    def start_response(status, headers, exc_info=None):
+        captured["status"] = status
+        captured["headers"] = {k.lower(): v for k, v in headers}
+
+    body = b"".join(m.app(environ, start_response))
+    return captured["status"], captured.get("headers", {}), body
+
+
+@pytest.mark.parametrize("filename", _FRONTEND_MODULE_FILES)
+def test_frontend_module_is_served_as_javascript(app_blank, filename):
+    m, _ = app_blank
+    status, headers, body = _wsgi_get_with_headers(m, "/" + filename)
+    assert status.startswith("200"), (filename, status)
+    # A JavaScript MIME so the browser evaluates it as an ES module.
+    assert "javascript" in headers.get("content-type", ""), (filename, headers.get("content-type"))
+    assert len(body) > 0
+
+
+def test_boot_module_body_is_the_real_module(app_blank):
+    m, _ = app_blank
+    _, _, body = _wsgi_get_with_headers(m, "/boot.js")
+    text = body.decode("utf-8")
+    # It is the actual entry module: imports siblings and defines boot().
+    assert 'from "./state.js"' in text
+    assert "function boot" in text
+
+
+def test_every_import_specifier_resolves_to_a_served_module(app_blank):
+    """The whole graph must be fetchable: every `./x.js` any module imports must
+    itself be a served module (else the browser 404s mid-graph and nothing runs
+    -- a subtler version of the original bug)."""
+    m, _ = app_blank
+    served = set(_FRONTEND_MODULE_FILES)
+    specifiers = set()
+    for filename in _FRONTEND_MODULE_FILES:
+        _, _, body = _wsgi_get_with_headers(m, "/" + filename)
+        for match in re.findall(r'from "\./([A-Za-z0-9_-]+\.js)"', body.decode("utf-8")):
+            specifiers.add(match)
+    missing = specifiers - served
+    assert not missing, "imported but not served: " + ", ".join(sorted(missing))
+
+
+@pytest.mark.parametrize("path", [
+    "/config.js",      # a real sibling .py exists as config.py -- must NOT leak as .js
+    "/logic.js",
+    "/nonexistent.js",
+    "/drill.py",       # never serve source
+])
+def test_non_module_paths_are_404(app_blank, path):
+    m, _ = app_blank
+    status, _, _ = _wsgi_get_with_headers(m, path)
+    assert status.startswith("404"), (path, status)
