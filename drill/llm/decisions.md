@@ -2263,3 +2263,80 @@ ADR-053 [DECIDED -- C-MOD-review, spike-verified]: accept the drill<->session
     relocation, not rewrite -- no logic added -- so it honors "a cut is a cut".
     One stage.js (not a stage/notify split): six small related DOM-write helpers
     are one coherent concern.
+
+ADR-054 [DECIDED -- 2026-07 roadmap reassessment, post-modularization]: after
+  roadmap #1 (modularization) shipped, re-rank the REMAINING roadmap items
+  against the actual code, and sequence the next threads by score TEMPERED with
+  explicit user constraints rather than by raw score alone.
+  - CONTEXT: the original priority model (roadmap.py ITEMS + roadmap.md tiers,
+    C-MOD-design era) scored every candidate before modularization existed.
+    Six items have since shipped (#1 modularize, #2/#4/#5 arithmetic, #8 tests,
+    #11 migration runner). A fresh read of the code changed several feasibility
+    numbers, so the ranking was recomputed for what remains.
+  - MODEL: roadmap.py now carries a REASSESS_2026_07 block beside the original
+    ITEMS (kept as history). Same six axes, SAME weights (the user's priorities
+    are stable); only code-reality axes (EFFORT/RISK/FOUND) moved. `uv run
+    python3 roadmap.py` prints both the original ranking and the reassessment
+    with deltas, plus the recommended sequence.
+  - SURVEY FACTS that moved scores (verified against shipped code):
+    * pick_next_question(candidates, history) is a single PURE swappable
+      function, history already threaded through http_layer -> SM2 (+0.22) and
+      adaptive selection get +EFFORT/+RISK.
+    * migration runner DONE + battle-tested; elapsed_ms/difficulty columns
+      exist -> new-migration / timing work de-risked.
+    * JSONL/CSV import pipeline + translate/identify/free_response qtypes +
+      bank-language plumbing ALL exist -> "vocab/language features" is mostly
+      content + small extension of built seams, not net-new (NEW item, 4.00).
+    * typing has NO infra beyond an empty "typing" config category stub ->
+      genuinely net-new; LEARN rises, EFFORT stays moderate.
+    * stats pipeline modular, elapsed_ms collected-but-unsummarized -> timing
+      stats (+0.14) and stats depth (+0.14) become render-additions (quick wins).
+    * FOUND drops for items whose leverage was "unblocks the refactor"
+      (curriculum -0.18, adaptive -0.04) now that the refactor is done.
+  - REASSESSED TOP (remaining): study curriculum 4.26, SM2 4.26, vocab/language
+    4.00 (new), adaptive 3.94, logic drill 3.80, code drill 3.72, typing 3.58,
+    timed-round 3.50, ... timing-stats 3.26, stats-depth 3.22, ADR-index 3.04.
+  - DECISION -- SEQUENCE (score TEMPERED by constraints, NOT raw score):
+    the raw top is a tie between the study curriculum and SM2, but three user
+    constraints reshape the order: (a) the study curriculum runs in PARALLEL
+    (user decision), so it is not a "next thread" and its FOUND was dropped
+    accordingly; (b) the user wants product movement WITH comprehension, not a
+    reflective-only phase (pure study is explicitly off the table); (c)
+    modularization was heavy, so avoid a second architecturally-invasive thread
+    immediately (SM2 is schema-invasive). Therefore lead with the highest-value
+    item that is BOTH product-facing AND low-risk on proven seams:
+      Thread N   : Vocab/language features (4.00) + timing-stats (3.26) + the
+                   ADR index (3.04). One meaty-but-safe feature on built seams,
+                   two quick wins folded in (both touch files the feature
+                   touches anyway). Cashes in the modularization; safe re-warm-up.
+      Thread N+1 : SM2 consolidation (4.26) + adaptive selection (3.94). Its own
+                   focused, schema-invasive thread; the two share the
+                   pick_next_question seam. Reserves the SM2 fields migration
+                   (ADR-025) for here.
+      Thread N+2 : Typing drill (3.58). A deliberate net-new qtype -- the test
+                   of whether the modular seams absorb a genuinely new question
+                   kind cleanly.
+      Parallel   : Study curriculum (4.26) throughout, feeding on each thread's
+                   fresh code (auditing new code teaches more per hour than
+                   re-reading code already understood from the cutover).
+  - ALTERNATIVES WEIGHED:
+    * "SM2 next" (follow raw score): rejected as the immediate next thread --
+      highest value but schema-invasive right after a brutal refactor; violates
+      constraint (c). Kept as Thread N+1.
+    * "Study curriculum next" (roadmap Phase 3 as written): rejected as a
+      standalone next thread -- it is parallel now, and a reflective-only phase
+      risks becoming avoidance of product work (constraint b). Runs in parallel
+      instead.
+    * "Deferred-cleanup thread next" (DOM-mutation seam, leaf-test merge, HTML/
+      CSS conventions): rejected as next -- more refactoring right after a
+      refactor (fatigue). Cleanup is INTERLEAVED into feature threads instead
+      (timing-stats + ADR index ride the vocab thread).
+    * "Typing next" (the user's meaty suggestion): deferred to Thread N+2 --
+      it is net-new (least de-risked by modularization) and a better structural
+      stress test once re-warmed up on the codebase.
+  - USER-STATED GOAL served: "understand the codebase while moving it forward."
+    Leading with vocab (largely reading + extending existing code) plus the
+    parallel study is the comprehension throttle; the LLM loop ships features at
+    speed while the audit forces human-speed reading of what shipped.
+  - [RECONSIDER WHEN] a thread completes (re-run roadmap.py; the survey facts
+    may shift again), or the user re-weights the axes.

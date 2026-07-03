@@ -95,9 +95,39 @@ IN PROGRESS
 ================================================================================
 NEXT (the phase map)
 ================================================================================
-The next major checkpoint is MODULARIZATION (roadmap #1). It is sequenced after
-the arithmetic round (score-vs-sequence: refactor code you understand cold) and
-is split around a quality pass:
+MODULARIZATION (roadmap #1) is DONE (C-MOD-*, through the E10 cutover). The
+project has been REASSESSED (2026-07, ADR-054): the remaining roadmap items were
+rescored against the actual code and the next threads sequenced by score tempered
+with the user's constraints (study runs in parallel; want product movement with
+comprehension; avoid a second schema-invasive thread right after the refactor).
+See roadmap.md section 2a, ADR-054, and the runnable model roadmap.py.
+
+CURRENT PLAN (post-reassessment):
+- Thread N (NEXT): Vocab/language features + timing-stats + ADR index. One
+  meaty-but-safe feature on proven seams (translate/identify/free_response
+  qtypes, bank-language plumbing, and the JSONL/CSV import pipeline all already
+  exist), with two quick wins folded in (timing-stats is a stats.js render
+  addition against elapsed_ms already collected; the ADR index is the last WIP
+  cleanup item). Cashes in the modularization; a safe re-warm-up.
+- Thread N+1: SM2 consolidation (roadmap #6) + adaptive selection (#7). Its own
+  focused, schema-invasive thread; both plug the pure swappable pick_next_question
+  seam. The SM2 scheduling-fields migration (reserved in ADR-025) lands here.
+- Thread N+2: Typing drill (#12). A deliberate net-new qtype -- the test of
+  whether the modular seams absorb a genuinely new question kind cleanly. No
+  typing infra exists yet beyond an empty "typing" config category stub.
+- PARALLEL (ongoing): Study curriculum (roadmap #3) + the JS/Python/HTML/CSS
+  coding-conventions formalization. Runs alongside the feature threads, auditing
+  each thread's fresh code (per-file audit + encapsulation pass); it is the
+  comprehension throttle, NOT a standalone phase. See CODING_CONVENTIONS.md.
+
+The baseline SHA for Thread N is whatever this reassessment docs commit lands at
+on main; a launch message pins it. Verify the clone matches before any work.
+
+--------------------------------------------------------------------------------
+HISTORY (the modularization arc, for reference)
+--------------------------------------------------------------------------------
+Modularization was sequenced after the arithmetic round (refactor code you
+understand cold) and split around a quality pass:
 
 - Phase A (current): foundation cleanup -- glob test discovery (done, C-2U-e),
   STATUS.md, CODING_CONVENTIONS.md, and drift reconciliation. Then archive the

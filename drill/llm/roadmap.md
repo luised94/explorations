@@ -46,17 +46,22 @@ env-overridable. Those facts make several "big-sounding" items cheap.
 Tier 1 = do first (high alignment, high leverage, mostly low risk). Tier 4 =
 defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 
+NOTE (2026-07): the tables below are the ORIGINAL pre-modularization ranking,
+kept as history. Six items have shipped (marked DONE). For the CURRENT ranking
+of what remains -- rescored against the actual code after modularization -- see
+section 2a (Reassessment 2026-07) and ADR-054; the runnable model is roadmap.py.
+
 ### Tier 1 -- Foundation and core priorities (do these first)
 
 | # | Item | Score |
 |--:|------|------:|
-| 1 | Modularize: extract JS into modules, split Python into packages | 4.56 |
+| 1 | Modularize: extract JS into modules, split Python into packages | 4.56 | DONE (C-MOD-*)
 | 2 | Extend arithmetic: difficulty control (digits / #operations / operator set) | 4.50 | DONE
-| 3 | Study curriculum derived from the codebase | 4.44 |
+| 3 | Study curriculum derived from the codebase | 4.44 | PARALLEL (see 2a)
 | 4 | Extend arithmetic: more operators (exponent, modulo, ...) | 4.32 | DONE
 | 5 | Generalize expression generation (nested multi-operator trees) | 4.32 | DONE
-| 6 | Consolidate the SM2 spaced-repetition engine | 4.04 |
-| 7 | Adaptive question selection (swap `pick_next_question`) | 3.98 |
+| 6 | Consolidate the SM2 spaced-repetition engine | 4.04 | NEXT+1 (see 2a)
+| 7 | Adaptive question selection (swap `pick_next_question`) | 3.98 | with SM2
 | 8 | Automated test suite checked into the repo | 3.94 | DONE
 | 9 | Logic / deduction drill (truth tables, syllogisms) | 3.80 |
 | 10 | Code drill ("what does this snippet output?") | 3.72 |
@@ -101,6 +106,72 @@ defer or skip for a single-user tool. Full per-axis scores are in the appendix.
 | 34 | Handwriting canvas (CJK / Arabic / Devanagari) | 1.90 |
 | 35 | Pronunciation via SpeechRecognition (already deferred, ADR-006) | 1.46 |
 | 36 | Multi-user / auth / connection pooling | 1.32 |
+
+---
+
+## 2a. Reassessment 2026-07 (post-modularization) -- ADR-054
+
+The tiers above are the ORIGINAL pre-modularization ranking. After roadmap #1
+shipped, the remaining items were rescored against a fresh read of the actual
+code (weights unchanged; only code-reality axes EFFORT/RISK/FOUND moved). The
+runnable model is `roadmap.py` (REASSESS_2026_07); the rationale, alternatives,
+and sequence decision are ADR-054. Current ranking of what remains:
+
+| # | Item | Score | delta | note |
+|--:|------|------:|------:|------|
+| 1 | Study curriculum from the codebase | 4.26 | -0.18 | runs in PARALLEL |
+| 2 | Consolidate SM2 (spaced repetition) engine | 4.26 | +0.22 | Thread N+1 |
+| 3 | Vocab/language features (extend qtypes/banks/import) | 4.00 | new | **Thread N** |
+| 4 | Adaptive selection (swap `pick_next_question`) | 3.94 | -0.04 | with SM2 |
+| 5 | Logic/deduction drill | 3.80 | - | |
+| 6 | Code drill (what does this output?) | 3.72 | - | |
+| 7 | Typing / text-entry speed drill | 3.58 | +0.08 | Thread N+2 |
+| 8 | Timed-round / speed-drill mode | 3.50 | - | |
+| 9 | Assertion / invariant pass | 3.44 | - | |
+| 10 | Timing stats (display `elapsed_ms`) | 3.26 | +0.14 | quick win -> Thread N |
+| 11 | Stats depth: most-missed, over-time, per-bank | 3.22 | +0.14 | |
+| 12 | JSONL export/backup endpoint + button | 3.18 | - | |
+| 13 | Module docstring/status drift + ADR index | 3.04 | - | quick win -> Thread N |
+| 14 | Alphabet/romanization drill | 3.04 | - | |
+| 15 | Grammar exercises (fill-in / reorder) | 3.04 | - | |
+| 16 | Vocabulary importers (CodingFriends, doozan) | 2.86 | - | feeds vocab |
+
+What moved and why (survey facts, all verified against shipped code): the
+`pick_next_question(candidates, history)` seam is a single pure swappable
+function, so SM2 (+0.22) and adaptive selection are cheaper/safer to slot in;
+the migration runner is DONE and `elapsed_ms`/`difficulty` columns exist, so
+new-migration and timing work are de-risked; the JSONL/CSV import pipeline and
+the translate/identify/free_response qtypes + bank-language plumbing already
+exist, so vocab/language is mostly content + small extension (new item, 4.00),
+not net-new; typing has no infra beyond an empty `"typing"` config category
+stub, so it stays genuinely net-new; the stats pipeline is modular with
+`elapsed_ms` collected-but-unsummarized, so timing-stats and stats-depth become
+render additions (+0.14 each, quick wins); and FOUND drops for items whose
+leverage was "unblocks the refactor" (curriculum, adaptive) now that it is done.
+
+**Recommended sequence (score TEMPERED by user constraints -- ADR-054).** The
+raw top ties study-curriculum with SM2, but three constraints reshape the order:
+the study runs in parallel (not a next thread); the user wants product movement
+with comprehension (pure study is off the table); and SM2 is schema-invasive, to
+be avoided immediately after a heavy refactor. So:
+
+- **Thread N -- Vocab/language features + timing-stats + ADR index.** One
+  meaty-but-safe feature on proven seams, plus two quick wins that touch the
+  same files. Cashes in the modularization and is a safe re-warm-up.
+- **Thread N+1 -- SM2 consolidation (+ adaptive selection).** Its own focused,
+  schema-invasive thread; both plug the `pick_next_question` seam. The SM2
+  scheduling-fields migration (reserved in ADR-025) lands here.
+- **Thread N+2 -- Typing drill.** A deliberate net-new qtype: the test of
+  whether the modular seams absorb a genuinely new question kind cleanly.
+- **Parallel -- Study curriculum.** Throughout, feeding on each thread's fresh
+  code (auditing new code teaches more per hour than re-reading the cutover).
+
+Alternatives weighed and rejected as the immediate next thread: "SM2 next"
+(raw-score winner but schema-invasive right after a refactor); "study next"
+(now parallel; a reflective-only phase risks avoidance); "deferred-cleanup
+thread" (more refactoring after a refactor -- interleaved into feature threads
+instead); "typing next" (least de-risked by modularization; better once
+re-warmed up). Full rationale in ADR-054.
 
 ---
 
@@ -159,6 +230,13 @@ maintainability risk, which is exactly why modularization is ranked #1.
 The ranking tells you what is valuable; this tells you what order avoids
 rework. Dependencies matter more than raw score for the first moves.
 
+STATUS (2026-07): Phases 0-2 are DONE (foundation, arithmetic depth,
+modularization). The sequencing for what REMAINS has been re-derived post-
+modularization -- see section 2a and ADR-054. Phases 3-5 below are the ORIGINAL
+plan text, kept as reference; where 2a and the phase text differ on ordering,
+2a/ADR-054 win (notably: the study curriculum now runs in PARALLEL rather than
+as a standalone Phase 3, and vocab/language + quick wins lead the next thread).
+
 **Phase 0 -- lock the foundation (do before anything else). [DONE]**
 Test suite (#8) and the migration runner (#11) -- both now complete. The
 reason they came first: every Tier 1 feature either changes the generator/
@@ -167,7 +245,7 @@ upfront cost was spent so the rest is safe. Pair this with the docstring/ADR
 cleanup (#20) since
 you will be touching headers anyway.
 
-**Phase 1 -- arithmetic depth (your top content priority).**
+**Phase 1 -- arithmetic depth (your top content priority). [DONE]**
 Do them in this order, because each builds on the last:
 `operators (#4)` -> `generalize expression trees (#5)` -> `difficulty control
 (#2)`. Operators is the warm-up (add dicts to the data-driven table, near-zero
@@ -176,9 +254,10 @@ recurse, so this is mostly a new recursive `generate_expression` plus
 parenthesization in the renderer -- a genuinely instructive piece of cs.
 Difficulty then sits on top as the knob that drives depth, operand digits, and
 operator set. Adaptive selection (#7) is the natural follow-on once difficulty
-exists, and is a clean single-function swap.
+exists, and is a clean single-function swap. [Adaptive selection is NOT done --
+it now pairs with SM2 in the next-thread plan, section 2a.]
 
-**Phase 2 -- modularize (do once arithmetic has grown enough to motivate it).**
+**Phase 2 -- modularize. [DONE -- C-MOD-*, roadmap #1 COMPLETE]**
 Extract the frontend JS into ES modules (`state.js`, `api.js`, `drill.js`,
 `stats.js`, `speech.js`) loaded via `<script type="module">` -- no build step,
 which keeps the "vanilla, no framework" property. Split `drill.py` into a small
@@ -188,6 +267,9 @@ sections already have a strict one-way dependency boundary. This is #1 on the
 ranking but sequenced second on purpose: doing it after a round of arithmetic
 work means you modularize code you understand cold, and the seams will be
 obvious. It also directly serves your "understand how concerns separate" goal.
+AS-BUILT: ten frontend ES modules (state, el, api, timing, stage, speech, stats,
+session, drill, boot) + backend config/db/logic/http_layer/drill; the E10 atomic
+cutover shipped with an enforced ownership guard. See STATUS.md and the handoffs.
 DESIGN + SPIKES COMPLETE (C-MOD-design): see llm/roadmap-1-modularization-
 findings.md and llm/roadmap-1-modularization-commit-plan.md, and decisions.md
 ADR-049..052. Implementation (adversarial-review -> commit-planning ->
