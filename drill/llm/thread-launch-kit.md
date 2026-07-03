@@ -45,6 +45,24 @@ ASCII only, consistent with the project.
 > and flags per commit. Verify every commit with a real test (jsdom for
 > frontend, WSGI-over-temp-DB for backend) and report pass/fail before I accept.
 >
+> Delivery contract (EVERY commit, no exceptions -- deliver all three together):
+> (a) a summary + files-modified list; (b) the PATCH as a downloadable file
+> (git diff <prev_sha> HEAD, surfaced via present_files), verified to apply in a
+> fresh clone at the stated baseline with the suite re-run to the green COUNT;
+> and (c) the COMMIT MESSAGE reproduced INLINE IN CHAT (house format: `type(scope):
+> subject`, blank line, "  - " bullets, blank line, "Suite: X -> Y green (...).
+> ALL GREEN.", then the bare commit tag). A patch delivered WITHOUT its inline
+> commit message is incomplete -- never ship (b) without (c). One patch per
+> commit; no push.
+>
+> Runtime verification (not just spec + green tests): for any change to how code
+> LOADS, packages, starts, routes, or crosses the client/server boundary, smoke-
+> test the REAL path end to end before calling it done -- start the server, open
+> the URL, and confirm every asset the page pulls returns 2xx with the right
+> content type. Green tests that structurally bypass the changed path are not
+> evidence (see llm/verification-practices.md). Treat spec silence about a real
+> runtime concern as a question to raise, not permission to skip it.
+>
 > Output rules: all code and prose ASCII only. Be concise. Before writing code,
 > read the relevant section of the attached spec and DECISIONS so you match the
 > existing patterns rather than inventing new ones.
@@ -313,3 +331,9 @@ thread-specific files (your SM2 source) where noted.
 
 Once C-027/C-028 land and the code is modular, attach only the specific modules
 a thread touches, not the whole tree -- smaller context, sharper work.
+
+Always attach CODING_CONVENTIONS.md and verification-practices.md too: the first
+carries the naming/layering/idiom rules, the second the runtime-verification
+practice and the cutover/load-path checklist. Every thread that ships commits
+owes the delivery contract in section 1 -- all three of (summary, downloadable
+patch verified in a fresh clone, INLINE commit message) for each commit.
