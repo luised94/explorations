@@ -119,6 +119,12 @@ CURRENT PLAN (post-reassessment):
 - Thread N+1: SM2 consolidation (roadmap #6) + adaptive selection (#7). Its own
   focused, schema-invasive thread; both plug the pure swappable pick_next_question
   seam. The SM2 scheduling-fields migration (reserved in ADR-025) lands here.
+  DESIGN-FIRST: adaptive (B) and SM2 (C) are to be co-designed then shipped
+  separately (B schema-free first, C the migration). Design handoff with all
+  gathered facts + forks + instincts: llm/design-handoffs-BCDE.md (also covers
+  D conversion pipelines and E authored content). The next SAFE build thread
+  (schema-free stats-depth + JSONL export) is fully planned in
+  llm/design-A-quick-consolidation.md.
 - Thread N+2: Typing drill (#12). A deliberate net-new qtype -- the test of
   whether the modular seams absorb a genuinely new question kind cleanly. No
   typing infra exists yet beyond an empty "typing" config category stub.
