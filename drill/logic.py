@@ -1554,3 +1554,70 @@ def build_question_payload(question: dict) -> dict:
         random.shuffle(options)
         payload["options"] = options
     return payload
+
+
+# B2: adaptive selection (roadmap #7, ADR-005 seam). A second selection
+# strategy alongside pick_next_question: weight candidates by their smoothed
+# historical miss rate so struggling questions surface more often. The
+# response aggregates arrive from DATABASE (get_response_stats_for_bank);
+# the uniform random sample arrives from HTTP as a parameter, so unlike
+# pick_next_question (module-level random by the v1 convention) these
+# functions are fully deterministic given their inputs.
+
+
+def miss_rate_weight(attempt_count: int, correct_count: int) -> float:
+    """Laplace-smoothed miss rate: (misses + 1) / (attempts + 2).
+
+    A never-attempted question weighs 0.5, so a cold bank is uniform and
+    the weighted policy degrades to the current random policy instead of
+    starving or looping.
+    """
+    miss_count = attempt_count - correct_count
+    return (miss_count + 1.0) / (attempt_count + 2.0)
+
+
+def select_weighted_by_miss_rate(
+    candidates: list[dict],
+    response_stats_by_question_id: dict,
+    history: list[int] | None,
+    random_value: float,
+) -> dict | None:
+    """Choose one candidate, weighted by smoothed miss rate.
+
+    Adaptive selection (roadmap #7, schema-free): weight candidates by
+    Laplace-smoothed miss rate (miss_rate_weight over the per-question
+    attempt_count/correct_count aggregates in response_stats_by_question_id),
+    softly avoiding the recent-history window exactly as pick_next_question
+    does -- prefer candidates outside the window, fall back to all when the
+    filtered pool is empty. random_value is a uniform [0, 1) sample supplied
+    by the caller (HTTP reads randomness at the edge) so the function stays
+    deterministic in tests. Returns None only for an empty candidate list.
+    """
+    if not candidates:
+        return None
+    recent_question_ids = set(history or [])
+    fresh = [
+        candidate
+        for candidate in candidates
+        if candidate.get("id") not in recent_question_ids
+    ]
+    pool = fresh if fresh else candidates
+
+    weights = []
+    for candidate in pool:
+        stats = response_stats_by_question_id.get(candidate["id"])
+        if stats is None:
+            weights.append(miss_rate_weight(0, 0))
+        else:
+            weights.append(
+                miss_rate_weight(stats["attempt_count"], stats["correct_count"])
+            )
+
+    total_weight = sum(weights)
+    threshold = random_value * total_weight
+    cumulative = 0.0
+    for candidate, weight in zip(pool, weights):
+        cumulative += weight
+        if cumulative > threshold:
+            return candidate
+    return pool[-1]

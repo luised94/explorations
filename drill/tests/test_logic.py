@@ -946,3 +946,104 @@ def test_payload_single_hint_forwarded(m):
     # still arrive as a one-element list, not a bare string.
     payload = m.build_question_payload(_bank_question(hints=["only clue"]))
     assert payload["hints"] == ["only clue"]
+
+
+# --------------------------------------------------------------------------
+# B2: select_weighted_by_miss_rate -- adaptive selection pure core
+# Ported from the spike test_selection_and_throttle.py (selection half).
+# Seeded random.Random supplies random_value; the functions themselves take
+# it as a parameter and never touch the random module (boundary purity).
+# --------------------------------------------------------------------------
+import random as _random_for_selection_tests  # noqa: E402
+
+
+def test_weighted_selection_empty_returns_none(m):
+    assert m.select_weighted_by_miss_rate([], {}, None, 0.5) is None
+
+
+def test_miss_rate_weight_never_attempted_is_half(m):
+    assert m.miss_rate_weight(0, 0) == 0.5
+
+
+def test_weighted_selection_cold_start_is_uniform(m):
+    # No stats at all: every candidate weighs 0.5, so the pick distribution
+    # over 20000 seeded draws must be uniform within 10 percent per bucket.
+    candidates = [{"id": question_id} for question_id in range(1, 11)]
+    seeded_random = _random_for_selection_tests.Random(20260703)
+    pick_counts = {question_id: 0 for question_id in range(1, 11)}
+    for _ in range(20000):
+        chosen = m.select_weighted_by_miss_rate(
+            candidates, {}, None, seeded_random.random()
+        )
+        pick_counts[chosen["id"]] += 1
+    expected_per_question = 20000 / 10
+    worst_deviation = max(
+        abs(count - expected_per_question) for count in pick_counts.values()
+    )
+    assert worst_deviation < expected_per_question * 0.10
+
+
+def test_weighted_selection_favors_missed_question_by_weight_ratio(m):
+    # Nine mastered questions (10/10) and one struggling (10 attempts,
+    # 2 correct): the struggling question must be favored by the predicted
+    # weight ratio, within 15 percent.
+    candidates = [{"id": question_id} for question_id in range(1, 11)]
+    response_stats = {
+        question_id: {"attempt_count": 10, "correct_count": 10}
+        for question_id in range(1, 11)
+    }
+    response_stats[7] = {"attempt_count": 10, "correct_count": 2}
+    seeded_random = _random_for_selection_tests.Random(20260703)
+    pick_counts = {question_id: 0 for question_id in range(1, 11)}
+    for _ in range(20000):
+        chosen = m.select_weighted_by_miss_rate(
+            candidates, response_stats, None, seeded_random.random()
+        )
+        pick_counts[chosen["id"]] += 1
+    mastered_weight = m.miss_rate_weight(10, 10)
+    struggling_weight = m.miss_rate_weight(10, 2)
+    expected_ratio = struggling_weight / mastered_weight
+    observed_ratio = (
+        pick_counts[7] / (sum(pick_counts.values()) - pick_counts[7]) * 9.0
+    )
+    assert abs(observed_ratio - expected_ratio) / expected_ratio < 0.15
+
+
+def test_weighted_selection_history_window_excludes_recent(m):
+    # Ids 1..9 recent, only 10 fresh: every draw must return 10, regardless
+    # of the (heavier) weight sitting on the recent struggling question 7.
+    candidates = [{"id": question_id} for question_id in range(1, 11)]
+    response_stats = {
+        question_id: {"attempt_count": 10, "correct_count": 10}
+        for question_id in range(1, 11)
+    }
+    response_stats[7] = {"attempt_count": 10, "correct_count": 2}
+    history = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    seeded_random = _random_for_selection_tests.Random(20260703)
+    for _ in range(2000):
+        chosen = m.select_weighted_by_miss_rate(
+            candidates, response_stats, history, seeded_random.random()
+        )
+        assert chosen["id"] == 10
+
+
+def test_weighted_selection_all_recent_falls_back_to_full_pool(m):
+    candidates = [{"id": question_id} for question_id in range(1, 11)]
+    everything_recent = list(range(1, 11))
+    seeded_random = _random_for_selection_tests.Random(20260703)
+    chosen = m.select_weighted_by_miss_rate(
+        candidates, {}, everything_recent, seeded_random.random()
+    )
+    assert chosen is not None
+    assert chosen["id"] in everything_recent
+
+
+def test_weighted_selection_random_value_extremes_are_total(m):
+    # random_value at the extremes of [0, 1): 0.0 picks the first pool
+    # member; a value just under 1.0 lands on the last (rounding-safe tail
+    # return). Neither may raise or return None for a non-empty pool.
+    candidates = [{"id": 1}, {"id": 2}, {"id": 3}]
+    first = m.select_weighted_by_miss_rate(candidates, {}, None, 0.0)
+    assert first["id"] == 1
+    last = m.select_weighted_by_miss_rate(candidates, {}, None, 0.999999999)
+    assert last["id"] == 3
