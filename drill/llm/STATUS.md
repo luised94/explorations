@@ -9,7 +9,9 @@ made structural: when status changes, edit THIS file only.
 
 ASCII only. Single-user assumption holds throughout.
 
-Last updated: THREAD THREE complete -- E10 cutover landed; roadmap #1 DONE.
+Last updated: THREAD N+1 (SM2 + adaptive selection) implementation complete
+through C5 -- roadmap #7's B and C phases landed; A phase (authoring) handed
+to a follow-up thread. Previous marker: THREAD THREE complete (E10 cutover).
 
 ================================================================================
 BASELINE
@@ -125,6 +127,30 @@ CURRENT PLAN (post-reassessment):
   D conversion pipelines and E authored content). The next SAFE build thread
   (schema-free stats-depth + JSONL export) is fully planned in
   llm/design-A-quick-consolidation.md.
+  ** THREAD N+1 IMPLEMENTATION: B AND C PHASES DONE (this update). ** Commits
+  B1-B3 and C1-C5 per llm/implementation-plan.md, delivered as format-patch
+  series at the B3, C4, and C5 stop points and applied by the human. Landed:
+  B1 per-question response stats reader; B2 miss-rate weighted selection pure
+  core; B3 strategy dispatch on GET /api/question (random | weighted); C1
+  migration 4 = question_schedule + accessors, SCHEMA_VERSION 4 (ADR-055); C2
+  SM2 scheduler pure core with the ported sm2 invariant suite (ADR-056); C3
+  partition / relative-overdueness ordering / new-question throttle (floor
+  keyed on bank_id) / rebuild-from-log, budget constants in config; C4 review
+  mode end to end (strategy=scheduled, answer mode=review, once-per-day rule,
+  THE 90-day rebuild==stored invariant test; ADR-057); C5 measurement (true
+  retention S1, elapsed_ms percentiles S2) + terminal views ported from sm2 +
+  drill.py report subcommands (data-driven dispatch table, no argparse:
+  stats | failures | leeches | preview | dry-run; serve unchanged).
+  Suite 589 -> 668 green (ALL GREEN). Deviations recorded per R1/R2, notably:
+  responses has NO qtype column (qtype joins in from questions; findings s1
+  corrected); the questions import funnel does NOT accept metadata (affects
+  A3 -- the follow-up thread must extend the funnel or write directly);
+  db.py gained get_schedule_for_question beyond the plan's C4 list (the
+  answer path holds no bank_id); S2 percentiles computed in pure LOGIC
+  (nearest-rank) rather than SQL; no stats.js render was added (terminal
+  views only). REMAINING: A1-A3 (authoring transform, shell, content
+  migration + sm2/ retirement) hand off to a fresh thread with a STOP after
+  A2 per plan P6.
 - Thread N+2: Typing drill (#12). A deliberate net-new qtype -- the test of
   whether the modular seams absorb a genuinely new question kind cleanly. No
   typing infra exists yet beyond an empty "typing" config category stub.

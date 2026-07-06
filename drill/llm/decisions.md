@@ -2340,3 +2340,71 @@ ADR-054 [DECIDED -- 2026-07 roadmap reassessment, post-modularization]: after
     speed while the audit forces human-speed reading of what shipped.
   - [RECONSIDER WHEN] a thread completes (re-run roadmap.py; the survey facts
     may shift again), or the user re-weights the axes.
+
+ADR-055 [DECIDED -- C1, resolving the scheduling half of ADR-025]: SM2
+scheduling state lives in a SEPARATE 1:1 side table, question_schedule.
+- [DECIDED] Migration 4 creates question_schedule keyed on question_id
+  (PK, REFERENCES questions) with six NOT NULL columns: easiness_factor,
+  interval_days, repetition_count, due_date, last_review, lapse_count.
+  SCHEMA_VERSION is 4. NOT columns on questions: scheduling state is
+  mutable review state, not content, and a side table keeps the import
+  pipeline (parse_import -> _normalize_question_dict ->
+  insert_questions_bulk) entirely ignorant of scheduling. This reproduces
+  sm2's proven "absence of row means never scheduled" semantics: a row is
+  created whole on the first graded review, so no schedule field is ever
+  NULL and the scheduler needs no NULL handling.
+- Dates are ordinal-day integers (datetime.date.toordinal); day granularity
+  IS the SM2 contract. The timezone/midnight policy lives at the HTTP edge
+  where the ordinal is stamped (ADR-057), never in the schema.
+- No backfill in the migration: rows appear lazily on the write path or via
+  rebuild_schedule_from_response_log (C3). The migration is one idempotent
+  CREATE TABLE IF NOT EXISTS.
+- ADR-025's other half (grading_kind) stays unresolved and unadded; C2
+  confirmed its reasoning -- the scheduler consumes a derived quality grade,
+  not a persisted judging policy.
+
+ADR-056 [DECIDED -- C2]: derive_recall_quality is BINARY in v1 (wrong -> 0,
+correct -> 2); no quality is persisted.
+- [DECIDED] Quality is derived at grading time from (correct, elapsed_ms),
+  never stored (per ADR-025: no grading column). The v1 policy ignores
+  elapsed_ms entirely; the parameter is accepted so a timing-derived policy
+  can swap in behind the same signature. The middle grade (1, "correct with
+  effort") is therefore UNREACHABLE in v1.
+- Accepted cost: easiness never decays on effortful passes. Bounded by the
+  lapse path (any miss resets interval to one day and floors toward 1.3).
+- [RECONSIDER WHEN] per-qtype elapsed_ms baselines exist. C5's
+  summarize_elapsed_percentiles (median/p90 per qtype) is deliberately that
+  measurement: the stats landed BEFORE the policy so the v2 thresholds are
+  evidence, not guesses. Do not add timing thresholds before then.
+- The grade table (0->1, 1->3, 2->5 SM2 grades), EF floor 1.3, ceiling 3.0,
+  and the 1 -> 6 -> interval*EF opening are pinned field-identical to
+  sm2.sm2_update by the ported invariant suite in tests/test_logic.py; that
+  suite carries the sm2 contract forward when sm2/ retires at A3.
+
+ADR-057 [DECIDED -- C4]: the once-per-day rule, rebuild-equals-stored, and
+the local-day stamp.
+- [DECIDED] Only the FIRST graded attempt of a question's day advances its
+  schedule (schedule_update_allowed_today: last_review != today). Every
+  response is still logged -- the log is complete; same-day retries are
+  history the scheduler ignores, both on the live write path and inside
+  rebuild_schedule_from_response_log's fold. Rationale: a same-day retry
+  re-tests minutes of memory, not the interval.
+- [DECIDED] Schedule state is a CACHE of the response log. The invariant --
+  folding responses through the rebuild reproduces the stored
+  question_schedule on every field to 1e-9 -- is enforced by the 90-day
+  simulation test in tests/test_http.py (two banks, throttling, deliberate
+  same-day repeats). It holds only while derive_recall_quality is
+  deterministic from stored fields; a policy change makes rebuild a
+  REINTERPRETATION of history, not a reconstruction (acceptable, but the
+  test must then pin the policy version).
+- [DECIDED] The day ordinal is stamped ONCE per request at the top of the
+  handler, from date.today() -- the LOCAL calendar day, the honest boundary
+  for a single-user local tool (a 23:59 review and a 00:01 retry are
+  different days). KNOWN LIMIT: responses.answered is stored in UTC, so the
+  rebuild's ordinal derivation (substr of the ISO timestamp) matches the
+  live stamp only while the local and UTC date agree at review time.
+  Documented in both handler docstrings; revisit only if reviews near
+  midnight prove common.
+- Interval fuzz (apply_interval_fuzz) is deterministic per question_id (no
+  RNG) precisely so this invariant can hold; intervals <= 2 days are exempt
+  to protect the fixed 1 -> 6 opening.
