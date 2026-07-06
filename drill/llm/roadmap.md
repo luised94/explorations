@@ -57,7 +57,7 @@ section 2a (Reassessment 2026-07) and ADR-054; the runnable model is roadmap.py.
 |--:|------|------:|
 | 1 | Modularize: extract JS into modules, split Python into packages | 4.56 | DONE (C-MOD-*)
 | 2 | Extend arithmetic: difficulty control (digits / #operations / operator set) | 4.50 | DONE
-| 3 | Study curriculum derived from the codebase | 4.44 | PARALLEL (see 2a)
+| 3 | Study curriculum derived from the codebase | 4.44 | PARALLEL, IN PROGRESS (Thread N audit landed; see study-curriculum doc S6)
 | 4 | Extend arithmetic: more operators (exponent, modulo, ...) | 4.32 | DONE
 | 5 | Generalize expression generation (nested multi-operator trees) | 4.32 | DONE
 | 6 | Consolidate the SM2 spaced-repetition engine | 4.04 | NEXT+1 (see 2a)
@@ -119,7 +119,7 @@ and sequence decision are ADR-054. Current ranking of what remains:
 
 | # | Item | Score | delta | note |
 |--:|------|------:|------:|------|
-| 1 | Study curriculum from the codebase | 4.26 | -0.18 | runs in PARALLEL |
+| 1 | Study curriculum from the codebase | 4.26 | -0.18 | PARALLEL, in progress (N audit done) |
 | 2 | Consolidate SM2 (spaced repetition) engine | 4.26 | +0.22 | Thread N+1 |
 | 3 | Vocab/language features (extend qtypes/banks/import) | 4.00 | new | **Thread N** |
 | 4 | Adaptive selection (swap `pick_next_question`) | 3.94 | -0.04 | with SM2 |

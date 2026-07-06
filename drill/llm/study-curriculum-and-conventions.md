@@ -186,3 +186,185 @@ inline during the audit -- record, batch, and schedule.
     as the parallel track).
   - roadmap.md -- mark #3 progress; do not close until the curriculum exists.
   - This file -- the running index of audit findings + curriculum entries.
+
+================================================================================
+6. AUDIT PASS: THREAD N (N.1 hints, N.2 timing stats, N.3 ADR index)
+================================================================================
+STATUS: DONE. First parallel-track audit run against a real feature thread's
+fresh code, per the Section 4 loop. Thread N landed three commits on top of the
+E10 cutover baseline; suite 555 -> 589 green. Diffs read at human speed; touched
+files run through the Section 2 axes. Two curriculum entries written (N.1, N.2);
+N.3 is docs-only (no code axes, one process note). One convention ratified, two
+fix-backlog items, one semantics note, zero deviations that block.
+
+--------------------------------------------------------------------------------
+6.1 N.1 -- surface stored hints (drill.js, el.js, stage-adjacent, index.html)
+--------------------------------------------------------------------------------
+Files touched: el.js (+1 registry node), drill.js (renderHints/clearHints +
+two call sites), index.html (+hint-reveal node), logic.py (payload +hints),
+and five test fixtures + one new test file.
+
+Axis A (ENCAPSULATION & INVOCATION): PASS, and a positive datapoint for the
+Section 3 rule. renderHints/clearHints are named, exported, reused pure-ish
+units (justified by "reusable named unit" + "called at a later time" for the
+click handler) -- not wrappers-by-habit. The inner updateButton closure is
+justified: it is called 3x (initial, per-click, after exhaustion) and closes
+over button+revealed+hints, so it is genuine reuse with private state, exactly
+the "closure over local state, called multiple times" exception. The click
+handler is a deferred-execution callback (the "later time" exception). No
+IIFE-by-habit, no named-then-immediately-called antipattern.
+
+Axis D (IMPORT DIRECTION / OWNERSHIP): PASS, and the cleanest teaching moment
+of the thread. The new node is owner:"drill" precisely BECAUSE drill both
+renders and clears it -- keeping owner == sole-reader avoided a CROSS_OWNER_READS
+allowlist row and kept the E10 ownership guard green at 27 nodes with no policy
+change. This is the ownership model working as designed: node placement is
+driven by who manipulates it, not by where it visually sits (the C-2U-c badge
+precedent). RATIFIED CONVENTION (added to CODING_CONVENTIONS.md JS block): "a
+new el node's owner is the module that is its dominant manipulator; if exactly
+one module reads it, owner == that module and no cross-owner row is needed --
+prefer this shape when adding UI nodes."
+
+Axis E (DOM LOOKUP vs MUTATION): PARTIAL -- surfaces the known deferred seam.
+renderHints does its own document.createElement + el.hintReveal.appendChild
+inline, rather than through a stage.js mutation helper (the way setNote /
+clearChoices / clearAnd wrap their mutations). This is consistent with the
+EXISTING codebase (renderChoices in drill.js also builds DOM inline), so it is
+not a NEW deviation -- but it is another instance of the thin-DOM-mutation-seam
+that Section 2E already flagged as deferred. FIX-BACKLOG (append, do not fix
+now): renderChoices + renderHints both build+append DOM inline in drill.js; when
+the DOM-mutation seam is built, these are its second and third customers (clear*
+helpers were the first). Recorded, batched, not refactored inline (Section 4).
+
+Axis I (AFFORDANCE TRUTH): PASS, exemplary. The 0-hints case renders NOTHING
+and keeps the area [hidden] -- no button promising a hint that does not exist
+(the comment cites adversarial lens 10 explicitly). The button retires
+(button.hidden = true) the instant hints are exhausted, so the control's
+presence always equals "a hint remains to reveal." Perceived state == real
+state throughout. This is the [hidden]-guard discipline (C-2U-d gotcha) applied
+correctly on a fresh node: hint-reveal carries the guard from birth.
+
+Axis G (STATE OWNERSHIP): PASS with a note. `revealed` is a per-render closure
+counter, NOT stashed in state.js and NOT read back from the DOM -- correct (no
+DOM-as-state). It is deliberately EPHEMERAL: a question transition calls
+clearHints then a fresh renderHints, resetting revealed to 0. This is the right
+call (revealed-hint progress is not durable session state), but it is a
+CURRICULUM point: transient view state (a closure local) vs durable model state
+(state.js) vs stored fact (the payload) -- three tiers, and hint-reveal touches
+all three in one function.
+
+Axes B/C/F/H: clean. Names say what they do (renderHints/clearHints/
+updateButton/revealed). No error paths needed (pure DOM construction over an
+already-validated list; the `|| []` defaults in renderQuestion make the input
+total). No async (synchronous DOM build; the click handler is sync). Comments
+carry the WHY (truthful affordance, ownership rationale) at the point of use.
+
+CURRICULUM ENTRY N.1 -- "adding a UI node end to end on the modular seams."
+  Read: el.js (the registry + owner tag), ownership.guard.test.js (checks A/B/C
+  and why owner==reader needs no row), drill.js renderHints/clearHints + their
+  two call sites in renderQuestion/loadQuestion, and the backend
+  build_question_payload +hints line.
+  Principle: a UI feature crosses four seams in order -- (1) the stored fact
+  (db/payload), (2) the DOM node + its ownership registration, (3) the render
+  function that reads the payload and builds the node, (4) the transition clear
+  that prevents stale carryover. The ownership guard is the safety rail that
+  makes step 2 mechanical. Truthful affordance (step 3) is the design constraint.
+  EXTEND IT YOURSELF: add a second per-question display node (e.g. a "show
+  example sentence" disclosure) following the same four-seam path; prove the
+  guard stays green and the [hidden] guard holds at 0 examples.
+
+--------------------------------------------------------------------------------
+6.2 N.2 -- median timing stats (logic.py _median + summarize_stats, stats.js)
+--------------------------------------------------------------------------------
+Files touched: logic.py (_median helper + summarize_stats +median_elapsed_ms +
+docstring rewrite), stats.js (formatElapsed + renderStatsPanel figure), plus
+the backend + frontend tests.
+
+Axis A (ENCAPSULATION): PASS. _median is a named pure module-level helper
+(justified: reused-in-principle, unit-testable, documents a non-obvious
+even/odd + int-rounding contract). formatElapsed likewise (pure, testable,
+named). Neither is a wrapper-by-habit; both earn their names by the Section 3
+"pure reusable named unit" exception.
+
+Axis C (ERROR HANDLING / EMPTY): PASS, exemplary null discipline. _median
+returns None on empty rather than raising or returning 0; summarize_stats
+threads that None straight through as median_elapsed_ms, and the null case is
+handled at every layer: backend returns None, the render suppresses the figure
+on null (=== null / undefined check), tests pin both the present and absent
+paths. The subtle correctness point -- a null elapsed_ms is SKIPPED, not counted
+as 0 -- is the teaching core: counting nulls as 0 would silently drag the median
+down, a right-answer-looking bug. This is fail-honest, not fail-loud (the honest
+figure is "no data yet -> no figure"), and it is the right choice for a display
+aggregate.
+
+Axis E (DOM LOOKUP vs MUTATION): PASS. The figure is built via the existing
+statsFigure helper (the established mutation idiom for this panel), NOT inline
+DOM -- so N.2 sits on the RIGHT side of the seam that N.1's renderHints sits on
+the wrong side of. Contrast noted for the curriculum: same thread, two DOM-build
+styles, because stats.js already had a figure factory and drill.js does not have
+a choice/hint factory. This is the argument FOR building the deferred mutation
+seam (the fix-backlog item): where a factory exists, the code is cleaner.
+
+Axis H (COMMENT DENSITY / LOCALITY / ADR-worthiness): PASS with a DECISION
+surfaced. The "median not mean" choice is a real design decision (right-skewed
+response times) and is documented in both the plan (adversarial lens 1) and the
+summarize_stats docstring. It did NOT get its own ADR. JUDGMENT: this is
+borderline -- it is a genuine decision with a rejected alternative (mean), which
+is the ADR trigger. But it is small, local, and fully captured in the docstring.
+RATIFY (no new ADR): display-aggregate choices (median vs mean, suppression
+thresholds) live in the function docstring, not decisions.md, UNLESS they
+constrain a downstream consumer. median_elapsed_ms has no downstream consumer
+(pure display), so docstring is the right home. Recorded here so the "why no
+ADR?" question is answered rather than left implicit.
+
+Axis G (STATE OWNERSHIP) / D (IMPORT): clean. summarize_stats stays pure and
+deterministic (sort once, no input-order dependence, preserved from its prior
+contract). No new import edges. stats.js reads summary.* off the response, never
+back off the DOM.
+
+SEMANTICS-TOUCHED: none new. (formatElapsed's Math.round / toFixed are ordinary
+float formatting, not an ES-module runtime fact.)
+
+CURRICULUM ENTRY N.2 -- "the pure-summary + render split, and honest nulls."
+  Read: logic.py _median + summarize_stats (the pure aggregate), its tests
+  (odd/even/null-skip/all-null/empty), stats.js formatElapsed + the
+  renderStatsPanel suppression, its tests (figure present vs suppressed).
+  Principle: a stat is computed as a PURE function returning a total value
+  including its own empty case (None), and RENDERED by a separate function that
+  decides display (suppress on None, format units). The two never braid: the
+  compute layer has no DOM, the render layer has no arithmetic policy. Honest
+  nulls (skip, don't zero-fill) keep the aggregate truthful.
+  EXTEND IT YOURSELF: add a second timing aggregate (e.g. p90 elapsed_ms) as
+  another pure helper + a second suppressed figure; note how the null discipline
+  and the compute/render split make it a copy of the median path, not new
+  machinery -- evidence the seam generalizes.
+
+--------------------------------------------------------------------------------
+6.3 N.3 -- ADR index (docs only)
+--------------------------------------------------------------------------------
+No code axes. One PROCESS note worth keeping: the plan brief said "ADR-001..054"
+but the actual set is 36 records (ADR-021..054 contiguous, plus retro-references
+005/007). The audit-style habit -- verify the doc claim against the code/artifact
+rather than trusting the brief -- is exactly what caught it (grep the ADR headers,
+diff against the index id set). CURRICULUM META-NOTE: the same "verify against
+the artifact, do not trust the brief" reflex that this parallel track institutes
+for code caught a docs error in N.3. The reflex generalizes beyond code review.
+
+--------------------------------------------------------------------------------
+6.4 AUDIT OUTPUTS (the accretion, per Section 4)
+--------------------------------------------------------------------------------
+RATIFIED -> CODING_CONVENTIONS.md (JS block):
+  - el-node ownership rule: owner == dominant manipulator; owner==sole-reader
+    needs no cross-owner row (from N.1 axis D).
+RATIFIED -> here (no ADR, by judgment):
+  - display-aggregate design choices live in the docstring, not decisions.md,
+    unless they constrain a downstream consumer (from N.2 axis H).
+FIX-BACKLOG (deferred-cleanup thread; do NOT fix inline):
+  - thin DOM-mutation seam now has three named customers: clear* helpers (have
+    it), renderChoices + renderHints (build DOM inline in drill.js, want it).
+    Build the seam when the backlog is drained; these are its first customers.
+  - (carried) leaf-test consolidation, any other prior backlog items.
+SEMANTICS -> knowledge-capture.md: none new this thread.
+COMPREHENSION CHECKPOINT (Section 4.4): PASS -- both feature changes explainable
+  without the diff (four-seam UI-node path; pure-summary/render split with honest
+  nulls). No deeper re-audit needed before the next thread.

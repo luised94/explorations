@@ -128,7 +128,10 @@ CURRENT PLAN (post-reassessment):
   comprehension throttle, NOT a standalone phase. Operating doc:
   llm/study-curriculum-and-conventions.md (audit axes, the semantics-vs-
   conventions split, the drafted encapsulation rule + its first-pass audit
-  result). See also CODING_CONVENTIONS.md.
+  result). FIRST THREAD AUDIT DONE: Thread N (S6 of that doc) -- two curriculum
+  entries, one ratified convention (el-node ownership), one fix-backlog item
+  (the DOM-mutation seam now has three named customers). See also
+  CODING_CONVENTIONS.md.
 
 The baseline SHA for Thread N is whatever this reassessment docs commit lands at
 on main; a launch message pins it. Verify the clone matches before any work.

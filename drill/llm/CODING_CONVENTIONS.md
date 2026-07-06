@@ -129,6 +129,14 @@ JS-SPECIFIC (index.html, tests/frontend/*.js)
 - A read endpoint that feeds a UI control returns STRUCTURAL FACTS; the client
   composes the user-facing label from them. The server owns what exists and its
   shape; the presentation layer owns the words.
+- A new DOM node in the el registry is owned by the module that is its DOMINANT
+  MANIPULATOR, not by where it visually sits. When exactly one module reads the
+  node, set owner == that module: no CROSS_OWNER_READS row is needed and the
+  ownership guard stays green with no policy change. Prefer this owner==sole-
+  reader shape when adding a UI node; reach for a cross-owner row only when a
+  second module genuinely must read a node another module owns. (Ratified from
+  the Thread N.1 hint-reveal node, which is drill-owned because drill both
+  renders and clears it.)
 - No browser storage (localStorage/sessionStorage) and no persistence across
   reloads unless it is a deliberate, app-wide feature -- "reload is a clean
   slate" is the current model.
