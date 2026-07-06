@@ -806,6 +806,86 @@ def get_response_stats_for_bank(
     return stats_by_question_id
 
 
+def get_schedule_for_bank(
+    connection: sqlite3.Connection,
+    bank_id: int,
+) -> dict:
+    """Return all question_schedule rows for one bank, keyed by question_id.
+
+    C1 (SM2 scheduling, roadmap #7): the reader feeding
+    partition_candidates_by_schedule. Each value is a plain dict carrying the
+    six schedule fields verbatim (easiness_factor, interval_days,
+    repetition_count, due_date, last_review, lapse_count). A question with no
+    row is simply absent -- "absence means never scheduled", the semantics the
+    partition function keys on. Pure reader; all scheduling math is LOGIC.
+    """
+    cursor = connection.execute(
+        "SELECT qs.question_id AS question_id, "
+        "qs.easiness_factor AS easiness_factor, "
+        "qs.interval_days AS interval_days, "
+        "qs.repetition_count AS repetition_count, "
+        "qs.due_date AS due_date, "
+        "qs.last_review AS last_review, "
+        "qs.lapse_count AS lapse_count "
+        "FROM question_schedule qs "
+        "JOIN questions q ON qs.question_id = q.id "
+        "WHERE q.bank_id = ?",
+        (bank_id,),
+    )
+    schedule_by_question_id = {}
+    for row in cursor.fetchall():
+        schedule_by_question_id[row["question_id"]] = {
+            "question_id": row["question_id"],
+            "easiness_factor": row["easiness_factor"],
+            "interval_days": row["interval_days"],
+            "repetition_count": row["repetition_count"],
+            "due_date": row["due_date"],
+            "last_review": row["last_review"],
+            "lapse_count": row["lapse_count"],
+        }
+    return schedule_by_question_id
+
+
+def upsert_schedule_row(
+    connection: sqlite3.Connection,
+    state_dict: dict,
+) -> None:
+    """Insert or update one question_schedule row from a schedule state dict.
+
+    C1: the writer the review answer path (C4) and the rebuild use. state_dict
+    carries the seven keys of the table (question_id plus the six schedule
+    fields), exactly the dict shape advance_schedule_state produces and
+    get_schedule_for_bank returns -- one shape end to end, no translation
+    layer. The spike's WRITE_SCHEDULE_ROW statement: INSERT with
+    ON CONFLICT(question_id) DO UPDATE so first review and every later review
+    go through the same statement. Commits, matching the file's writer
+    convention (insert_response et al.).
+    """
+    connection.execute(
+        "INSERT INTO question_schedule "
+        "(question_id, easiness_factor, interval_days, repetition_count, "
+        "due_date, last_review, lapse_count) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(question_id) DO UPDATE SET "
+        "easiness_factor = excluded.easiness_factor, "
+        "interval_days = excluded.interval_days, "
+        "repetition_count = excluded.repetition_count, "
+        "due_date = excluded.due_date, "
+        "last_review = excluded.last_review, "
+        "lapse_count = excluded.lapse_count",
+        (
+            state_dict["question_id"],
+            state_dict["easiness_factor"],
+            state_dict["interval_days"],
+            state_dict["repetition_count"],
+            state_dict["due_date"],
+            state_dict["last_review"],
+            state_dict["lapse_count"],
+        ),
+    )
+    connection.commit()
+
+
 # --- migrations (moved from the CONFIG region in D2 -- these run DDL, so they
 # are DATABASE operations; S10a). run_migrations above walks this registry. The
 # consistency guard reads SCHEMA_VERSION (config) and fires at import time. ---
@@ -870,6 +950,40 @@ def _migrate_3_add_response_difficulty(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE responses ADD COLUMN leaf_count INTEGER")
 
 
+def _migrate_4_add_question_schedule(connection: sqlite3.Connection) -> None:
+    """v4 (C1): add question_schedule, the SM2 per-question scheduling state.
+
+    Scheduling state is mutable review state, not content (findings section 2,
+    resolving ADR-025 to a separate table): a 1:1 side table keyed on
+    question_id keeps the import pipeline (parse_import ->
+    _normalize_question_dict -> insert_questions_bulk) entirely ignorant of
+    scheduling, makes this migration a single idempotent CREATE TABLE, and
+    reproduces sm2's proven "absence of row means never scheduled" semantics.
+
+    All columns NOT NULL: a row exists only after a first graded review,
+    created whole with values computed by the pure core (C2), so no schedule
+    field is ever NULL and the scheduler needs no NULL handling. due_date and
+    last_review are ordinal-day integers (datetime.date.toordinal) -- day
+    granularity is the SM2 contract; the timezone/midnight policy lives at the
+    HTTP edge where the ordinal is stamped (C4), never here. No backfill: rows
+    appear lazily on the write path or via rebuild_schedule_from_response_log.
+
+    The runner owns the transaction and stamps schema_version; this fn performs
+    ONLY the schema change and must not commit, rollback, or touch the version.
+    """
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS question_schedule ("
+        "question_id      INTEGER PRIMARY KEY REFERENCES questions(id), "
+        "easiness_factor  REAL    NOT NULL, "
+        "interval_days    REAL    NOT NULL, "
+        "repetition_count INTEGER NOT NULL, "
+        "due_date         INTEGER NOT NULL, "
+        "last_review      INTEGER NOT NULL, "
+        "lapse_count      INTEGER NOT NULL"
+        ")"
+    )
+
+
 # Forward-only schema migrations, in ascending version order. Each entry is
 # (version, description, migrate) where migrate(connection) performs the schema
 # change for that version. The runner (run_migrations) applies every entry whose
@@ -888,6 +1002,8 @@ def _migrate_3_add_response_difficulty(connection: sqlite3.Connection) -> None:
 MIGRATIONS: list[tuple[int, str, object]] = [
     (2, "add questions.metadata", _migrate_2_add_questions_metadata),
     (3, "add responses.difficulty and leaf_count", _migrate_3_add_response_difficulty),
+    (4, "add question_schedule (SM2 scheduling state, ADR-025)",
+     _migrate_4_add_question_schedule),
 ]
 
 

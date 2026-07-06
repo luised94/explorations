@@ -339,3 +339,78 @@ def test_response_stats_excludes_null_question_id_rows(bank_with_responses):
     assert None not in stats
     total_attempts = sum(entry["attempt_count"] for entry in stats.values())
     assert total_attempts == 4
+
+
+# --- C1: question_schedule accessors (SM2 scheduling state) ---
+
+
+def test_schedule_accessors_round_trip_and_upsert(bank_with_responses):
+    # One shape end to end: the dict upsert_schedule_row writes is the dict
+    # get_schedule_for_bank returns. First write inserts; second write on the
+    # same question_id updates in place (the ON CONFLICT path); other banks'
+    # rows never leak into the read.
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    assert m.get_schedule_for_bank(conn, bank_id) == {}
+
+    first_state = {
+        "question_id": question_ids[0],
+        "easiness_factor": 2.5,
+        "interval_days": 1.0,
+        "repetition_count": 1,
+        "due_date": 739800,
+        "last_review": 739799,
+        "lapse_count": 0,
+    }
+    m.upsert_schedule_row(conn, first_state)
+    schedule = m.get_schedule_for_bank(conn, bank_id)
+    assert set(schedule.keys()) == {question_ids[0]}
+    assert schedule[question_ids[0]] == first_state
+
+    # Upsert on the same question_id: updated in place, still one row.
+    second_state = dict(first_state)
+    second_state["easiness_factor"] = 2.6
+    second_state["interval_days"] = 6.0
+    second_state["repetition_count"] = 2
+    second_state["due_date"] = 739806
+    second_state["last_review"] = 739800
+    m.upsert_schedule_row(conn, second_state)
+    schedule = m.get_schedule_for_bank(conn, bank_id)
+    assert set(schedule.keys()) == {question_ids[0]}
+    assert schedule[question_ids[0]] == second_state
+    row_count = conn.execute(
+        "SELECT COUNT(*) FROM question_schedule"
+    ).fetchone()[0]
+    assert row_count == 1
+
+
+def test_schedule_reader_scopes_to_bank(bank_with_responses):
+    # A schedule row for a question in ANOTHER bank must not appear in this
+    # bank's read -- the join through questions.bank_id is the scope.
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    second_name = next(n for n in cats if n != "arithmetic")
+    other_bank_id = m.insert_bank(
+        conn, cats[second_name], "c1-other-bank", "test", _iso(times["now"])
+    )
+    m.insert_questions_bulk(
+        conn,
+        other_bank_id,
+        [{"question": "q other", "answer": "a other"}],
+        _iso(times["now"]),
+    )
+    other_question_id = m.list_questions(conn, other_bank_id)[0]["id"]
+    m.upsert_schedule_row(
+        conn,
+        {
+            "question_id": other_question_id,
+            "easiness_factor": 1.3,
+            "interval_days": 1.0,
+            "repetition_count": 1,
+            "due_date": 739800,
+            "last_review": 739799,
+            "lapse_count": 2,
+        },
+    )
+    assert m.get_schedule_for_bank(conn, bank_id) == {}
+    other_schedule = m.get_schedule_for_bank(conn, other_bank_id)
+    assert set(other_schedule.keys()) == {other_question_id}

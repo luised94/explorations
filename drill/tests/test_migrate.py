@@ -105,18 +105,18 @@ def test_apply_one_failure_rolls_back_ddl_and_version(db):
 
 
 def test_shipped_migrations_consistent_with_schema_version(db):
-    # The registry as shipped must satisfy the import-time guard. As of #2 it
-    # holds v2 (questions.metadata) and v3 (responses difficulty + leaf_count)
-    # and SCHEMA_VERSION is 3; the guard already ran at import (load_drill would
-    # have raised otherwise), so re-invoking it here documents the invariant and
-    # re-checks it explicitly. This asserts the SHIPPED registry, not just the
-    # guard, so adding a migration without bumping the constant (or vice versa)
-    # surfaces here as a red.
+    # The registry as shipped must satisfy the import-time guard. As of C1 it
+    # holds v2 (questions.metadata), v3 (responses difficulty + leaf_count),
+    # and v4 (question_schedule) and SCHEMA_VERSION is 4; the guard already ran
+    # at import (load_drill would have raised otherwise), so re-invoking it here
+    # documents the invariant and re-checks it explicitly. This asserts the
+    # SHIPPED registry, not just the guard, so adding a migration without
+    # bumping the constant (or vice versa) surfaces here as a red.
     m, _conn = db
     m._check_migration_version_consistency()  # must not raise
-    assert len(m.MIGRATIONS) == 2
-    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3]
-    assert CFG.SCHEMA_VERSION == 3
+    assert len(m.MIGRATIONS) == 3
+    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3, 4]
+    assert CFG.SCHEMA_VERSION == 4
 
 
 def test_drift_guard_rejects_constant_ahead_of_registry(db):
@@ -559,3 +559,78 @@ def test_v3_columns_are_nullable(db):
     ).fetchone()
     assert row["difficulty"] is None
     assert row["leaf_count"] is None
+
+
+# --- the real v4 migration: question_schedule (C1) ---
+
+
+def test_real_v4_migration_creates_question_schedule(db):
+    # C1's migration deliverable through the REAL MIGRATIONS: a fresh baseline
+    # DB walks 1 -> 4; the version stamps at SCHEMA_VERSION, question_schedule
+    # exists with exactly the six NOT NULL state columns around the PK, and
+    # every pre-existing table survives untouched.
+    m, conn = db
+    assert m.get_schema_version(conn) == CFG.BASELINE_SCHEMA_VERSION
+
+    tables_before = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+
+    result = m.run_migrations(conn, FIXED_NOW)
+    assert result["from_version"] == CFG.BASELINE_SCHEMA_VERSION
+    assert result["to_version"] == CFG.SCHEMA_VERSION
+    assert (
+        4,
+        "add question_schedule (SM2 scheduling state, ADR-025)",
+    ) in result["applied"]
+    assert m.get_schema_version(conn) == CFG.SCHEMA_VERSION
+
+    tables_after = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    assert tables_before <= tables_after  # existing tables all survived
+    assert "question_schedule" in tables_after
+
+    # Column contract: name -> (type, notnull, pk) per findings section 2.
+    columns = {
+        r[1]: (r[2], r[3], r[5])
+        for r in conn.execute("PRAGMA table_info(question_schedule)")
+    }
+    assert columns["question_id"] == ("INTEGER", 0, 1)  # PK
+    assert columns["easiness_factor"] == ("REAL", 1, 0)
+    assert columns["interval_days"] == ("REAL", 1, 0)
+    assert columns["repetition_count"] == ("INTEGER", 1, 0)
+    assert columns["due_date"] == ("INTEGER", 1, 0)
+    assert columns["last_review"] == ("INTEGER", 1, 0)
+    assert columns["lapse_count"] == ("INTEGER", 1, 0)
+
+
+def test_real_v4_migration_rerun_is_noop_with_identical_tables(db):
+    # Idempotence: a second run applies nothing and the table set is identical
+    # (the CREATE TABLE IF NOT EXISTS never fires twice destructively).
+    m, conn = db
+    first = m.run_migrations(conn, FIXED_NOW)
+    assert first["to_version"] == CFG.SCHEMA_VERSION
+    tables_first = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    second = m.run_migrations(conn, FIXED_NOW)
+    assert second["applied"] == []
+    assert second["from_version"] == CFG.SCHEMA_VERSION
+    assert second["to_version"] == CFG.SCHEMA_VERSION
+    tables_second = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    assert tables_first == tables_second
