@@ -84,7 +84,7 @@ section 2a (Reassessment 2026-07) and ADR-054; the runnable model is roadmap.py.
 | 17 | Structured logging + error-envelope audit | 3.12 |
 | 18 | Timing stats (compute / display `elapsed_ms`) | 3.12 |
 | 19 | Stats depth: most-missed, over-time, per-bank | 3.08 |
-| 20 | Module docstring / status-drift cleanup + ADR index | 3.04 | WIP (STATUS.md + conventions done; ADR index left)
+| 20 | Module docstring / status-drift cleanup + ADR index | 3.04 | DONE (STATUS.md + conventions done; ADR index at llm/adr-index.md, Thread N.3)
 | 21 | Alphabet / romanization drill | 3.04 |
 | 22 | Grammar exercises (fill-in / reorder) | 3.04 |
 | 23 | Trivia importers (OpenTriviaDB/QA, FreebaseQA) | 2.86 |
@@ -131,7 +131,7 @@ and sequence decision are ADR-054. Current ranking of what remains:
 | 10 | Timing stats (display `elapsed_ms`) | 3.26 | +0.14 | quick win -> Thread N |
 | 11 | Stats depth: most-missed, over-time, per-bank | 3.22 | +0.14 | |
 | 12 | JSONL export/backup endpoint + button | 3.18 | - | |
-| 13 | Module docstring/status drift + ADR index | 3.04 | - | quick win -> Thread N |
+| 13 | Module docstring/status drift + ADR index | 3.04 | - | DONE in Thread N.3 (llm/adr-index.md) |
 | 14 | Alphabet/romanization drill | 3.04 | - | |
 | 15 | Grammar exercises (fill-in / reorder) | 3.04 | - | |
 | 16 | Vocabulary importers (CodingFriends, doozan) | 2.86 | - | feeds vocab |

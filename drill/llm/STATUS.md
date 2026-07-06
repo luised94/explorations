@@ -87,10 +87,10 @@ DONE (roadmap items and the commit arc)
 ================================================================================
 IN PROGRESS
 ================================================================================
-- #20 Module docstring / status-drift cleanup + ADR index. THIS docs work
+- #20 Module docstring / status-drift cleanup + ADR index. DONE. The docs work
       (STATUS.md + CODING_CONVENTIONS.md + reconciling stale status across the
-      doc set) is the bulk of #20. An ADR index is still outstanding and can be
-      finished in or alongside the modularization thread.
+      doc set) was the bulk of #20; the last outstanding piece, the ADR index,
+      is now written at llm/adr-index.md (Thread N.3).
 
 ================================================================================
 NEXT (the phase map)
@@ -213,6 +213,5 @@ KNOWN REMAINING GAPS (real, not yet addressed)
   the GRADING kind {string-equality, numeric, speed, spatial, set/order}; every
   drill type projects onto the general prompt->answer record EXCEPT geography
   point-on-map (spatial). Addressed when a spatial or speed drill is built.
-- The ADR index (part of #20) is not yet written.
 - run.sh glob is done, but the backend pytest side is still a directory run;
   no per-module test split exists yet (arrives naturally with modularization).
