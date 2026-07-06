@@ -23,6 +23,7 @@ Behavior-preserving: every symbol is identical to its pre-split definition.
 from __future__ import annotations
 
 import os
+import random
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -32,6 +33,7 @@ from config import DEFAULT_DATABASE_PATH, DIFFICULTY_RUNGS, QTYPE_ARITHMETIC
 from db import (
     connect,
     end_session,
+    get_response_stats_for_bank,
     get_responses_for_stats,
     get_session_correctness,
     insert_bank,
@@ -53,6 +55,7 @@ from logic import (
     parse_import,
     pick_next_question,
     render_expression,
+    select_weighted_by_miss_rate,
     summarize_correctness,
     summarize_stats,
     validate_answer,
@@ -368,13 +371,35 @@ def get_question_endpoint():
                     status=400,
                 )
 
+    # B3 (adaptive selection, roadmap #7 / ADR-005): optional strategy
+    # parameter selects the picking policy. Absent or "random" keeps the
+    # existing pick_next_question path byte-identical; "weighted" draws by
+    # smoothed miss rate. Context (candidates, response stats, the uniform
+    # random sample) is assembled entirely here at the HTTP edge -- LOGIC
+    # never queries and never reads the random module for this path.
+    strategy = bottle.request.query.get("strategy") or "random"
+    if strategy not in ("random", "weighted"):
+        return _json_error(
+            "unknown strategy: " + strategy + " (expected random or weighted)",
+            status=400,
+        )
+
     connection = connect(DATABASE_PATH)
     try:
         candidates = list_questions(connection, bank_id)
+        if strategy == "weighted":
+            response_stats_by_question_id = get_response_stats_for_bank(
+                connection, bank_id
+            )
     finally:
         connection.close()
 
-    chosen = pick_next_question(candidates, history)
+    if strategy == "weighted":
+        chosen = select_weighted_by_miss_rate(
+            candidates, response_stats_by_question_id, history, random.random()
+        )
+    else:
+        chosen = pick_next_question(candidates, history)
     if chosen is None:
         return _json_error("bank " + str(bank_id) + " has no questions", status=404)
     # C-018b scaffold (deferred Option A): if per-question-language TTS is ever

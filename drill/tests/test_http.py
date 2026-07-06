@@ -548,6 +548,79 @@ def test_question_missing_category_is_400(app_with_bank):
     assert status.startswith("400")
 
 
+# ---- /api/question: selection strategy dispatch (B3) ----------------------
+# The strategy parameter is optional; absent or "random" is the existing
+# pick_next_question path (covered by the bank-branch tests above, unchanged).
+# "weighted" assembles context at the HTTP edge (stats reader + random sample)
+# and dispatches to select_weighted_by_miss_rate. Unknown values get the
+# standard error envelope.
+def test_question_strategy_random_explicit_returns_payload(app_with_bank):
+    m, cat_name, full, _ = app_with_bank
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=random" % (cat_name, full),
+    )
+    assert status.startswith("200")
+    assert data["question_text"] in ("hola", "adios")
+
+
+def test_question_strategy_weighted_returns_candidate(app_with_bank):
+    m, cat_name, full, _ = app_with_bank
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=weighted" % (cat_name, full),
+    )
+    assert status.startswith("200")
+    assert data["question_text"] in ("hola", "adios")
+    assert data["qtype"] == "translate"
+    assert isinstance(data["question_id"], int)
+
+
+def test_question_strategy_weighted_respects_recent_window(app_with_bank):
+    # With one of the two questions marked recent, the weighted path must
+    # serve the other one, exactly like the random path's soft window.
+    m, cat_name, full, _ = app_with_bank
+    status, first = _get_json(
+        m, "/api/question", "category=%s&bank_id=%d" % (cat_name, full)
+    )
+    assert status.startswith("200")
+    recent_id = first["question_id"]
+    for _ in range(10):
+        status, data = _get_json(
+            m,
+            "/api/question",
+            "category=%s&bank_id=%d&strategy=weighted&recent=%d"
+            % (cat_name, full, recent_id),
+        )
+        assert status.startswith("200")
+        assert data["question_id"] != recent_id
+
+
+def test_question_strategy_weighted_empty_bank_is_404(app_with_bank):
+    m, cat_name, _, empty = app_with_bank
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=weighted" % (cat_name, empty),
+    )
+    assert status.startswith("404")
+    assert "error" in data
+
+
+def test_question_unknown_strategy_is_400_with_error_envelope(app_with_bank):
+    m, cat_name, full, _ = app_with_bank
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=galaxy_brain" % (cat_name, full),
+    )
+    assert status.startswith("400")
+    assert "error" in data
+    assert "strategy" in data["error"]
+
+
 # ---- /api/question: arithmetic operator validation -----------------------
 def test_question_arithmetic_unknown_operator_is_400(app_blank):
     m, _ = app_blank
