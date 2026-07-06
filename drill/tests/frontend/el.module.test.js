@@ -48,7 +48,7 @@ const ck = (n, c) => { c ? (pass++, console.log("  ok  - " + n)) : (fail++, cons
 
   /* --- registry shape ---------------------------------------------------- */
   const reg = mod.EL_REGISTRY;
-  ck("registry has 26 entries", Object.keys(reg).length === 26);
+  ck("registry has 27 entries", Object.keys(reg).length === 27);
   ck("every entry has id + owner",
     Object.keys(reg).every(k => reg[k] && typeof reg[k].id === "string" && typeof reg[k].owner === "string"));
   ck("ids are unique",

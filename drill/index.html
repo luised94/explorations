@@ -850,6 +850,15 @@
            array; clicking a choice submits that option's text. -->
       <div class="choices" id="choices" hidden></div>
 
+      <!-- Progressive hint reveal (Thread N.1): questions may store a `hints`
+           list (imported via JSONL/CSV). When the served payload carries one or
+           more hints, this area shows a "Reveal hint" control that discloses
+           them one at a time. Truthful affordance: with 0 hints the whole area
+           stays hidden (no control). Owned by the drill loop -- rebuilt per
+           question in renderQuestion, cleared on transition in loadQuestion,
+           mirroring the answer-hint lifecycle but on its own node. -->
+      <div class="hint-reveal" id="hint-reveal" hidden></div>
+
       <!-- Action button lives OUTSIDE the answer row so it remains available
            in the feedback phase for multiple_choice (where the answer row is
            hidden). For text qtypes it is the Submit/Next control; for MC it

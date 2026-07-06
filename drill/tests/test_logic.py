@@ -860,3 +860,49 @@ def test_malformed_tolerance_degrades_to_exact(m):
 def test_non_numeric_given_is_wrong_not_error(m):
     # Letters typed for a math question are simply incorrect, never an error.
     assert m.validate_answer("13", "abc", m.QTYPE_ARITHMETIC) is False
+
+
+# --------------------------------------------------------------------------
+# build_question_payload -- hints forwarding (Thread N.1)
+# --------------------------------------------------------------------------
+# The payload is the client-facing question shape. Thread N.1 adds `hints`:
+# questions store a hint LIST (imported per question); it was never forwarded
+# before. Additive + display-only -- it never feeds validate_answer's grading.
+def _bank_question(**overrides):
+    # Minimal stored-question dict as db row conversion produces it. The four
+    # required keys (qtype, question, answer, id) must be present; the rest are
+    # optional and default the way build_question_payload expects.
+    q = {
+        "qtype": "translate",
+        "question": "hola",
+        "answer": "hello",
+        "id": 7,
+    }
+    q.update(overrides)
+    return q
+
+
+def test_payload_forwards_hints_when_present(m):
+    payload = m.build_question_payload(
+        _bank_question(hints=["starts with h", "a greeting"])
+    )
+    assert payload["hints"] == ["starts with h", "a greeting"]
+
+
+def test_payload_hints_is_empty_list_when_absent(m):
+    # A question with no hints key yields [] (not None, not missing), so the
+    # client can test truthiness uniformly.
+    payload = m.build_question_payload(_bank_question())
+    assert payload["hints"] == []
+
+
+def test_payload_hints_empty_list_stays_empty(m):
+    payload = m.build_question_payload(_bank_question(hints=[]))
+    assert payload["hints"] == []
+
+
+def test_payload_single_hint_forwarded(m):
+    # SPIKE 1 note: hints is a LIST at N (not N=1); the single-hint case must
+    # still arrive as a one-element list, not a bare string.
+    payload = m.build_question_payload(_bank_question(hints=["only clue"]))
+    assert payload["hints"] == ["only clue"]

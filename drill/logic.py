@@ -1475,6 +1475,13 @@ def build_question_payload(question: dict) -> dict:
         "question_id": question["id"],
         "alternatives": question.get("alternatives") or [],
         "media_url": question.get("media_url"),
+        # Thread N.1: forward the stored per-question hint list so the client
+        # can offer a progressive "reveal hint" affordance. Questions already
+        # store `hints` (imported via JSONL/CSV, db.py row conversion); it was
+        # never forwarded before. Additive + display-only: hints NEVER feed
+        # validate_answer's grading dispatch (columns grade; hints only hint).
+        # Absent/empty -> [], so the client can uniformly test truthiness.
+        "hints": question.get("hints") or [],
     }
     # ---- C-018b scaffold: deferred "Option A" (per-question language) -------
     # TTS (C-018a) needs a language code to pronounce a prompt. It currently

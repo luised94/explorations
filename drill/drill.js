@@ -48,6 +48,7 @@ export async function loadQuestion() {
   el.answer.value = "";
   clearChoices();
   clearFeedback();
+  clearHints(); /* Thread N.1: drop prior question's revealed hints */
   /* C-018a: stop any prior word and hide the speaker until the next question
      renders, so speech never carries across a question transition. */
   cancelSpeech(setSpeakerSpeaking);
@@ -141,6 +142,9 @@ export function renderQuestion(payload) {
   /* C-2U-c: name the active rung under the prompt (non-default rungs only). */
   updateActiveRung(payload);
 
+  /* Thread N.1: surface any stored hints for this question (0 -> no control). */
+  renderHints(payload.hints || []);
+
   if (payload.qtype === "multiple_choice") {
     el.answerRow.hidden = true;
     renderChoices(payload.options || []);
@@ -168,6 +172,63 @@ export function renderChoices(options) {
     });
     el.choices.appendChild(button);
   });
+}
+
+/* Thread N.1: progressive hint reveal. The served payload carries a `hints`
+   LIST (0, 1, or many -- imported per question). Build a "Reveal hint" control
+   that discloses hints one at a time; each click reveals the next until they
+   are exhausted, then the button retires. TRUTHFUL AFFORDANCE (adversarial lens
+   10): with 0 hints, nothing renders and the area stays hidden -- no button that
+   would promise a hint that does not exist. Drill-owned node, so this lives here
+   (not in stage) and needs no cross-owner allowlist row. */
+export function renderHints(hints) {
+  clearHints();
+  if (!hints || hints.length === 0) {
+    return; /* no control when there is nothing to reveal */
+  }
+  var revealed = 0;
+  var list = document.createElement("ol");
+  list.className = "hint-list";
+
+  var button = document.createElement("button");
+  button.type = "button";
+  button.className = "hint-reveal-button";
+
+  function updateButton() {
+    if (revealed >= hints.length) {
+      button.hidden = true;
+      return;
+    }
+    button.hidden = false;
+    button.textContent = revealed === 0
+      ? (hints.length === 1 ? "Reveal hint" : "Reveal a hint")
+      : "Reveal another hint";
+  }
+
+  button.addEventListener("click", function () {
+    if (revealed >= hints.length) {
+      return;
+    }
+    var item = document.createElement("li");
+    item.className = "hint-item";
+    item.textContent = hints[revealed];
+    list.appendChild(item);
+    revealed += 1;
+    updateButton();
+  });
+
+  el.hintReveal.appendChild(button);
+  el.hintReveal.appendChild(list);
+  el.hintReveal.hidden = false;
+  updateButton();
+}
+
+/* Tear down the hint-reveal area (transition clear -- mirrors clearChoices for
+   the drill-owned hint node). Empties contents and hides the area so no stale
+   hint from the prior question carries across. */
+export function clearHints() {
+  el.hintReveal.textContent = "";
+  el.hintReveal.hidden = true;
 }
 
 export function enterAnswering() {

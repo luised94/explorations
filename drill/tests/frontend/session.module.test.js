@@ -23,6 +23,7 @@ function fixtureHtml() {
     "<span id='expression'></span><input id='answer'><div id='answer-row'></div>" +
     "<button id='action'></button><div id='feedback'></div><div id='answer-hint'></div>" +
     "<div id='choices'></div><button id='speaker'></button><div id='active-rung'></div>" +
+    "<div id='hint-reveal'></div>" +
     "<span id='stat-total'></span><span id='stat-accuracy'></span><span id='stat-streak'></span>" +
     "<span id='streak-pips'></span><div id='session-controls'></div>" +
     "<div id='run-log' hidden><ul id='run-log-list'></ul></div>" +

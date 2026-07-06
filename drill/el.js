@@ -54,6 +54,7 @@ export var EL_REGISTRY = {
   activeRung: { id: "active-rung", owner: "drill" },
   answerRow: { id: "answer-row", owner: "drill" },
   choices: { id: "choices", owner: "drill" },
+  hintReveal: { id: "hint-reveal", owner: "drill" },
   speaker: { id: "speaker", owner: "speech" }
 };
 

@@ -46,6 +46,7 @@ function fixtureHtml() {
     "<div id='feedback'></div>" +
     "<div id='answer-hint'></div>" +
     "<div id='choices'></div>" +
+    "<div id='hint-reveal' hidden></div>" +
     "<button id='speaker'></button>" +
     "<div id='active-rung' hidden></div>" +
     "<div id='note'></div>" +
