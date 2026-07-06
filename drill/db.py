@@ -886,6 +886,68 @@ def upsert_schedule_row(
     connection.commit()
 
 
+def get_schedule_for_question(
+    connection: sqlite3.Connection,
+    question_id: int,
+) -> dict | None:
+    """Return one question_schedule row as a dict, or None if never scheduled.
+
+    C4: the answer path's read -- post_answer holds a question_id but no
+    bank_id, so the write path needs a direct single-row reader to feed
+    schedule_update_allowed_today and advance_schedule_state. Same dict shape
+    as get_schedule_for_bank's values; None reproduces the "absence means
+    never scheduled" semantics.
+    """
+    cursor = connection.execute(
+        "SELECT question_id, easiness_factor, interval_days, repetition_count, "
+        "due_date, last_review, lapse_count "
+        "FROM question_schedule WHERE question_id = ?",
+        (question_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return {
+        "question_id": row["question_id"],
+        "easiness_factor": row["easiness_factor"],
+        "interval_days": row["interval_days"],
+        "repetition_count": row["repetition_count"],
+        "due_date": row["due_date"],
+        "last_review": row["last_review"],
+        "lapse_count": row["lapse_count"],
+    }
+
+
+def get_new_introduced_today_by_bank(
+    connection: sqlite3.Connection,
+    today: int,
+) -> dict:
+    """Count questions that ENTERED the schedule today, grouped by bank.
+
+    C4: the aggregate feeding apply_new_question_throttle's daily budget. A
+    question was introduced today exactly when its schedule row shows its
+    first-ever graded review happened today with no prior history:
+    repetition_count = 1 AND lapse_count = 0 AND last_review = today (the
+    spike's verified predicate). today is an ordinal-day integer stamped by
+    the caller at the HTTP edge -- DATABASE never reads the clock. Returns
+    {bank_id: count}; banks with nothing introduced today are simply absent.
+    """
+    cursor = connection.execute(
+        "SELECT q.bank_id AS bank_id, COUNT(*) AS introduced_count "
+        "FROM question_schedule qs "
+        "JOIN questions q ON qs.question_id = q.id "
+        "WHERE qs.repetition_count = 1 "
+        "AND qs.lapse_count = 0 "
+        "AND qs.last_review = ? "
+        "GROUP BY q.bank_id",
+        (today,),
+    )
+    introduced_by_bank = {}
+    for row in cursor.fetchall():
+        introduced_by_bank[row["bank_id"]] = int(row["introduced_count"])
+    return introduced_by_bank
+
+
 # --- migrations (moved from the CONFIG region in D2 -- these run DDL, so they
 # are DATABASE operations; S10a). run_migrations above walks this registry. The
 # consistency guard reads SCHEMA_VERSION (config) and fires at import time. ---

@@ -25,16 +25,26 @@ from __future__ import annotations
 import os
 import random
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import bottle
 
-from config import DEFAULT_DATABASE_PATH, DIFFICULTY_RUNGS, QTYPE_ARITHMETIC
+from config import (
+    DEFAULT_DATABASE_PATH,
+    DIFFICULTY_RUNGS,
+    NEW_QUESTIONS_PER_BANK_MINIMUM,
+    NEW_QUESTIONS_PER_DAY_MAXIMUM,
+    QTYPE_ARITHMETIC,
+    REVIEWS_PER_SESSION_MAXIMUM,
+)
 from db import (
     connect,
     end_session,
+    get_new_introduced_today_by_bank,
     get_response_stats_for_bank,
     get_responses_for_stats,
+    get_schedule_for_bank,
+    get_schedule_for_question,
     get_session_correctness,
     insert_bank,
     insert_questions_bulk,
@@ -43,18 +53,26 @@ from db import (
     list_categories,
     list_questions,
     start_session,
+    upsert_schedule_row,
     utc_now_iso,
 )
 from logic import (
+    EASINESS_FACTOR_INITIAL,
     ImportParseError,
     OPERATORS,
+    advance_schedule_state,
+    apply_interval_fuzz,
+    apply_new_question_throttle,
     build_question_payload,
+    derive_recall_quality,
     evaluate_expression,
     generate_expression,
     leaf_count,
     parse_import,
+    partition_candidates_by_schedule,
     pick_next_question,
     render_expression,
+    schedule_update_allowed_today,
     select_weighted_by_miss_rate,
     summarize_correctness,
     summarize_stats,
@@ -374,15 +392,28 @@ def get_question_endpoint():
     # B3 (adaptive selection, roadmap #7 / ADR-005): optional strategy
     # parameter selects the picking policy. Absent or "random" keeps the
     # existing pick_next_question path byte-identical; "weighted" draws by
-    # smoothed miss rate. Context (candidates, response stats, the uniform
-    # random sample) is assembled entirely here at the HTTP edge -- LOGIC
-    # never queries and never reads the random module for this path.
+    # smoothed miss rate. C4 adds "scheduled": SM2 review mode -- partition
+    # against the schedule, throttle new questions, serve due-then-new.
+    # Context (candidates, schedules, response stats, the today ordinal, the
+    # uniform random sample) is assembled entirely here at the HTTP edge --
+    # LOGIC never queries, never reads the clock, never reads random.
     strategy = bottle.request.query.get("strategy") or "random"
-    if strategy not in ("random", "weighted"):
+    if strategy not in ("random", "weighted", "scheduled"):
         return _json_error(
-            "unknown strategy: " + strategy + " (expected random or weighted)",
+            "unknown strategy: " + strategy
+            + " (expected random, weighted, or scheduled)",
             status=400,
         )
+
+    # C4: the day is stamped ONCE per request, here at the top, and threaded
+    # through partition/throttle/new-today so one request cannot straddle a
+    # day boundary mid-computation. date.today() is the LOCAL calendar day:
+    # for this single-user local tool the user's own midnight is the honest
+    # day boundary (a 23:59 review and its 00:01 retry are different days).
+    # Note responses.answered is stored in UTC; the rebuild derives ordinals
+    # from those timestamps, so rebuild == stored parity assumes the local
+    # and UTC date agree at review time (documented limit, findings s8/s11).
+    today_ordinal = date.today().toordinal()
 
     connection = connect(DATABASE_PATH)
     try:
@@ -391,6 +422,14 @@ def get_question_endpoint():
             response_stats_by_question_id = get_response_stats_for_bank(
                 connection, bank_id
             )
+        if strategy == "scheduled":
+            response_stats_by_question_id = get_response_stats_for_bank(
+                connection, bank_id
+            )
+            schedule_by_question_id = get_schedule_for_bank(connection, bank_id)
+            new_introduced_today_by_bank = get_new_introduced_today_by_bank(
+                connection, today_ordinal
+            )
     finally:
         connection.close()
 
@@ -398,6 +437,41 @@ def get_question_endpoint():
         chosen = select_weighted_by_miss_rate(
             candidates, response_stats_by_question_id, history, random.random()
         )
+    elif strategy == "scheduled":
+        if not candidates:
+            return _json_error(
+                "bank " + str(bank_id) + " has no questions", status=404
+            )
+        due, new, not_due = partition_candidates_by_schedule(
+            candidates, schedule_by_question_id, today_ordinal
+        )
+        # The session cap keeps a huge backlog from swamping one sitting;
+        # partition already ordered due by relative overdueness so the capped
+        # subset is the most at-risk one. Within that due set the pick is
+        # weighted by miss rate (findings section 12), not strict order, so
+        # a struggling due question surfaces sooner.
+        due_within_session_cap = due[:REVIEWS_PER_SESSION_MAXIMUM]
+        admitted_new = apply_new_question_throttle(
+            new,
+            new_introduced_today_by_bank,
+            NEW_QUESTIONS_PER_DAY_MAXIMUM,
+            NEW_QUESTIONS_PER_BANK_MINIMUM,
+        )
+        if due_within_session_cap:
+            chosen = select_weighted_by_miss_rate(
+                due_within_session_cap,
+                response_stats_by_question_id,
+                history,
+                random.random(),
+            )
+        elif admitted_new:
+            chosen = admitted_new[0]
+        else:
+            return _json_error(
+                "nothing due for review in bank " + str(bank_id)
+                + " and no new-question budget left today",
+                status=404,
+            )
     else:
         chosen = pick_next_question(candidates, history)
     if chosen is None:
@@ -435,6 +509,10 @@ def post_answer():
         leaf_count    (int, optional)   expression leaf_count echoed from the
                                         question payload; NULL for non-arithmetic
         tolerance     (float, optional) numeric tolerance for arithmetic
+        mode          (str, optional)   "practice" (default) or "review".
+                                        Review mode (C4) advances the SM2
+                                        schedule for stored questions; the
+                                        practice path never touches it.
     Returns {"correct": bool, "expected": str, "user_input": str,
     "session_stats": {total, correct, accuracy, streak}} so the client can
     show feedback (including the right answer on a miss) and refresh the
@@ -462,6 +540,16 @@ def post_answer():
         leaf_count = _optional_int(body.get("leaf_count"), "leaf_count")
     except _BadParameter as bad:
         return _json_error(bad.message, status=400)
+
+    # C4: mode is a REQUEST property (findings section 11) -- the review path
+    # updates schedules, the practice path never does; no schema, no flag
+    # column. Absent means practice, so every pre-C4 client is untouched.
+    mode = body.get("mode") or "practice"
+    if mode not in ("practice", "review"):
+        return _json_error(
+            "unknown mode: " + str(mode) + " (expected practice or review)",
+            status=400,
+        )
 
     # Trust assumption: this single-user local tool trusts the client-supplied
     # question context (expected, qtype, alternatives). The server re-runs
@@ -492,6 +580,50 @@ def post_answer():
             difficulty=difficulty,
             leaf_count=leaf_count,
         )
+        # C4: the schedule write path. The response row above is ALWAYS
+        # inserted (the log is complete); the schedule advances only in
+        # review mode, only for stored questions (generated arithmetic has
+        # question_id None and is never scheduled), and only on the FIRST
+        # graded attempt of the day (schedule_update_allowed_today) --
+        # same-day retries are logged history that must not advance the
+        # interval again off one day of memory. The day is stamped ONCE per
+        # request; date.today() is the LOCAL calendar day, the honest
+        # boundary for a single-user local tool (a 23:59 review and a 00:01
+        # retry are different days). responses.answered is UTC, so the
+        # rebuild's ordinal derivation matches this stamp only while the
+        # local and UTC date agree at review time (documented limit).
+        if mode == "review" and question_id is not None:
+            today_ordinal = date.today().toordinal()
+            existing_schedule = get_schedule_for_question(connection, question_id)
+            if schedule_update_allowed_today(existing_schedule, today_ordinal):
+                if existing_schedule is None:
+                    easiness_factor = EASINESS_FACTOR_INITIAL
+                    interval_days = 0.0
+                    repetition_count = 0
+                    lapse_count_value = 0
+                else:
+                    easiness_factor = existing_schedule["easiness_factor"]
+                    interval_days = existing_schedule["interval_days"]
+                    repetition_count = existing_schedule["repetition_count"]
+                    lapse_count_value = existing_schedule["lapse_count"]
+                recall_quality = derive_recall_quality(correct, elapsed_ms)
+                advanced_schedule = advance_schedule_state(
+                    recall_quality,
+                    easiness_factor,
+                    interval_days,
+                    repetition_count,
+                    lapse_count_value,
+                    today_ordinal,
+                )
+                fuzzed_interval = apply_interval_fuzz(
+                    advanced_schedule["interval_days"], question_id
+                )
+                advanced_schedule["interval_days"] = fuzzed_interval
+                advanced_schedule["due_date"] = today_ordinal + int(
+                    round(fuzzed_interval)
+                )
+                advanced_schedule["question_id"] = question_id
+                upsert_schedule_row(connection, advanced_schedule)
         # Tack the running session stats onto the response so the UI updates
         # its stats bar without a separate GET /api/stats call per question
         # (keeps the drill hot path to two calls: POST answer, GET question).

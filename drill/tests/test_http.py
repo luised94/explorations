@@ -880,3 +880,472 @@ def test_non_module_paths_are_404(app_blank, path):
     m, _ = app_blank
     status, _, _ = _wsgi_get_with_headers(m, path)
     assert status.startswith("404"), (path, status)
+
+
+# ---- C4: review mode -- scheduled strategy + schedule write path ----------
+# The day boundary in these tests is the REAL local today (the handler stamps
+# date.today().toordinal() once per request); tests that need a controlled
+# clock (the multi-week invariant) inject ordinals by replicating the
+# handler's exact function sequence instead of going through WSGI.
+from datetime import date as _date  # noqa: E402
+
+
+@pytest.fixture
+def review_app(tmp_path):
+    """A module + temp DB with one bank of three questions, a session, and
+    nothing scheduled yet. Returns (m, cat_name, bank_id, question_ids,
+    session_id, conn). The connection stays open for direct inspection."""
+    m = load_http()
+    conn = current_db(m, tmp_path)
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
+    cat_name = next(n for n in cats if n != "arithmetic")
+    now = m.utc_now_iso()
+    bank_id = m.insert_bank(
+        conn, category_id=cat_id, name="review-bank", source="manual", created=now
+    )
+    m.insert_questions_bulk(
+        conn,
+        bank_id,
+        [
+            {"question": "uno", "answer": "one", "qtype": "translate"},
+            {"question": "dos", "answer": "two", "qtype": "translate"},
+            {"question": "tres", "answer": "three", "qtype": "translate"},
+        ],
+        now,
+    )
+    question_ids = [q["id"] for q in m.list_questions(conn, bank_id)]
+    session_id = m.start_session(conn, cat_id, now, bank_id=bank_id)
+    conn.commit()
+    yield m, cat_name, bank_id, question_ids, session_id, conn
+    conn.close()
+
+
+def _answer_payload(session_id, question_id, correct, mode=None):
+    payload = {
+        "session_id": session_id,
+        "qtype": "translate",
+        "question_text": "uno",
+        "expected": "one",
+        "user_input": "one" if correct else "wrong",
+        "question_id": question_id,
+        "elapsed_ms": 1200,
+    }
+    if mode is not None:
+        payload["mode"] = mode
+    return payload
+
+
+def test_scheduled_strategy_serves_new_question_on_fresh_bank(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=scheduled" % (cat_name, bank_id),
+    )
+    assert status.startswith("200")
+    # Nothing scheduled -> everything is new; admitted new is served in id
+    # order, so the first question arrives first.
+    assert data["question_id"] == question_ids[0]
+
+
+def test_scheduled_strategy_serves_due_before_new(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    today = _date.today().toordinal()
+    # Seed one OVERDUE schedule row directly: question 3 due yesterday,
+    # last reviewed before today so the once-per-day rule cannot block it.
+    m.upsert_schedule_row(
+        conn,
+        {
+            "question_id": question_ids[2],
+            "easiness_factor": 2.5,
+            "interval_days": 6.0,
+            "repetition_count": 2,
+            "due_date": today - 1,
+            "last_review": today - 7,
+            "lapse_count": 0,
+        },
+    )
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=scheduled" % (cat_name, bank_id),
+    )
+    assert status.startswith("200")
+    assert data["question_id"] == question_ids[2]
+
+
+def test_review_answer_creates_schedule_row(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    today = _date.today().toordinal()
+    status, data = wsgi_post_json(
+        m,
+        "/api/answer",
+        _answer_payload(session_id, question_ids[0], True, mode="review"),
+    )
+    assert status.startswith("200")
+    stored = m.get_schedule_for_question(conn, question_ids[0])
+    assert stored is not None
+    assert stored["repetition_count"] == 1
+    assert stored["lapse_count"] == 0
+    assert stored["interval_days"] == 1.0  # first pass; <= 2d so fuzz exempt
+    assert stored["last_review"] == today
+    assert stored["due_date"] == today + 1
+
+
+def test_practice_answer_never_touches_schedule(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    # Explicit practice AND the default (mode absent) both leave no row.
+    status, _ = wsgi_post_json(
+        m,
+        "/api/answer",
+        _answer_payload(session_id, question_ids[0], True, mode="practice"),
+    )
+    assert status.startswith("200")
+    status, _ = wsgi_post_json(
+        m,
+        "/api/answer",
+        _answer_payload(session_id, question_ids[1], True),
+    )
+    assert status.startswith("200")
+    assert m.get_schedule_for_question(conn, question_ids[0]) is None
+    assert m.get_schedule_for_question(conn, question_ids[1]) is None
+
+
+def test_review_answer_same_day_repeat_logs_but_never_reschedules(review_app):
+    # THE same-day-repeat case: the second response IS logged (the log is
+    # complete) but the schedule is unchanged on every field.
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    status, _ = wsgi_post_json(
+        m,
+        "/api/answer",
+        _answer_payload(session_id, question_ids[0], True, mode="review"),
+    )
+    assert status.startswith("200")
+    schedule_after_first = m.get_schedule_for_question(conn, question_ids[0])
+
+    # Same day, second graded attempt -- and a FAIL, which would reset the
+    # interval and bump lapse_count if it were allowed to schedule.
+    status, _ = wsgi_post_json(
+        m,
+        "/api/answer",
+        _answer_payload(session_id, question_ids[0], False, mode="review"),
+    )
+    assert status.startswith("200")
+    schedule_after_second = m.get_schedule_for_question(conn, question_ids[0])
+    assert schedule_after_second == schedule_after_first
+
+    response_count = conn.execute(
+        "SELECT COUNT(*) FROM responses WHERE question_id = ?",
+        (question_ids[0],),
+    ).fetchone()[0]
+    assert response_count == 2
+
+
+def test_review_answer_arithmetic_question_id_null_never_schedules(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    payload = _answer_payload(session_id, None, True, mode="review")
+    payload["qtype"] = "arithmetic"
+    payload["question_text"] = "1 + 1"
+    payload["expected"] = "2"
+    payload["user_input"] = "2"
+    status, _ = wsgi_post_json(m, "/api/answer", payload)
+    assert status.startswith("200")
+    count = conn.execute("SELECT COUNT(*) FROM question_schedule").fetchone()[0]
+    assert count == 0
+
+
+def test_answer_unknown_mode_is_400(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    status, data = wsgi_post_json(
+        m,
+        "/api/answer",
+        _answer_payload(session_id, question_ids[0], True, mode="cramming"),
+    )
+    assert status.startswith("400")
+    assert "mode" in json.loads(data)["error"]
+
+
+def test_scheduled_strategy_nothing_due_and_budget_spent_is_404(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    today = _date.today().toordinal()
+    # Everything scheduled for the FUTURE (nothing due, nothing new) and the
+    # daily new budget fully spent by rows introduced today in this bank.
+    for question_id in question_ids:
+        m.upsert_schedule_row(
+            conn,
+            {
+                "question_id": question_id,
+                "easiness_factor": 2.5,
+                "interval_days": 6.0,
+                "repetition_count": 1,
+                "due_date": today + 5,
+                "last_review": today,
+                "lapse_count": 0,
+            },
+        )
+    status, data = _get_json(
+        m,
+        "/api/question",
+        "category=%s&bank_id=%d&strategy=scheduled" % (cat_name, bank_id),
+    )
+    assert status.startswith("404")
+    assert "error" in data
+
+
+def test_new_introduced_today_aggregate_counts_first_reviews_only(review_app):
+    m, cat_name, bank_id, question_ids, session_id, conn = review_app
+    today = _date.today().toordinal()
+    # question 1: introduced today (rep 1, lapse 0, last_review today).
+    m.upsert_schedule_row(
+        conn,
+        {
+            "question_id": question_ids[0],
+            "easiness_factor": 2.6,
+            "interval_days": 1.0,
+            "repetition_count": 1,
+            "due_date": today + 1,
+            "last_review": today,
+            "lapse_count": 0,
+        },
+    )
+    # question 2: reviewed today but NOT new (rep 2).
+    m.upsert_schedule_row(
+        conn,
+        {
+            "question_id": question_ids[1],
+            "easiness_factor": 2.7,
+            "interval_days": 6.0,
+            "repetition_count": 2,
+            "due_date": today + 6,
+            "last_review": today,
+            "lapse_count": 0,
+        },
+    )
+    # question 3: first review happened yesterday.
+    m.upsert_schedule_row(
+        conn,
+        {
+            "question_id": question_ids[2],
+            "easiness_factor": 2.6,
+            "interval_days": 1.0,
+            "repetition_count": 1,
+            "due_date": today,
+            "last_review": today - 1,
+            "lapse_count": 0,
+        },
+    )
+    introduced = m.get_new_introduced_today_by_bank(conn, today)
+    assert introduced == {bank_id: 1}
+
+
+# ---- C4: THE INVARIANT TEST -- rebuild == stored over a simulated history --
+# Port of the spike test_migration_and_simulation.py as a proper suite test.
+# A multi-week (90-day) review history is driven through the HTTP-EQUIVALENT
+# flow: each simulated request replicates the scheduled-strategy handler's
+# exact function sequence (fetch via the real db readers, partition ->
+# throttle -> weighted-due-then-admitted-new, insert_response, then the gated
+# advance/fuzz/upsert write path) with the today ordinal injected instead of
+# read from the clock -- the one substitution WSGI cannot provide. Deliberate
+# same-day repeats are injected along the way. The invariant: folding the
+# responses log through rebuild_schedule_from_response_log reproduces the
+# stored question_schedule on every field to 1e-9. This is what makes
+# "state is a cache of the log" a tested property, not a slogan.
+def test_rebuild_from_response_log_equals_stored_schedule_over_90_days(tmp_path):
+    import random as random_module
+
+    from _support import load_logic
+
+    m = load_http()
+    logic_module = load_logic()
+    conn = current_db(m, tmp_path)
+
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    cat_id = next(cid for n, cid in cats.items() if n != "arithmetic")
+    now = m.utc_now_iso()
+    bank_alpha = m.insert_bank(
+        conn, category_id=cat_id, name="sim-alpha", source="manual", created=now
+    )
+    bank_beta = m.insert_bank(
+        conn, category_id=cat_id, name="sim-beta", source="manual", created=now
+    )
+    m.insert_questions_bulk(
+        conn,
+        bank_alpha,
+        [
+            {"question": "alpha question %d" % index, "answer": "answer %d" % index}
+            for index in range(12)
+        ],
+        now,
+    )
+    m.insert_questions_bulk(
+        conn,
+        bank_beta,
+        [
+            {"question": "beta question %d" % index, "answer": "answer %d" % index}
+            for index in range(4)
+        ],
+        now,
+    )
+    session_id = m.start_session(conn, cat_id, now, bank_id=bank_alpha)
+    conn.commit()
+
+    start_ordinal = datetime(2026, 7, 3).date().toordinal()
+    review_outcome_pattern = [True, True, False, True, True, True, False, True]
+    pattern_index = 0
+    seeded_random = random_module.Random(20260706)
+
+    for day_offset in range(90):
+        today = start_ordinal + day_offset
+        answered_text = (
+            datetime.fromordinal(today).date().isoformat() + "T09:00:00"
+        )
+        first_reviewed_today = None
+        for bank_id in (bank_alpha, bank_beta):
+            # One simulated GET+POST cycle per iteration, exactly the
+            # handler's sequence, until this bank has nothing to serve.
+            while True:
+                candidates = m.list_questions(conn, bank_id)
+                response_stats = m.get_response_stats_for_bank(conn, bank_id)
+                schedule_by_question_id = m.get_schedule_for_bank(conn, bank_id)
+                new_introduced_today = m.get_new_introduced_today_by_bank(
+                    conn, today
+                )
+                due, new, not_due = m.partition_candidates_by_schedule(
+                    candidates, schedule_by_question_id, today
+                )
+                due_capped = due[:100]  # REVIEWS_PER_SESSION_MAXIMUM
+                admitted_new = m.apply_new_question_throttle(
+                    new, new_introduced_today, 9, 1
+                )
+                if due_capped:
+                    chosen = m.select_weighted_by_miss_rate(
+                        due_capped,
+                        response_stats,
+                        None,
+                        seeded_random.random(),
+                    )
+                elif admitted_new:
+                    chosen = admitted_new[0]
+                else:
+                    break
+
+                question_id = chosen["id"]
+                correct = review_outcome_pattern[
+                    pattern_index % len(review_outcome_pattern)
+                ]
+                pattern_index += 1
+                elapsed_ms = 4000 + 137 * (question_id + day_offset)
+                m.insert_response(
+                    conn,
+                    session_id,
+                    chosen["question"],
+                    chosen["answer"],
+                    chosen["answer"] if correct else "wrong",
+                    correct,
+                    answered_text,
+                    question_id=question_id,
+                    elapsed_ms=elapsed_ms,
+                )
+                if first_reviewed_today is None:
+                    first_reviewed_today = question_id
+                existing = m.get_schedule_for_question(conn, question_id)
+                if not m.schedule_update_allowed_today(existing, today):
+                    continue
+                if existing is None:
+                    easiness_factor = m.EASINESS_FACTOR_INITIAL
+                    interval_days = 0.0
+                    repetition_count = 0
+                    lapse_count_value = 0
+                else:
+                    easiness_factor = existing["easiness_factor"]
+                    interval_days = existing["interval_days"]
+                    repetition_count = existing["repetition_count"]
+                    lapse_count_value = existing["lapse_count"]
+                recall_quality = m.derive_recall_quality(correct, elapsed_ms)
+                advanced = m.advance_schedule_state(
+                    recall_quality,
+                    easiness_factor,
+                    interval_days,
+                    repetition_count,
+                    lapse_count_value,
+                    today,
+                )
+                fuzzed = m.apply_interval_fuzz(
+                    advanced["interval_days"], question_id
+                )
+                advanced["interval_days"] = fuzzed
+                advanced["due_date"] = today + int(round(fuzzed))
+                advanced["question_id"] = question_id
+                m.upsert_schedule_row(conn, advanced)
+
+        # Every tenth day: a deliberate same-day SECOND graded attempt on a
+        # question already reviewed today, driven through the same gated
+        # write path -- the response logs, the gate blocks the reschedule,
+        # and the rebuild fold must ignore it identically.
+        if day_offset % 10 == 0 and first_reviewed_today is not None:
+            repeat_question = next(
+                q
+                for q in m.list_questions(conn, bank_alpha)
+                + m.list_questions(conn, bank_beta)
+                if q["id"] == first_reviewed_today
+            )
+            m.insert_response(
+                conn,
+                session_id,
+                repeat_question["question"],
+                repeat_question["answer"],
+                "wrong",
+                False,
+                answered_text,
+                question_id=first_reviewed_today,
+            )
+            existing = m.get_schedule_for_question(conn, first_reviewed_today)
+            assert m.schedule_update_allowed_today(existing, today) is False
+            # Gate blocked: no advance, no upsert -- exactly the handler.
+    conn.commit()
+
+    response_count = conn.execute("SELECT COUNT(*) FROM responses").fetchone()[0]
+    scheduled_count = conn.execute(
+        "SELECT COUNT(*) FROM question_schedule"
+    ).fetchone()[0]
+    assert response_count > 100  # a real multi-week history
+    assert scheduled_count == 16  # every question eventually entered
+
+    response_rows_for_rebuild = [
+        {
+            "question_id": row["question_id"],
+            "correct": bool(row["correct"]),
+            "elapsed_ms": row["elapsed_ms"],
+            "answered_ordinal": datetime.fromisoformat(
+                row["answered"][:10]
+            ).date().toordinal(),
+        }
+        for row in conn.execute(
+            "SELECT question_id, correct, elapsed_ms, answered "
+            "FROM responses ORDER BY id"
+        )
+    ]
+    rebuilt = logic_module.rebuild_schedule_from_response_log(
+        response_rows_for_rebuild
+    )
+    stored = {
+        row["question_id"]: dict(row)
+        for row in conn.execute("SELECT * FROM question_schedule")
+    }
+    assert set(rebuilt.keys()) == set(stored.keys())
+    for question_id, rebuilt_state in rebuilt.items():
+        stored_state = stored[question_id]
+        for field in (
+            "easiness_factor",
+            "interval_days",
+            "repetition_count",
+            "due_date",
+            "last_review",
+            "lapse_count",
+        ):
+            assert abs(rebuilt_state[field] - stored_state[field]) <= 1e-9, (
+                "rebuild mismatch: question %d field %s rebuilt %r stored %r"
+                % (question_id, field, rebuilt_state[field], stored_state[field])
+            )
+    conn.close()
