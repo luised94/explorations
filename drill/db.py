@@ -766,6 +766,46 @@ def get_responses_for_stats(
     ]
 
 
+def get_response_stats_for_bank(
+    connection: sqlite3.Connection,
+    bank_id: int,
+) -> dict:
+    """Return per-question response aggregates for one bank.
+
+    B1 (adaptive selection, roadmap #7): the reader feeding
+    select_weighted_by_miss_rate. Returns a dict keyed by question_id, each
+    value a dict with attempt_count (int), correct_count (int), and
+    last_answered (str, the max responses.answered ISO 8601 timestamp).
+    Questions with no responses simply have no entry ("absence means never
+    attempted", the same semantics the weighted selector's Laplace smoothing
+    expects).
+
+    The inner join through questions restricts rows to the requested bank and
+    inherently excludes generated-arithmetic responses (their question_id is
+    NULL and joins nothing). Pure SQL aggregation, no LOGIC import; the
+    weighting math lives in LOGIC and consumes this dict.
+    """
+    cursor = connection.execute(
+        "SELECT r.question_id AS question_id, "
+        "COUNT(*) AS attempt_count, "
+        "SUM(r.correct) AS correct_count, "
+        "MAX(r.answered) AS last_answered "
+        "FROM responses r "
+        "JOIN questions q ON r.question_id = q.id "
+        "WHERE q.bank_id = ? "
+        "GROUP BY r.question_id",
+        (bank_id,),
+    )
+    stats_by_question_id = {}
+    for row in cursor.fetchall():
+        stats_by_question_id[row["question_id"]] = {
+            "attempt_count": int(row["attempt_count"]),
+            "correct_count": int(row["correct_count"]),
+            "last_answered": row["last_answered"],
+        }
+    return stats_by_question_id
+
+
 # --- migrations (moved from the CONFIG region in D2 -- these run DDL, so they
 # are DATABASE operations; S10a). run_migrations above walks this registry. The
 # consistency guard reads SCHEMA_VERSION (config) and fires at import time. ---

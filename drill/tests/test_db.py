@@ -237,3 +237,105 @@ def test_insert_response_difficulty_leaf_count_round_trip(seeded):
     ).fetchone()
     assert row_without["difficulty"] is None
     assert row_without["leaf_count"] is None
+
+# --- B1: per-question response stats reader (adaptive selection feed) ---
+
+
+@pytest.fixture
+def bank_with_responses(tmp_path):
+    """A fresh current-schema DB with one bank of three questions and a
+    known response spread, plus a NULL-question_id arithmetic response.
+
+    Question 1: 3 attempts, 2 correct. Question 2: 1 attempt, 0 correct.
+    Question 3: never attempted. Arithmetic: 1 correct response with
+    question_id NULL (must never appear in bank stats).
+    Returns (module, conn, bank_id, question_ids, timestamps).
+    """
+    m = load_db()
+    conn = current_db(m, tmp_path)
+
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    second_name = next(n for n in cats if n != "arithmetic")
+    second_id = cats[second_name]
+
+    now = datetime.now(timezone.utc)
+    earlier = now - timedelta(days=2)
+
+    bank_id = m.insert_bank(conn, second_id, "b1-stats-bank", "test", _iso(now))
+    m.insert_questions_bulk(
+        conn,
+        bank_id,
+        [
+            {"question": "q one", "answer": "a one"},
+            {"question": "q two", "answer": "a two"},
+            {"question": "q three", "answer": "a three"},
+        ],
+        _iso(now),
+    )
+    question_ids = [q["id"] for q in m.list_questions(conn, bank_id)]
+
+    session_id = m.start_session(conn, second_id, _iso(now), bank_id=bank_id)
+    m.insert_response(
+        conn, session_id, "q one", "a one", "a one", True,
+        _iso(earlier), question_id=question_ids[0],
+    )
+    m.insert_response(
+        conn, session_id, "q one", "a one", "wrong", False,
+        _iso(earlier), question_id=question_ids[0],
+    )
+    m.insert_response(
+        conn, session_id, "q one", "a one", "a one", True,
+        _iso(now), question_id=question_ids[0],
+    )
+    m.insert_response(
+        conn, session_id, "q two", "a two", "wrong", False,
+        _iso(now), question_id=question_ids[1],
+    )
+    # Generated arithmetic: question_id NULL, must be excluded by the join.
+    m.insert_response(
+        conn, session_id, "1+1", "2", "2", True,
+        _iso(now), question_id=None,
+    )
+    conn.commit()
+
+    yield m, conn, bank_id, question_ids, {"now": now, "earlier": earlier}
+    conn.close()
+
+
+def test_response_stats_empty_bank_returns_empty_dict(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    second_name = next(n for n in cats if n != "arithmetic")
+    empty_bank_id = m.insert_bank(
+        conn, cats[second_name], "b1-empty-bank", "test", _iso(times["now"])
+    )
+    assert m.get_response_stats_for_bank(conn, empty_bank_id) == {}
+
+
+def test_response_stats_counts_exact(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    stats = m.get_response_stats_for_bank(conn, bank_id)
+    assert stats[question_ids[0]]["attempt_count"] == 3
+    assert stats[question_ids[0]]["correct_count"] == 2
+    assert stats[question_ids[0]]["last_answered"] == _iso(times["now"])
+    assert stats[question_ids[1]]["attempt_count"] == 1
+    assert stats[question_ids[1]]["correct_count"] == 0
+    assert stats[question_ids[1]]["last_answered"] == _iso(times["now"])
+
+
+def test_response_stats_never_attempted_question_absent(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    stats = m.get_response_stats_for_bank(conn, bank_id)
+    assert question_ids[2] not in stats
+    assert set(stats.keys()) == {question_ids[0], question_ids[1]}
+
+
+def test_response_stats_excludes_null_question_id_rows(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    # The fixture inserted one arithmetic response (question_id NULL). The
+    # total attempts across the stats dict must equal only the 4 bank-question
+    # responses; the NULL row joins nothing and can appear under no key.
+    stats = m.get_response_stats_for_bank(conn, bank_id)
+    assert None not in stats
+    total_attempts = sum(entry["attempt_count"] for entry in stats.values())
+    assert total_attempts == 4
