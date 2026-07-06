@@ -150,8 +150,9 @@ export async function onStatsToggle() {
    response {total, correct, accuracy, categories:[...], window} -- no network.
    Empty/time-zero (total 0) gets a friendly note rather than a wall of zeros.
    The categories list arrives pre-sorted by the endpoint (most-practiced
-   first), so it renders in order as-is. Timing is intentionally absent: it is
-   collected (C-018c) and queryable but not summarized in v1. */
+   first), so it renders in order as-is. The median think+type time is shown in
+   the overall row when present (Thread N.2); it is suppressed when null (no
+   timed responses). */
 export function renderStatsPanel(summary) {
   el.statsPanel.textContent = "";
 
@@ -172,6 +173,16 @@ export function renderStatsPanel(summary) {
     statsFigure(Math.round((summary.accuracy || 0) * 100) + "%", "accuracy")
   );
   overall.appendChild(statsFigure(String(summary.correct), "correct"));
+  /* Median think+type time (Thread N.2). Shown only when the backend returned a
+     figure (non-null): a null means no timed responses, so suppress it the way
+     single-category/single-bucket breakdowns are suppressed (C-D2i-3), rather
+     than printing a misleading "0 ms". Rendered in seconds with one decimal for
+     readability (elapsed_ms is stored in milliseconds). */
+  if (summary.median_elapsed_ms !== null && summary.median_elapsed_ms !== undefined) {
+    overall.appendChild(
+      statsFigure(formatElapsed(summary.median_elapsed_ms), "median time")
+    );
+  }
   el.statsPanel.appendChild(overall);
 
   /* Window echo (only when a filter is active), so the user knows the scope. */
@@ -256,6 +267,16 @@ export function statsFigure(value, label) {
   fig.appendChild(head);
   fig.appendChild(cap);
   return fig;
+}
+
+/* Format a millisecond duration for display (Thread N.2). Sub-second times read
+   as "NNN ms"; one second and up read as seconds with one decimal ("2.4 s"),
+   which is the scale a think+type answer actually lands at. Pure. */
+export function formatElapsed(ms) {
+  if (ms < 1000) {
+    return String(Math.round(ms)) + " ms";
+  }
+  return (Math.round(ms / 100) / 10).toFixed(1) + " s";
 }
 
 /* Build a short human description of the active window/filter, or "" when the

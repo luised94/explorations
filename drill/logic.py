@@ -1308,6 +1308,25 @@ def breakdown_by(
     return buckets
 
 
+def _median(values: list):
+    """Median of a PRE-SORTED numeric list, or None when the list is empty.
+
+    Thread N.2 timing helper. Pure and deterministic. Returns an int for an
+    odd-length list (the middle element) and the int-rounded average of the two
+    middle elements for an even-length list, so the surfaced figure is always a
+    whole number of milliseconds. Callers pass a sorted list (summarize_stats
+    sorts once); this does not re-sort.
+    """
+    count = len(values)
+    if count == 0:
+        return None
+    mid = count // 2
+    if count % 2 == 1:
+        return int(values[mid])
+    # Even length: average the two central values, rounded to the nearest int.
+    return int(round((values[mid - 1] + values[mid]) / 2))
+
+
 def summarize_stats(rows: list[dict]) -> dict:
     """Summarize durable cross-session stats for the stats view (C-019a).
 
@@ -1335,16 +1354,22 @@ def summarize_stats(rows: list[dict]) -> dict:
                       bank-only practice, or all responses pre-#2). The render
                       layer decides whether to show it (single-bucket suppression
                       is a display choice, C-D2i-3), exactly as for categories.
+        median_elapsed_ms -- the MEDIAN think+type time across responses that
+                      carry a non-null elapsed_ms, as an int (ms), or None when
+                      no response carries timing. Median not mean (Thread N.2):
+                      response times are right-skewed (a few long pauses), so the
+                      mean misleads while the median is the honest central figure.
+                      Rows with a null elapsed_ms are skipped, NOT treated as 0.
 
     The empty case (a fresh database, or a window/filter with no responses)
-    yields total 0, accuracy 0.0, an empty categories list, and an empty
-    difficulty_breakdown rather than a division error -- the time-zero case,
-    handled like summarize_correctness.
+    yields total 0, accuracy 0.0, an empty categories list, an empty
+    difficulty_breakdown, and a None median_elapsed_ms rather than a division
+    error -- the time-zero case, handled like summarize_correctness.
 
-    elapsed_ms is deliberately IGNORED in v1: timing collection began at C-018c
-    but the timing FEATURE (any per-answer or aggregate timing metric) is a
-    deferred future commit. The rows carry elapsed_ms so that feature can use
-    it later without a new query; this summary simply does not read it.
+    elapsed_ms is surfaced as a single aggregate (median_elapsed_ms) as of
+    Thread N.2. Timing collection began at C-018c; the rows already carry
+    elapsed_ms, so this summary reads it without a new query. Only the median
+    is exposed; per-answer timing remains unsurfaced.
 
     Pure and deterministic (the category ordering is total/name, not input
     order, so the same rows always summarize identically).
@@ -1399,12 +1424,25 @@ def summarize_stats(rows: list[dict]) -> dict:
         ),
     )
 
+    # Median think+type time (Thread N.2). Collect only non-null elapsed_ms
+    # values; a null means the response predates timing collection or was not
+    # timed, and must be skipped (not counted as 0, which would drag the median
+    # down). None when no response carries timing -- the time-zero case, so the
+    # render layer suppresses the figure the way it does for empty breakdowns.
+    elapsed_values = sorted(
+        row.get("elapsed_ms")
+        for row in rows
+        if row.get("elapsed_ms") is not None
+    )
+    median_elapsed_ms = _median(elapsed_values)
+
     return {
         "total": total,
         "correct": correct_count,
         "accuracy": accuracy,
         "categories": categories,
         "difficulty_breakdown": difficulty_breakdown,
+        "median_elapsed_ms": median_elapsed_ms,
     }
 
 

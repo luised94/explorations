@@ -110,11 +110,51 @@ def test_summarize_stats_empty_is_time_zero(m):
     assert s["accuracy"] == 0.0
     assert s["categories"] == []
     assert s["difficulty_breakdown"] == []
+    assert s["median_elapsed_ms"] is None
 
 
-def test_summarize_stats_ignores_elapsed_ms(m):
-    s = m.summarize_stats(_rows((1, "arithmetic", True, 1500)))
-    assert not any(("elapsed" in k) or ("ms" in k) or ("time" in k) for k in s.keys())
+def test_summarize_stats_median_elapsed_ms_odd(m):
+    # Thread N.2: median over the non-null timing values. Odd count -> the
+    # middle value after sorting (900, 1500, 2200 -> 1500).
+    rows = _rows(
+        (1, "arithmetic", True, 1500),
+        (1, "arithmetic", True, 900),
+        (2, "vocabulary", True, 2200),
+    )
+    assert m.summarize_stats(rows)["median_elapsed_ms"] == 1500
+
+
+def test_summarize_stats_median_elapsed_ms_even(m):
+    # Even count -> average of the two central values, int-rounded.
+    # sorted 900, 1500, 2000, 2200 -> (1500 + 2000) / 2 = 1750.
+    rows = _rows(
+        (1, "arithmetic", True, 1500),
+        (1, "arithmetic", True, 900),
+        (1, "arithmetic", True, 2000),
+        (2, "vocabulary", True, 2200),
+    )
+    assert m.summarize_stats(rows)["median_elapsed_ms"] == 1750
+
+
+def test_summarize_stats_median_skips_null_elapsed_ms(m):
+    # The subtle case: a null elapsed_ms is SKIPPED, not counted as 0 (which
+    # would drag the median down). With one null, the median is over the two
+    # real values -> average(900, 1500) = 1200, NOT median(0, 900, 1500)=900.
+    rows = _rows(
+        (1, "arithmetic", True, 1500),
+        (1, "arithmetic", False, None),
+        (1, "arithmetic", True, 900),
+    )
+    assert m.summarize_stats(rows)["median_elapsed_ms"] == 1200
+
+
+def test_summarize_stats_median_null_when_all_null(m):
+    # All responses lack timing (e.g. all pre-C-018c) -> no figure.
+    rows = _rows(
+        (1, "arithmetic", True, None),
+        (2, "vocabulary", False, None),
+    )
+    assert m.summarize_stats(rows)["median_elapsed_ms"] is None
 
 
 def test_summarize_stats_is_order_independent(m):

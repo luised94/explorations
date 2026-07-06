@@ -46,7 +46,8 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms || 20));
   ck("module imported without throwing", !!mod);
   ck("exports the public surface",
     ["renderStats", "renderStreakPips", "renderRunLog", "figure", "onStatsToggle",
-     "renderStatsPanel", "statsFigure", "statsWindowText", "categoryNameById"]
+     "renderStatsPanel", "statsFigure", "statsWindowText", "categoryNameById",
+     "formatElapsed"]
       .every(n => typeof mod[n] === "function"));
 
   /* --- renderStats: total/accuracy/streak + pips ------------------------- */
@@ -137,6 +138,42 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms || 20));
   });
   ck("category breakdown renders with >1 category", panel.querySelector(".stats-breakdown") !== null);
   ck("category rows present", panel.querySelectorAll(".stats-row").length === 2);
+
+  /* --- formatElapsed: ms under a second, seconds with one decimal above --- */
+  ck("formatElapsed sub-second -> ms", mod.formatElapsed(850) === "850 ms");
+  ck("formatElapsed >= 1s -> seconds 1dp", mod.formatElapsed(2400) === "2.4 s");
+  ck("formatElapsed exactly 1000 -> 1.0 s", mod.formatElapsed(1000) === "1.0 s");
+
+  /* --- renderStatsPanel: median timing figure present when non-null ------ */
+  mod.renderStatsPanel({
+    total: 5, correct: 4, accuracy: 0.8,
+    categories: [], window: null, difficulty_breakdown: [],
+    median_elapsed_ms: 1500
+  });
+  const overallWithTime = panel.querySelector(".stats-overall");
+  const timeFigPresent = Array.prototype.some.call(
+    overallWithTime.querySelectorAll(".stats-figure span"),
+    s => s.textContent === "median time"
+  );
+  ck("median time figure renders when present", timeFigPresent);
+  const timeVal = Array.prototype.find.call(
+    overallWithTime.querySelectorAll(".stats-figure"),
+    f => f.querySelector("span") && f.querySelector("span").textContent === "median time"
+  );
+  ck("median time value formatted", timeVal && timeVal.querySelector("b").textContent === "1.5 s");
+
+  /* --- renderStatsPanel: median timing figure ABSENT when null ---------- */
+  mod.renderStatsPanel({
+    total: 5, correct: 4, accuracy: 0.8,
+    categories: [], window: null, difficulty_breakdown: [],
+    median_elapsed_ms: null
+  });
+  const overallNoTime = panel.querySelector(".stats-overall");
+  const timeFigAbsent = !Array.prototype.some.call(
+    overallNoTime.querySelectorAll(".stats-figure span"),
+    s => s.textContent === "median time"
+  );
+  ck("median time figure suppressed when null", timeFigAbsent);
 
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
