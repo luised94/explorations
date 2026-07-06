@@ -1465,3 +1465,154 @@ def test_rebuild_applies_fuzz_to_long_intervals(m):
     expected_interval = m.apply_interval_fuzz(unfuzzed_third, 11)
     assert abs(state["interval_days"] - expected_interval) < _SM2_TOLERANCE
     assert state["due_date"] == (review_day + 7) + int(round(expected_interval))
+
+
+# --------------------------------------------------------------------------
+# C5: terminal views and elapsed_ms percentiles
+# render_table ported from sm2 with its test conventions carried over: fixed
+# widths respected, dynamic widths fit the widest cell, the final left column
+# is unpadded so no line has trailing whitespace.
+# --------------------------------------------------------------------------
+def test_render_table_alignment_widths_and_no_trailing_whitespace(m):
+    columns = (
+        ("id", "<", None, ""),
+        ("count", ">", 6, ""),
+        ("EF", ">", 5, ".2f"),
+        ("note", "<", None, ""),
+    )
+    rows = [
+        (7, 3, 2.5, "short"),
+        (12345, 42, 1.3, "a longer note"),
+    ]
+    rendered = m.render_table(columns, rows)
+    lines = rendered.split("\n")
+    assert lines[0] == "id      count     EF  note"
+    assert lines[1] == "7           3   2.50  short"
+    assert lines[2] == "12345      42   1.30  a longer note"
+    for line in lines:
+        assert line == line.rstrip()
+
+
+def test_failures_view_renders_user_input(m):
+    rows = [
+        {
+            "question_id": 4,
+            "bank_name": "spanish",
+            "answered_day": "2026-07-01",
+            "user_input": "los perro",
+            "lapse_count": 2,
+        }
+    ]
+    rendered = m.failures_view(rows)
+    assert "los perro" in rendered
+    assert "spanish" in rendered
+    assert "2026-07-01" in rendered
+    assert m.failures_view([]) == "no recorded failures."
+
+
+def test_leeches_view_days_since_and_empty_message(m):
+    today = 739800
+    rows = [
+        {
+            "question_id": 9,
+            "bank_name": "kanji",
+            "lapse_count": 5,
+            "easiness_factor": 1.3,
+            "last_review": today - 4,
+        }
+    ]
+    rendered = m.leeches_view(rows, today, 3)
+    assert " 1.30" in rendered
+    assert rendered.split("\n")[1].endswith("4")
+    empty_message = m.leeches_view([], today, 3)
+    assert "no leeches" in empty_message and "3" in empty_message
+
+
+def test_preview_view_due_in_days(m):
+    today = 739800
+    rows = [
+        {
+            "question_id": 2,
+            "bank_name": "spanish",
+            "easiness_factor": 2.6,
+            "interval_days": 6.0,
+            "repetition_count": 2,
+            "due_date": today + 5,
+        }
+    ]
+    rendered = m.preview_view(rows, today)
+    assert "5" in rendered.split("\n")[1]
+    assert m.preview_view([], today) == "no upcoming reviews scheduled."
+
+
+def test_dry_run_view_header_and_kinds(m):
+    today = 739800
+    due_candidates = [{"id": 1, "bank_id": 10}]
+    admitted_new = [{"id": 2, "bank_id": 11}]
+    schedule_by_question_id = {
+        1: {
+            "repetition_count": 3,
+            "easiness_factor": 2.5,
+            "interval_days": 15.6,
+            "due_date": today - 2,
+        }
+    }
+    bank_name_by_id = {10: "spanish", 11: "kanji"}
+    rendered = m.dry_run_view(
+        due_candidates, admitted_new, schedule_by_question_id,
+        bank_name_by_id, today,
+    )
+    lines = rendered.split("\n")
+    assert lines[0] == "dry run: 2 question(s) in today's review queue (1 due, 1 new)"
+    assert "due" in lines[2] and "spanish" in lines[2] and lines[2].endswith("2")
+    assert "new" in lines[3] and "kanji" in lines[3] and lines[3].endswith("-")
+    empty = m.dry_run_view([], [], {}, {}, today)
+    assert empty == "dry run: 0 question(s) in today's review queue (0 due, 0 new)"
+
+
+def test_percentile_nearest_rank_exact(m):
+    values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    assert m._percentile_nearest_rank(values, 0.5) == 50
+    assert m._percentile_nearest_rank(values, 0.9) == 90
+    assert m._percentile_nearest_rank([7], 0.5) == 7
+    assert m._percentile_nearest_rank([7], 0.9) == 7
+    odd = [1, 2, 3]
+    assert m._percentile_nearest_rank(odd, 0.5) == 2
+
+
+def test_summarize_elapsed_percentiles_groups(m):
+    samples = [
+        {"qtype": "translate", "bank_name": "spanish", "elapsed_ms": 1000},
+        {"qtype": "translate", "bank_name": "spanish", "elapsed_ms": 3000},
+        {"qtype": "translate", "bank_name": "spanish", "elapsed_ms": 2000},
+        {"qtype": "arithmetic", "bank_name": None, "elapsed_ms": 500},
+    ]
+    summary = m.summarize_elapsed_percentiles(samples)
+    translate = summary["by_qtype"]["translate"]
+    assert translate["count"] == 3
+    assert translate["median_ms"] == 2000
+    assert translate["p90_ms"] == 3000
+    assert summary["by_qtype"]["arithmetic"]["median_ms"] == 500
+    # bank grouping: arithmetic (bank_name None) appears in NO bank bucket.
+    assert set(summary["by_bank"].keys()) == {"spanish"}
+    assert summary["by_bank"]["spanish"]["count"] == 3
+
+
+def test_stats_view_renders_retention_and_tables(m):
+    retention = {"retention": 0.875, "graded_reviews": 40}
+    summary = {
+        "by_qtype": {
+            "translate": {"count": 3, "median_ms": 2000, "p90_ms": 3000}
+        },
+        "by_bank": {"spanish": {"count": 3, "median_ms": 2000, "p90_ms": 3000}},
+    }
+    rendered = m.stats_view(retention, summary)
+    assert "87.5%" in rendered
+    assert "40 first-attempts-of-day" in rendered
+    assert "translate" in rendered and "spanish" in rendered
+    empty = m.stats_view(
+        {"retention": None, "graded_reviews": 0},
+        {"by_qtype": {}, "by_bank": {}},
+    )
+    assert "no graded reviews yet" in empty
+    assert "no timed responses" in empty

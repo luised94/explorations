@@ -948,6 +948,136 @@ def get_new_introduced_today_by_bank(
     return introduced_by_bank
 
 
+def get_true_retention(connection: sqlite3.Connection) -> dict:
+    """True retention: accuracy over the FIRST graded attempt of each
+    question-day (S1). Retries after a miss inflate plain accuracy; the
+    scheduling decision only ever sees the first attempt (the once-per-day
+    rule), so this is the number that says whether intervals are working.
+    The CTE is the spike-verified query (test_migration_and_simulation.py).
+    Returns {"retention": float | None, "graded_reviews": int}; retention is
+    None when there are no graded reviews at all.
+    """
+    row = connection.execute(
+        "WITH first_attempt_per_day AS ("
+        "    SELECT question_id, substr(answered, 1, 10) AS day_text, "
+        "           MIN(id) AS first_response_id "
+        "    FROM responses "
+        "    WHERE question_id IS NOT NULL "
+        "    GROUP BY question_id, day_text"
+        ") "
+        "SELECT AVG(responses.correct) AS retention, "
+        "       COUNT(*) AS graded_reviews "
+        "FROM first_attempt_per_day "
+        "JOIN responses ON responses.id = first_attempt_per_day.first_response_id"
+    ).fetchone()
+    return {
+        "retention": row["retention"],
+        "graded_reviews": int(row["graded_reviews"]),
+    }
+
+
+def get_elapsed_ms_samples(connection: sqlite3.Connection) -> list[dict]:
+    """All timed responses as (qtype, bank_name, elapsed_ms) sample dicts (S2).
+
+    Feeds summarize_elapsed_percentiles in LOGIC, which computes the per-qtype
+    and per-bank median/p90 -- the same trailing medians the future
+    timing-derived derive_recall_quality needs as baselines. NULL elapsed_ms
+    rows are excluded here (untimed responses carry no signal). qtype lives on
+    the question row; responses with question_id NULL are, by construction,
+    generated arithmetic, so they group under qtype 'arithmetic' with
+    bank_name None.
+    """
+    cursor = connection.execute(
+        "SELECT COALESCE(q.qtype, 'arithmetic') AS qtype, "
+        "       b.name AS bank_name, r.elapsed_ms AS elapsed_ms "
+        "FROM responses r "
+        "LEFT JOIN questions q ON r.question_id = q.id "
+        "LEFT JOIN banks b ON q.bank_id = b.id "
+        "WHERE r.elapsed_ms IS NOT NULL "
+        "ORDER BY r.id"
+    )
+    samples = []
+    for row in cursor.fetchall():
+        samples.append(
+            {
+                "qtype": row["qtype"],
+                "bank_name": row["bank_name"],
+                "elapsed_ms": int(row["elapsed_ms"]),
+            }
+        )
+    return samples
+
+
+def get_failure_rows(connection: sqlite3.Connection) -> list[dict]:
+    """Wrong answers with what the user ACTUALLY typed (C5 failures view).
+
+    sm2's failures view showed a manually written error note; drill stores
+    the real wrong answer on every response, so user_input replaces the note
+    -- the actual confusion, recorded for free. One row per incorrect graded
+    response on a stored question, newest first; lapse_count joins in from
+    the schedule when the question has one (0 when never scheduled).
+    """
+    cursor = connection.execute(
+        "SELECT r.question_id AS question_id, b.name AS bank_name, "
+        "       substr(r.answered, 1, 10) AS answered_day, "
+        "       r.user_input AS user_input, "
+        "       COALESCE(qs.lapse_count, 0) AS lapse_count "
+        "FROM responses r "
+        "JOIN questions q ON r.question_id = q.id "
+        "JOIN banks b ON q.bank_id = b.id "
+        "LEFT JOIN question_schedule qs ON qs.question_id = r.question_id "
+        "WHERE r.correct = 0 "
+        "ORDER BY r.id DESC"
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_leech_rows(
+    connection: sqlite3.Connection,
+    leech_threshold: int,
+) -> list[dict]:
+    """Questions that keep lapsing (C5 leeches view): schedule rows with
+    lapse_count >= leech_threshold, worst first. bank_name replaces sm2's
+    domain_of prefix parsing -- the bank is a real column here.
+    """
+    cursor = connection.execute(
+        "SELECT qs.question_id AS question_id, b.name AS bank_name, "
+        "       qs.lapse_count AS lapse_count, "
+        "       qs.easiness_factor AS easiness_factor, "
+        "       qs.last_review AS last_review "
+        "FROM question_schedule qs "
+        "JOIN questions q ON qs.question_id = q.id "
+        "JOIN banks b ON q.bank_id = b.id "
+        "WHERE qs.lapse_count >= ? "
+        "ORDER BY qs.lapse_count DESC, qs.question_id",
+        (leech_threshold,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_upcoming_schedule_rows(
+    connection: sqlite3.Connection,
+    today: int,
+) -> list[dict]:
+    """Schedule rows due strictly after today, soonest first (C5 preview
+    view). today is an ordinal stamped by the caller.
+    """
+    cursor = connection.execute(
+        "SELECT qs.question_id AS question_id, b.name AS bank_name, "
+        "       qs.easiness_factor AS easiness_factor, "
+        "       qs.interval_days AS interval_days, "
+        "       qs.repetition_count AS repetition_count, "
+        "       qs.due_date AS due_date "
+        "FROM question_schedule qs "
+        "JOIN questions q ON qs.question_id = q.id "
+        "JOIN banks b ON q.bank_id = b.id "
+        "WHERE qs.due_date > ? "
+        "ORDER BY qs.due_date, qs.question_id",
+        (today,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 # --- migrations (moved from the CONFIG region in D2 -- these run DDL, so they
 # are DATABASE operations; S10a). run_migrations above walks this registry. The
 # consistency guard reads SCHEMA_VERSION (config) and fires at import time. ---

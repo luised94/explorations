@@ -414,3 +414,117 @@ def test_schedule_reader_scopes_to_bank(bank_with_responses):
     assert m.get_schedule_for_bank(conn, bank_id) == {}
     other_schedule = m.get_schedule_for_bank(conn, other_bank_id)
     assert set(other_schedule.keys()) == {other_question_id}
+
+
+# --- C5: measurement readers ---
+
+
+def test_true_retention_counts_first_attempt_of_day_only(bank_with_responses):
+    # Fixture history: q1 has earlier-day (correct, wrong) then now-day
+    # (correct); q2 has now-day (wrong); the arithmetic NULL row is excluded.
+    # First attempts: q1@earlier correct, q1@now correct, q2@now wrong ->
+    # retention 2/3 over 3 graded reviews. The same-day retry (q1's wrong
+    # second attempt on the earlier day) must NOT drag the number down.
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    retention = m.get_true_retention(conn)
+    assert retention["graded_reviews"] == 3
+    assert abs(retention["retention"] - (2.0 / 3.0)) < 1e-9
+
+
+def test_true_retention_empty_database(tmp_path):
+    m = load_db()
+    conn = current_db(m, tmp_path)
+    retention = m.get_true_retention(conn)
+    assert retention == {"retention": None, "graded_reviews": 0}
+    conn.close()
+
+
+def test_elapsed_samples_exclude_null_and_group_arithmetic(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    cats = {c["name"]: c["id"] for c in m.list_categories(conn)}
+    second_name = next(n for n in cats if n != "arithmetic")
+    session_id = m.start_session(
+        conn, cats[second_name], _iso(times["now"]), bank_id=bank_id
+    )
+    # One timed stored-question response, one timed arithmetic (NULL
+    # question_id) response; the fixture's five responses are all untimed.
+    m.insert_response(
+        conn, session_id, "q one", "a one", "a one", True,
+        _iso(times["now"]), question_id=question_ids[0], elapsed_ms=2500,
+    )
+    m.insert_response(
+        conn, session_id, "2+2", "4", "4", True,
+        _iso(times["now"]), question_id=None, elapsed_ms=800,
+    )
+    conn.commit()
+    samples = m.get_elapsed_ms_samples(conn)
+    assert len(samples) == 2  # untimed rows excluded
+    stored_sample = next(s for s in samples if s["elapsed_ms"] == 2500)
+    arithmetic_sample = next(s for s in samples if s["elapsed_ms"] == 800)
+    assert stored_sample["bank_name"] == "b1-stats-bank"
+    assert arithmetic_sample["qtype"] == "arithmetic"
+    assert arithmetic_sample["bank_name"] is None
+
+
+def test_failure_rows_carry_user_input_newest_first(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    failure_rows = m.get_failure_rows(conn)
+    # Fixture wrong answers on stored questions: q1 ("wrong", earlier day)
+    # and q2 ("wrong", now). Newest first; lapse_count 0 (never scheduled).
+    assert [row["question_id"] for row in failure_rows] == [
+        question_ids[1],
+        question_ids[0],
+    ]
+    assert all(row["user_input"] == "wrong" for row in failure_rows)
+    assert all(row["lapse_count"] == 0 for row in failure_rows)
+    assert failure_rows[0]["bank_name"] == "b1-stats-bank"
+    assert failure_rows[0]["answered_day"] == _iso(times["now"])[:10]
+
+
+def test_leech_rows_threshold_and_order(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    today = 739800
+    for question_id, lapse_count in zip(question_ids, (5, 1, 3)):
+        m.upsert_schedule_row(
+            conn,
+            {
+                "question_id": question_id,
+                "easiness_factor": 1.3,
+                "interval_days": 1.0,
+                "repetition_count": 0,
+                "due_date": today + 1,
+                "last_review": today,
+                "lapse_count": lapse_count,
+            },
+        )
+    leech_rows = m.get_leech_rows(conn, 3)
+    assert [row["lapse_count"] for row in leech_rows] == [5, 3]
+    assert leech_rows[0]["question_id"] == question_ids[0]
+    assert leech_rows[0]["bank_name"] == "b1-stats-bank"
+
+
+def test_upcoming_rows_future_only_soonest_first(bank_with_responses):
+    m, conn, bank_id, question_ids, times = bank_with_responses
+    today = 739800
+    for question_id, due_date in zip(
+        question_ids, (today, today + 9, today + 2)
+    ):
+        m.upsert_schedule_row(
+            conn,
+            {
+                "question_id": question_id,
+                "easiness_factor": 2.5,
+                "interval_days": 6.0,
+                "repetition_count": 2,
+                "due_date": due_date,
+                "last_review": today - 6,
+                "lapse_count": 0,
+            },
+        )
+    upcoming = m.get_upcoming_schedule_rows(conn, today)
+    # due today is NOT upcoming (strictly after today); order by due_date.
+    assert [row["question_id"] for row in upcoming] == [
+        question_ids[2],
+        question_ids[1],
+    ]
+    assert upcoming[0]["due_date"] == today + 2

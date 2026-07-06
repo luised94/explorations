@@ -57,6 +57,11 @@ NEW_QUESTIONS_PER_DAY_MAXIMUM: int = 9
 NEW_QUESTIONS_PER_BANK_MINIMUM: int = 1
 REVIEWS_PER_SESSION_MAXIMUM: int = 100
 
+# C5 (measurement): a question is a leech once it has lapsed this many times
+# -- it is consuming reviews without sticking and deserves manual attention
+# (rewrite the question, add a mnemonic, or retire it). Carried from sm2.
+LEECH_THRESHOLD: int = 3
+
 # Seed categories (spec section 4.1). Inserted once at init if absent.
 # Each entry is (name, description). Config defaults to an empty JSON object
 # at seed time; per-category config is populated by later commits as needed.

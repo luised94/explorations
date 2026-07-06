@@ -1890,3 +1890,300 @@ def rebuild_schedule_from_response_log(
         advanced["question_id"] = question_id
         schedule_by_question_id[question_id] = advanced
     return schedule_by_question_id
+
+
+# C5: terminal views (roadmap #7 measurement). One table renderer ported from
+# sm2 (its T3 refactor: the pre-refactor printers differed only in columns,
+# so the differences live in column tables and the mechanism exists once).
+# Style translation from sm2: the Column NamedTuple becomes a plain 4-tuple
+# (header, align, width, fmt) and the nested line() closure becomes the
+# module-level _render_table_row. Views stay pure -- rows in, string out; all
+# fetching happens in the cli entry (drill.py). width None fits the widest of
+# header and cells; a left-aligned LAST column is emitted unpadded so no line
+# carries trailing whitespace.
+
+
+def _render_table_row(cells: list, columns: tuple, widths: list) -> str:
+    """Render one table line: each cell aligned to its column width, except a
+    left-aligned final column, which is emitted bare (no trailing pad)."""
+    last_index = len(columns) - 1
+    parts = []
+    for index in range(len(columns)):
+        cell = cells[index]
+        _header, align, _width, _fmt = columns[index]
+        if index == last_index and align == "<":
+            parts.append(cell)
+        else:
+            parts.append(format(cell, align + str(widths[index])))
+    return "  ".join(parts)
+
+
+def render_table(columns: tuple, rows: list) -> str:
+    """Render rows under headers. columns is a tuple of
+    (header, align, width, fmt) 4-tuples; rows are same-length value tuples.
+    """
+    grid = []
+    for row in rows:
+        formatted_row = []
+        for column, value in zip(columns, row):
+            _header, _align, _width, fmt = column
+            formatted_row.append(format(value, fmt) if fmt else str(value))
+        grid.append(formatted_row)
+
+    widths = []
+    for index, column in enumerate(columns):
+        header, _align, width, _fmt = column
+        if width is not None:
+            widths.append(width)
+        else:
+            widest_cell = max((len(row[index]) for row in grid), default=0)
+            widths.append(max(len(header), widest_cell))
+
+    header_cells = [column[0] for column in columns]
+    lines = [_render_table_row(header_cells, columns, widths)]
+    for formatted_row in grid:
+        lines.append(_render_table_row(formatted_row, columns, widths))
+    return "\n".join(lines)
+
+
+FAILURES_COLUMNS: tuple = (
+    ("question_id", "<", None, ""),
+    ("bank", "<", 12, ""),
+    ("date", "<", 10, ""),
+    ("lapses", ">", 6, ""),
+    ("user_input", "<", None, ""),
+)
+
+
+def failures_view(failure_rows: list[dict]) -> str:
+    """Wrong answers with what the user actually typed. sm2 showed a manually
+    written error note; drill stores the real wrong answer on every response,
+    so user_input replaces the note. rows from get_failure_rows."""
+    if not failure_rows:
+        return "no recorded failures."
+    table_rows = [
+        (
+            row["question_id"],
+            row["bank_name"],
+            row["answered_day"],
+            row["lapse_count"],
+            row["user_input"],
+        )
+        for row in failure_rows
+    ]
+    return render_table(FAILURES_COLUMNS, table_rows)
+
+
+LEECHES_COLUMNS: tuple = (
+    ("question_id", "<", None, ""),
+    ("bank", "<", 12, ""),
+    ("lapses", ">", 6, ""),
+    ("EF", ">", 5, ".2f"),
+    ("days_since", "<", None, ""),
+)
+
+
+def leeches_view(leech_rows: list[dict], today: int, leech_threshold: int) -> str:
+    """Questions that keep lapsing (lapse_count >= threshold), worst first.
+    bank_name replaces sm2's domain_of prefix parse. rows from
+    get_leech_rows; today is an ordinal stamped by the caller."""
+    if not leech_rows:
+        return (
+            "no leeches found (lapse_count < "
+            + str(leech_threshold)
+            + " for all questions)."
+        )
+    table_rows = [
+        (
+            row["question_id"],
+            row["bank_name"],
+            row["lapse_count"],
+            row["easiness_factor"],
+            str(today - row["last_review"]),
+        )
+        for row in leech_rows
+    ]
+    return render_table(LEECHES_COLUMNS, table_rows)
+
+
+PREVIEW_COLUMNS: tuple = (
+    ("question_id", "<", None, ""),
+    ("bank", "<", 12, ""),
+    ("due_in", ">", 6, ""),
+    ("rep", ">", 3, ""),
+    ("EF", ">", 5, ".2f"),
+)
+
+
+def preview_view(upcoming_rows: list[dict], today: int) -> str:
+    """Upcoming reviews, soonest first. rows from get_upcoming_schedule_rows."""
+    if not upcoming_rows:
+        return "no upcoming reviews scheduled."
+    table_rows = [
+        (
+            row["question_id"],
+            row["bank_name"],
+            row["due_date"] - today,
+            row["repetition_count"],
+            row["easiness_factor"],
+        )
+        for row in upcoming_rows
+    ]
+    return render_table(PREVIEW_COLUMNS, table_rows)
+
+
+DRY_RUN_COLUMNS: tuple = (
+    ("question_id", "<", None, ""),
+    ("bank", "<", 12, ""),
+    ("kind", "<", 4, ""),
+    ("rep", ">", 3, ""),
+    ("EF", ">", 5, ".2f"),
+    ("interval", ">", 8, ".1f"),
+    ("days_overdue", "<", None, ""),
+)
+
+
+def dry_run_view(
+    due_candidates: list[dict],
+    admitted_new_candidates: list[dict],
+    schedule_by_question_id: dict,
+    bank_name_by_id: dict,
+    today: int,
+) -> str:
+    """What a review session TODAY would serve, without serving it: the due
+    backlog in risk order, then the throttle-admitted new questions. The cli
+    entry runs the same partition/cap/throttle sequence as the scheduled
+    strategy and hands the results here."""
+    total = len(due_candidates) + len(admitted_new_candidates)
+    header = (
+        "dry run: "
+        + str(total)
+        + " question(s) in today's review queue ("
+        + str(len(due_candidates))
+        + " due, "
+        + str(len(admitted_new_candidates))
+        + " new)"
+    )
+    if total == 0:
+        return header
+    table_rows = []
+    for candidate in due_candidates:
+        state = schedule_by_question_id[candidate["id"]]
+        table_rows.append(
+            (
+                candidate["id"],
+                bank_name_by_id.get(candidate["bank_id"], "?"),
+                "due",
+                state["repetition_count"],
+                state["easiness_factor"],
+                state["interval_days"],
+                str(today - state["due_date"]),
+            )
+        )
+    for candidate in admitted_new_candidates:
+        table_rows.append(
+            (
+                candidate["id"],
+                bank_name_by_id.get(candidate["bank_id"], "?"),
+                "new",
+                0,
+                EASINESS_FACTOR_INITIAL,
+                0.0,
+                "-",
+            )
+        )
+    return header + "\n" + render_table(DRY_RUN_COLUMNS, table_rows)
+
+
+def _percentile_nearest_rank(sorted_values: list, fraction: float):
+    """Nearest-rank percentile over an ascending list: the value at ceiling
+    (fraction * n), 1-indexed. No interpolation -- every reported number is
+    a real observed sample, and the definition is exact for tests."""
+    rank = int(fraction * len(sorted_values))
+    if rank * 1.0 != fraction * len(sorted_values):
+        rank = rank + 1
+    if rank < 1:
+        rank = 1
+    return sorted_values[rank - 1]
+
+
+def summarize_elapsed_percentiles(samples: list[dict]) -> dict:
+    """Median and p90 of elapsed_ms per qtype and per bank (S2).
+
+    samples from get_elapsed_ms_samples. Returns {"by_qtype": {...},
+    "by_bank": {...}} where each value is {"count", "median_ms", "p90_ms"}
+    (nearest-rank). These per-qtype medians are exactly the baselines the
+    future timing-derived derive_recall_quality needs -- the measurement
+    lands before the policy, deliberately. Samples with bank_name None
+    (generated arithmetic) appear only in the qtype grouping.
+    """
+    elapsed_by_qtype: dict = {}
+    elapsed_by_bank: dict = {}
+    for sample in samples:
+        elapsed_by_qtype.setdefault(sample["qtype"], []).append(
+            sample["elapsed_ms"]
+        )
+        if sample["bank_name"] is not None:
+            elapsed_by_bank.setdefault(sample["bank_name"], []).append(
+                sample["elapsed_ms"]
+            )
+
+    summary: dict = {"by_qtype": {}, "by_bank": {}}
+    for qtype, values in elapsed_by_qtype.items():
+        values.sort()
+        summary["by_qtype"][qtype] = {
+            "count": len(values),
+            "median_ms": _percentile_nearest_rank(values, 0.5),
+            "p90_ms": _percentile_nearest_rank(values, 0.9),
+        }
+    for bank_name, values in elapsed_by_bank.items():
+        values.sort()
+        summary["by_bank"][bank_name] = {
+            "count": len(values),
+            "median_ms": _percentile_nearest_rank(values, 0.5),
+            "p90_ms": _percentile_nearest_rank(values, 0.9),
+        }
+    return summary
+
+
+STATS_PERCENTILES_COLUMNS: tuple = (
+    ("group", "<", None, ""),
+    ("count", ">", 6, ""),
+    ("median_ms", ">", 9, ""),
+    ("p90_ms", ">", 7, ""),
+)
+
+
+def stats_view(retention: dict, percentile_summary: dict) -> str:
+    """The measurement one-pager: true retention (S1) plus the elapsed_ms
+    percentile tables (S2). retention from get_true_retention; the summary
+    from summarize_elapsed_percentiles."""
+    lines = []
+    if retention["retention"] is None:
+        lines.append("true retention: no graded reviews yet.")
+    else:
+        lines.append(
+            "true retention: "
+            + format(retention["retention"], ".1%")
+            + " over "
+            + str(retention["graded_reviews"])
+            + " first-attempts-of-day"
+        )
+    for group_key, title in (("by_qtype", "qtype"), ("by_bank", "bank")):
+        groups = percentile_summary[group_key]
+        lines.append("")
+        if not groups:
+            lines.append("elapsed_ms by " + title + ": no timed responses.")
+            continue
+        lines.append("elapsed_ms by " + title + ":")
+        table_rows = [
+            (
+                group_name,
+                groups[group_name]["count"],
+                groups[group_name]["median_ms"],
+                groups[group_name]["p90_ms"],
+            )
+            for group_name in sorted(groups)
+        ]
+        lines.append(render_table(STATS_PERCENTILES_COLUMNS, table_rows))
+    return "\n".join(lines)
