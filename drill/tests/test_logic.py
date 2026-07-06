@@ -1257,3 +1257,211 @@ def test_schedule_update_allowed_once_per_day(m):
         m.schedule_update_allowed_today(reviewed_yesterday, _SM2_START_ORDINAL)
         is True
     )
+
+
+# --------------------------------------------------------------------------
+# C3: partition, backlog ordering, throttle, rebuild
+# Throttle checks ported from the spike test_selection_and_throttle.py;
+# partition ordering pins RELATIVE overdueness (risk order), not
+# most-days-overdue-first; rebuild unit cases pin the NULL-question_id skip
+# and the once-per-day gate inside the fold (the full simulation-vs-stored
+# invariant is C4's HTTP-level test).
+# --------------------------------------------------------------------------
+def test_partition_splits_due_new_not_due(m):
+    today = _SM2_START_ORDINAL
+    candidates = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
+    schedule_by_question_id = {
+        1: {"interval_days": 6.0, "due_date": today - 1},
+        2: {"interval_days": 6.0, "due_date": today + 3},
+        3: {"interval_days": 1.0, "due_date": today},
+    }
+    due, new, not_due = m.partition_candidates_by_schedule(
+        candidates, schedule_by_question_id, today
+    )
+    assert {candidate["id"] for candidate in due} == {1, 3}
+    assert [candidate["id"] for candidate in new] == [4]
+    assert [candidate["id"] for candidate in not_due] == [2]
+
+
+def test_partition_due_ordered_by_relative_overdueness_descending(m):
+    # THE distinguishing case: a short-interval question 3 days late
+    # (3/2 = 1.5) outranks a long-interval one 5 days late (5/20 = 0.25).
+    # Most-days-overdue-first would order these the other way around.
+    today = _SM2_START_ORDINAL
+    candidates = [{"id": 1}, {"id": 2}]
+    schedule_by_question_id = {
+        1: {"interval_days": 20.0, "due_date": today - 5},
+        2: {"interval_days": 2.0, "due_date": today - 3},
+    }
+    due, new, not_due = m.partition_candidates_by_schedule(
+        candidates, schedule_by_question_id, today
+    )
+    assert [candidate["id"] for candidate in due] == [2, 1]
+    assert new == [] and not_due == []
+
+
+def test_partition_new_in_id_order(m):
+    today = _SM2_START_ORDINAL
+    candidates = [{"id": 9}, {"id": 3}, {"id": 7}]
+    due, new, not_due = m.partition_candidates_by_schedule(candidates, {}, today)
+    assert due == [] and not_due == []
+    assert [candidate["id"] for candidate in new] == [3, 7, 9]
+
+
+def test_relative_overdueness_floors_interval_at_one_day(m):
+    today = _SM2_START_ORDINAL
+    # A sub-day interval must not inflate the ratio: floored to 1.0.
+    state = {"interval_days": 0.5, "due_date": today - 2}
+    assert m.relative_overdueness(state, today) == 2.0
+    # Not yet due yields <= 0.
+    future_state = {"interval_days": 6.0, "due_date": today + 3}
+    assert m.relative_overdueness(future_state, today) <= 0.0
+
+
+def test_throttle_floor_guarantees_each_bank_a_slot(m):
+    new_candidates = (
+        [{"id": 100 + index, "bank_id": 1} for index in range(6)]
+        + [{"id": 200, "bank_id": 2}]
+        + [{"id": 300, "bank_id": 3}]
+    )
+    admitted = m.apply_new_question_throttle(
+        new_candidates, {}, per_day_maximum=4, per_bank_minimum=1
+    )
+    admitted_banks = {candidate["bank_id"] for candidate in admitted}
+    assert len(admitted) == 4
+    assert admitted_banks == {1, 2, 3}
+
+
+def test_throttle_spent_budget_admits_nothing(m):
+    new_candidates = (
+        [{"id": 100 + index, "bank_id": 1} for index in range(6)]
+        + [{"id": 200, "bank_id": 2}]
+        + [{"id": 300, "bank_id": 3}]
+    )
+    nothing = m.apply_new_question_throttle(
+        new_candidates, {1: 3, 2: 1}, per_day_maximum=4, per_bank_minimum=1
+    )
+    assert nothing == []
+
+
+def test_throttle_partial_budget_admits_exactly_the_remainder(m):
+    new_candidates = (
+        [{"id": 100 + index, "bank_id": 1} for index in range(6)]
+        + [{"id": 200, "bank_id": 2}]
+        + [{"id": 300, "bank_id": 3}]
+    )
+    partial = m.apply_new_question_throttle(
+        new_candidates, {1: 2}, per_day_maximum=4, per_bank_minimum=1
+    )
+    assert len(partial) == 2
+
+
+def test_throttle_bank_at_minimum_already_today_gets_no_floor_slot(m):
+    # Bank 1 already introduced one question today (the per-bank minimum):
+    # the floor pass skips it; the fill pass may still admit its candidates
+    # once every starved bank got its slot.
+    new_candidates = [
+        {"id": 101, "bank_id": 1},
+        {"id": 201, "bank_id": 2},
+    ]
+    admitted = m.apply_new_question_throttle(
+        new_candidates, {1: 1}, per_day_maximum=8, per_bank_minimum=1
+    )
+    # Floor pass admits only bank 2; fill pass then admits bank 1's candidate
+    # from remaining budget. Bank 2's floor slot must come first.
+    assert [candidate["id"] for candidate in admitted] == [201, 101]
+
+
+def test_config_daily_budget_constants(m):
+    # C3 config deliverable: the three budget constants exist with the sm2
+    # carried-over values. Read via logic's config import path is deliberate
+    # NOT used -- tests read config directly (D-4).
+    import _support
+    config_module = _support.load_config()
+    assert config_module.NEW_QUESTIONS_PER_DAY_MAXIMUM == 9
+    assert config_module.NEW_QUESTIONS_PER_BANK_MINIMUM == 1
+    assert config_module.REVIEWS_PER_SESSION_MAXIMUM == 100
+
+
+def test_rebuild_skips_null_question_id_rows(m):
+    rows = [
+        {
+            "question_id": None,
+            "correct": True,
+            "elapsed_ms": None,
+            "answered_ordinal": _SM2_START_ORDINAL,
+        },
+        {
+            "question_id": 5,
+            "correct": True,
+            "elapsed_ms": 1200,
+            "answered_ordinal": _SM2_START_ORDINAL,
+        },
+    ]
+    rebuilt = m.rebuild_schedule_from_response_log(rows)
+    assert set(rebuilt.keys()) == {5}
+    assert rebuilt[5]["repetition_count"] == 1
+    assert rebuilt[5]["interval_days"] == 1.0
+    assert rebuilt[5]["last_review"] == _SM2_START_ORDINAL
+
+
+def test_rebuild_once_per_day_gate_inside_the_fold(m):
+    # Two same-day responses: only the FIRST advances the schedule; the
+    # second is logged history the fold must ignore. A next-day response
+    # advances again.
+    rows = [
+        {
+            "question_id": 5,
+            "correct": True,
+            "elapsed_ms": None,
+            "answered_ordinal": _SM2_START_ORDINAL,
+        },
+        {
+            "question_id": 5,
+            "correct": False,  # same-day retry: must NOT reset the schedule
+            "elapsed_ms": None,
+            "answered_ordinal": _SM2_START_ORDINAL,
+        },
+        {
+            "question_id": 5,
+            "correct": True,
+            "elapsed_ms": None,
+            "answered_ordinal": _SM2_START_ORDINAL + 1,
+        },
+    ]
+    rebuilt = m.rebuild_schedule_from_response_log(rows)
+    state = rebuilt[5]
+    assert state["repetition_count"] == 2  # two scheduling reviews, not three
+    assert state["lapse_count"] == 0  # the same-day fail never counted
+    # Second pass of the 1 -> 6 opening; 6.0 is above the 2-day exemption so
+    # the stored interval carries the deterministic per-question fuzz.
+    expected_interval = m.apply_interval_fuzz(6.0, 5)
+    assert abs(state["interval_days"] - expected_interval) < _SM2_TOLERANCE
+    assert state["last_review"] == _SM2_START_ORDINAL + 1
+
+
+def test_rebuild_applies_fuzz_to_long_intervals(m):
+    # Third pass multiplies past the 2-day exemption; the stored interval and
+    # due_date must carry the SAME deterministic fuzz the live path applies.
+    rows = []
+    review_day = _SM2_START_ORDINAL
+    for offset in (0, 1, 7):
+        rows.append(
+            {
+                "question_id": 11,
+                "correct": True,
+                "elapsed_ms": None,
+                "answered_ordinal": review_day + offset,
+            }
+        )
+    rebuilt = m.rebuild_schedule_from_response_log(rows)
+    state = rebuilt[11]
+    # The fold stores fuzzed intervals and multiplies FROM them (exactly what
+    # the live path does, which is what makes rebuild == stored hold): the
+    # second pass stores fuzz(6.0), the third multiplies that by the new ef
+    # and fuzzes again.
+    second_pass_interval = m.apply_interval_fuzz(6.0, 11)
+    unfuzzed_third = second_pass_interval * state["easiness_factor"]
+    expected_interval = m.apply_interval_fuzz(unfuzzed_third, 11)
+    assert abs(state["interval_days"] - expected_interval) < _SM2_TOLERANCE
+    assert state["due_date"] == (review_day + 7) + int(round(expected_interval))

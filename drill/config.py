@@ -45,6 +45,18 @@ SCHEMA_VERSION: int = 4
 # SCHEMA_VERSION directly and a bump to 2 made fresh DBs skip the v2 migration).
 BASELINE_SCHEMA_VERSION: int = 1
 
+# C3 (SM2 review mode, roadmap #7): daily budgets for the review path. A
+# maximum of NEW_QUESTIONS_PER_DAY_MAXIMUM never-reviewed questions enter the
+# schedule per day across all banks, with NEW_QUESTIONS_PER_BANK_MINIMUM slots
+# guaranteed per bank that still has headroom (the floor pass), so one large
+# bank cannot starve the others. REVIEWS_PER_SESSION_MAXIMUM caps how much of
+# a due backlog one session serves (ordered by relative overdueness, so the
+# capped set is the most at-risk subset). Values carried over from sm2's
+# proven daily rhythm.
+NEW_QUESTIONS_PER_DAY_MAXIMUM: int = 9
+NEW_QUESTIONS_PER_BANK_MINIMUM: int = 1
+REVIEWS_PER_SESSION_MAXIMUM: int = 100
+
 # Seed categories (spec section 4.1). Inserted once at init if absent.
 # Each entry is (name, description). Config defaults to an empty JSON object
 # at seed time; per-category config is populated by later commits as needed.

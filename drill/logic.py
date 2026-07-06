@@ -1727,3 +1727,166 @@ def schedule_update_allowed_today(schedule_state: dict | None, today: int) -> bo
     if schedule_state is None:
         return True
     return schedule_state["last_review"] != today
+
+
+# C3: review-mode candidate handling (roadmap #7). Partition a bank into
+# due/new/not_due against the schedule, order the due backlog by recall risk,
+# budget how many new questions enter the schedule per day, and rebuild the
+# whole schedule table from the response log (state is a cache of the log).
+# All pure; the daily budget values live in config
+# (NEW_QUESTIONS_PER_DAY_MAXIMUM et al.) and arrive here as parameters.
+
+
+def relative_overdueness(schedule_state: dict, today: int) -> float:
+    """Sort key for spending a capped review budget on a backlog: days
+    overdue divided by interval. A short-interval question three days
+    late is at greater recall risk than a long-interval one five days
+    late. Larger means more at risk; not-yet-due yields <= 0.
+    """
+    interval_days = schedule_state["interval_days"]
+    if interval_days < 1.0:
+        interval_days = 1.0
+    return (today - schedule_state["due_date"]) / interval_days
+
+
+def _overdueness_of_decorated_pair(decorated_pair: tuple) -> float:
+    """Sort key for the (overdueness, candidate) pairs built in
+    partition_candidates_by_schedule -- module-level per the style contract
+    (the spike used a closure-carrying lambda here)."""
+    return decorated_pair[0]
+
+
+def _question_id_of_candidate(candidate: dict) -> int:
+    """Sort key: a candidate's id (authoring order for new questions)."""
+    return candidate["id"]
+
+
+def partition_candidates_by_schedule(
+    candidates: list[dict],
+    schedule_by_question_id: dict,
+    today: int,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Split bank candidates into (due, new, not_due) for review mode.
+
+    due: has a schedule row and due_date <= today, ordered most at risk
+    first (relative overdueness, DESCENDING -- risk order, deliberately not
+    most-days-overdue-first). new: no schedule row yet, in id order
+    (authoring order). not_due: scheduled for the future.
+    """
+    due: list[dict] = []
+    new: list[dict] = []
+    not_due: list[dict] = []
+    for candidate in candidates:
+        schedule_state = schedule_by_question_id.get(candidate["id"])
+        if schedule_state is None:
+            new.append(candidate)
+        elif schedule_state["due_date"] <= today:
+            due.append(candidate)
+        else:
+            not_due.append(candidate)
+
+    decorated_due = []
+    for candidate in due:
+        overdueness = relative_overdueness(
+            schedule_by_question_id[candidate["id"]], today
+        )
+        decorated_due.append((overdueness, candidate))
+    decorated_due.sort(key=_overdueness_of_decorated_pair, reverse=True)
+    due = [candidate for _overdueness, candidate in decorated_due]
+
+    new.sort(key=_question_id_of_candidate)
+    return due, new, not_due
+
+
+def apply_new_question_throttle(
+    new_candidates: list[dict],
+    new_introduced_today_by_bank: dict,
+    per_day_maximum: int,
+    per_bank_minimum: int,
+) -> list[dict]:
+    """Budget how many never-reviewed questions enter the schedule today.
+
+    Port of sm2's apply_throttle_and_cap floor/cap idea with the string
+    domain prefix replaced by the real bank_id column (throttle floor keyed
+    on bank_id per the plan amendment). Two passes: first guarantee
+    per_bank_minimum slots per bank that still has headroom today, then
+    fill remaining budget in candidate order.
+    """
+    total_introduced_today = sum(new_introduced_today_by_bank.values())
+    budget = per_day_maximum - total_introduced_today
+    if budget <= 0:
+        return []
+
+    admitted: list[dict] = []
+    admitted_ids: set[int] = set()
+    admitted_count_by_bank: dict[int, int] = {}
+
+    for candidate in new_candidates:
+        if len(admitted) >= budget:
+            break
+        bank_id = candidate["bank_id"]
+        already_today = new_introduced_today_by_bank.get(bank_id, 0)
+        admitted_so_far = admitted_count_by_bank.get(bank_id, 0)
+        if already_today + admitted_so_far >= per_bank_minimum:
+            continue
+        admitted.append(candidate)
+        admitted_ids.add(candidate["id"])
+        admitted_count_by_bank[bank_id] = admitted_so_far + 1
+
+    for candidate in new_candidates:
+        if len(admitted) >= budget:
+            break
+        if candidate["id"] in admitted_ids:
+            continue
+        admitted.append(candidate)
+        admitted_ids.add(candidate["id"])
+
+    return admitted
+
+
+def rebuild_schedule_from_response_log(
+    response_rows: list[dict],
+) -> dict:
+    """Fold the responses log into schedule state: state is a cache of the
+    log. Each row needs question_id, correct, elapsed_ms, answered_ordinal.
+    Applies the same once-per-day rule and fuzz the live path applies, so
+    rebuild == stored holds while the quality policy is unchanged. This is
+    the backfill for the migration, the corruption-recovery path, and the
+    invariant check (C4's simulation test) in one function. Rows with
+    question_id None (generated arithmetic) are skipped -- they were never
+    scheduled.
+    """
+    schedule_by_question_id: dict = {}
+    for row in response_rows:
+        question_id = row["question_id"]
+        if question_id is None:
+            continue
+        review_date = row["answered_ordinal"]
+        existing = schedule_by_question_id.get(question_id)
+        if not schedule_update_allowed_today(existing, review_date):
+            continue
+        if existing is None:
+            easiness_factor = EASINESS_FACTOR_INITIAL
+            interval_days = 0.0
+            repetition_count = 0
+            lapse_count = 0
+        else:
+            easiness_factor = existing["easiness_factor"]
+            interval_days = existing["interval_days"]
+            repetition_count = existing["repetition_count"]
+            lapse_count = existing["lapse_count"]
+        recall_quality = derive_recall_quality(row["correct"], row["elapsed_ms"])
+        advanced = advance_schedule_state(
+            recall_quality,
+            easiness_factor,
+            interval_days,
+            repetition_count,
+            lapse_count,
+            review_date,
+        )
+        fuzzed_interval = apply_interval_fuzz(advanced["interval_days"], question_id)
+        advanced["interval_days"] = fuzzed_interval
+        advanced["due_date"] = review_date + int(round(fuzzed_interval))
+        advanced["question_id"] = question_id
+        schedule_by_question_id[question_id] = advanced
+    return schedule_by_question_id
