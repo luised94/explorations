@@ -106,6 +106,138 @@ for name, vals in ranked:
 
 
 # ===========================================================================
+# CANDIDATE BACKLOG 2026-07 (user-suggested, post-Thread-N)  -- see
+# llm/feature-backlog-2026-07.md for the qualitative writeup of each.
+# ===========================================================================
+# New candidates raised while planning after Thread N. Scored on the SAME six
+# axes / weights (unchanged). Grounded in the code survey facts already in this
+# file, plus these additional verified facts about the arithmetic engine:
+#   - The expression EVALUATOR and RENDERER already recurse over nested operator
+#     trees; only the GENERATOR shape and the OPERATOR TABLE define what exists.
+#     A new BINARY/UNARY operator over integers is a data-row + eval-rule add,
+#     reusing the whole tree machinery. (This is why bit-arithmetic is cheap.)
+#   - qtypes are data-driven (translate/identify/free_response/multiple_choice);
+#     a "static expression/problem" that is stored+graded like a bank question
+#     needs NO new generator -- it is content on the SM2/bank path.
+# The dividing line that recurs below: GENERABLE (a generator emits infinite
+# instances -> arithmetic-style, tree engine) vs AUTHORED/STATIC (a finite set
+# of stored problems -> SM2/bank path, Doc C + authoring Doc E). Which side an
+# idea lands on is the main scoping question, and it is called out per item.
+CANDIDATES_2026_07 = {
+    # --- GENERABLE: reuse the arithmetic tree engine (operator-table adds) ---
+    "Bitwise arithmetic drill (AND/OR/XOR/NOT/shifts)": (
+        (4, 5, 3, 4, 4, 4), None,
+        "GENERABLE. Bitwise ops are integer binary/unary operators: add rows to "
+        "the operator table (&, |, ^, ~, <<, >>) with eval rules + precedence, "
+        "reuse the existing tree generator/evaluator/renderer. LEARN 5 (two's "
+        "complement, bit representation, operator precedence in C-like langs). "
+        "EFFORT 4 (data + a display mode toggle for binary/hex; the tree machinery "
+        "is free). Main design Q: show operands in binary/hex vs decimal, and how "
+        "to render the expected answer's base. CHEAP HIGH-VALUE -- top new item."),
+    "Number-base conversion drill (bin/oct/hex/dec)": (
+        (3, 4, 2, 4, 4, 4), None,
+        "GENERABLE but NOT via the tree engine -- it is a single-value transform, "
+        "not an expression. A small standalone generator (pick n, pick base pair, "
+        "ask for the converted value). Pairs naturally with bitwise. EFFORT 4. "
+        "LEARN 4 (positional notation). Modest but clean; fold into the bitwise "
+        "thread as a sibling qtype."),
+    "Sets & boolean logic drill (union/intersection/truth eval)": (
+        (4, 5, 3, 3, 4, 4), None,
+        "PARTLY GENERABLE and adjacent to bitwise (set ops ARE bitwise over a "
+        "universe; boolean logic IS bitwise over 1 bit). Overlaps roadmap #9 "
+        "(logic/deduction: truth tables, syllogisms, score 3.80). Recommend "
+        "MERGING with #9 rather than a separate item: one 'discrete-structures' "
+        "drill covering boolean eval + set ops + truth tables, sharing a small "
+        "generator. LEARN 5. EFFORT 3 (new generator + eval, but no UI novelty)."),
+    "Pre-algebra / algebra: solve-for-x (linear, quadratic)": (
+        (4, 5, 3, 3, 3, 3), None,
+        "GENERABLE with real work. Generating an equation is easy (pick roots, "
+        "expand); the hard part is GRADING a symbolic answer (x = 3, or a factored "
+        "form) rather than a numeric one -- needs a new grading mode (symbolic or "
+        "canonicalized-numeric-solution). Start with linear (numeric solution, "
+        "grades like arithmetic), defer symbolic. LEARN 5. EFFORT 3 (linear) / "
+        "much lower for symbolic. Design Q: constrain to integer/rational roots so "
+        "the answer is exact-matchable."),
+    "Geometry / trig: evaluate-the-expression (not prove-the-theorem)": (
+        (3, 5, 2, 3, 3, 3), None,
+        "GENERABLE only as EXPRESSIONS, per user's own instinct: 'sin(30)=?', "
+        "'area of a 3-4-5 triangle', 'hypotenuse given legs' -- a value to compute, "
+        "which the arithmetic path can grade. NOT geometric PROOF/construction "
+        "(that is authored/multimodal, out of the generator). Needs float grading "
+        "with tolerance (a new grading mode: numeric-within-epsilon) -- a genuinely "
+        "useful seam that also unblocks any future float answer. LEARN 5. EFFORT 3. "
+        "Design Q: exact-value trig (sin30=1/2) vs decimal-with-tolerance."),
+    "Unit / dimensional-analysis drill (convert & compute)": (
+        (3, 4, 2, 4, 3, 4), None,
+        "GENERABLE. Pick a quantity + unit pair, ask for the converted/derived "
+        "value. Numeric grading (reuses the epsilon-grading seam from geometry). "
+        "EFFORT 4. Practical, modest LEARN. A sibling of base-conversion."),
+    # --- AUTHORED/STATIC: SM2/bank path, need Doc C + authoring Doc E ---
+    "Calculus / advanced-math problems (authored expressions)": (
+        (3, 5, 2, 2, 3, 2), None,
+        "MOSTLY AUTHORED. User's instinct is right: generable 'only as expressions "
+        "not problems, and unclear how hard.' Generating a WELL-FORMED derivative/"
+        "integral drill with a checkable answer is a symbolic-math problem (needs a "
+        "CAS or a curated instance set). RECOMMEND: authored static problems on the "
+        "SM2/bank path (finite, hand-picked, recall-scheduled) rather than a "
+        "generator. LEARN 5 but EFFORT 2 / RISK 2 for true generation -> DEFER "
+        "generation; ENABLE via authored content (Doc C/E) at low cost."),
+    "Field trivia / knowledge (biochem, genetics, etc.)": (
+        (3, 3, 2, 4, 3, 4), None,
+        "AUTHORED/IMPORTED. User is right that this is general-trivia-shaped: "
+        "static Q/A on the bank path, gradable as identify/free_response/MC (all "
+        "exist). NO new engine. Value is CONTENT, not code. Overlaps roadmap #23 "
+        "(trivia importers, 2.86). EFFORT 4 (it is import + author, both built/"
+        "planned). Belongs to Doc D (import) + Doc E (author) + SM2 scheduling."),
+    "Textbook word problems (substantial, multi-step)": (
+        (4, 4, 2, 3, 3, 3), None,
+        "AUTHORED. User asked what makes them different from arithmetic: it is the "
+        "GENERATION, exactly -- a rich word problem is not template-generable "
+        "without templating tech (roadmap-adjacent to AI content #27). So they are "
+        "AUTHORED static problems, SM2-scheduled, graded free_response/numeric. "
+        "The 'more SM2-type' instinct is correct: finite, authored, recall-worthy. "
+        "Doc C/E path. LEARN 4 (modeling), EFFORT 3 as content."),
+    # --- MULTIMODAL (cross-cutting; gates several of the above) ---
+    "Multimodal content: images in questions (render + author)": (
+        (4, 4, 3, 3, 3, 3), None,
+        "CROSS-CUTTING ENABLER. media_url ALREADY exists in the question payload "
+        "and schema (surfaced but under-used). Rendering an <img> is small; the "
+        "real work is AUTHORING/STORING media (where do image bytes live for a "
+        "single-user local tool -- filesystem refs vs data URIs vs a media table) "
+        "and the import format carrying them. FOUND 3: unblocks geometry diagrams, "
+        "trivia with images, alphabet/handwriting, geography. Design-heavy; "
+        "warrants its OWN design doc before build. Recommend a MINIMAL first cut "
+        "(render an image from a URL/path already in media_url) then expand."),
+    "Multimodal content: audio prompts (listen-and-answer)": (
+        (3, 3, 2, 2, 3, 3), None,
+        "CROSS-CUTTING, harder than images. Enables pronunciation/listening/music "
+        "(#30) drills. Storage + playback + authoring. Speech SYNTHESIS already "
+        "exists (speech.js) for TTS prompts -- so 'listen to synthesized word, "
+        "type it' is cheap and needs NO stored audio; stored-audio clips are the "
+        "expensive part. RECOMMEND: exploit existing TTS first (near-free), defer "
+        "stored-audio. Split this row in the writeup accordingly."),
+    # --- UI / QOL (value depends on multimodal + content growth) ---
+    "UI/QOL: keyboard-first flow + shortcuts (submit, grade, skip)": (
+        (4, 2, 2, 4, 4, 5), None,
+        "QOL. A drill tool lives or dies on input friction. Keyboard shortcuts "
+        "(enter submit exists; add grade-keys for an SM2 0/1/2 prompt, skip, "
+        "reveal-hint) are cheap and high daily value. EFFORT 4, RISK 5. Rises in "
+        "value once SM2 adds a grade step. Low LEARN. Good quick-win bundle."),
+    "UI/QOL: responsive + mobile-friendly layout": (
+        (3, 2, 2, 3, 4, 4), None,
+        "QOL. The HTML/CSS convention section is still unwritten (flagged at "
+        "modularization close-out). A responsive pass + writing those conventions "
+        "together is a natural pairing. Value rises with multimodal (images/media "
+        "need layout rules). EFFORT 3. Fold the CSS-conventions doc into it."),
+    "UI/QOL: session review screen (end-of-session summary)": (
+        (3, 3, 2, 3, 3, 4), None,
+        "QOL. An end-of-session recap (what you got, what to review) using the "
+        "stats seams Doc A builds. Reuses most-missed/over-time. EFFORT 3, low "
+        "risk. Depends on Doc A landing. Nice capstone to the stats-depth work."),
+}
+
+
+# ===========================================================================
 # REASSESSMENT 2026-07 (post-modularization)  -- ADR-054
 # ===========================================================================
 # The ITEMS scores above are the ORIGINAL model (C-MOD-design era), preserved
@@ -216,6 +348,18 @@ for i, (name, (vals, orig, _why)) in enumerate(reassessed, 1):
     print("%-2d %-58s %5.2f %s" % (i, name[:58], s, _fmt_delta(s, orig)))
 
 if __name__ == "__main__":
+    # --- CANDIDATE BACKLOG 2026-07 ranking (user-suggested new items) ---
+    print("\n\n=== CANDIDATE BACKLOG 2026-07 (new, user-suggested) ===")
+    print("%-2s %-56s %5s  %s" % ("#", "Item", "Score", "Tier"))
+    print("-" * 78)
+    cand_ranked = sorted(
+        CANDIDATES_2026_07.items(), key=lambda kv: score(kv[1][0]), reverse=True
+    )
+    for i, (name, (vals, _o, _w)) in enumerate(cand_ranked, 1):
+        s = score(vals)
+        tier = "1" if s >= 3.7 else "2" if s >= 3.2 else "3" if s >= 2.7 else "4"
+        print("%-2d %-56s %5.2f  T%s" % (i, name[:56], s, tier))
+
     # Recommended sequence (ADR-054): score + user constraints (study is
     # parallel; want product movement + comprehension; avoid a second brutal
     # thread right after modularization) => lead with the safe, mostly-built

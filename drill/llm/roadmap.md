@@ -15,6 +15,13 @@ next, the current baseline and green count), see llm/STATUS.md -- the single
 source of truth. The DONE markers in the tables below are a convenience; if they
 disagree with STATUS.md, STATUS.md wins.
 
+NEW CANDIDATES (2026-07, post-Thread-N): user-suggested items (bitwise/discrete/
+algebra/geometry math drills, multimodal content, UI-QOL) are scored in
+roadmap.py (CANDIDATES_2026_07) and written up in llm/feature-backlog-2026-07.md.
+Top new item: bitwise arithmetic (4.04) -- generable on the arithmetic rail. The
+backlog's organizing insight (GENERABLE vs AUTHORED) is the main scoping tool
+for all of them.
+
 ---
 
 ## 1. How the ranking was built
