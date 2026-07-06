@@ -1621,3 +1621,109 @@ def select_weighted_by_miss_rate(
         if cumulative > threshold:
             return candidate
     return pool[-1]
+
+
+# C2: SM2 scheduler pure core (roadmap #7, ADR-025). Ported from the spike
+# scheduler_port.py, itself pinned field-identical to sm2.sm2_update by the
+# equivalence spike. Schedule state is a plain dict mirroring the
+# question_schedule row (C1): question_id, easiness_factor, interval_days,
+# repetition_count, due_date, last_review, lapse_count. Dates are ordinal-day
+# integers (datetime.date.toordinal), stamped ONCE per request at the HTTP
+# boundary and passed down -- no clock and no IO anywhere in these functions.
+
+EASINESS_FACTOR_MINIMUM = 1.3
+EASINESS_FACTOR_MAXIMUM = 3.0
+EASINESS_FACTOR_INITIAL = 2.5
+RECALL_QUALITY_TO_SM2_GRADE = {0: 1, 1: 3, 2: 5}
+INTERVAL_FUZZ_FRACTION = 0.05
+
+
+def derive_recall_quality(correct: bool, elapsed_ms: int | None) -> int:
+    """Map a drill grading outcome to an SM-2 recall quality 0|1|2.
+
+    Version 1 policy: binary. Wrong -> 0, correct -> 2. elapsed_ms is
+    accepted but deliberately unused so the timing-derived policy can swap
+    in behind the same signature once per-qtype baselines exist -- do NOT
+    add timing thresholds here before those baselines are measured (C5),
+    per ADR-025 (no persisted grading column; quality is derived at grading
+    time). The middle grade (1, "correct with effort") is unreachable until
+    then; the cost is that easiness never decays on effortful passes,
+    bounded by the lapse path resetting interval to one day.
+    """
+    if correct:
+        return 2
+    return 0
+
+
+def advance_schedule_state(
+    recall_quality: int,
+    easiness_factor: float,
+    interval_days: float,
+    repetition_count: int,
+    lapse_count: int,
+    review_date: int,
+) -> dict:
+    """Advance one question's schedule after a graded review. Pure SM-2.
+
+    Port of sm2.sm2_update with drill naming; the arithmetic is identical
+    and pinned by the equivalence spike against the original. review_date
+    is an ordinal day supplied by the caller. An unknown recall_quality
+    raises KeyError -- programmer errors stay loud, never value-ified.
+    """
+    sm2_grade = RECALL_QUALITY_TO_SM2_GRADE[recall_quality]
+    easiness_delta_inner = 0.08 + (5 - sm2_grade) * 0.02
+    easiness_delta = 0.1 - (5 - sm2_grade) * easiness_delta_inner
+    new_easiness_factor = easiness_factor + easiness_delta
+    if new_easiness_factor < EASINESS_FACTOR_MINIMUM:
+        new_easiness_factor = EASINESS_FACTOR_MINIMUM
+    if new_easiness_factor > EASINESS_FACTOR_MAXIMUM:
+        new_easiness_factor = EASINESS_FACTOR_MAXIMUM
+
+    if sm2_grade < 3:
+        new_repetition_count = 0
+        new_interval_days = 1.0
+        new_lapse_count = lapse_count + 1
+    else:
+        new_repetition_count = repetition_count + 1
+        new_lapse_count = lapse_count
+        if new_repetition_count == 1:
+            new_interval_days = 1.0
+        elif new_repetition_count == 2:
+            new_interval_days = 6.0
+        else:
+            new_interval_days = interval_days * new_easiness_factor
+
+    return {
+        "easiness_factor": new_easiness_factor,
+        "interval_days": new_interval_days,
+        "repetition_count": new_repetition_count,
+        "lapse_count": new_lapse_count,
+        "due_date": review_date + int(round(new_interval_days)),
+        "last_review": review_date,
+    }
+
+
+def apply_interval_fuzz(interval_days: float, question_id: int) -> float:
+    """Spread intervals by a deterministic per-question jitter of at most
+    +-INTERVAL_FUZZ_FRACTION, so questions learned together do not stay
+    due together forever. Deterministic (keyed on question_id, no RNG) so
+    replaying the response log reproduces the stored schedule exactly.
+    Intervals of two days or less are exempt: fuzzing there can only
+    round to the same day or distort the fixed 1 -> 6 opening steps.
+    """
+    if interval_days <= 2.0:
+        return interval_days
+    jitter_step = (question_id * 2654435761) % 1024
+    jitter_fraction = (jitter_step / 1023.0) * 2.0 - 1.0
+    return interval_days * (1.0 + INTERVAL_FUZZ_FRACTION * jitter_fraction)
+
+
+def schedule_update_allowed_today(schedule_state: dict | None, today: int) -> bool:
+    """One schedule update per question per day: only the first graded
+    attempt schedules; later same-day attempts log a response but must
+    not advance the interval again off one day of memory. A question
+    with no schedule row (never reviewed) is always allowed.
+    """
+    if schedule_state is None:
+        return True
+    return schedule_state["last_review"] != today

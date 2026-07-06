@@ -1047,3 +1047,213 @@ def test_weighted_selection_random_value_extremes_are_total(m):
     assert first["id"] == 1
     last = m.select_weighted_by_miss_rate(candidates, {}, None, 0.999999999)
     assert last["id"] == 3
+
+
+# --------------------------------------------------------------------------
+# C2: SM2 scheduler pure core -- the invariant contract
+# Ported from sm2/test_sm2.py (the algorithm half; sm2 user grades 0/1/2 map
+# one-to-one onto recall_quality via the identical grade table) plus the fuzz
+# determinism/bounds/exemption checks from the port-equivalence spike. These
+# invariants ARE the sm2 contract; sm2/ retires at A3 and this section carries
+# it forward.
+# --------------------------------------------------------------------------
+_SM2_TOLERANCE = 1e-9
+_SM2_START_ORDINAL = 739800
+
+
+def _advance_sequence(m, recall_quality, steps):
+    """Feed one recall_quality repeatedly through advance_schedule_state,
+    threading the state exactly as the live path does; returns the history."""
+    easiness_factor = 2.5
+    interval_days = 0.0
+    repetition_count = 0
+    lapse_count = 0
+    review_date = _SM2_START_ORDINAL
+    history = []
+    for _ in range(steps):
+        advanced = m.advance_schedule_state(
+            recall_quality,
+            easiness_factor,
+            interval_days,
+            repetition_count,
+            lapse_count,
+            review_date,
+        )
+        easiness_factor = advanced["easiness_factor"]
+        interval_days = advanced["interval_days"]
+        repetition_count = advanced["repetition_count"]
+        lapse_count = advanced["lapse_count"]
+        review_date = advanced["due_date"]
+        history.append(advanced)
+    return history
+
+
+def test_recall_quality_binary_v1_policy(m):
+    # Wrong -> 0, correct -> 2; elapsed_ms deliberately ignored either way.
+    assert m.derive_recall_quality(False, None) == 0
+    assert m.derive_recall_quality(False, 50) == 0
+    assert m.derive_recall_quality(True, None) == 2
+    assert m.derive_recall_quality(True, 999999) == 2
+
+
+def test_advance_point_values_from_defaults(m):
+    # The three grade rows from sm2's point-value table, first review from
+    # the initial state (ef 2.5, interval 0, rep 0, lapse 0).
+    expected_by_quality = {
+        2: (2.6, 1.0, 1, 0),
+        1: (2.36, 1.0, 1, 0),
+        0: (1.96, 1.0, 0, 1),
+    }
+    for quality, expected in expected_by_quality.items():
+        advanced = m.advance_schedule_state(
+            quality, 2.5, 0.0, 0, 0, _SM2_START_ORDINAL
+        )
+        expected_ef, expected_interval, expected_rep, expected_lapse = expected
+        assert abs(advanced["easiness_factor"] - expected_ef) < _SM2_TOLERANCE
+        assert advanced["interval_days"] == expected_interval
+        assert advanced["repetition_count"] == expected_rep
+        assert advanced["lapse_count"] == expected_lapse
+        assert advanced["due_date"] == _SM2_START_ORDINAL + round(expected_interval)
+        assert advanced["last_review"] == _SM2_START_ORDINAL
+
+
+def test_advance_illegal_quality_is_loud(m):
+    # Programmer errors stay loud, not value-ified (the sm2 A3 boundary).
+    with pytest.raises(KeyError):
+        m.advance_schedule_state(3, 2.5, 0.0, 0, 0, _SM2_START_ORDINAL)
+
+
+def test_ef_floor_holds_across_ten_fails(m):
+    history = _advance_sequence(m, 0, 10)
+    for step in history:
+        assert step["easiness_factor"] >= 1.3 - _SM2_TOLERANCE
+    assert abs(history[-1]["easiness_factor"] - 1.3) < _SM2_TOLERANCE
+
+
+def test_ef_ceiling_holds_across_twenty_passes(m):
+    history = _advance_sequence(m, 2, 20)
+    for step in history:
+        assert step["easiness_factor"] <= 3.0 + _SM2_TOLERANCE
+    assert abs(history[-1]["easiness_factor"] - 3.0) < _SM2_TOLERANCE
+
+
+def test_first_pass_interval_is_one_regardless_of_ef(m):
+    for easiness_factor in (1.3, 2.5, 3.0):
+        advanced = m.advance_schedule_state(
+            2, easiness_factor, 0.0, 0, 0, _SM2_START_ORDINAL
+        )
+        assert advanced["interval_days"] == 1.0
+
+
+def test_second_pass_interval_is_six_regardless_of_ef(m):
+    for easiness_factor in (1.3, 2.5, 3.0):
+        advanced = m.advance_schedule_state(
+            2, easiness_factor, 1.0, 1, 0, _SM2_START_ORDINAL
+        )
+        assert advanced["interval_days"] == 6.0
+
+
+def test_third_pass_interval_multiplies_by_new_ef(m):
+    advanced = m.advance_schedule_state(2, 2.5, 6.0, 2, 0, _SM2_START_ORDINAL)
+    assert abs(advanced["interval_days"] - 6.0 * 2.6) < _SM2_TOLERANCE
+
+
+def test_grade2_sequence_intervals_never_decrease(m):
+    previous_interval = 0.0
+    for step in _advance_sequence(m, 2, 10):
+        assert step["interval_days"] >= previous_interval - _SM2_TOLERANCE
+        previous_interval = step["interval_days"]
+
+
+def test_grade0_sequence_stuck_item_invariants(m):
+    for index, step in enumerate(_advance_sequence(m, 0, 10)):
+        assert step["repetition_count"] == 0
+        assert step["lapse_count"] == index + 1
+        assert step["interval_days"] == 1.0
+
+
+def test_recovery_after_three_fails_retains_lowered_ef(m):
+    # Three fails drive ef to the floor; recovery on grade 1 walks the fixed
+    # 1 -> 6 opening then multiplies by the retained (floored) ef.
+    easiness_factor = 2.5
+    interval_days = 0.0
+    repetition_count = 0
+    lapse_count = 0
+    review_date = _SM2_START_ORDINAL
+    for _ in range(3):
+        advanced = m.advance_schedule_state(
+            0, easiness_factor, interval_days, repetition_count,
+            lapse_count, review_date,
+        )
+        easiness_factor = advanced["easiness_factor"]
+        interval_days = advanced["interval_days"]
+        repetition_count = advanced["repetition_count"]
+        lapse_count = advanced["lapse_count"]
+        review_date = advanced["due_date"]
+    assert repetition_count == 0 and lapse_count == 3
+    assert abs(easiness_factor - 1.3) < _SM2_TOLERANCE
+
+    advanced = m.advance_schedule_state(
+        1, easiness_factor, interval_days, repetition_count,
+        lapse_count, review_date,
+    )
+    assert advanced["interval_days"] == 1.0
+    assert advanced["repetition_count"] == 1
+    easiness_factor = advanced["easiness_factor"]
+    interval_days = advanced["interval_days"]
+    repetition_count = advanced["repetition_count"]
+    lapse_count = advanced["lapse_count"]
+    review_date = advanced["due_date"]
+
+    advanced = m.advance_schedule_state(
+        1, easiness_factor, interval_days, repetition_count,
+        lapse_count, review_date,
+    )
+    assert advanced["interval_days"] == 6.0
+    assert advanced["repetition_count"] == 2
+    easiness_factor = advanced["easiness_factor"]
+    interval_days = advanced["interval_days"]
+    repetition_count = advanced["repetition_count"]
+    lapse_count = advanced["lapse_count"]
+    review_date = advanced["due_date"]
+
+    advanced = m.advance_schedule_state(
+        1, easiness_factor, interval_days, repetition_count,
+        lapse_count, review_date,
+    )
+    assert abs(advanced["interval_days"] - 6.0 * 1.3) < _SM2_TOLERANCE
+    assert advanced["repetition_count"] == 3
+
+
+def test_fuzz_deterministic_and_bounded(m):
+    for question_id in range(1, 2000):
+        once = m.apply_interval_fuzz(30.0, question_id)
+        twice = m.apply_interval_fuzz(30.0, question_id)
+        assert once == twice
+        assert abs(once - 30.0) <= 30.0 * m.INTERVAL_FUZZ_FRACTION + 1e-9
+
+
+def test_fuzz_exempts_intervals_of_two_days_or_less(m):
+    for short_interval in (0.0, 1.0, 2.0):
+        assert m.apply_interval_fuzz(short_interval, 7) == short_interval
+
+
+def test_fuzz_spreads_cohort_due_dates(m):
+    # The point of the fuzz: a cohort scheduled together lands on more than
+    # one distinct due date (port-equivalence spike's spread check).
+    distinct_due_dates = {
+        _SM2_START_ORDINAL + int(round(m.apply_interval_fuzz(30.0, question_id)))
+        for question_id in range(1, 101)
+    }
+    assert len(distinct_due_dates) > 1
+
+
+def test_schedule_update_allowed_once_per_day(m):
+    assert m.schedule_update_allowed_today(None, _SM2_START_ORDINAL) is True
+    reviewed_today = {"last_review": _SM2_START_ORDINAL}
+    reviewed_yesterday = {"last_review": _SM2_START_ORDINAL - 1}
+    assert m.schedule_update_allowed_today(reviewed_today, _SM2_START_ORDINAL) is False
+    assert (
+        m.schedule_update_allowed_today(reviewed_yesterday, _SM2_START_ORDINAL)
+        is True
+    )
