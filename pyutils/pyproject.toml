@@ -1,0 +1,16 @@
+[project]
+name = "pyutils"
+version = "0.1.0"
+description = "Small, general, dependency-free Python utilities (terminal formatting, and more as they accrete)."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
