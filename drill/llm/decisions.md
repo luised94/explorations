@@ -2438,3 +2438,65 @@ one parse, with explicit-create bank targeting.
   backward-compatible later ergonomic; a `type: recall` self-graded qtype
   and any category-taxonomy re-grain are named follow-up decisions raised
   at the A2 STOP, not folded in here.
+
+ADR-059 [DECIDED -- A3]: sm2/ retired; the contract is carried by ported
+tests and code, recoverable from git.
+- [DECIDED] The sm2/ directory is removed (git rm -r sm2). SM2
+  consolidation is complete: the scheduler (sm2.sm2_update ->
+  logic.advance_schedule_state, field-identical, RECALL_QUALITY_TO_SM2_GRADE
+  mapping), the new-question throttle (apply_throttle_and_cap ->
+  apply_new_question_throttle), and all five terminal views (render_table,
+  failures_view, leeches_view, preview_view, dry_run_view) were ported into
+  drill in threads B/C. The scheduling invariants (EF floor 1.3 / ceiling,
+  point-value rows, 1->6 interval opening, non-decreasing intervals,
+  stuck-item and recovery behavior, deterministic interval fuzz,
+  once-per-day gate) are pinned by the SM2 section of tests/test_logic.py
+  (C2). The exercise CONTENT is migratable by tools/migrate_sm2_exercises.py
+  (A3, previous commit).
+- Verify-before-delete evidence: what sm2/ held falls in two piles.
+  CARRIED FORWARD (has a drill home + tests): scheduler, throttle, the five
+  views, the exercise content, the invariant contract. NOT carried, by
+  design (sm2-internal, superseded): sm2's own grade_item/domain_of (drill
+  keys throttle on bank_id, not sm2 domains), its @@@ parser (drill authors
+  via the A1/A2 buffer format; the one-off migration inlines a copy), its
+  two-table DB layer (reconcile/fetch_*/commit_review -- drill has its own
+  schedule table + review path, C4), its argparse CLI
+  (build_review_card/build_reveal/run_review_session -- drill is web +
+  REPORT_COMMANDS), and its frozen-schema/e2e tests (drill has its own).
+  No load-bearing behavior is lost.
+- RECOVERY: the full sm2/ tree exists at commit
+  bf8f43d926e21c0934a61c0012e6dd31a3c95994 (the A3 script commit, the last
+  before this deletion). Restore any part with:
+      git checkout bf8f43d -- sm2/
+  This is the whole archival mechanism -- git history is the archive; no
+  snapshot copy is kept in the tree (a dead copy is drift bait). The
+  migration script's directory argument would then point at the restored
+  sm2/exercises.
+- The real-fixtures migration test (test_migrate_sm2.py) skips once
+  sm2/exercises is gone, so the suite stays green post-retirement; the
+  synthetic-fixture tests keep pinning the script.
+
+ADR-060 [DECIDED -- backlog, not this thread]: two named follow-ups from
+the authoring thread, recorded so they are not lost.
+- [DECIDED to build later] A self-graded recall qtype ("recall"): the
+  prompt shows a criterion/expected answer after the attempt and the user
+  presses pass/fail, rather than string-matching. This is the honest home
+  for self-assessment content (the sm2 exercises, textbook concept
+  questions) whose criteria are paragraphs no one types verbatim; without
+  it, such content imports as free_response and the scheduler buries it as
+  a false leech. Precedent: the recitation/catechism tradition and
+  Wozniak's minimum-information principle (make the criterion specific
+  enough that honest self-grading is easy). Scope: one qtype constant plus
+  one review-mode branch (HTTP/C4 territory); the scheduler downstream is
+  indifferent to where the boolean came from. LLM-in-the-loop grading was
+  considered and rejected for the hot path (cost/sustainability/complexity);
+  LLMs belong at AUTHORING time (extraction pipelines), not grading time.
+- [DECIDED to build later] Category-taxonomy re-grain: today categories are
+  a coarse seeded set (arithmetic/vocabulary/trivia/geography/logic/typing/
+  code) and subject collides (physics, chemistry, calculus, art, history all
+  land in "trivia"). The direction is category = grading/session domain,
+  SUBJECT = tags (list-valued, already free), so coverage and per-session
+  balancing key on the fine axis (tags) rather than encoding hierarchy into
+  category name strings (which every consumer would then have to split).
+  This is schema/consumer-touching and deserves its own thread; not folded
+  in here.
