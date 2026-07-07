@@ -1733,3 +1733,20 @@ def test_author_parse_arithmetic_qtype_rejected_by_funnel(m):
         m.author_parse("q: 2+2\na: 4\ntype: arithmetic")
     assert "qtype" in str(caught.value)
     assert "arithmetic" not in m.author_template(1)
+
+
+def test_author_parse_errors_carry_error_line_attribute(m):
+    # A2 contract: every authoring-path ImportParseError carries the integer
+    # line the push shell needs for its file:line: stderr format, so the
+    # edge never re-parses its own error strings. Block-level failures point
+    # at the block's first line.
+    cases = [
+        ("q: x\na: y\nno colon &&&", 3),
+        ("q: x\na: y\nbogus: z", 3),
+        ("q: x\nq: again\na: y", 2),
+        ("q: orphan\ntags: x", 1),
+    ]
+    for bad_buffer, expected_line in cases:
+        with pytest.raises(m.ImportParseError) as caught:
+            m.author_parse(bad_buffer)
+        assert caught.value.error_line == expected_line

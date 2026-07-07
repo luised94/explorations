@@ -36,7 +36,9 @@ loudly during development rather than emit silently wrong output.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+import tempfile
 from datetime import date
 
 from config import (
@@ -56,13 +58,19 @@ from db import (
     get_true_retention,
     get_upcoming_schedule_rows,
     init_db,
+    insert_bank,
+    insert_questions_bulk,
     list_banks,
+    list_categories,
     list_questions,
     run_migrations,
     utc_now_iso,
 )
 from logic import (
+    ImportParseError,
     apply_new_question_throttle,
+    author_parse,
+    author_template,
     dry_run_view,
     failures_view,
     leeches_view,
@@ -306,6 +314,252 @@ def build_dry_run_report(database_path: str) -> str:
     )
 
 
+# =============================================================================
+# A2: authoring shells (the impure edges around the pure A1 transform).
+#
+# Two faces, one parse. `drill add` is the terminal face: the git-commit
+# pattern (open $EDITOR on a template buffer; on a parse error, reinsert the
+# error as a #! comment banner and reopen so the fix happens where the eyes
+# already are; an untouched or emptied buffer aborts). `drill push` is the
+# editor-integration face: a stdin/file filter whose errors go to stderr as
+# file:line: message -- the nvim quickfix contract (errorformat=%f:%l:\ %m),
+# so :w !drill push --bank X pushes a buffer and :make jumps to the failing
+# line. Both faces call author_parse and append through the same
+# insert_questions_bulk path the HTTP import uses; neither validates
+# anything itself.
+#
+# Bank targeting is append-first (the human's decision): --bank names an
+# EXISTING bank; creating one requires an explicit --category so a typo can
+# never silently mint a stray bank. Clock reads and all IO live here at the
+# MAIN edge, per the layering contract.
+# =============================================================================
+
+AUTHOR_ERROR_BANNER_PREFIX = "#! "
+AUTHOR_EDITOR_MAX_ATTEMPTS = 5
+
+
+def strip_author_error_banner(text: str) -> str:
+    """Drop the #!-prefixed error-banner lines the retry loop inserts."""
+    kept_lines = [
+        line for line in text.splitlines()
+        if not line.startswith(AUTHOR_ERROR_BANNER_PREFIX)
+    ]
+    return "\n".join(kept_lines)
+
+
+def author_session(
+    initial_text: str,
+    editor_command: list[str],
+    max_attempts: int = AUTHOR_EDITOR_MAX_ATTEMPTS,
+) -> list[dict] | None:
+    """Run the $EDITOR loop: buffer out, editor, parse on save.
+
+    On a parse error the error text is reinserted at the top of the buffer
+    as #! comment lines and the editor reopens (up to max_attempts). An
+    untouched or emptied buffer aborts and returns None -- the git-commit
+    contract. Returns the parsed canonical records on success.
+    """
+    buffer_text = initial_text
+    for _attempt in range(max_attempts):
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".drill", delete=False, encoding="utf-8"
+        ) as handle:
+            handle.write(buffer_text)
+            buffer_path = handle.name
+        try:
+            subprocess.run(editor_command + [buffer_path], check=True)
+            with open(buffer_path, "r", encoding="utf-8") as handle:
+                edited_text = handle.read()
+        finally:
+            os.unlink(buffer_path)
+        cleaned_text = strip_author_error_banner(edited_text)
+        if (
+            cleaned_text.strip() == ""
+            or cleaned_text == strip_author_error_banner(buffer_text)
+        ):
+            return None
+        try:
+            return author_parse(cleaned_text)
+        except ImportParseError as error:
+            buffer_text = (
+                AUTHOR_ERROR_BANNER_PREFIX + "ERROR: " + str(error) + "\n"
+                + AUTHOR_ERROR_BANNER_PREFIX
+                + "fix and save again; empty the buffer to abort\n"
+                + cleaned_text
+            )
+    return None
+
+
+def parse_author_arguments(arguments: list[str]) -> dict:
+    """Parse `add`/`push` arguments into {bank, category, file_path}.
+
+    --bank NAME is required; --category NAME is optional (needed only to
+    create a bank); one optional positional is a file path (push face).
+    Prints the problem to stderr and exits 2 on anything malformed, matching
+    main()'s unknown-command behavior.
+    """
+    bank_name = None
+    category_name = None
+    file_path = None
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == "--bank" or argument == "--category":
+            if index + 1 >= len(arguments):
+                print("missing value after " + argument, file=sys.stderr)
+                raise SystemExit(2)
+            if argument == "--bank":
+                bank_name = arguments[index + 1]
+            else:
+                category_name = arguments[index + 1]
+            index += 2
+            continue
+        if argument.startswith("--"):
+            print("unknown flag " + repr(argument), file=sys.stderr)
+            raise SystemExit(2)
+        if file_path is not None:
+            print("unexpected extra argument " + repr(argument), file=sys.stderr)
+            raise SystemExit(2)
+        file_path = argument
+        index += 1
+    if bank_name is None:
+        print("missing required --bank <name>", file=sys.stderr)
+        raise SystemExit(2)
+    return {
+        "bank": bank_name,
+        "category": category_name,
+        "file_path": file_path,
+    }
+
+
+def resolve_author_bank(connection, bank_name: str, category_name) -> int:
+    """Return the id of the named bank, creating it only when allowed.
+
+    An existing bank name resolves regardless of --category. A missing bank
+    is created only when --category names a seeded category (source
+    "manual"); without --category the command refuses, so a typo in --bank
+    appends nowhere instead of silently minting a stray bank.
+    """
+    for bank in list_banks(connection):
+        if bank["name"] == bank_name:
+            return bank["id"]
+    if category_name is None:
+        print(
+            "bank " + repr(bank_name) + " not found; "
+            + "pass --category <name> to create it",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    for category in list_categories(connection):
+        if category["name"] == category_name:
+            bank_id = insert_bank(
+                connection,
+                category_id=category["id"],
+                name=bank_name,
+                source="manual",
+                created=utc_now_iso(),
+            )
+            print(
+                "created bank " + repr(bank_name)
+                + " in category " + repr(category_name),
+                file=sys.stderr,
+            )
+            return bank_id
+    known_names = ", ".join(
+        category["name"] for category in list_categories(connection)
+    )
+    print(
+        "unknown category " + repr(category_name) + " (known: " + known_names + ")",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
+def run_add_command(arguments: list[str]) -> None:
+    """`drill add --bank <name> [--category <name>]`: the $EDITOR loop.
+
+    Resolves the target bank FIRST so a bad target fails before an editor
+    session is spent, then loops the editor via author_session and appends
+    the accepted records. Aborting the buffer exits 1 with a note; success
+    prints the inserted count.
+    """
+    parsed = parse_author_arguments(arguments)
+    if parsed["file_path"] is not None:
+        print("add takes no file argument (use push to filter a file)",
+              file=sys.stderr)
+        raise SystemExit(2)
+    database_path = os.environ.get("DRILL_DB", DEFAULT_DATABASE_PATH)
+    editor_command = os.environ.get("EDITOR", "vi").split()
+    connection = open_reporting_connection(database_path)
+    try:
+        bank_id = resolve_author_bank(
+            connection, parsed["bank"], parsed["category"]
+        )
+        records = author_session(author_template(1), editor_command)
+        if records is None:
+            print("aborted: buffer untouched or emptied", file=sys.stderr)
+            raise SystemExit(1)
+        inserted = insert_questions_bulk(
+            connection, bank_id, records, utc_now_iso()
+        )
+    finally:
+        connection.close()
+    print("added " + str(inserted) + " question(s) to bank " + repr(parsed["bank"]))
+
+
+def run_push_command(arguments: list[str]) -> None:
+    """`drill push --bank <name> [--category <name>] [file]`: the filter.
+
+    Reads the file argument if given, else stdin (so `:w !drill push --bank
+    X` works from nvim). A parse failure prints ONE line to stderr in the
+    quickfix shape `file:line: message` (stdin reads report as "stdin") and
+    exits 1; nothing is written on failure. Success appends every record
+    and prints the inserted count.
+    """
+    parsed = parse_author_arguments(arguments)
+    if parsed["file_path"] is not None:
+        source_name = parsed["file_path"]
+        with open(parsed["file_path"], "r", encoding="utf-8") as handle:
+            text = handle.read()
+    else:
+        source_name = "stdin"
+        text = sys.stdin.read()
+    try:
+        records = author_parse(text)
+    except ImportParseError as error:
+        error_line = getattr(error, "error_line", 0)
+        print(
+            source_name + ":" + str(error_line) + ": " + str(error),
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if not records:
+        print(source_name + ":0: no question blocks found", file=sys.stderr)
+        raise SystemExit(1)
+    database_path = os.environ.get("DRILL_DB", DEFAULT_DATABASE_PATH)
+    connection = open_reporting_connection(database_path)
+    try:
+        bank_id = resolve_author_bank(
+            connection, parsed["bank"], parsed["category"]
+        )
+        inserted = insert_questions_bulk(
+            connection, bank_id, records, utc_now_iso()
+        )
+    finally:
+        connection.close()
+    print("added " + str(inserted) + " question(s) to bank " + repr(parsed["bank"]))
+
+
+# The two authoring commands take flags and have side effects, so they do
+# not fit REPORT_COMMANDS' (database_path -> str) shape; like serve, they
+# dispatch before the table lookup in main(). Recorded as a deviation from
+# the "extend the table" amendment.
+AUTHORING_COMMANDS: dict = {
+    "add": (run_add_command, "author questions in $EDITOR (--bank, --category)"),
+    "push": (run_push_command, "filter stdin/file into a bank (--bank [file])"),
+}
+
+
 # The dispatch table: command name -> (builder, one-line help). Adding a
 # report = one reader + one view + one entry here; usage stays in sync for
 # free because it is generated from this table.
@@ -319,13 +573,17 @@ REPORT_COMMANDS: dict = {
 
 
 def build_usage_text() -> str:
+    command_names = sorted(REPORT_COMMANDS) + sorted(AUTHORING_COMMANDS)
     lines = [
-        "usage: drill.py [serve | " + " | ".join(sorted(REPORT_COMMANDS)) + "]",
+        "usage: drill.py [serve | " + " | ".join(command_names) + "]",
         "",
         "  serve     start the drill server (the default)",
     ]
     for command_name in sorted(REPORT_COMMANDS):
         _builder, help_text = REPORT_COMMANDS[command_name]
+        lines.append("  " + format(command_name, "<8") + "  " + help_text)
+    for command_name in sorted(AUTHORING_COMMANDS):
+        _runner, help_text = AUTHORING_COMMANDS[command_name]
         lines.append("  " + format(command_name, "<8") + "  " + help_text)
     lines.append("")
     lines.append("database: DRILL_DB (default " + DEFAULT_DATABASE_PATH + ")")
@@ -333,11 +591,16 @@ def build_usage_text() -> str:
 
 
 def main() -> None:
-    """Dispatch: no arguments or `serve` starts the server; a report command
-    prints its view and exits; anything else prints usage and exits 2."""
+    """Dispatch: no arguments or `serve` starts the server; an authoring
+    command runs its shell; a report command prints its view and exits;
+    anything else prints usage and exits 2."""
     arguments = sys.argv[1:]
     if not arguments or arguments == ["serve"]:
         run_serve_command()
+        return
+    if arguments[0] in AUTHORING_COMMANDS:
+        runner, _help_text = AUTHORING_COMMANDS[arguments[0]]
+        runner(arguments[1:])
         return
     if len(arguments) != 1 or arguments[0] not in REPORT_COMMANDS:
         print(build_usage_text(), file=sys.stderr)

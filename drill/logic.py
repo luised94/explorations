@@ -1240,16 +1240,21 @@ def flush_author_block(block: dict, block_start_line: int, records: list) -> Non
     style contract). An empty block is a no-op, so blank-line runs and a
     trailing blank line are harmless. Re-raises ImportParseError with the
     block's starting line prepended, so the editor loop can point at the
-    offending block.
+    offending block. Every ImportParseError raised on the authoring path
+    carries an integer error_line attribute (here, the block's first line)
+    so the A2 stdin-filter shell can emit file:line: messages -- the nvim
+    quickfix contract -- without re-parsing its own error strings.
     """
     if not block:
         return
     try:
         records.append(_normalize_question_dict(block))
     except ImportParseError as error:
-        raise ImportParseError(
+        block_error = ImportParseError(
             "block starting at line " + str(block_start_line) + ": " + str(error)
         )
+        block_error.error_line = block_start_line
+        raise block_error
 
 
 def author_parse(text: str) -> list[dict]:
@@ -1271,24 +1276,30 @@ def author_parse(text: str) -> list[dict]:
             block = {}
             continue
         if ":" not in line:
-            raise ImportParseError(
+            bare_line_error = ImportParseError(
                 "line " + str(line_number) + ": expected 'key: value', got " + repr(line)
             )
+            bare_line_error.error_line = line_number
+            raise bare_line_error
         key, _, value = line.partition(":")
         key = AUTHOR_KEY_ALIASES.get(key.strip(), key.strip())
         value = value.strip()
         if key not in AUTHOR_KNOWN_KEYS:
-            raise ImportParseError(
+            unknown_key_error = ImportParseError(
                 "line " + str(line_number) + ": unknown key " + repr(key)
                 + " (known: " + ", ".join(AUTHOR_KNOWN_KEYS) + ")"
             )
+            unknown_key_error.error_line = line_number
+            raise unknown_key_error
         if not block:
             block_start_line = line_number
         if key in block:
-            raise ImportParseError(
+            duplicate_key_error = ImportParseError(
                 "line " + str(line_number) + ": duplicate key " + repr(key)
                 + " in one block"
             )
+            duplicate_key_error.error_line = line_number
+            raise duplicate_key_error
         if key in _ARRAY_FIELDS:
             block[key] = [
                 piece.strip()

@@ -2408,3 +2408,33 @@ the local-day stamp.
 - Interval fuzz (apply_interval_fuzz) is deterministic per question_id (no
   RNG) precisely so this invariant can hold; intervals <= 2 days are exempt
   to protect the fixed 1 -> 6 opening.
+
+ADR-058 [DECIDED -- A2]: authoring shells are append-first, two faces over
+one parse, with explicit-create bank targeting.
+- [DECIDED] `drill add` (the $EDITOR loop, git-commit contract: error
+  banner reinserted as #! comments, untouched-or-empty buffer aborts) and
+  `drill push` (stdin/file filter) are the two impure faces over the one
+  pure author_parse; both append through insert_questions_bulk, the same
+  funnel as HTTP import. Neither validates anything itself.
+- [DECIDED, human, option ii] --bank names an EXISTING bank; creating one
+  requires an explicit --category naming a seeded category. Rationale: in
+  a long-lived personal collection, a typo in --bank must refuse loudly
+  (exit 2, nothing created) rather than silently mint a stray bank. The
+  HTTP import endpoint keeps its always-new-bank behavior; the CLI is the
+  first append path.
+- [DECIDED] The filter face emits parse failures to stderr as exactly
+  `file:line: message` (stdin reads report as "stdin") and exits 1 writing
+  nothing. That format IS the nvim integration (errorformat=%f:%l:\ %m; :w
+  !drill push --bank X from a buffer; no plugin). To serve it, every
+  ImportParseError raised on the authoring path carries an integer
+  error_line attribute -- structured position data at the raise site, so
+  the edge never re-parses its own error strings.
+- Dispatch: add/push live in a second small data table (AUTHORING_COMMANDS)
+  consulted before REPORT_COMMANDS, because their shape (args + side
+  effects) is not the report shape (database_path -> str). This deviates
+  from the kickoff amendment's "extend that table" wording while keeping
+  its substance (data-driven, no argparse); recorded per R1/R2.
+- [RESERVED] An in-buffer bank:/category: header (option c) is a
+  backward-compatible later ergonomic; a `type: recall` self-graded qtype
+  and any category-taxonomy re-grain are named follow-up decisions raised
+  at the A2 STOP, not folded in here.
