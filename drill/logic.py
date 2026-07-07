@@ -1197,6 +1197,148 @@ def parse_import(text: str, file_format: str) -> list[dict]:
     )
 
 
+# A1: Authoring transform (pure). A minimal editor-buffer block format for
+# writing questions by hand: 'key: value' lines, blank-line-separated blocks,
+# '#' comment lines, '|'-separated arrays (the same in-cell convention as CSV
+# import). Short aliases q/a/alt/type/hint keep the typing burden low. The
+# buffer is a TRANSIENT INBOX, not a canonical store -- no ids, no source
+# tracking, no cross-file policy (those existed in sm2's @@@ format to serve
+# files-as-truth, which the database-authoritative model dissolves; see
+# consolidation-findings.md section 15). Every parsed block funnels through
+# _normalize_question_dict, so this section adds a projection, not a second
+# validation authority: author_parse output is exactly what parse_jsonl
+# produces for the same records. author_render is the inverse (enables a
+# future edit-bank round trip); author_template is the commented starter
+# buffer the editor loop opens. The impure shells (editor loop, stdin
+# filter) live at the MAIN edge in drill.py (A2), never here.
+
+AUTHOR_KEY_ALIASES = {
+    "q": "question",
+    "a": "answer",
+    "alt": "alternatives",
+    "type": "qtype",
+    "hint": "hints",
+}
+
+AUTHOR_KNOWN_KEYS = (
+    "question",
+    "answer",
+    "qtype",
+    "alternatives",
+    "distractors",
+    "hints",
+    "tags",
+    "media_url",
+    "difficulty",
+)
+
+
+def flush_author_block(block: dict, block_start_line: int, records: list) -> None:
+    """Normalize one accumulated authoring block and append it to records.
+
+    Module-level on purpose (no nested closure in author_parse, per the
+    style contract). An empty block is a no-op, so blank-line runs and a
+    trailing blank line are harmless. Re-raises ImportParseError with the
+    block's starting line prepended, so the editor loop can point at the
+    offending block.
+    """
+    if not block:
+        return
+    try:
+        records.append(_normalize_question_dict(block))
+    except ImportParseError as error:
+        raise ImportParseError(
+            "block starting at line " + str(block_start_line) + ": " + str(error)
+        )
+
+
+def author_parse(text: str) -> list[dict]:
+    """Parse an editor buffer into canonical question dicts. Pure.
+
+    Raises ImportParseError naming the line or block on any problem, so the
+    shells can report position (editor banner, or file:line: on stderr).
+    """
+    records: list[dict] = []
+    block: dict = {}
+    block_start_line = 0
+
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.rstrip()
+        if line.lstrip().startswith("#"):
+            continue
+        if line.strip() == "":
+            flush_author_block(block, block_start_line, records)
+            block = {}
+            continue
+        if ":" not in line:
+            raise ImportParseError(
+                "line " + str(line_number) + ": expected 'key: value', got " + repr(line)
+            )
+        key, _, value = line.partition(":")
+        key = AUTHOR_KEY_ALIASES.get(key.strip(), key.strip())
+        value = value.strip()
+        if key not in AUTHOR_KNOWN_KEYS:
+            raise ImportParseError(
+                "line " + str(line_number) + ": unknown key " + repr(key)
+                + " (known: " + ", ".join(AUTHOR_KNOWN_KEYS) + ")"
+            )
+        if not block:
+            block_start_line = line_number
+        if key in block:
+            raise ImportParseError(
+                "line " + str(line_number) + ": duplicate key " + repr(key)
+                + " in one block"
+            )
+        if key in _ARRAY_FIELDS:
+            block[key] = [
+                piece.strip()
+                for piece in value.split(_CSV_ARRAY_SEPARATOR)
+                if piece.strip() != ""
+            ]
+        else:
+            block[key] = value
+    flush_author_block(block, block_start_line, records)
+    return records
+
+
+def author_render(records: list[dict]) -> str:
+    """Render canonical question dicts back into the buffer format. Pure.
+
+    Inverse of author_parse for every representable record; omits empty and
+    default-valued fields so round trips stay minimal.
+    """
+    blocks: list[str] = []
+    for record in records:
+        lines = ["q: " + record["question"], "a: " + record["answer"]]
+        if record.get("qtype") and record["qtype"] != QTYPE_FREE_RESPONSE:
+            lines.append("type: " + record["qtype"])
+        for field in _ARRAY_FIELDS:
+            values = record.get(field) or []
+            if values:
+                lines.append(
+                    field + ": "
+                    + (" " + _CSV_ARRAY_SEPARATOR + " ").join(values)
+                )
+        if record.get("media_url"):
+            lines.append("media_url: " + record["media_url"])
+        if record.get("difficulty") is not None:
+            lines.append("difficulty: " + str(record["difficulty"]))
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + "\n"
+
+
+def author_template(count: int = 1) -> str:
+    """Starter buffer with the format documented in comments. Pure."""
+    header = (
+        "# One question per block; blank line between blocks.\n"
+        "# Required: q, a. Optional: type (" + "|".join(QTYPES) + "),\n"
+        "# alt, distractors, hint, tags, media_url, difficulty (1-5).\n"
+        "# Arrays use ' | '. Lines starting with '#' are ignored.\n"
+        "# An empty buffer aborts.\n\n"
+    )
+    return header + "\n\n".join("q: \na: " for _ in range(count)) + "\n"
+
+
 # C-011 support: session stats summary (pure). Takes the ordered correctness
 # sequence from DATABASE.get_session_correctness and computes the summary the
 # UI stats bar shows. Streak is the count of consecutive correct answers

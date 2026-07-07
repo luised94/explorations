@@ -22,6 +22,7 @@ Decision anchors (decisions.md):
   pick_next_question ......... C-012, ADR-005 (random + avoid-recent, v1)
 """
 
+import json
 import os
 import sys
 
@@ -1616,3 +1617,119 @@ def test_stats_view_renders_retention_and_tables(m):
     )
     assert "no graded reviews yet" in empty
     assert "no timed responses" in empty
+
+# --------------------------------------------------------------------------
+# A1: authoring transform -- the twelve spike checks from
+# llm/spike/test_author.py, ported as proper tests, plus the arithmetic
+# funnel pin. author_parse output must be EXACTLY what parse_jsonl produces
+# for the same records (one validation authority, _normalize_question_dict);
+# author_render is the inverse. Error messages carry line/block positions --
+# that text IS the contract the A2 shells (editor banner, file:line: stderr)
+# are built on.
+# --------------------------------------------------------------------------
+_AUTHOR_BUFFER = """\
+# capitals bank additions
+q: Capital of France?
+a: Paris
+alt: paris | Paris, France
+tags: geo | europe
+
+q: 7 * 8
+a: 56
+type: translate
+difficulty: 2
+
+q: Which planet is largest?
+a: Jupiter
+type: multiple_choice
+distractors: Saturn | Neptune | Earth
+hint: It is a gas giant
+"""
+
+
+def test_author_parse_splits_blank_separated_blocks(m):
+    records = m.author_parse(_AUTHOR_BUFFER)
+    assert len(records) == 3
+
+
+def test_author_parse_resolves_key_aliases(m):
+    records = m.author_parse(_AUTHOR_BUFFER)
+    assert records[0]["question"] == "Capital of France?"
+    assert records[0]["alternatives"] == ["paris", "Paris, France"]
+    assert records[2]["hints"] == ["It is a gas giant"]
+    assert records[1]["qtype"] == "translate"
+
+
+def test_author_parse_coerces_difficulty(m):
+    records = m.author_parse(_AUTHOR_BUFFER)
+    assert records[1]["difficulty"] == 2
+
+
+def test_author_parse_fills_canonical_defaults(m):
+    records = m.author_parse(_AUTHOR_BUFFER)
+    assert records[0]["qtype"] == "free_response"
+    assert records[0]["media_url"] is None
+    assert records[0]["distractors"] == []
+
+
+def test_author_parse_equivalent_to_parse_jsonl(m):
+    # The one-funnel guarantee: serializing author_parse's output as JSONL
+    # and re-parsing it through the canonical path yields identical dicts.
+    records = m.author_parse(_AUTHOR_BUFFER)
+    jsonl_text = "\n".join(json.dumps(record) for record in records)
+    assert m.parse_jsonl(jsonl_text) == records
+
+
+def test_author_render_parse_round_trip(m):
+    records = m.author_parse(_AUTHOR_BUFFER)
+    assert m.author_parse(m.author_render(records)) == records
+
+
+def test_author_template_alone_raises_naming_question(m):
+    # The starter buffer is comments plus empty q/a lines; saving it
+    # untouched must fail loudly on the empty required field.
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse(m.author_template(1))
+    assert "question" in str(caught.value)
+
+
+def test_author_parse_missing_answer_names_block(m):
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse("q: orphan question\ntags: x")
+    assert "block" in str(caught.value)
+
+
+def test_author_parse_unknown_key_names_line(m):
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse("q: x\na: y\nbogus: z")
+    assert "line" in str(caught.value)
+
+
+def test_author_parse_bare_line_rejected_with_line(m):
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse("q: x\na: y\nno colon here at all &&&")
+    assert "line" in str(caught.value)
+
+
+def test_author_parse_duplicate_key_in_block_rejected(m):
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse("q: x\nq: again\na: y")
+    assert "line" in str(caught.value)
+
+
+def test_author_parse_bad_qtype_rejected(m):
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse("q: x\na: y\ntype: essay")
+    assert "qtype" in str(caught.value)
+
+
+def test_author_parse_arithmetic_qtype_rejected_by_funnel(m):
+    # arithmetic is generated-only and excluded from QTYPES; the funnel
+    # rejects it here exactly as it does on the JSONL/CSV import paths, so
+    # authoring structurally cannot create schedulable arithmetic. (The
+    # spike's template text listed arithmetic as offered -- corrected: the
+    # landed author_template lists QTYPES only.)
+    with pytest.raises(m.ImportParseError) as caught:
+        m.author_parse("q: 2+2\na: 4\ntype: arithmetic")
+    assert "qtype" in str(caught.value)
+    assert "arithmetic" not in m.author_template(1)
