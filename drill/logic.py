@@ -2270,6 +2270,73 @@ def dry_run_view(
     return header + "\n" + render_table(DRY_RUN_COLUMNS, table_rows)
 
 
+STATUS_CONTENT_COLUMNS: tuple = (
+    ("category", "<", 12, ""),
+    ("banks", ">", 5, ""),
+    ("questions", ">", 9, ""),
+)
+
+
+def status_view(
+    database_path: str,
+    counts_by_category: list,
+    due_today_count: int,
+    new_available_count: int,
+    admitted_new_count: int,
+    new_introduced_today_count: int,
+    new_per_day_maximum: int,
+    new_per_bank_minimum: int,
+    reviews_per_session_maximum: int,
+    leech_threshold: int,
+) -> str:
+    """The invisible state in one screen (Q2, QoL thread). Pure.
+
+    Shows the configuration the scheduler actually runs on (budgets, leech
+    threshold, EF bounds), the database path in use, today's position
+    against the new-item budget, the due/new picture for today (computed by
+    the caller through the SAME partition/throttle sequence the scheduled
+    strategy uses, so this view can never disagree with behavior), and the
+    per-category bank/question counts.
+    """
+    remaining_new_budget = new_per_day_maximum - new_introduced_today_count
+    if remaining_new_budget < 0:
+        remaining_new_budget = 0
+    lines = [
+        "database: " + database_path,
+        "",
+        "scheduler configuration:",
+        "  new questions/day (global): " + str(new_per_day_maximum)
+        + "  per-bank minimum: " + str(new_per_bank_minimum),
+        "  reviews/session maximum: " + str(reviews_per_session_maximum),
+        "  leech threshold: " + str(leech_threshold) + " lapses",
+        "  easiness factor: initial " + str(EASINESS_FACTOR_INITIAL)
+        + ", bounds [" + str(EASINESS_FACTOR_MINIMUM)
+        + ", " + str(EASINESS_FACTOR_MAXIMUM) + "]",
+        "",
+        "today:",
+        "  due for review: " + str(due_today_count),
+        "  new introduced: " + str(new_introduced_today_count)
+        + " of " + str(new_per_day_maximum)
+        + " (remaining budget: " + str(remaining_new_budget) + ")",
+        "  new available: " + str(new_available_count)
+        + " (throttle admits " + str(admitted_new_count) + " today)",
+        "",
+        "content:",
+    ]
+    content_rows = [
+        (
+            row["category_name"],
+            row["bank_count"],
+            row["question_count"],
+        )
+        for row in counts_by_category
+    ]
+    return (
+        "\n".join(lines) + "\n"
+        + render_table(STATUS_CONTENT_COLUMNS, content_rows)
+    )
+
+
 def _percentile_nearest_rank(sorted_values: list, fraction: float):
     """Nearest-rank percentile over an ascending list: the value at ceiling
     (fraction * n), 1-indexed. No interpolation -- every reported number is

@@ -50,6 +50,7 @@ from config import (
 )
 from db import (
     connect,
+    get_bank_and_question_counts_by_category,
     get_elapsed_ms_samples,
     get_failure_rows,
     get_leech_rows,
@@ -77,6 +78,7 @@ from logic import (
     partition_candidates_by_schedule,
     preview_view,
     stats_view,
+    status_view,
     summarize_elapsed_percentiles,
 )
 
@@ -311,6 +313,53 @@ def build_dry_run_report(database_path: str) -> str:
         schedule_by_question_id,
         bank_name_by_id,
         today_ordinal,
+    )
+
+
+def build_status_report(database_path: str) -> str:
+    """The invisible state in one screen (Q2): scheduler budgets, leech
+    threshold, EF bounds, the database path in use, per-category bank and
+    question counts, today's new-item budget position, and today's due/new
+    picture. The due/new numbers come from the SAME partition -> cap ->
+    throttle sequence the scheduled strategy runs (the dry-run pattern), so
+    status can never disagree with what a session would actually do."""
+    today_ordinal = date.today().toordinal()
+    connection = open_reporting_connection(database_path)
+    try:
+        counts_by_category = get_bank_and_question_counts_by_category(connection)
+        banks = list_banks(connection)
+        candidates = []
+        schedule_by_question_id = {}
+        for bank in banks:
+            candidates.extend(list_questions(connection, bank["id"]))
+            schedule_by_question_id.update(
+                get_schedule_for_bank(connection, bank["id"])
+            )
+        new_introduced_today = get_new_introduced_today_by_bank(
+            connection, today_ordinal
+        )
+    finally:
+        connection.close()
+    due, new, not_due = partition_candidates_by_schedule(
+        candidates, schedule_by_question_id, today_ordinal
+    )
+    admitted_new = apply_new_question_throttle(
+        new,
+        new_introduced_today,
+        NEW_QUESTIONS_PER_DAY_MAXIMUM,
+        NEW_QUESTIONS_PER_BANK_MINIMUM,
+    )
+    return status_view(
+        database_path,
+        counts_by_category,
+        due_today_count=len(due),
+        new_available_count=len(new),
+        admitted_new_count=len(admitted_new),
+        new_introduced_today_count=sum(new_introduced_today.values()),
+        new_per_day_maximum=NEW_QUESTIONS_PER_DAY_MAXIMUM,
+        new_per_bank_minimum=NEW_QUESTIONS_PER_BANK_MINIMUM,
+        reviews_per_session_maximum=REVIEWS_PER_SESSION_MAXIMUM,
+        leech_threshold=LEECH_THRESHOLD,
     )
 
 
@@ -581,6 +630,7 @@ REPORT_COMMANDS: dict = {
     "leeches": (build_leeches_report, "questions that keep lapsing"),
     "preview": (build_preview_report, "upcoming scheduled reviews"),
     "dry-run": (build_dry_run_report, "what a review session today would serve"),
+    "status": (build_status_report, "scheduler config, budgets, and content counts"),
 }
 
 

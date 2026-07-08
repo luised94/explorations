@@ -83,6 +83,7 @@ def test_report_commands_table_shape():
         "leeches",
         "preview",
         "dry-run",
+        "status",
     }
     for command_name, entry in drill.REPORT_COMMANDS.items():
         builder, help_text = entry
@@ -148,6 +149,40 @@ def test_dry_run_report_end_to_end(populated_database):
     lines = report.split("\n")
     assert str(question_ids[0]) in lines[2]
     assert "due" in lines[2]
+
+
+def test_status_report_end_to_end(populated_database):
+    # Q2 (QoL thread): the fixture has one bank of two questions, both with
+    # schedule rows (question 1 due yesterday, question 2 due in four days),
+    # nothing introduced today, so: 1 due, 0 new available, full budget
+    # remaining. The counts table shows every seeded category, with the
+    # cli-bank's category at 1 bank / 2 questions.
+    database_path, question_ids = populated_database
+    drill = load_drill()
+    report = drill.build_status_report(database_path)
+    assert "database: " + database_path in report
+    assert "new questions/day (global): 9" in report
+    assert "per-bank minimum: 1" in report
+    assert "reviews/session maximum: 100" in report
+    assert "leech threshold: 3 lapses" in report
+    assert "bounds [1.3, 3.0]" in report
+    assert "due for review: 1" in report
+    assert "new introduced: 0 of 9 (remaining budget: 9)" in report
+    assert "new available: 0 (throttle admits 0 today)" in report
+    for category_name in (
+        "arithmetic", "vocabulary", "trivia", "geography",
+        "logic", "typing", "code",
+    ):
+        assert category_name in report
+
+
+def test_status_report_on_a_fresh_file(tmp_path):
+    # Empty database: zeros everywhere, every category listed, no crash.
+    drill = load_drill()
+    report = drill.build_status_report(str(tmp_path / "fresh.db"))
+    assert "due for review: 0" in report
+    assert "new introduced: 0 of 9" in report
+    assert "arithmetic" in report
 
 
 def test_reporting_connection_migrates_a_fresh_file(tmp_path):
