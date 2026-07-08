@@ -29,7 +29,7 @@ function fetchStub() {
       { rung: 2, operator_depth: 2, recurse_probability: 0.5, max_result_value: null },
       { rung: 3, operator_depth: 2, recurse_probability: 0.7, max_result_value: null },
       { rung: 4, operator_depth: 3, recurse_probability: 0.7, max_result_value: 100000 }
-    ] });
+    ], default_parameters: { operator_depth: 2, recurse_probability: 0.5, max_result_value: null } });
     if (url.indexOf("/api/question") === 0) {
       const m = url.match(/[?&]difficulty=(\d+)/);
       const served = m ? parseInt(m[1], 10) : null;
@@ -52,7 +52,8 @@ function fetchStub() {
 
   /* --- population from the endpoint --- */
   c.ck("difficulty endpoint was fetched", calls.some(x => x.url === "/api/difficulty-rungs"));
-  c.ck("first option is Default (empty value)", diff.options[0].value === "" && diff.options[0].textContent === "Default");
+  c.ck("first option is Default (empty value) labeled from the default facts (qol-8)",
+    diff.options[0].value === "" && diff.options[0].textContent === "Default - nested, any size (no rung)");
   c.ck("four rung options follow Default", diff.options.length === 5);
   c.ck("rung option value is the numeric rung", diff.options[1].value === "1");
   c.ck("rung label composed from facts (nested/ceiling)", diff.options[4].textContent.indexOf("Rung 4") === 0

@@ -32,6 +32,8 @@ import bottle
 from config import (
     DEFAULT_DATABASE_PATH,
     DIFFICULTY_RUNGS,
+    _MAX_OPERATOR_DEPTH,
+    _RECURSE_PROBABILITY,
     NEW_QUESTIONS_PER_BANK_MINIMUM,
     NEW_QUESTIONS_PER_DAY_MAXIMUM,
     QTYPE_ARITHMETIC,
@@ -842,7 +844,17 @@ def get_difficulty_rungs():
         }
         for record in DIFFICULTY_RUNGS
     ]
-    return {"rungs": rungs}
+    # Q4 use-period report (qol-8): the client's "Default" option needs to
+    # say what default generation actually does. The no-rung path uses the
+    # module constants, so expose them as the same structural facts a rung
+    # carries (max_result_value null: the default path has no ceiling); the
+    # client composes the wording, exactly as for rungs.
+    default_parameters = {
+        "operator_depth": _MAX_OPERATOR_DEPTH,
+        "recurse_probability": _RECURSE_PROBABILITY,
+        "max_result_value": None,
+    }
+    return {"rungs": rungs, "default_parameters": default_parameters}
 
 
 @app.post("/api/banks/import")

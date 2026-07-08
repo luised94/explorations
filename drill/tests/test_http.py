@@ -194,6 +194,15 @@ def test_difficulty_rungs_endpoint_lists_config(app_with_data):
             "recurse_probability",
             "max_result_value",
         }
+    # qol-8: the default (no-rung) path's structural facts ride along so the
+    # client can label the "Default" option honestly. Same fact shape as a
+    # rung, minus the rung number; ceiling is null (default has none).
+    default_parameters = data["default_parameters"]
+    assert default_parameters == {
+        "operator_depth": m._MAX_OPERATOR_DEPTH,
+        "recurse_probability": m._RECURSE_PROBABILITY,
+        "max_result_value": None,
+    }
 
 
 # ---- /api/question: boundary payload shape -------------------------------

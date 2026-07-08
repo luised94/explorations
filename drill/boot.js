@@ -120,13 +120,17 @@ export function findCategory(id) {
    layer while the server stays the source of truth for what rungs exist.
    Reads operator_depth, recurse_probability, and max_result_value to give a
    sense of what the rung drills. Example: "Rung 2 - nested, to any size". */
-export function difficultyLabel(record) {
+export function difficultyDescriptor(record) {
   var shape = (record.recurse_probability > 0) ? "nested" : "flat";
   var ceiling = (record.max_result_value === null
                  || record.max_result_value === undefined)
     ? "any size"
     : "to " + record.max_result_value;
-  return "Rung " + record.rung + " - " + shape + ", " + ceiling;
+  return shape + ", " + ceiling;
+}
+
+export function difficultyLabel(record) {
+  return "Rung " + record.rung + " - " + difficultyDescriptor(record);
 }
 
 /* Populate the difficulty selector from GET /api/difficulty-rungs (C-2U-b).
@@ -143,6 +147,14 @@ export async function populateDifficulty() {
   el.difficulty.appendChild(defaultOption);
   try {
     var data = await apiGet("/api/difficulty-rungs");
+    /* qol-8: "Default" is not a rung -- it is the unparameterized path.
+       Label it with the same structural facts the rung options carry so
+       the setting is explicit (use-period report). Falls back to the bare
+       word when an older server omits default_parameters. */
+    if (data.default_parameters) {
+      defaultOption.textContent =
+        "Default - " + difficultyDescriptor(data.default_parameters) + " (no rung)";
+    }
     (data.rungs || []).forEach(function (record) {
       var label = difficultyLabel(record);
       state.rungLabels[record.rung] = label; /* C-2U-c: for the active badge */
