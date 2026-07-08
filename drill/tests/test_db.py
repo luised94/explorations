@@ -566,3 +566,38 @@ def test_upcoming_rows_future_only_soonest_first(bank_with_responses):
         question_ids[1],
     ]
     assert upcoming[0]["due_date"] == today + 2
+
+
+# --- rec-1 (recall qtype): ungraded attempts (correct IS NULL) are invisible
+# to every graded-outcome reader. An ungraded row is an attempt awaiting its
+# batched self-assessment (or an abandoned one); it must neither count as a
+# miss nor as a review anywhere.
+
+
+def test_ungraded_responses_are_excluded_from_graded_readers(bank_with_responses):
+    m, conn, bank_id, question_ids, stamps = bank_with_responses
+    session_id = conn.execute(
+        "SELECT id FROM sessions LIMIT 1"
+    ).fetchone()["id"]
+
+    before_correctness = m.get_session_correctness(conn, session_id)
+    before_stats = m.get_response_stats_for_bank(conn, bank_id)
+    before_retention = m.get_true_retention(conn)
+    before_rows = m.get_responses_for_stats(conn)
+
+    # One ungraded recall attempt on question 1, "today" (a fresh day, so it
+    # would be its day's first attempt if retention failed to exclude it).
+    m.insert_response(
+        conn, session_id, "q one", "a one", "my attempt", None,
+        _iso(datetime.now(timezone.utc)), question_id=question_ids[0],
+    )
+    conn.commit()
+
+    assert m.get_session_correctness(conn, session_id) == before_correctness
+    assert m.get_response_stats_for_bank(conn, bank_id) == before_stats
+    assert m.get_true_retention(conn) == before_retention
+    assert m.get_responses_for_stats(conn) == before_rows
+    # get_failure_rows needs no change: correct = 0 never matches NULL.
+    assert all(
+        row["user_input"] != "my attempt" for row in m.get_failure_rows(conn)
+    )

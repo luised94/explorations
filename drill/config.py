@@ -32,7 +32,7 @@ from __future__ import annotations
 # init_db (the baseline) plus every migration in MIGRATIONS. v2 (D1) adds
 # questions.metadata via the runner; init_db builds the baseline and
 # run_migrations layers v2..N on top of it.
-SCHEMA_VERSION: int = 5
+SCHEMA_VERSION: int = 6
 
 # The version init_db itself builds and stamps. init_db lays down the v1-shaped
 # SCHEMA_STATEMENTS, so the baseline IS version 1 -- it must be stamped as 1,

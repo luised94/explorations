@@ -17,6 +17,7 @@ commits of this thread.
 """
 
 import os
+import sqlite3
 import sys
 
 import pytest
@@ -107,7 +108,8 @@ def test_apply_one_failure_rolls_back_ddl_and_version(db):
 def test_shipped_migrations_consistent_with_schema_version(db):
     # The registry as shipped must satisfy the import-time guard. As of C1 it
     # holds v2 (questions.metadata), v3 (responses difficulty + leaf_count),
-    # v4 (question_schedule), and v5 (session feedback, Q4b) and
+    # v4 (question_schedule), v5 (session feedback, Q4b), and v6
+    # (responses.correct nullable, rec-1) and
     # SCHEMA_VERSION is 5; the guard already ran
     # at import (load_drill would have raised otherwise), so re-invoking it here
     # documents the invariant and re-checks it explicitly. This asserts the
@@ -115,9 +117,9 @@ def test_shipped_migrations_consistent_with_schema_version(db):
     # bumping the constant (or vice versa) surfaces here as a red.
     m, _conn = db
     m._check_migration_version_consistency()  # must not raise
-    assert len(m.MIGRATIONS) == 4
-    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3, 4, 5]
-    assert CFG.SCHEMA_VERSION == 5
+    assert len(m.MIGRATIONS) == 5
+    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3, 4, 5, 6]
+    assert CFG.SCHEMA_VERSION == 6
 
 
 def test_drift_guard_rejects_constant_ahead_of_registry(db):
@@ -290,6 +292,52 @@ def test_fresh_db_reaches_current_version_via_startup_sequence(tmp_path):
     cols = [r[1] for r in conn.execute("PRAGMA table_info(questions)")]
     assert "metadata" in cols
     conn.close()
+
+
+
+
+def test_v6_rebuild_preserves_rows_and_allows_null_correct(tmp_path):
+    # rec-1: the v6 rebuild must carry every pre-existing response verbatim
+    # (same ids, same 0/1 correct) and afterwards accept NULL correct (the
+    # ungraded recall attempt). Drive the db to v5, write a graded row,
+    # apply v6, verify preservation, then insert an ungraded row.
+    m = load_db()
+    dbpath = os.path.join(str(tmp_path), "rebuild.db")
+    conn = m.connect(dbpath)
+    m.init_db(conn)
+    conn.commit()
+    up_to_v5 = [entry for entry in m.MIGRATIONS if entry[0] <= 5]
+    m.run_migrations(conn, FIXED_NOW, target_version=5, migrations=up_to_v5)
+
+    category_id = conn.execute("SELECT id FROM categories LIMIT 1").fetchone()["id"]
+    session_id = m.start_session(conn, category_id, FIXED_NOW)
+    response_id = m.insert_response(
+        conn, session_id, "q", "a", "a", True, FIXED_NOW
+    )
+    conn.commit()
+    # Pre-v6: NULL correct is rejected by the NOT NULL constraint.
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO responses (session_id, question_text, answer_text, "
+            "user_input, correct, answered) VALUES (?, 'q', 'a', '', NULL, ?)",
+            (session_id, FIXED_NOW),
+        )
+    conn.rollback()
+
+    m.run_migrations(conn, FIXED_NOW)  # applies v6
+    row = conn.execute(
+        "SELECT id, correct FROM responses WHERE id = ?", (response_id,)
+    ).fetchone()
+    assert row["id"] == response_id and row["correct"] == 1
+
+    ungraded_id = m.insert_response(
+        conn, session_id, "q2", "a2", "attempt", None, FIXED_NOW
+    )
+    conn.commit()
+    stored = conn.execute(
+        "SELECT correct FROM responses WHERE id = ?", (ungraded_id,)
+    ).fetchone()
+    assert stored["correct"] is None
 
 
 def test_existing_baselined_db_is_untouched_by_startup_sequence(tmp_path):

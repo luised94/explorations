@@ -672,7 +672,7 @@ def insert_response(
     question_text: str,
     answer_text: str,
     user_input: str,
-    correct: bool,
+    correct: bool | None,
     answered: str,
     question_id: int | None = None,
     elapsed_ms: int | None = None,
@@ -705,7 +705,7 @@ def insert_response(
             question_text,
             answer_text,
             user_input,
-            1 if correct else 0,
+            None if correct is None else (1 if correct else 0),
             elapsed_ms,
             answered,
             difficulty,
@@ -742,7 +742,8 @@ def get_session_correctness(
     (added in C-019a), summarized by summarize_stats.
     """
     cursor = connection.execute(
-        "SELECT correct FROM responses WHERE session_id = ? ORDER BY id",
+        "SELECT correct FROM responses "
+        "WHERE session_id = ? AND correct IS NOT NULL ORDER BY id",
         (session_id,),
     )
     return [bool(row["correct"]) for row in cursor.fetchall()]
@@ -781,7 +782,10 @@ def get_responses_for_stats(
     answered DESC, id DESC so the most recent activity leads (the view renders
     newest-first).
     """
-    clauses = []
+    # rec-1: ungraded recall attempts (correct IS NULL) are not stats -- the
+    # durable view aggregates GRADED outcomes only, matching the session
+    # correctness reader's exclusion.
+    clauses = ["r.correct IS NOT NULL"]
     params: list[object] = []
     if category_id is not None:
         clauses.append("s.category_id = ?")
@@ -842,7 +846,7 @@ def get_response_stats_for_bank(
         "MAX(r.answered) AS last_answered "
         "FROM responses r "
         "JOIN questions q ON r.question_id = q.id "
-        "WHERE q.bank_id = ? "
+        "WHERE q.bank_id = ? AND r.correct IS NOT NULL "
         "GROUP BY r.question_id",
         (bank_id,),
     )
@@ -1012,7 +1016,7 @@ def get_true_retention(connection: sqlite3.Connection) -> dict:
         "    SELECT question_id, substr(answered, 1, 10) AS day_text, "
         "           MIN(id) AS first_response_id "
         "    FROM responses "
-        "    WHERE question_id IS NOT NULL "
+        "    WHERE question_id IS NOT NULL AND correct IS NOT NULL "
         "    GROUP BY question_id, day_text"
         ") "
         "SELECT AVG(responses.correct) AS retention, "
@@ -1256,6 +1260,52 @@ def _migrate_5_add_session_feedback(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE sessions ADD COLUMN note TEXT")
 
 
+def _migrate_6_make_responses_correct_nullable(connection: sqlite3.Connection) -> None:
+    """v6 (rec-1, recall qtype): allow NULL in responses.correct.
+
+    The recall qtype records an ATTEMPT before any grade exists (the batched
+    self-assessment happens at session end), so correct gains a third state:
+    NULL = attempted, not yet graded. SQLite cannot drop NOT NULL in place,
+    so this is the standard rebuild: create the replacement table with the
+    full CURRENT column set (the v3 difficulty/leaf_count columns exist by
+    the time v6 runs, on fresh and old files alike, because migrations apply
+    in order), copy every row verbatim including ids, drop, rename. The
+    runner owns the transaction, so a failure mid-rebuild rolls back whole.
+
+    Explicit-id copy keeps AUTOINCREMENT's sqlite_sequence at the max copied
+    id; responses are an append-only log (never deleted), so no id-reuse
+    hazard exists. Every existing row keeps its 0/1 -- NULL only ever enters
+    through new recall attempts.
+    """
+    connection.execute(
+        "CREATE TABLE responses_rebuild ("
+        "    id            INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "    session_id    INTEGER NOT NULL,"
+        "    question_id   INTEGER,"
+        "    question_text TEXT NOT NULL,"
+        "    answer_text   TEXT NOT NULL,"
+        "    user_input    TEXT NOT NULL,"
+        "    correct       INTEGER,"
+        "    elapsed_ms    INTEGER,"
+        "    answered      TEXT NOT NULL,"
+        "    difficulty    INTEGER,"
+        "    leaf_count    INTEGER,"
+        "    FOREIGN KEY (session_id) REFERENCES sessions (id),"
+        "    FOREIGN KEY (question_id) REFERENCES questions (id)"
+        ")"
+    )
+    connection.execute(
+        "INSERT INTO responses_rebuild "
+        "(id, session_id, question_id, question_text, answer_text, user_input, "
+        "correct, elapsed_ms, answered, difficulty, leaf_count) "
+        "SELECT id, session_id, question_id, question_text, answer_text, "
+        "user_input, correct, elapsed_ms, answered, difficulty, leaf_count "
+        "FROM responses"
+    )
+    connection.execute("DROP TABLE responses")
+    connection.execute("ALTER TABLE responses_rebuild RENAME TO responses")
+
+
 MIGRATIONS: list[tuple[int, str, object]] = [
     (2, "add questions.metadata", _migrate_2_add_questions_metadata),
     (3, "add responses.difficulty and leaf_count", _migrate_3_add_response_difficulty),
@@ -1263,6 +1313,8 @@ MIGRATIONS: list[tuple[int, str, object]] = [
      _migrate_4_add_question_schedule),
     (5, "add sessions.rating and note (session feedback, Q4b)",
      _migrate_5_add_session_feedback),
+    (6, "responses.correct nullable (recall ungraded attempts, rec-1)",
+     _migrate_6_make_responses_correct_nullable),
 ]
 
 
