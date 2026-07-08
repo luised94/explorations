@@ -504,7 +504,13 @@ def run_add_command(arguments: list[str]) -> None:
         )
     finally:
         connection.close()
-    print("added " + str(inserted) + " question(s) to bank " + repr(parsed["bank"]))
+    print(
+        "added " + str(inserted) + " question(s) to bank "
+        + repr(parsed["bank"])
+        + "; new items enter review sessions up to "
+        + str(NEW_QUESTIONS_PER_DAY_MAXIMUM)
+        + "/day across all banks, so they appear over upcoming sessions"
+    )
 
 
 def run_push_command(arguments: list[str]) -> None:
@@ -547,7 +553,13 @@ def run_push_command(arguments: list[str]) -> None:
         )
     finally:
         connection.close()
-    print("added " + str(inserted) + " question(s) to bank " + repr(parsed["bank"]))
+    print(
+        "added " + str(inserted) + " question(s) to bank "
+        + repr(parsed["bank"])
+        + "; new items enter review sessions up to "
+        + str(NEW_QUESTIONS_PER_DAY_MAXIMUM)
+        + "/day across all banks, so they appear over upcoming sessions"
+    )
 
 
 # The two authoring commands take flags and have side effects, so they do

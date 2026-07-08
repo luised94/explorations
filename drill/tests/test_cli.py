@@ -302,6 +302,11 @@ def test_push_file_end_to_end_appends_rows(tmp_path, monkeypatch, capsys):
     )
     output = capsys.readouterr()
     assert "added 2 question(s)" in output.out
+    # Q3 (QoL thread): the success message kills the add==queue
+    # misconception at the point of action -- it names the daily budget
+    # and says the items surface over upcoming sessions, not today.
+    assert "/day across all banks" in output.out
+    assert "upcoming sessions" in output.out
 
     conn = dbm.connect(database_path)
     bank = [b for b in dbm.list_banks(conn) if b["name"] == "capitals"][0]
