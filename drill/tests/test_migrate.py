@@ -107,16 +107,17 @@ def test_apply_one_failure_rolls_back_ddl_and_version(db):
 def test_shipped_migrations_consistent_with_schema_version(db):
     # The registry as shipped must satisfy the import-time guard. As of C1 it
     # holds v2 (questions.metadata), v3 (responses difficulty + leaf_count),
-    # and v4 (question_schedule) and SCHEMA_VERSION is 4; the guard already ran
+    # v4 (question_schedule), and v5 (session feedback, Q4b) and
+    # SCHEMA_VERSION is 5; the guard already ran
     # at import (load_drill would have raised otherwise), so re-invoking it here
     # documents the invariant and re-checks it explicitly. This asserts the
     # SHIPPED registry, not just the guard, so adding a migration without
     # bumping the constant (or vice versa) surfaces here as a red.
     m, _conn = db
     m._check_migration_version_consistency()  # must not raise
-    assert len(m.MIGRATIONS) == 3
-    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3, 4]
-    assert CFG.SCHEMA_VERSION == 4
+    assert len(m.MIGRATIONS) == 4
+    assert [version for version, _desc, _fn in m.MIGRATIONS] == [2, 3, 4, 5]
+    assert CFG.SCHEMA_VERSION == 5
 
 
 def test_drift_guard_rejects_constant_ahead_of_registry(db):

@@ -703,8 +703,19 @@ def post_session_end():
         return _json_error("missing required field: session_id", status=400)
     try:
         session_id = _require_int(body.get("session_id"), "session_id")
+        rating = _optional_int(body.get("rating"), "rating")
     except _BadParameter as bad:
         return _json_error(bad.message, status=400)
+    # Q4b: both feedback fields optional. A provided rating must be 1..5;
+    # a provided note must be a string. Absent means absent -- the database
+    # layer leaves missing fields untouched.
+    if rating is not None and not 1 <= rating <= 5:
+        return _json_error(
+            "rating must be between 1 and 5, got " + str(rating), status=400
+        )
+    note = body.get("note")
+    if note is not None and not isinstance(note, str):
+        return _json_error("note must be a string", status=400)
     today_ordinal = date.today().toordinal()
     connection = connect(DATABASE_PATH)
     try:
@@ -712,6 +723,8 @@ def post_session_end():
             connection,
             session_id=session_id,
             ended=utc_now_iso(),
+            rating=rating,
+            note=note,
         )
         summary = None
         if updated > 0:

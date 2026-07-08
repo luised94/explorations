@@ -562,6 +562,8 @@ def _session_row_to_dict(row: sqlite3.Row) -> dict:
         "config": _load_json(row["config"], {}),
         "started": row["started"],
         "ended": row["ended"],
+        "rating": row["rating"] if "rating" in row.keys() else None,
+        "note": row["note"] if "note" in row.keys() else None,
     }
 
 
@@ -616,6 +618,8 @@ def end_session(
     connection: sqlite3.Connection,
     session_id: int,
     ended: str,
+    rating: int | None = None,
+    note: str | None = None,
 ) -> int:
     """Stamp a session's ended timestamp, returning the number of rows updated.
 
@@ -623,10 +627,25 @@ def end_session(
     when the session does not exist. Already-ended sessions are overwritten
     with the new timestamp; guarding against re-ending is a logic concern,
     not enforced here.
+
+    Q4b (QoL thread): rating and note are the optional session-level
+    feedback fields (schema v5). None means not provided and leaves the
+    stored value untouched, so ending twice (the explicit end followed by
+    the unload beacon) cannot erase feedback captured the first time.
+    Validation (rating range, types) is the HTTP edge's job.
     """
+    assignments = ["ended = ?"]
+    parameters: list = [ended]
+    if rating is not None:
+        assignments.append("rating = ?")
+        parameters.append(rating)
+    if note is not None:
+        assignments.append("note = ?")
+        parameters.append(note)
+    parameters.append(session_id)
     cursor = connection.execute(
-        "UPDATE sessions SET ended = ? WHERE id = ?",
-        (ended, session_id),
+        "UPDATE sessions SET " + ", ".join(assignments) + " WHERE id = ?",
+        parameters,
     )
     connection.commit()
     return cursor.rowcount
@@ -1222,11 +1241,28 @@ def _migrate_4_add_question_schedule(connection: sqlite3.Connection) -> None:
 # responses difficulty + leaf_count columns; it is added together with the
 # SCHEMA_VERSION bump to 3 so the import-time consistency guard stays satisfied
 # (adding one without the other raises -- the guard-weld).
+def _migrate_5_add_session_feedback(connection: sqlite3.Connection) -> None:
+    """v5 (Q4b, QoL thread): add sessions.rating and sessions.note.
+
+    Session-level subjective feedback captured at end-of-session: rating is
+    a small integer (the HTTP edge validates 1..5), note is free text. Both
+    nullable and both optional at capture time -- every pre-existing row and
+    every session ended without feedback simply carries NULLs. Additive
+    only; no data movement. The answer-level log stays the objective record;
+    this is the one subjective, whole-session field pair (how it felt),
+    which no response row can carry.
+    """
+    connection.execute("ALTER TABLE sessions ADD COLUMN rating INTEGER")
+    connection.execute("ALTER TABLE sessions ADD COLUMN note TEXT")
+
+
 MIGRATIONS: list[tuple[int, str, object]] = [
     (2, "add questions.metadata", _migrate_2_add_questions_metadata),
     (3, "add responses.difficulty and leaf_count", _migrate_3_add_response_difficulty),
     (4, "add question_schedule (SM2 scheduling state, ADR-025)",
      _migrate_4_add_question_schedule),
+    (5, "add sessions.rating and note (session feedback, Q4b)",
+     _migrate_5_add_session_feedback),
 ]
 
 

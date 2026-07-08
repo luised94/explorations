@@ -489,6 +489,54 @@ def test_session_end_summary_counts_answers(app_blank):
     assert summary["streak"] == 0  # most recent answer was wrong
 
 
+def test_session_end_stores_optional_feedback(app_blank):
+    # Q4b (QoL thread): rating and note are optional end-of-session
+    # feedback, persisted on the sessions row (schema v5). A second end
+    # without feedback (the unload beacon path) must not erase them.
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    session_id = start["session_id"]
+    status, data = _post_json(
+        m,
+        "/api/session/end",
+        {"session_id": session_id, "rating": 4, "note": "felt smooth"},
+    )
+    assert status.startswith("200")
+    assert data["ended"] is True
+
+    connection = m.connect(m.DATABASE_PATH)
+    session = m.get_session(connection, session_id)
+    assert session["rating"] == 4
+    assert session["note"] == "felt smooth"
+    connection.close()
+
+    # Re-end with no feedback fields: ended re-stamps, feedback survives.
+    _post_json(m, "/api/session/end", {"session_id": session_id})
+    connection = m.connect(m.DATABASE_PATH)
+    session = m.get_session(connection, session_id)
+    assert session["rating"] == 4
+    assert session["note"] == "felt smooth"
+    connection.close()
+
+
+def test_session_end_rejects_bad_feedback(app_blank):
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    session_id = start["session_id"]
+    status, _ = wsgi_post_json(
+        m, "/api/session/end", {"session_id": session_id, "rating": 6}
+    )
+    assert status.startswith("400")
+    status, _ = wsgi_post_json(
+        m, "/api/session/end", {"session_id": session_id, "rating": 0}
+    )
+    assert status.startswith("400")
+    status, _ = wsgi_post_json(
+        m, "/api/session/end", {"session_id": session_id, "note": 12345}
+    )
+    assert status.startswith("400")
+
+
 def test_session_end_unknown_session_is_harmless_noop(app_blank):
     # DELIBERATE contract: ending an unknown/already-cleaned session is a
     # no-op returning ended=false, NOT a 404. Pins it against a future
