@@ -1339,13 +1339,35 @@ def author_render(records: list[dict]) -> str:
 
 
 def author_template(count: int = 1) -> str:
-    """Starter buffer with the format documented in comments. Pure."""
+    """Starter buffer with the format documented in comments. Pure.
+
+    The header includes one fully commented worked example showing every
+    field, so the buffer format is self-documenting. The example lines are
+    comments, which author_parse skips, so the raw template contributes no
+    phantom blocks; stripping the leading '# ' from the example yields a
+    block that parses cleanly (pinned by test).
+    """
     header = (
-        "# One question per block; blank line between blocks.\n"
-        "# Required: q, a. Optional: type (" + "|".join(QTYPES) + "),\n"
+        "# One question per block; blank line between blocks. A single\n"
+        "# buffer may hold many blocks; every block is inserted.\n"
+        "# Required: q, a (each on its OWN line). Optional: type\n"
+        "# (" + "|".join(QTYPES) + "),\n"
         "# alt, distractors, hint, tags, media_url, difficulty (1-5).\n"
-        "# Arrays use ' | '. Lines starting with '#' are ignored.\n"
-        "# An empty buffer aborts.\n\n"
+        "# Array fields (alt, distractors, hint, tags) put every value on\n"
+        "# one line separated by ' | '. Lines starting with '#' are\n"
+        "# ignored. An empty buffer aborts.\n"
+        "#\n"
+        "# Worked example showing every field (kept as comments; copy a\n"
+        "# line and remove the leading '# ' to use it):\n"
+        "# q: Which planet in the solar system is largest?\n"
+        "# a: Jupiter\n"
+        "# type: multiple_choice\n"
+        "# alt: planet Jupiter\n"
+        "# distractors: Saturn | Neptune | Earth\n"
+        "# hint: It is a gas giant | Its storm is famous\n"
+        "# tags: astronomy | solar-system\n"
+        "# media_url: https://example.com/jupiter.png\n"
+        "# difficulty: 2\n\n"
     )
     return header + "\n\n".join("q: \na: " for _ in range(count)) + "\n"
 

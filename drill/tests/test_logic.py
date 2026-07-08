@@ -1693,6 +1693,48 @@ def test_author_template_alone_raises_naming_question(m):
     assert "question" in str(caught.value)
 
 
+# Q1 (QoL thread): the template's worked example is derived FROM the
+# template here, not restated, so the test cannot drift from the code. The
+# example must (a) contribute zero blocks while commented and (b) parse to
+# one fully populated record once the leading '# ' is stripped.
+_TEMPLATE_EXAMPLE_KEYS = (
+    "q", "a", "type", "alt", "distractors", "hint", "tags",
+    "media_url", "difficulty",
+)
+
+
+def test_author_template_comments_contribute_no_blocks(m):
+    template = m.author_template(2)
+    comments_and_blanks = "\n".join(
+        line for line in template.splitlines()
+        if line.startswith("#") or line.strip() == ""
+    )
+    assert m.author_parse(comments_and_blanks) == []
+
+
+def test_author_template_worked_example_parses_with_every_field(m):
+    template = m.author_template(1)
+    example_lines = []
+    for line in template.splitlines():
+        if not line.startswith("# "):
+            continue
+        candidate = line[2:]
+        key = candidate.partition(":")[0].strip()
+        if key in _TEMPLATE_EXAMPLE_KEYS:
+            example_lines.append(candidate)
+    records = m.author_parse("\n".join(example_lines) + "\n")
+    assert len(records) == 1
+    record = records[0]
+    assert record["question"] != "" and record["answer"] != ""
+    assert record["qtype"] == m.QTYPE_MULTIPLE_CHOICE
+    assert record["alternatives"] != []
+    assert record["distractors"] != []
+    assert record["hints"] != []
+    assert record["tags"] != []
+    assert record["media_url"] is not None
+    assert record["difficulty"] == 2
+
+
 def test_author_parse_missing_answer_names_block(m):
     with pytest.raises(m.ImportParseError) as caught:
         m.author_parse("q: orphan question\ntags: x")
