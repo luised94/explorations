@@ -2500,3 +2500,36 @@ the authoring thread, recorded so they are not lost.
   category name strings (which every consumer would then have to split).
   This is schema/consumer-touching and deserves its own thread; not folded
   in here.
+
+ADR-061 [DECIDED -- QoL + recall thread]: the recall qtype ships as
+  deferred, batched self-assessment (rec-1..rec-6), superseding ADR-060's
+  inline sketch. Design as built: QTYPE_RECALL joins QTYPES; the attempt
+  path on /api/answer stores the row with correct = NULL ("attempted, not
+  yet graded"), requires a non-empty typed attempt, never reveals the
+  criterion, never touches the schedule (even in review mode), and returns
+  response_id for later grading. Submit IS the advance in the UI -- no
+  feedback phase, the retrieval pass stays uninterrupted. Grading happens
+  at the explicit End in a batched pass (attempt shown, criterion revealed,
+  Pass/Fail per item) through POST /api/response/grade, a ONE-WAY
+  transition (only NULL -> graded; regrade is a 400) that feeds the exact
+  schedule sequence inline grading uses (advance_question_schedule,
+  extracted from post_answer in rec-3; derive_recall_quality is indifferent
+  to the boolean's source). Decisions locked with the human:
+  - Grading verb is BINARY pass/fail in v1. An "unsure" third state was
+    raised and deferred; when it arrives it maps to FAIL (conservative
+    scheduling -- uncertain recall is not retention). Revisit with use data.
+  - elapsed_ms on a recall row is ATTEMPT time only (submit stops the
+    clock); grading time is not retrieval and is deliberately unmeasured.
+  - Abandonment semantics: an ungraded attempt is INERT. Schema v6 made
+    responses.correct nullable and the rec-1 audit excluded NULLs from
+    every graded reader (session correctness, miss-rate weighting, true
+    retention, durable stats; failure rows exclude naturally; elapsed
+    samples deliberately keep ungraded rows). Ending, restarting, or
+    closing the page before grading corrupts nothing; the rows remain
+    gradable later.
+  FINDING recorded for post-use planning: the browser client sends NO mode
+  (practice) and NO strategy (random) -- the C4 review/scheduled rails are
+  server-complete but UI-unwired, so browser sessions (including recall
+  grading) do not advance schedules today. Wiring review mode into the UI
+  is the same deferred decision as the unified daily-session flow; the
+  recall pipeline is ready for it (the grade endpoint honors mode=review).

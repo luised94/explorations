@@ -1616,3 +1616,33 @@ def test_grade_validates_inputs(app_with_bank):
     assert status.startswith("400") and "boolean" in body
     status, body = wsgi_post_json(m, "/api/response/grade", {"correct": True})
     assert status.startswith("400") and "response_id" in body
+
+
+def test_abandoned_recall_attempts_are_inert(app_with_bank):
+    # rec-6: the abandonment invariant end-to-end. An attempt made in
+    # review mode whose session ends WITHOUT the grading pass must leave no
+    # trace anywhere that matters: no schedule row, no session-stats count,
+    # an end-summary of zeros -- and it must still be gradable later if a
+    # tool ever wants to (the row is merely ungraded, not lost).
+    m, category_name, bank_id, _empty = app_with_bank
+    session_id, question_id, response_id = _recall_attempt(m, category_name, bank_id)
+
+    status, data = _post_json(m, "/api/session/end", {"session_id": session_id})
+    assert status.startswith("200")
+    assert data["summary"]["total"] == 0  # the ungraded attempt is not an outcome
+
+    connection = m.connect(m.DATABASE_PATH)
+    assert m.get_schedule_for_question(connection, question_id) is None
+    row = m.get_response(connection, response_id)
+    connection.close()
+    assert row["correct"] is None  # attempted, ungraded -- exactly as left
+
+    # Late grading still works (the row survived the session's end).
+    status, graded = _post_json(
+        m, "/api/response/grade",
+        {"response_id": response_id, "correct": True, "mode": "review"},
+    )
+    assert status.startswith("200") and graded["correct"] is True
+    connection = m.connect(m.DATABASE_PATH)
+    assert m.get_schedule_for_question(connection, question_id) is not None
+    connection.close()
