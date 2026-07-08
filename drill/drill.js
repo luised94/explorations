@@ -350,6 +350,28 @@ export async function gradeAndShow(userInput) {
   if (q.alternatives && q.alternatives.length > 0) {
     body.alternatives = q.alternatives;
   }
+  /* rec-4: recall sends the same body (the server's recall branch stores
+     it ungraded) but the RESPONSE flow diverges: no verdict, no reveal, no
+     feedback phase -- submit IS the advance. The attempt is queued for the
+     batched self-assessment pass at session end. */
+  if (q.qtype === "recall") {
+    try {
+      var recallResult = await apiPost("/api/answer", body);
+      state.recallAttempts.push({
+        responseId: recallResult.response_id,
+        questionText: q.question_text,
+        expected: q.expected,
+        userInput: userInput
+      });
+      recordStats(sessionId, recallResult.session_stats);
+      renderSessionUI();
+      await loadQuestion();
+    } catch (error) {
+      setNote(error.message, true);
+      enterAnswering();
+    }
+    return;
+  }
   try {
     var result = await apiPost("/api/answer", body);
     /* Single source of truth: fold the snapshot into the session record and
@@ -373,6 +395,11 @@ export async function gradeAndShow(userInput) {
 export function emptyHintText() {
   if (state.current && state.current.qtype === "arithmetic") {
     return "Enter a number to submit.";
+  }
+  if (state.current && state.current.qtype === "recall") {
+    /* rec-4: the effortful attempt is the point -- an empty submit is not
+       an attempt. Mirrors the server's 400 for blank recall input. */
+    return "Write your attempt, even a brief one, to continue.";
   }
   return "Enter an answer to submit.";
 }

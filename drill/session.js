@@ -91,6 +91,7 @@ export async function startSession() {
   });
   state.activeSessionId = result.session_id;
   state.recentIds = []; /* fresh repeat-avoidance window per session */
+  state.recallAttempts = []; /* rec-4: fresh grading queue per session */
   return result.session_id;
 }
 

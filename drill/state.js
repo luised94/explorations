@@ -32,6 +32,12 @@ export var state = {
                               bankName} -- the current drill target */
   recentIds: [],           /* C-016: last-RECENT_MAX served bank question ids
                               for the active session (recent= param) */
+  recallAttempts: [],      /* rec-4: recall attempts awaiting the batched
+                              self-assessment pass at session end --
+                              [{responseId, questionText, expected,
+                              userInput}]. Collected client-side (the server
+                              rows carry correct = NULL); reset per session;
+                              abandoned entries are inert (rec-1). */
   difficulty: null,        /* C-D2c: selected arithmetic difficulty rung, or
                               null for the default (no-rung) path. The C-2U-b
                               selector sets this; null is the default path. */
