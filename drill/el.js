@@ -40,6 +40,7 @@ export var EL_REGISTRY = {
   statStreak: { id: "stat-streak", owner: "stats" },
   streakPips: { id: "streak-pips", owner: "stats" },
   sessionControls: { id: "session-controls", owner: "session" },
+  sessionSummary: { id: "session-summary", owner: "session" },
   runLog: { id: "run-log", owner: "stats" },
   runLogList: { id: "run-log-list", owner: "stats" },
   answerHint: { id: "answer-hint", owner: "stage" },

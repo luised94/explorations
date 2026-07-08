@@ -25,7 +25,7 @@ function fixtureHtml() {
     "<div id='choices'></div><button id='speaker'></button><div id='active-rung'></div>" +
     "<div id='hint-reveal'></div>" +
     "<span id='stat-total'></span><span id='stat-accuracy'></span><span id='stat-streak'></span>" +
-    "<span id='streak-pips'></span><div id='session-controls'></div>" +
+    "<span id='streak-pips'></span><div id='session-controls'></div><div id='session-summary' hidden></div>" +
     "<div id='run-log' hidden><ul id='run-log-list'></ul></div>" +
     "<div id='note'></div>" +
     "</body></html>";
@@ -52,7 +52,10 @@ function fixtureHtml() {
   const fetchStub = async (url, opts) => {
     calls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
     if (url === "/api/session/start") return j({ session_id: 42 });
-    if (url === "/api/session/end") return j({ ended: true });
+    if (url === "/api/session/end") return j({ ended: true, summary: {
+      total: 3, correct: 2, accuracy: 0.667, streak: 0,
+      new_introduced_today: 1, due_remaining: 4
+    } });
     if (url.indexOf("/api/question") === 0) return j({ qtype: "arithmetic", question_text: "2 + 2", expected: "4", question_id: null });
     if (url === "/api/answer") return j({ correct: true, expected: "4", session_stats: { total: 1, correct: 1, accuracy: 1.0, streak: 1 } });
     return j({ error: "x" }, false, 404);
@@ -123,6 +126,38 @@ function fixtureHtml() {
   await session.onEndSession();
   ck("onEndSession cleared the active session", state.activeSessionId === null);
   ck("onEndSession rested the phase (drill.enterResting ran)", state.phase === "resting");
+
+  /* --- Q4: the closing summary view -------------------------------------- */
+  const summaryNode = doc.getElementById("session-summary");
+  ck("onEndSession shows the summary view", summaryNode.hidden === false);
+  ck("summary line carries the counts",
+    summaryNode.textContent.indexOf("2/3 correct (67%)") !== -1 &&
+    summaryNode.textContent.indexOf("1 new introduced today") !== -1 &&
+    summaryNode.textContent.indexOf("4 due next in this bank") !== -1);
+  ck("summary offers the feedback controls",
+    summaryNode.querySelector("#session-rating") !== null &&
+    summaryNode.querySelector("#session-note") !== null &&
+    summaryNode.querySelector("#save-session-feedback") !== null);
+
+  /* --- Q4b: saving feedback re-posts session/end with the fields --------- */
+  summaryNode.querySelector("#session-rating").value = "4";
+  summaryNode.querySelector("#session-note").value = "  felt smooth  ";
+  const endPostsBefore = calls.filter(c => c.url === "/api/session/end").length;
+  summaryNode.querySelector("#save-session-feedback").click();
+  await tick();
+  const feedbackCalls = calls.filter(c => c.url === "/api/session/end");
+  ck("save posted a second session/end", feedbackCalls.length === endPostsBefore + 1);
+  const feedbackBody = feedbackCalls[feedbackCalls.length - 1].body;
+  ck("feedback body carries rating and trimmed note",
+    feedbackBody.rating === 4 && feedbackBody.note === "felt smooth");
+  ck("save disables after success",
+    summaryNode.querySelector("#save-session-feedback").disabled === true);
+
+  /* --- Q4: a new run dismisses the summary ------------------------------- */
+  await session.onStartSession();
+  await tick();
+  ck("starting a new run hides the summary", summaryNode.hidden === true && summaryNode.textContent === "");
+  await session.onEndSession(); /* back to resting for the unload check below */
 
   /* --- endSessionOnUnload: beacon path, no throw ------------------------ */
   state.activeSessionId = 7;

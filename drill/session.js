@@ -13,6 +13,8 @@
  *   renderSessionUI / renderSessionControls -- derived render (never
  *     hand-patched); the control row wires on*Session handlers INSIDE
  *     renderSessionControls, so those handlers are session-owned (S6).
+ *   renderSessionSummary / clearSessionSummary -- the Q4 closing view after
+ *     an explicit End (summary + optional Q4b feedback capture).
  *   onStartSession / onRestartSession / onEndSession -- the handlers.
  *   endSessionOnUnload -- dev cleanup on page close (see below).
  *
@@ -112,14 +114,32 @@ export function recordStats(sessionId, stats) {
    active one, the resting state begins (activeSessionId -> null). Ending an
    unknown/already-ended id is a harmless server no-op, so this is safe to
    call without first checking server state. */
-export async function endSession(sessionId) {
+/* End a session on the server and mark its record "ended". If it is the
+   active one, the resting state begins (activeSessionId -> null). Ending an
+   unknown/already-ended id is a harmless server no-op, so this is safe to
+   call without first checking server state.
+
+   Q4/Q4b: feedback is an optional {rating, note} object merged into the
+   request; the server updates only the fields provided, so a later bare
+   end (the unload beacon) cannot erase saved feedback. Returns the server
+   response ({ended, summary}) or null when the request failed or was
+   skipped, so callers can render the closing summary. */
+export async function endSession(sessionId, feedback) {
   if (sessionId === null) {
-    return;
+    return null;
   }
   /* C-018a: a run ending should not leave a word still being spoken. */
   cancelSpeech(setSpeakerSpeaking);
+  var body = { session_id: sessionId };
+  if (feedback && feedback.rating !== undefined && feedback.rating !== null) {
+    body.rating = feedback.rating;
+  }
+  if (feedback && feedback.note) {
+    body.note = feedback.note;
+  }
+  var result = null;
   try {
-    await apiPost("/api/session/end", { session_id: sessionId });
+    result = await apiPost("/api/session/end", body);
   } catch (error) {
     /* A failed end should not strand the UI: still mark it ended locally and
        surface the message. The server treats unknown ids as no-ops anyway. */
@@ -134,6 +154,7 @@ export async function endSession(sessionId) {
   if (state.activeSessionId === sessionId) {
     state.activeSessionId = null;
   }
+  return result;
 }
 
 /* ---- Session UI: derived renders (never hand-patched) ----------------- */
@@ -147,8 +168,105 @@ export function renderSessionUI() {
   /* The streak pips are meaningful only for an in-progress run; hide the row
      in the resting state so the bar reads as "nothing in progress". */
   el.streakPips.style.visibility = active ? "visible" : "hidden";
+  /* Q4: the closing summary belongs to the resting state only; a new run
+     dismisses it (renderSessionUI runs on every transition). */
+  if (active) {
+    clearSessionSummary();
+  }
   renderSessionControls(active);
   renderRunLog();
+}
+
+/* ---- End-of-session summary (Q4/Q4b) ----------------------------------- */
+
+/* Hide and empty the closing view. */
+export function clearSessionSummary() {
+  el.sessionSummary.textContent = "";
+  el.sessionSummary.hidden = true;
+}
+
+/* The closing view after an explicit End: what happened this run, plus the
+   optional feedback capture. summary is the server's session/end payload
+   ({total, correct, accuracy, streak, new_introduced_today, due_remaining})
+   or null/undefined when the end failed -- then nothing is shown. Saving
+   feedback re-posts session/end with {rating, note}; the server merges
+   fields without erasing the first end (Q4b). */
+export function renderSessionSummary(summary, sessionId) {
+  clearSessionSummary();
+  if (!summary) {
+    return;
+  }
+
+  var line = document.createElement("div");
+  var text = "Session ended: " + summary.correct + "/" + summary.total
+    + " correct (" + Math.round(summary.accuracy * 100) + "%). "
+    + summary.new_introduced_today + " new introduced today.";
+  if (summary.due_remaining !== null && summary.due_remaining !== undefined) {
+    text += " " + summary.due_remaining + " due next in this bank.";
+  }
+  line.textContent = text;
+  el.sessionSummary.appendChild(line);
+
+  var feedbackRow = document.createElement("div");
+  feedbackRow.className = "summary-feedback-row";
+
+  var feedbackLabel = document.createElement("span");
+  feedbackLabel.textContent = "How was it? (optional)";
+  feedbackRow.appendChild(feedbackLabel);
+
+  var ratingSelect = document.createElement("select");
+  ratingSelect.id = "session-rating";
+  var blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "rating";
+  ratingSelect.appendChild(blank);
+  for (var value = 1; value <= 5; value++) {
+    var option = document.createElement("option");
+    option.value = String(value);
+    option.textContent = String(value);
+    ratingSelect.appendChild(option);
+  }
+  feedbackRow.appendChild(ratingSelect);
+
+  var noteInput = document.createElement("input");
+  noteInput.type = "text";
+  noteInput.id = "session-note";
+  noteInput.placeholder = "note (how it felt, energy, difficulty)";
+  feedbackRow.appendChild(noteInput);
+
+  var save = document.createElement("button");
+  save.type = "button";
+  save.className = "secondary";
+  save.id = "save-session-feedback";
+  save.textContent = "Save feedback";
+  save.addEventListener("click", async function onSaveFeedback() {
+    var feedback = {};
+    if (ratingSelect.value !== "") {
+      feedback.rating = parseInt(ratingSelect.value, 10);
+    }
+    if (noteInput.value.trim() !== "") {
+      feedback.note = noteInput.value.trim();
+    }
+    if (feedback.rating === undefined && feedback.note === undefined) {
+      setNote("nothing to save -- pick a rating or write a note");
+      return;
+    }
+    try {
+      await apiPost("/api/session/end", {
+        session_id: sessionId,
+        rating: feedback.rating,
+        note: feedback.note
+      });
+      save.disabled = true;
+      setNote("feedback saved");
+    } catch (error) {
+      setNote(error.message, true);
+    }
+  });
+  feedbackRow.appendChild(save);
+
+  el.sessionSummary.appendChild(feedbackRow);
+  el.sessionSummary.hidden = false;
 }
 
 /* The control row. Active: a "Restart" and an "End" control. Resting: a
@@ -215,9 +333,14 @@ export async function onEndSession() {
     return;
   }
   setNote("");
-  await endSession(state.activeSessionId);
+  var endedSessionId = state.activeSessionId;
+  var result = await endSession(endedSessionId);
   enterResting();
   renderSessionUI();
+  /* Q4: the explicit End shows the closing view (summary + optional
+     feedback). Restart and selection switches flow straight into a new run,
+     so they do not -- the next renderSessionUI dismisses any leftover. */
+  renderSessionSummary(result ? result.summary : null, endedSessionId);
 }
 
 /* Dev cleanup, not session UI: end the active session on page close/refresh

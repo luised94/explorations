@@ -425,6 +425,25 @@
     gap: 0.6rem;
     flex-wrap: wrap;
   }
+  .session-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--muted);
+    border-radius: 6px;
+    padding: 0.6rem;
+  }
+  .session-summary .summary-feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .session-summary input[type="text"] {
+    flex: 1;
+    min-width: 8rem;
+  }
   .session-controls .session-label {
     font-size: 0.7rem;
     letter-spacing: 0.1em;
@@ -809,6 +828,13 @@
          visible. Contents are rendered from session state so the resting
          state (no active session) and the active state share one render. -->
     <div class="session-controls" id="session-controls"></div>
+
+    <!-- End-of-session summary (Q4/Q4b, QoL thread): the closing view shown
+         after an explicit End -- what happened this run, plus optional
+         feedback (rating 1-5 and a note) saved via a second session/end
+         POST (the server merges feedback without erasing the first end).
+         Hidden while a session is active. -->
+    <div class="session-summary" id="session-summary" hidden></div>
 
     <!-- Question stage: the expression is the hero. -->
     <section class="stage">

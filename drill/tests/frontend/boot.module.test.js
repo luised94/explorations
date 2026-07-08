@@ -31,7 +31,7 @@ function fixtureHtml() {
     "<div id='note'></div>" +
     /* stats/session nodes */
     "<span id='stat-total'></span><span id='stat-accuracy'></span><span id='stat-streak'></span>" +
-    "<span id='streak-pips'></span><div id='session-controls'></div>" +
+    "<span id='streak-pips'></span><div id='session-controls'></div><div id='session-summary' hidden></div>" +
     "<div id='run-log' hidden><ul id='run-log-list'></ul></div>" +
     "<button id='stats-toggle' aria-expanded='false'></button><div id='stats-panel' hidden></div>" +
     /* boot's own selector + import nodes */
