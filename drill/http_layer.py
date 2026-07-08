@@ -37,6 +37,7 @@ from config import (
     NEW_QUESTIONS_PER_BANK_MINIMUM,
     NEW_QUESTIONS_PER_DAY_MAXIMUM,
     QTYPE_ARITHMETIC,
+    QTYPE_RECALL,
     REVIEWS_PER_SESSION_MAXIMUM,
 )
 from db import (
@@ -553,6 +554,48 @@ def post_answer():
             "unknown mode: " + str(mode) + " (expected practice or review)",
             status=400,
         )
+
+    # rec-2: the recall attempt path. No inline grading, no reveal, no
+    # schedule touch -- the row is stored with correct = NULL ("attempted,
+    # not yet graded") and graded later by the batched self-assessment pass
+    # (POST /api/response/grade). Every graded reader excludes NULLs
+    # (rec-1), so an abandoned ungraded attempt is inert history: logged,
+    # never a phantom pass/fail, never a schedule move. elapsed_ms here is
+    # ATTEMPT time only (submit stops the clock); grading time is not
+    # retrieval and is deliberately not measured.
+    if str(body["qtype"]) == QTYPE_RECALL:
+        if str(body["user_input"]).strip() == "":
+            return _json_error(
+                "recall attempts need a written attempt -- type something, "
+                "even a brief one",
+                status=400,
+            )
+        connection = connect(DATABASE_PATH)
+        try:
+            response_id = insert_response(
+                connection,
+                session_id=session_id,
+                question_text=str(body["question_text"]),
+                answer_text=str(body["expected"]),
+                user_input=str(body["user_input"]),
+                correct=None,
+                answered=utc_now_iso(),
+                question_id=question_id,
+                elapsed_ms=elapsed_ms,
+                difficulty=difficulty,
+                leaf_count=leaf_count,
+            )
+            correctness = get_session_correctness(connection, session_id)
+        except sqlite3.IntegrityError as error:
+            return _json_error(_integrity_message(error), status=400)
+        finally:
+            connection.close()
+        return {
+            "recorded": True,
+            "graded": False,
+            "response_id": response_id,
+            "session_stats": summarize_correctness(correctness),
+        }
 
     # Trust assumption: this single-user local tool trusts the client-supplied
     # question context (expected, qtype, alternatives). The server re-runs

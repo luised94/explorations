@@ -1442,3 +1442,78 @@ def test_rebuild_from_response_log_equals_stored_schedule_over_90_days(tmp_path)
                 % (question_id, field, rebuilt_state[field], stored_state[field])
             )
     conn.close()
+
+
+# ---- rec-2: the recall attempt path ---------------------------------------
+def test_recall_attempt_records_ungraded_and_skips_schedule(app_with_bank):
+    m, category_name, bank_id, _empty = app_with_bank
+    connection = m.connect(m.DATABASE_PATH)
+    category_id = next(
+        c["id"] for c in m.list_categories(connection)
+        if c["name"] == category_name
+    )
+    question_id = m.list_questions(connection, bank_id)[0]["id"]
+    connection.close()
+    _, start = _post_json(
+        m, "/api/session/start",
+        {"category_id": category_id, "bank_id": bank_id},
+    )
+    session_id = start["session_id"]
+    status, data = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": session_id,
+            "qtype": "recall",
+            "question_text": "state the chain rule",
+            "expected": "d/dx f(g(x)) = f'(g(x)) g'(x)",
+            "user_input": "f prime of g times g prime",
+            "question_id": question_id,
+            "elapsed_ms": 4200,
+            "mode": "review",
+        },
+    )
+    assert status.startswith("200")
+    assert data["recorded"] is True and data["graded"] is False
+    assert isinstance(data["response_id"], int)
+    assert "correct" not in data and "expected" not in data
+    # Ungraded attempts are invisible to the session stats (rec-1).
+    assert data["session_stats"]["total"] == 0
+
+    connection = m.connect(m.DATABASE_PATH)
+    row = connection.execute(
+        "SELECT correct, elapsed_ms FROM responses WHERE id = ?",
+        (data["response_id"],),
+    ).fetchone()
+    assert row["correct"] is None and row["elapsed_ms"] == 4200
+    # Even in review mode the ATTEMPT never advances the schedule -- only
+    # the batched grading pass does.
+    assert m.get_schedule_for_question(connection, question_id) is None
+    connection.close()
+
+
+def test_recall_attempt_rejects_empty_input(app_with_bank):
+    m, category_name, bank_id, _empty = app_with_bank
+    connection = m.connect(m.DATABASE_PATH)
+    category_id = next(
+        c["id"] for c in m.list_categories(connection)
+        if c["name"] == category_name
+    )
+    connection.close()
+    _, start = _post_json(
+        m, "/api/session/start",
+        {"category_id": category_id, "bank_id": bank_id},
+    )
+    status, data = wsgi_post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": start["session_id"],
+            "qtype": "recall",
+            "question_text": "q",
+            "expected": "a",
+            "user_input": "   ",
+        },
+    )
+    assert status.startswith("400")
+    assert "type something" in data  # body_text; wsgi helper returns raw text

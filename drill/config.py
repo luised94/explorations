@@ -83,12 +83,19 @@ QTYPE_FREE_RESPONSE: str = "free_response"
 QTYPE_MULTIPLE_CHOICE: str = "multiple_choice"
 QTYPE_TRANSLATE: str = "translate"
 QTYPE_IDENTIFY: str = "identify"
+# rec-2 (recall qtype): prompt shown, user attempts, NO inline reveal or
+# grade -- the attempt is stored with correct = NULL and self-assessed in a
+# batched pass at session end (the grading endpoint). Effortful retrieval
+# before reveal is the learning event; batching keeps the retrieval pass
+# uninterrupted and dampens heat-of-the-moment generous self-grading.
+QTYPE_RECALL: str = "recall"
 
 QTYPES: list[str] = [
     QTYPE_FREE_RESPONSE,
     QTYPE_MULTIPLE_CHOICE,
     QTYPE_TRANSLATE,
     QTYPE_IDENTIFY,
+    QTYPE_RECALL,
 ]
 
 # Validator-level qtype for generated arithmetic. Deliberately NOT part of
