@@ -571,7 +571,9 @@ def _response_row_to_dict(row: sqlite3.Row) -> dict:
     """Convert a responses row to a plain dict with correct as a bool.
 
     The stored INTEGER 0/1 becomes a Python bool; elapsed_ms and question_id
-    remain nullable and pass through unchanged.
+    remain nullable and pass through unchanged. rec-1/rec-3: a NULL correct
+    (ungraded recall attempt) stays None -- bool(None) would fabricate a
+    fail, exactly the corruption the rec-1 audit exists to prevent.
     """
     return {
         "id": row["id"],
@@ -580,7 +582,7 @@ def _response_row_to_dict(row: sqlite3.Row) -> dict:
         "question_text": row["question_text"],
         "answer_text": row["answer_text"],
         "user_input": row["user_input"],
-        "correct": bool(row["correct"]),
+        "correct": None if row["correct"] is None else bool(row["correct"]),
         "elapsed_ms": row["elapsed_ms"],
         "answered": row["answered"],
     }
@@ -747,6 +749,46 @@ def get_session_correctness(
         (session_id,),
     )
     return [bool(row["correct"]) for row in cursor.fetchall()]
+
+
+def get_response(
+    connection: sqlite3.Connection,
+    response_id: int,
+) -> dict | None:
+    """Return a single response row by id, or None if no such response.
+
+    rec-3: the grading endpoint reads the attempt it is about to grade --
+    session_id feeds the returned session stats, question_id and elapsed_ms
+    feed the schedule advance, correct distinguishes ungraded (NULL) from
+    already-graded rows (regrading is rejected at the HTTP edge).
+    """
+    row = connection.execute(
+        "SELECT * FROM responses WHERE id = ?",
+        (response_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return _response_row_to_dict(row)
+
+
+def set_response_correct(
+    connection: sqlite3.Connection,
+    response_id: int,
+    correct: bool,
+) -> int:
+    """Set a response's correct flag, returning the number of rows updated.
+
+    rec-3: the batched self-assessment write -- an ungraded recall attempt
+    (correct NULL) becomes a graded outcome. Plain UPDATE; the
+    only-ungraded-may-be-graded rule is the HTTP edge's check (it reads the
+    row first), not a WHERE clause, so the 400 can say WHY it refused.
+    """
+    cursor = connection.execute(
+        "UPDATE responses SET correct = ? WHERE id = ?",
+        (1 if correct else 0, response_id),
+    )
+    connection.commit()
+    return cursor.rowcount
 
 
 def get_responses_for_stats(

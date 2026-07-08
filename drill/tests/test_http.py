@@ -1517,3 +1517,102 @@ def test_recall_attempt_rejects_empty_input(app_with_bank):
     )
     assert status.startswith("400")
     assert "type something" in data  # body_text; wsgi helper returns raw text
+
+
+# ---- rec-3: the batched self-assessment grade ------------------------------
+def _recall_attempt(m, category_name, bank_id, mode="review"):
+    """Start a session on the bank and record one recall attempt; returns
+    (session_id, question_id, response_id)."""
+    connection = m.connect(m.DATABASE_PATH)
+    category_id = next(
+        c["id"] for c in m.list_categories(connection)
+        if c["name"] == category_name
+    )
+    question_id = m.list_questions(connection, bank_id)[0]["id"]
+    connection.close()
+    _, start = _post_json(
+        m, "/api/session/start",
+        {"category_id": category_id, "bank_id": bank_id},
+    )
+    _, attempt = _post_json(
+        m,
+        "/api/answer",
+        {
+            "session_id": start["session_id"],
+            "qtype": "recall",
+            "question_text": "q",
+            "expected": "a",
+            "user_input": "my attempt",
+            "question_id": question_id,
+            "elapsed_ms": 3000,
+            "mode": mode,
+        },
+    )
+    return start["session_id"], question_id, attempt["response_id"]
+
+
+def test_grade_pass_sets_correct_and_advances_schedule(app_with_bank):
+    m, category_name, bank_id, _empty = app_with_bank
+    session_id, question_id, response_id = _recall_attempt(m, category_name, bank_id)
+    status, data = _post_json(
+        m, "/api/response/grade",
+        {"response_id": response_id, "correct": True, "mode": "review"},
+    )
+    assert status.startswith("200")
+    assert data["graded"] is True and data["correct"] is True
+    # The grade IS the session's graded outcome now.
+    assert data["session_stats"]["total"] == 1
+    assert data["session_stats"]["correct"] == 1
+    connection = m.connect(m.DATABASE_PATH)
+    schedule = m.get_schedule_for_question(connection, question_id)
+    assert schedule is not None and schedule["repetition_count"] == 1
+    connection.close()
+
+
+def test_grade_fail_lapses_without_double_grade(app_with_bank):
+    m, category_name, bank_id, _empty = app_with_bank
+    _sid, question_id, response_id = _recall_attempt(m, category_name, bank_id)
+    status, data = _post_json(
+        m, "/api/response/grade",
+        {"response_id": response_id, "correct": False, "mode": "review"},
+    )
+    assert status.startswith("200") and data["correct"] is False
+    connection = m.connect(m.DATABASE_PATH)
+    schedule = m.get_schedule_for_question(connection, question_id)
+    connection.close()
+    assert schedule is not None
+    # Regrading the one-way transition is rejected; the schedule cannot be
+    # advanced twice off one attempt (double-tap protection).
+    status, body = wsgi_post_json(
+        m, "/api/response/grade",
+        {"response_id": response_id, "correct": True, "mode": "review"},
+    )
+    assert status.startswith("400") and "already graded" in body
+
+
+def test_grade_practice_mode_skips_schedule(app_with_bank):
+    m, category_name, bank_id, _empty = app_with_bank
+    _sid, question_id, response_id = _recall_attempt(
+        m, category_name, bank_id, mode="practice"
+    )
+    status, data = _post_json(
+        m, "/api/response/grade", {"response_id": response_id, "correct": True}
+    )
+    assert status.startswith("200") and data["graded"] is True
+    connection = m.connect(m.DATABASE_PATH)
+    assert m.get_schedule_for_question(connection, question_id) is None
+    connection.close()
+
+
+def test_grade_validates_inputs(app_with_bank):
+    m, _category_name, _bank_id, _empty = app_with_bank
+    status, body = wsgi_post_json(
+        m, "/api/response/grade", {"response_id": 999999, "correct": True}
+    )
+    assert status.startswith("400") and "no such response" in body
+    status, body = wsgi_post_json(
+        m, "/api/response/grade", {"response_id": 1, "correct": "yes"}
+    )
+    assert status.startswith("400") and "boolean" in body
+    status, body = wsgi_post_json(m, "/api/response/grade", {"correct": True})
+    assert status.startswith("400") and "response_id" in body

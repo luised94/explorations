@@ -44,6 +44,7 @@ from db import (
     connect,
     end_session,
     get_new_introduced_today_by_bank,
+    get_response,
     get_response_stats_for_bank,
     get_responses_for_stats,
     get_schedule_for_bank,
@@ -56,6 +57,7 @@ from db import (
     list_banks,
     list_categories,
     list_questions,
+    set_response_correct,
     start_session,
     upsert_schedule_row,
     utc_now_iso,
@@ -493,6 +495,52 @@ def get_question_endpoint():
     return build_question_payload(chosen)
 
 
+def advance_question_schedule(
+    connection,
+    question_id: int,
+    correct: bool,
+    elapsed_ms: int | None,
+    today_ordinal: int,
+) -> None:
+    """Advance one question's SM2 schedule from a graded outcome (C4 body,
+    extracted in rec-3 so post_answer's inline grading and the batched
+    recall self-assessment feed the SAME sequence: first-graded-attempt-of-
+    the-day gate, derive_recall_quality (indifferent to the boolean's
+    source), advance, deterministic fuzz, due-date write. Reads the
+    existing schedule and writes the advanced one; the caller owns mode
+    policy (review advances, practice never calls this) and the day stamp
+    (stamped once per request)."""
+    existing_schedule = get_schedule_for_question(connection, question_id)
+    if not schedule_update_allowed_today(existing_schedule, today_ordinal):
+        return
+    if existing_schedule is None:
+        easiness_factor = EASINESS_FACTOR_INITIAL
+        interval_days = 0.0
+        repetition_count = 0
+        lapse_count_value = 0
+    else:
+        easiness_factor = existing_schedule["easiness_factor"]
+        interval_days = existing_schedule["interval_days"]
+        repetition_count = existing_schedule["repetition_count"]
+        lapse_count_value = existing_schedule["lapse_count"]
+    recall_quality = derive_recall_quality(correct, elapsed_ms)
+    advanced_schedule = advance_schedule_state(
+        recall_quality,
+        easiness_factor,
+        interval_days,
+        repetition_count,
+        lapse_count_value,
+        today_ordinal,
+    )
+    fuzzed_interval = apply_interval_fuzz(
+        advanced_schedule["interval_days"], question_id
+    )
+    advanced_schedule["interval_days"] = fuzzed_interval
+    advanced_schedule["due_date"] = today_ordinal + int(round(fuzzed_interval))
+    advanced_schedule["question_id"] = question_id
+    upsert_schedule_row(connection, advanced_schedule)
+
+
 @app.post("/api/answer")
 def post_answer():
     """Validate a submitted answer, log the response, return feedback.
@@ -639,37 +687,10 @@ def post_answer():
         # rebuild's ordinal derivation matches this stamp only while the
         # local and UTC date agree at review time (documented limit).
         if mode == "review" and question_id is not None:
-            today_ordinal = date.today().toordinal()
-            existing_schedule = get_schedule_for_question(connection, question_id)
-            if schedule_update_allowed_today(existing_schedule, today_ordinal):
-                if existing_schedule is None:
-                    easiness_factor = EASINESS_FACTOR_INITIAL
-                    interval_days = 0.0
-                    repetition_count = 0
-                    lapse_count_value = 0
-                else:
-                    easiness_factor = existing_schedule["easiness_factor"]
-                    interval_days = existing_schedule["interval_days"]
-                    repetition_count = existing_schedule["repetition_count"]
-                    lapse_count_value = existing_schedule["lapse_count"]
-                recall_quality = derive_recall_quality(correct, elapsed_ms)
-                advanced_schedule = advance_schedule_state(
-                    recall_quality,
-                    easiness_factor,
-                    interval_days,
-                    repetition_count,
-                    lapse_count_value,
-                    today_ordinal,
-                )
-                fuzzed_interval = apply_interval_fuzz(
-                    advanced_schedule["interval_days"], question_id
-                )
-                advanced_schedule["interval_days"] = fuzzed_interval
-                advanced_schedule["due_date"] = today_ordinal + int(
-                    round(fuzzed_interval)
-                )
-                advanced_schedule["question_id"] = question_id
-                upsert_schedule_row(connection, advanced_schedule)
+            advance_question_schedule(
+                connection, question_id, correct, elapsed_ms,
+                date.today().toordinal(),
+            )
         # Tack the running session stats onto the response so the UI updates
         # its stats bar without a separate GET /api/stats call per question
         # (keeps the drill hot path to two calls: POST answer, GET question).
@@ -686,6 +707,76 @@ def post_answer():
         "expected": str(body["expected"]),
         "user_input": str(body["user_input"]),
         "session_stats": session_stats,
+    }
+
+
+@app.post("/api/response/grade")
+def post_response_grade():
+    """Grade one previously ungraded attempt (rec-3, the batched
+    self-assessment write).
+
+    Required fields: response_id (int), correct (bool -- pass/fail; the v1
+    self-grading verb is deliberately binary, see decisions). Optional mode
+    exactly as on /api/answer: absent means practice; only review advances
+    the schedule, through the same advance_question_schedule sequence and
+    first-graded-attempt-of-the-day gate as inline grading.
+
+    Only a row whose correct is NULL (attempted, ungraded) may be graded;
+    grading an unknown row or regrading a graded one is a 400 -- the grade
+    is a one-way transition, so a stray double-tap in the grading pass
+    cannot flip an outcome or advance a schedule twice.
+
+    Returns {"graded": true, "correct": bool, "session_stats": {...}} for
+    the attempt's own session, so the grading pass can update the stats bar
+    the same way inline answers do.
+    """
+    body = _request_json()
+    for field in ("response_id", "correct"):
+        if field not in body:
+            return _json_error("missing required field: " + field, status=400)
+    try:
+        response_id = _require_int(body.get("response_id"), "response_id")
+    except _BadParameter as bad:
+        return _json_error(bad.message, status=400)
+    correct = body.get("correct")
+    if not isinstance(correct, bool):
+        return _json_error("correct must be a boolean", status=400)
+    mode = body.get("mode") or "practice"
+    if mode not in ("practice", "review"):
+        return _json_error(
+            "unknown mode: " + str(mode) + " (expected practice or review)",
+            status=400,
+        )
+    connection = connect(DATABASE_PATH)
+    try:
+        response_row = get_response(connection, response_id)
+        if response_row is None:
+            return _json_error(
+                "no such response: " + str(response_id), status=400
+            )
+        if response_row["correct"] is not None:
+            return _json_error(
+                "response " + str(response_id) + " is already graded",
+                status=400,
+            )
+        set_response_correct(connection, response_id, correct)
+        if mode == "review" and response_row["question_id"] is not None:
+            advance_question_schedule(
+                connection,
+                response_row["question_id"],
+                correct,
+                response_row["elapsed_ms"],
+                date.today().toordinal(),
+            )
+        correctness = get_session_correctness(
+            connection, response_row["session_id"]
+        )
+    finally:
+        connection.close()
+    return {
+        "graded": True,
+        "correct": correct,
+        "session_stats": summarize_correctness(correctness),
     }
 
 
