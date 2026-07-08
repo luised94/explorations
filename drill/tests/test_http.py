@@ -452,16 +452,52 @@ def test_session_end_real_session_returns_true(app_blank):
     )
     assert status.startswith("200")
     assert data["ended"] is True
+    # Q4 (QoL thread): a real ended session carries a summary. This blank
+    # session has zero answers, no bank -> zeros and a null due_remaining.
+    summary = data["summary"]
+    assert summary["total"] == 0
+    assert summary["correct"] == 0
+    assert summary["accuracy"] == 0.0
+    assert summary["streak"] == 0
+    assert summary["new_introduced_today"] == 0
+    assert summary["due_remaining"] is None
+
+
+def test_session_end_summary_counts_answers(app_blank):
+    # Two answers (one right, one wrong) through the real answer path show
+    # up in the closing summary exactly as the stats bar reported them.
+    m, cats = app_blank
+    _, start = _post_json(m, "/api/session/start", {"category_id": cats["arithmetic"]})
+    session_id = start["session_id"]
+    for user_input, _expected_correct in (("4", True), ("5", False)):
+        _post_json(
+            m,
+            "/api/answer",
+            {
+                "session_id": session_id,
+                "qtype": "free_response",
+                "question_text": "2+2",
+                "expected": "4",
+                "user_input": user_input,
+            },
+        )
+    status, data = _post_json(m, "/api/session/end", {"session_id": session_id})
+    assert status.startswith("200")
+    summary = data["summary"]
+    assert summary["total"] == 2
+    assert summary["correct"] == 1
+    assert summary["streak"] == 0  # most recent answer was wrong
 
 
 def test_session_end_unknown_session_is_harmless_noop(app_blank):
     # DELIBERATE contract: ending an unknown/already-cleaned session is a
     # no-op returning ended=false, NOT a 404. Pins it against a future
-    # "fix" that turns it into an error.
+    # "fix" that turns it into an error. No summary for a no-op.
     m, _ = app_blank
     status, data = _post_json(m, "/api/session/end", {"session_id": 888888})
     assert status.startswith("200")
     assert data["ended"] is False
+    assert data["summary"] is None
 
 
 def test_session_end_missing_id_is_400(app_blank):

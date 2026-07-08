@@ -45,6 +45,7 @@ from db import (
     get_responses_for_stats,
     get_schedule_for_bank,
     get_schedule_for_question,
+    get_session,
     get_session_correctness,
     insert_bank,
     insert_questions_bulk,
@@ -678,13 +679,24 @@ def post_session_start():
 
 @app.post("/api/session/end")
 def post_session_end():
-    """End a session by stamping its ended timestamp.
+    """End a session by stamping its ended timestamp, returning a summary.
 
     C-010: required field session_id. The ended timestamp is read here.
-    Returns {"ended": bool} indicating whether a session row was updated.
-    A session_id that does not exist updates no row and returns ended=false
-    (not an error -- ending an unknown or already-cleaned-up session is a
-    harmless no-op for this tool).
+    Returns {"ended": bool, "summary": dict | None}. ended indicates whether
+    a session row was updated; a session_id that does not exist updates no
+    row and returns ended=false with summary=null (not an error -- ending an
+    unknown or already-cleaned-up session is a harmless no-op for this
+    tool).
+
+    Q4 (QoL thread): summary closes the session loop in one response
+    instead of requiring separate report calls. Fields:
+        total, correct, accuracy, streak -- summarize_correctness over the
+            session's ordered answers (same numbers the stats bar showed).
+        new_introduced_today -- questions that entered the schedule today,
+            summed across all banks (the throttle budget is global).
+        due_remaining -- due-today count for the SESSION'S bank via the
+            same partition the scheduled strategy uses; null for sessions
+            without a bank (category-only sessions, generated arithmetic).
     """
     body = _request_json()
     if "session_id" not in body:
@@ -693,6 +705,7 @@ def post_session_end():
         session_id = _require_int(body.get("session_id"), "session_id")
     except _BadParameter as bad:
         return _json_error(bad.message, status=400)
+    today_ordinal = date.today().toordinal()
     connection = connect(DATABASE_PATH)
     try:
         updated = end_session(
@@ -700,9 +713,31 @@ def post_session_end():
             session_id=session_id,
             ended=utc_now_iso(),
         )
+        summary = None
+        if updated > 0:
+            correctness = get_session_correctness(connection, session_id)
+            summary = summarize_correctness(correctness)
+            new_introduced_today_by_bank = get_new_introduced_today_by_bank(
+                connection, today_ordinal
+            )
+            summary["new_introduced_today"] = sum(
+                new_introduced_today_by_bank.values()
+            )
+            session = get_session(connection, session_id)
+            summary["due_remaining"] = None
+            if session is not None and session.get("bank_id") is not None:
+                bank_id = session["bank_id"]
+                candidates = list_questions(connection, bank_id)
+                schedule_by_question_id = get_schedule_for_bank(
+                    connection, bank_id
+                )
+                due, _new, _not_due = partition_candidates_by_schedule(
+                    candidates, schedule_by_question_id, today_ordinal
+                )
+                summary["due_remaining"] = len(due)
     finally:
         connection.close()
-    return {"ended": updated > 0}
+    return {"ended": updated > 0, "summary": summary}
 
 
 @app.get("/api/stats")
