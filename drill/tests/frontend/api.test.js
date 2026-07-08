@@ -98,6 +98,16 @@ async function threw(fn) {
   ck("unreadable-body message is the fixed reader text",
     e3 && e3.message === "The server sent a response that could not be read.");
 
+  /* --- network failure (server gone) throws the specific message --------- */
+  fetchStub.queue(Promise.reject(new TypeError("Failed to fetch")));
+  const e5 = await threw(() => mod.apiGet("/api/question"));
+  ck("network failure throws the server-unreachable message",
+    e5 instanceof Error && e5.message.indexOf("drill server") !== -1 &&
+    e5.message.indexOf("serve") !== -1);
+  fetchStub.queue(Promise.reject(new TypeError("Failed to fetch")));
+  const e6 = await threw(() => mod.apiPost("/api/answer", {}));
+  ck("apiPost network failure throws the same message", e6 instanceof Error && e6.message === e5.message);
+
   /* --- readJson is usable directly (the multipart-import path depends on it) */
   const direct = await mod.readJson(ok({ ok: true }));
   ck("readJson returns data on a 2xx response", direct && direct.ok === true);

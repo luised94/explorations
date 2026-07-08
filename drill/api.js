@@ -41,13 +41,30 @@ export async function readJson(response) {
   return data;
 }
 
+/* Run a fetch, translating a NETWORK failure (server gone: fetch rejects
+   with a TypeError before any response exists) into a specific, actionable
+   message. The browser's generic "Failed to fetch" told the human nothing
+   when the serve terminal had been closed (use-period report); this names
+   the one cause a local single-user tool realistically has. HTTP-level
+   errors (a response arrived) are readJson's job, not this one's. */
+async function fetchOrExplain(path, options) {
+  try {
+    return await fetch(path, options);
+  } catch (networkError) {
+    throw new Error(
+      "Could not reach the drill server -- is 'uv run drill.py serve' "
+      + "still running in its terminal?"
+    );
+  }
+}
+
 export async function apiGet(path) {
-  var response = await fetch(path, { headers: { "Accept": "application/json" } });
+  var response = await fetchOrExplain(path, { headers: { "Accept": "application/json" } });
   return readJson(response);
 }
 
 export async function apiPost(path, body) {
-  var response = await fetch(path, {
+  var response = await fetchOrExplain(path, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
