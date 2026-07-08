@@ -150,8 +150,10 @@ function fixtureHtml() {
   const feedbackBody = feedbackCalls[feedbackCalls.length - 1].body;
   ck("feedback body carries rating and trimmed note",
     feedbackBody.rating === 4 && feedbackBody.note === "felt smooth");
-  ck("save disables after success",
-    summaryNode.querySelector("#save-session-feedback").disabled === true);
+  ck("save replaces the controls with a confirmation",
+    summaryNode.textContent.indexOf("Feedback saved.") !== -1 &&
+    summaryNode.querySelector("#save-session-feedback") === null &&
+    summaryNode.querySelector("#session-rating") === null);
 
   /* --- Q4: a new run dismisses the summary ------------------------------- */
   await session.onStartSession();

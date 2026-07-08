@@ -257,8 +257,10 @@ export function renderSessionSummary(summary, sessionId) {
         rating: feedback.rating,
         note: feedback.note
       });
-      save.disabled = true;
-      setNote("feedback saved");
+      /* Replace the capture controls with an explicit confirmation -- the
+         visible state change IS the receipt (the human's report: leaving
+         the filled controls in place read as "nothing happened"). */
+      feedbackRow.textContent = "Feedback saved.";
     } catch (error) {
       setNote(error.message, true);
     }
