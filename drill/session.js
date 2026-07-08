@@ -200,8 +200,11 @@ export function renderSessionSummary(summary, sessionId) {
 
   var line = document.createElement("div");
   var text = "Session ended: " + summary.correct + "/" + summary.total
-    + " correct (" + Math.round(summary.accuracy * 100) + "%). "
-    + summary.new_introduced_today + " new introduced today.";
+    + " correct (" + Math.round(summary.accuracy * 100) + "%).";
+  if (summary.new_introduced_today !== null
+      && summary.new_introduced_today !== undefined) {
+    text += " " + summary.new_introduced_today + " new introduced today.";
+  }
   if (summary.due_remaining !== null && summary.due_remaining !== undefined) {
     text += " " + summary.due_remaining + " due next in this bank.";
   }
@@ -313,6 +316,110 @@ export function renderSessionControls(active) {
   }
 }
 
+
+/* ---- The batched self-assessment pass (rec-5) --------------------------
+
+   Shown at the explicit End when recall attempts are queued: each item
+   presents the question, the user's typed attempt, and the now-revealed
+   criterion, with Pass/Fail per item. Each grade POSTs /api/response/grade
+   (the rec-3 one-way transition; a double-tap gets a harmless 400) and the
+   returned session_stats snapshot is kept so the closing summary reflects
+   the graded outcomes. "Finish" skips whatever remains -- ungraded rows
+   stay NULL and inert (rec-1), the designed abandonment behavior. */
+export function renderRecallGrading(attempts, sessionId, baseSummary) {
+  clearSessionSummary();
+
+  var heading = document.createElement("div");
+  heading.textContent = "Self-assessment: grade your " + attempts.length
+    + " recall attempt(s). The criterion is revealed below each attempt.";
+  el.sessionSummary.appendChild(heading);
+
+  var remaining = attempts.length;
+  var latestStats = null;
+
+  function finishGrading() {
+    var summary = baseSummary;
+    if (latestStats !== null) {
+      summary = {
+        total: latestStats.total,
+        correct: latestStats.correct,
+        accuracy: latestStats.accuracy,
+        streak: latestStats.streak,
+        new_introduced_today:
+          baseSummary ? baseSummary.new_introduced_today : null,
+        due_remaining: baseSummary ? baseSummary.due_remaining : null
+      };
+    }
+    renderSessionSummary(summary, sessionId);
+  }
+
+  var finish = document.createElement("button");
+  finish.type = "button";
+  finish.className = "secondary";
+  finish.id = "finish-grading";
+  finish.textContent = "Skip remaining and finish";
+  finish.addEventListener("click", finishGrading);
+
+  attempts.forEach(function (attempt) {
+    var item = document.createElement("div");
+    item.className = "recall-grade-item";
+
+    var question = document.createElement("div");
+    question.textContent = attempt.questionText;
+    item.appendChild(question);
+
+    var yours = document.createElement("div");
+    yours.textContent = "Your attempt: " + attempt.userInput;
+    item.appendChild(yours);
+
+    var criterion = document.createElement("div");
+    criterion.textContent = "Answer: " + attempt.expected;
+    item.appendChild(criterion);
+
+    var verdictRow = document.createElement("div");
+    verdictRow.className = "summary-feedback-row";
+    function grade(correct, chosenLabel) {
+      return async function onGrade() {
+        try {
+          var result = await apiPost("/api/response/grade", {
+            response_id: attempt.responseId,
+            correct: correct
+          });
+          latestStats = result.session_stats;
+          verdictRow.textContent = chosenLabel;
+          remaining -= 1;
+          if (remaining === 0) {
+            finishGrading();
+          } else {
+            finish.textContent = "Skip remaining and finish ("
+              + remaining + " left)";
+          }
+        } catch (error) {
+          setNote(error.message, true);
+        }
+      };
+    }
+    var pass = document.createElement("button");
+    pass.type = "button";
+    pass.className = "secondary recall-pass";
+    pass.textContent = "Pass";
+    pass.addEventListener("click", grade(true, "Passed"));
+    verdictRow.appendChild(pass);
+    var fail = document.createElement("button");
+    fail.type = "button";
+    fail.className = "secondary recall-fail";
+    fail.textContent = "Fail";
+    fail.addEventListener("click", grade(false, "Failed"));
+    verdictRow.appendChild(fail);
+    item.appendChild(verdictRow);
+
+    el.sessionSummary.appendChild(item);
+  });
+
+  el.sessionSummary.appendChild(finish);
+  el.sessionSummary.hidden = false;
+}
+
 /* ---- Handlers (wired inside renderSessionControls; session-owned, S6) -- */
 
 /* Restart = end the current run (preserved in the log) + start a fresh one,
@@ -337,13 +444,27 @@ export async function onEndSession() {
   }
   setNote("");
   var endedSessionId = state.activeSessionId;
+  /* rec-5: hand the queued recall attempts to the grading pass and clear
+     the state copy -- once the session is ending they belong to the pass,
+     and a subsequent startSession must not resurrect them. */
+  var pendingAttempts = state.recallAttempts;
+  state.recallAttempts = [];
   var result = await endSession(endedSessionId);
   enterResting();
   renderSessionUI();
   /* Q4: the explicit End shows the closing view (summary + optional
      feedback). Restart and selection switches flow straight into a new run,
-     so they do not -- the next renderSessionUI dismisses any leftover. */
-  renderSessionSummary(result ? result.summary : null, endedSessionId);
+     so they do not -- the next renderSessionUI dismisses any leftover.
+     rec-5: when recall attempts await self-assessment, the grading pass
+     comes FIRST (attempt shown, criterion revealed, pass/fail per item);
+     the summary follows with the graded outcomes folded in. */
+  if (pendingAttempts.length > 0) {
+    renderRecallGrading(
+      pendingAttempts, endedSessionId, result ? result.summary : null
+    );
+  } else {
+    renderSessionSummary(result ? result.summary : null, endedSessionId);
+  }
 }
 
 /* Dev cleanup, not session UI: end the active session on page close/refresh

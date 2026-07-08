@@ -17,6 +17,7 @@ const {
   const { window: win, document: doc } = makeDom();
 
   const calls = [];
+  const graded = [];
   let served = 0;
   const j = (o, ok = true, s = 200) => ({ ok, status: s, async json() { return o; } });
   installFetch(win, async (url, opts) => {
@@ -37,6 +38,14 @@ const {
       return j({ qtype: "recall", question_text: "state theorem " + served,
                  expected: "criterion " + served, question_id: 100 + served,
                  alternatives: null, media_url: null });
+    }
+    if (url === "/api/response/grade") {
+      const body = JSON.parse(opts.body);
+      graded.push(body);
+      return j({ graded: true, correct: body.correct,
+                 session_stats: { total: graded.length,
+                                  correct: graded.filter(g => g.correct).length,
+                                  accuracy: 0.5, streak: 0 } });
     }
     if (url === "/api/answer") return j({
       recorded: true, graded: false, response_id: 900 + served,
@@ -85,6 +94,46 @@ const {
   /* A new session resets the grading queue. */
   await startSession();
   c.ck("startSession resets recallAttempts", state.recallAttempts.length === 0);
+
+  /* --- rec-5: the batched grading pass at the explicit End --------------- */
+  const session = await importModule("session.js");
+  await drill.loadQuestion();
+  await tick();
+  doc.getElementById("answer").value = "attempt one";
+  await drill.submitAnswer();
+  await tick();
+  doc.getElementById("answer").value = "attempt two";
+  await drill.submitAnswer();
+  await tick();
+  c.ck("two attempts queued before End", state.recallAttempts.length === 2);
+
+  await session.onEndSession();
+  await tick();
+  const box = doc.getElementById("session-summary");
+  c.ck("End opens the grading pass, not the summary",
+    box.hidden === false && box.textContent.indexOf("Self-assessment") !== -1
+    && box.textContent.indexOf("Session ended") === -1);
+  c.ck("grading pass clears the state queue (attempts owned by the pass)",
+    state.recallAttempts.length === 0);
+  const items = box.querySelectorAll(".recall-grade-item");
+  c.ck("each attempt shows question, attempt, and revealed criterion",
+    items.length === 2 &&
+    items[0].textContent.indexOf("Your attempt: attempt one") !== -1 &&
+    items[0].textContent.indexOf("Answer: criterion") !== -1);
+
+  items[0].querySelector(".recall-pass").click();
+  await tick();
+  c.ck("pass posted the one-way grade", graded.length === 1 &&
+    graded[0].correct === true && typeof graded[0].response_id === "number");
+  c.ck("item shows its verdict, summary not yet shown",
+    items[0].textContent.indexOf("Passed") !== -1 &&
+    box.textContent.indexOf("Session ended") === -1);
+
+  items[1].querySelector(".recall-fail").click();
+  await tick();
+  c.ck("second grade posted as fail", graded.length === 2 && graded[1].correct === false);
+  c.ck("all graded -> summary appears with the graded outcomes folded in",
+    box.textContent.indexOf("Session ended: 1/2 correct") !== -1);
 
   c.done();
 })().catch(e => { console.error(e); process.exit(2); });
