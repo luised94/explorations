@@ -234,6 +234,37 @@ def list_categories(connection: sqlite3.Connection) -> list[dict]:
     return [_category_row_to_dict(row) for row in cursor.fetchall()]
 
 
+def get_bank_and_question_counts_by_category(
+    connection: sqlite3.Connection,
+) -> list[dict]:
+    """Per-category bank and question counts for the status report (Q2).
+
+    Returns one dict per category in seed (id) order:
+        {"category_name": str, "bank_count": int, "question_count": int}
+    LEFT JOINs so categories with no banks (and banks with no questions)
+    still appear with zero counts -- the status view must show the empty
+    categories, not hide them.
+    """
+    cursor = connection.execute(
+        "SELECT c.name AS category_name, "
+        "COUNT(DISTINCT b.id) AS bank_count, "
+        "COUNT(q.id) AS question_count "
+        "FROM categories c "
+        "LEFT JOIN banks b ON b.category_id = c.id "
+        "LEFT JOIN questions q ON q.bank_id = b.id "
+        "GROUP BY c.id "
+        "ORDER BY c.id"
+    )
+    return [
+        {
+            "category_name": row["category_name"],
+            "bank_count": row["bank_count"],
+            "question_count": row["question_count"],
+        }
+        for row in cursor.fetchall()
+    ]
+
+
 def get_category(connection: sqlite3.Connection, category_id: int) -> dict | None:
     """Return a single category dict by id, or None if no such category."""
     cursor = connection.execute(

@@ -152,6 +152,44 @@ def test_insert_response_elapsed_ms_round_trips_null_and_value(seeded):
     assert any(r["elapsed_ms"] is None for r in rows)
 
 
+def test_bank_and_question_counts_by_category(seeded):
+    # Q2 (QoL thread): the status report's counts reader. Every seeded
+    # category appears (LEFT JOIN), zero-count for the untouched ones;
+    # a category with one bank of two questions and one empty bank counts
+    # bank_count=2, question_count=2 (questions counted, not banks).
+    m, conn, ids = seeded
+    populated_bank_id = m.insert_bank(
+        conn, ids["arith"], "counts bank", "test", _iso(ids["now"])
+    )
+    m.insert_questions_bulk(
+        conn,
+        populated_bank_id,
+        [
+            {"qtype": m.QTYPE_FREE_RESPONSE, "question": "c1", "answer": "a"},
+            {"qtype": m.QTYPE_FREE_RESPONSE, "question": "c2", "answer": "b"},
+        ],
+        _iso(ids["now"]),
+    )
+    m.insert_bank(conn, ids["arith"], "empty bank", "test", _iso(ids["now"]))
+    conn.commit()
+
+    rows = m.get_bank_and_question_counts_by_category(conn)
+    by_name = {row["category_name"]: row for row in rows}
+    category_names = [c["name"] for c in m.list_categories(conn)]
+    assert sorted(by_name) == sorted(category_names)
+
+    arithmetic_row = by_name["arithmetic"]
+    assert arithmetic_row["bank_count"] == 2
+    assert arithmetic_row["question_count"] == 2
+
+    untouched = [
+        row for row in rows
+        if row["category_name"] not in ("arithmetic",)
+    ]
+    assert all(row["bank_count"] == 0 for row in untouched)
+    assert all(row["question_count"] == 0 for row in untouched)
+
+
 def test_question_metadata_surfaces_through_readers(seeded):
     # v2/D1 read path: questions.metadata is surfaced (parsed to a dict) by the
     # canonical reader, so get_question and list_questions return it. A freshly
