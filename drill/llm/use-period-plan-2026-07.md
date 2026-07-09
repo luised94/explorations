@@ -76,6 +76,10 @@ Q7. Naming friction: moments where "bank" or "category" misled in the
 Q8. Report reach: which report commands were actually reached for, which
     cuts were missing (-> stats-depth priorities, roadmap).
 
+Each of Q1-Q8 has at least one deliberate probe in the Experiments
+section below; the questions say WHAT we want to know, the experiments
+say what to DO so the answer exists.
+
 ## Recommended additions (beyond the three named areas)
 
 - A daily one-liner in the observations log beats a weekly essay: date,
@@ -90,6 +94,101 @@ Q8. Report reach: which report commands were actually reached for, which
   on them: unified daily-session flow (does drilling three banks in
   sequence chafe?), browser auto-open (still wanted? spec is in the
   qol-8-era discussion), hint-reveal wiring, generable-math bundle.
+
+## Experiments (deliberate probes; each names the questions it feeds)
+
+E1. Day-zero snapshot (feeds all): before real use, run drill feedback,
+    stats, status and save the outputs to a dated file (e.g.
+    snapshots/2026-07-XX.txt outside the repo or in the observations
+    log). Every later run is then a delta, not an absolute.
+
+E2. Authoring throughput (Q2): for EACH use case, author ~10 questions in
+    one sitting. Record: minutes taken, how many buffer errors the editor
+    loop caught, whether the worked example was consulted, any field you
+    wanted that does not exist (record the concrete question that wanted
+    it). Three sittings, three data points on the authoring rail.
+
+E3. Recall discipline run (Q5, Q6): one bank of ~10 recall items from the
+    work readings. Three sessions across one week, grading EVERY pass.
+    Note each hesitation ("was that a pass?") and which criterion caused
+    it -- hesitations locate vague criteria (minimum-information
+    principle) and tell us whether "unsure" is genuinely missed.
+
+E4. Abandonment probe (Q6, data trust): after recall attempts, end one
+    session with the explicit End button and one by closing the tab
+    before grading. Then check drill feedback: the ungraded count must
+    match what you abandoned, and the graded counts must match what you
+    graded. This is a live audit of the rec-1 invariant with real hands.
+
+E5. Pacing/wiring demonstration (Q4): drill one small bank daily for a
+    week, then read drill status (due counts) and the schedule envelope
+    in drill feedback. EXPECTED with the current browser client:
+    scheduled questions stays 0, because the browser posts practice mode
+    (ADR-061 finding). Feeling this gap -- items never spacing out, every
+    session re-serving everything -- is the experiment; if it chafes,
+    review-mode wiring is the top of the next roadmap. Optional
+    counterfactual probe: grade one recall response with mode=review via
+    curl against the running server (POST /api/response/grade with
+    {"response_id": N, "correct": true, "mode": "review"}) and watch one
+    schedule row appear in drill status -- the rails work; only the UI
+    wiring is absent.
+
+E6. Alphabet direction split (Q2b): author letter -> name and
+    name -> letter as SEPARATE banks (or tag them separately). After a
+    week, compare accuracy per bank in drill stats. Also record the
+    input-method reality: typing Cyrillic/Greek answers needs keyboard
+    layout switching -- note whether identify/translate chafed and
+    whether recall (self-graded, no exact typing) sidestepped it (Q13).
+
+E7. Distractor quality check (Q2a): while drilling the driving-test bank,
+    tally MC questions answerable by distractor elimination alone
+    (without knowing the rule). A high tally means MC is testing
+    test-taking, not knowledge -- data for qtype guidance.
+
+E8. Feedback-capture habit split (Q3): week one, rate/note only sessions
+    that felt notably good or bad; week two, rate the first session of
+    every day. Compare which regime produced notes the reflection thread
+    can actually use.
+
+## Workflows (the standing routine the experiments hang off)
+
+Daily: drill status -> drill one or two banks -> ALWAYS end with the
+explicit End button (the grading pass and the summary live there; tab-
+closing is the abandonment path, fine occasionally, but the End button is
+the primary exit) -> rate/note per the E8 regime -> one dated line in the
+observations log (what was drilled + one sentence of felt experience).
+
+Weekly: run drill feedback and drill leeches, append both to the
+snapshot file, skim for surprises, add a weekly one-paragraph note.
+
+Authoring: separate sittings from drilling (E2); batch 10-20 items per
+buffer; when a question fights the format, record it verbatim in the
+observations log before bending it to fit -- the fight is the data.
+
+## Additional questions (written down now; answer opportunistically)
+
+Q9.  Data trust: do the report numbers match felt reality? Any moment of
+     "that count looks wrong" is a bug report even if unproven (E4 is the
+     deliberate version of this).
+Q10. Content lifecycle: when a question turns out wrong, vague, or
+     duplicated, what do you DO? There is no edit/retire UI; record each
+     time you wanted one and what you did instead (sqlite by hand? left
+     it?). This decides whether question editing enters the roadmap.
+Q11. Session size and caps: how many items feel right per sitting; does
+     the reviews-per-session cap (100) or the 9/day new budget ever
+     actually bind; would you have changed them if a knob existed?
+Q12. Media: did any content want an image (road signs!) or audio (letter
+     pronunciation)? media_url exists in the schema; note per concrete
+     question whether its absence in the UI was felt.
+Q13. Input methods: non-Latin answer entry (Cyrillic/Greek IME switching)
+     -- real friction or non-issue? (Paired with E6.)
+Q14. Habit and motivation: what made you skip a day; what pulled you
+     back; does the tool need anything (streaks? a due nudge?) or is
+     external routine enough? Anti-feature data counts double here --
+     "nothing, leave it alone" is a valid and valuable answer.
+Q15. Operations: database file backup/location habits across the
+     WSL/Windows boundary; any near-miss with data loss; should the tool
+     do anything (a backup command?) or is cp enough?
 
 ## Friction log
 
