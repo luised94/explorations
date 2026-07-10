@@ -62,29 +62,33 @@ Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)} Cambridge, MA
 \vspace{-0.1em}
 
-Post-doctoral researcher (2023--present)
+\textbf{Post-doctoral researcher} (2023--present)
 
 Advisor: Stephen P. Bell
 
 \textit{In vivo} characterization of ATPase-deficient origin recognition complex allele and its suppressors using chromatin immunoprecipitation.
 
-- Designed and executed ChIP-seq experiments to characterize genomic occupancy of ATPase-deficient ORC and suppressor mutants
-- Developed computational pipeline for ChIP-seq analysis: read alignment with contamination filtering, signal normalization, peak calling, and motif analysis using Bash on Linux HPC
-- Genome-wide binding data visualization and statistical analysis using R
-- Cloned and tested a panel of loss-of-function alleles in general transcription factors to evaluate suppression of the \textit{orc4-R267A} lethal phenotype
-- Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors
+\begin{itemize}
+\item Designed and executed ChIP-seq experiments to characterize genomic occupancy of ATPase-deficient ORC and suppressor mutants
+\item Developed computational pipeline for ChIP-seq analysis: read alignment with contamination filtering, signal normalization, peak calling, and motif analysis using Bash on Linux HPC
+\item Genome-wide binding data visualization and statistical analysis using R
+\item Cloned and tested a panel of loss-of-function alleles in general transcription factors to evaluate suppression of the \textit{orc4-R267A} lethal phenotype
+\item Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors
+\end{itemize}
 
-Graduate student researcher (2016--2023)
+\textbf{Graduate student researcher} (2016--2023)
 
 Advisor: Stephen P. Bell
 
 Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
 
-- Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data.
-- Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
-- Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
+\begin{itemize}
+\item Design and validation of a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene. Performed the analysis of the whole-genome sequencing data.
+\item Genetic characterization of the suppressor alleles through CRISPR-Cas9 genetic engineering, allele-specificity and drug-sensitivity experiments.
+\item Biochemical characterization of an ATPase-deficient mutant ORC protein with and without the suppressor mutations.
+\end{itemize}
 
-**Research intern, MIT/Pfizer Internship Program** (Course 7.930[J]) \hfill 2022
+\textbf{Research intern, MIT/Pfizer Internship Program} (Course 7.930[J]) \hfill 2022
 Optimization of cell culture conditions and development of a high-throughput immunofluorescent CRISPR-Cas9 screen against collagen-producing primary cells to identify therapeutic targets for cystic fibrosis using the Beacon Optofluidic System.
 
 \cvsection{Additional Research Experience}
@@ -119,11 +123,12 @@ B.Sc. in Cellular and Molecular Biology, \uline{UNIVERSITY OF PUERTO RICO-RIO PI
 
 \cvsection{Publications}
 
-\textbf{Martínez-Rodríguez, L.} & Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{In preparation.}
+\textbf{Martínez-Rodríguez, L.} & Bell, S. P. (2026). A lethal ORC ATPase mutation is suppressed by alterations in ORC subunits and RNA Pol II transcription components. \textit{In revision.}
 
 \textbf{Martínez-Rodríguez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., & Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725. http://doi.org/10.1074/jbc.M115.642876
 
 \cvsection{Presentations}
+Yeast Genetics Meeting, Pacific Grove, CA. Poster Presentation. June 2026.
 
 New England Biolabs, Unorthodox Genomes Meeting. Poster Presentation, March 2026.
 

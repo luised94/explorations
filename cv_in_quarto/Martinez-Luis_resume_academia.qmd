@@ -70,33 +70,39 @@ Molecular biology: primer design, cloning, PCR, RT-qPCR, DNA and RNA extraction 
 \uline{MASSACHUSETTS INSTITUTE OF TECHNOLOGY (MIT)} Cambridge, MA
 \vspace{-0.1em}
 
-Post-doctoral researcher (2023--present)
+\textbf{Post-doctoral researcher} (2023--present)
 Advisor: Stephen P. Bell
 
 \textit{In vivo} characterization of ATPase-deficient origin recognition complex allele and its suppressors using chromatin immunoprecipitation.
 
-- Designed and executed ChIP-seq experiments to characterize genomic occupancy of ATPase-deficient ORC and suppressor mutants
-- Developed computational pipeline for ChIP-seq analysis: read alignment with contamination filtering, signal normalization, peak calling, and motif analysis using Bash on Linux HPC
-- Built genome-wide binding data visualization and statistical analysis workflows using R
-- Cloned and tested a panel of loss-of-function alleles in general transcription factors to evaluate suppression of the \textit{orc4-R267A} lethal phenotype
-- Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors
+\begin{itemize}
+\item Designed and executed ChIP-seq experiments to characterize genomic occupancy of ATPase-deficient ORC and suppressor mutants
+\item Developed computational pipeline for ChIP-seq analysis: read alignment with contamination filtering, signal normalization, peak calling, and motif analysis using Bash on Linux HPC
+\item Built genome-wide binding data visualization and statistical analysis workflows using R
+\item Cloned and tested a panel of loss-of-function alleles in general transcription factors to evaluate suppression of the \textit{orc4-R267A} lethal phenotype
+\item Implemented auxin-inducible degron (AID2) system for conditional depletion of essential replication factors
+\end{itemize}
 
-Graduate student researcher (2016--2023)
+\textbf{Graduate student researcher} (2016--2023)
 Advisor: Stephen P. Bell
 
 Use of genetic and biochemical assays to understand the function of ATP hydrolysis by the origin-recognition complex during \textit{Saccharomyces cerevisiae} DNA replication.
 
-- Designed and validated a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene, including analysis of whole-genome sequencing data
-- Characterized suppressor alleles genetically through CRISPR-Cas9 engineering, allele-specificity tests, and drug-sensitivity experiments
-- Characterized an ATPase-deficient mutant ORC protein biochemically, with and without suppressor mutations, using reconstituted replication assays
+\begin{itemize}
+\item Designed and validated a genetic screen for suppressors of a lethal allele of the \textit{ORC4} gene, including analysis of whole-genome sequencing data
+\item Characterized suppressor alleles genetically through CRISPR-Cas9 engineering, allele-specificity tests, and drug-sensitivity experiments
+\item Characterized an ATPase-deficient mutant ORC protein biochemically, with and without suppressor mutations, using reconstituted replication assays
+\end{itemize}
 
 \textbf{Research intern, MIT/Pfizer Internship Program} (Course 7.930[J]) \hfill 2022
 
 \textit{Development of a CRISPR-based screening platform to identify therapeutic targets for cystic fibrosis using primary human cells.}
 
-- Optimized primary cell culture conditions for collagen-producing cells relevant to cystic fibrosis therapeutic target identification
-- Developed high-throughput immunofluorescent CRISPR-Cas9 screening assay using the Beacon Optofluidic System
-- Electroporated CRISPR-Cas9-gRNA ribonucleoprotein complexes into primary human cells
+\begin{itemize}
+\item Optimized primary cell culture conditions for collagen-producing cells relevant to cystic fibrosis therapeutic target identification
+\item Developed high-throughput immunofluorescent CRISPR-Cas9 screening assay using the Beacon Optofluidic System
+\item Electroporated CRISPR-Cas9-gRNA ribonucleoprotein complexes into primary human cells
+\end{itemize}
 
 \cvsection{Additional Research Experience}
 
@@ -134,6 +140,7 @@ B.Sc. in Cellular and Molecular Biology, \uline{UNIVERSITY OF PUERTO RICO-RIO PI
 \textbf{Mart\'{i}nez-Rodr\'{i}guez, L.}, Erdogan, O., Jimenez-Rodriguez, M., Gonzalez-Rivera, K., Williams, T., Li, L., \& Carter, C. W. (2015). Functional Class I and II Amino Acid-activating Enzymes Can Be Coded by Opposite Strands of the Same Gene. \textit{Journal of Biological Chemistry}, 290(32), 19710--19725. http://doi.org/10.1074/jbc.M115.642876
 
 \cvsection{Presentations}
+Yeast Genetics Meeting, Pacific Grove, CA. Poster Presentation. June 2026
 
 New England Biolabs, Unorthodox Genomes Meeting. Poster presentation. March 2026.
 
