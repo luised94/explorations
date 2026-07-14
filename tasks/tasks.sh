@@ -9,7 +9,7 @@
 TSK_SCRIPT="$HOME/personal_repos/explorations/tasks/tasks.py"
 
 # Data directory: set a default, but let an existing override win.
-: "${TASKS_LOCAL_DIR:=$HOME/personal_repos/tasks}"
+: "${TASKS_LOCAL_DIR:=$HOME/personal_repos/usb-repos/tasks}"
 export TASKS_LOCAL_DIR
 
 # ============================================================================

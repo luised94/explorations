@@ -28,7 +28,7 @@ end
 local api = vim.api
 local fn  = vim.fn
 local kbd_local_dir = fn.fnamemodify(
-    os.getenv("KBD_LOCAL_DIR") or string.format("%s/personal_repos/kbd", os.getenv("HOME") or ""),
+    os.getenv("KBD_LOCAL_DIR") or string.format("%s/personal_repos/usb-repos/kbd", os.getenv("HOME") or ""),
     ":p"
 ):gsub("/$", "")
 local kbd_mount_point = os.getenv("KBD_MOUNT_POINT")
