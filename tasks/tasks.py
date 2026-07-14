@@ -28,9 +28,9 @@
 #   (Corollary: hand-moving a record between files without editing its
 #   status will be reverted on the next commit. Edit the status field.)
 #
-#   Converted to pure transforms: done, retire, today.
-#   Still legacy (own IO/print/exit; Phase 3 targets): add, edit, list,
-#   week, help, init.
+#   Pure transforms: add, done, retire, today, list, week.
+#   edit is the interactive sandwich: pure prepare / editor IO / pure apply.
+#   Shell-native (own IO/print/exit): help, init, not-implemented stubs.
 #
 #   Transforms may mutate the Store they are given in place and return it
 #   as effects["store"]; the shell loads a fresh Store per invocation, so
