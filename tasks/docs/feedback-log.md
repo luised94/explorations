@@ -56,3 +56,21 @@ Case 1 vs 2 need distinguishing in the message, which means tracking whether DAT
 Should the script auto-create the directory? My recommendation: no, not on normal runs - add an explicit tsk init command instead. The reasoning is specific to your USB workflow: if the drive isn't mounted, the mount point's parent often still exists, so an auto-mkdir would silently create a local directory shadowing the real synced one, and you'd start writing tasks to the wrong place with no warning - the data-divergence failure that's worst in a sync setup. A typo'd TASKS_LOCAL_DIR has the same hazard. Auto-create trades a one-time setup step for a silent-corruption risk; bad trade for a sync-based tool.
 tsk init gives you deliberate, idempotent creation (dir + files + docs), prints the path it created so you can eye-check it's the mount and not a local shadow, and keeps normal runs fail-fast with an accurate message. I'd make it a command, not a --flag, to match the dispatch style (flags here are value-carrying via parse_flags; a bare bootstrap action reads better as tsk init).
 Rejected alternatives: auto-create on every run (the shadow-dir hazard above); manual-only with no helper (needless friction when init is three lines). init is the middle path that stays safe.
+
+### 2026-07-14: done-path write guarantee (field report 2026-06-01, closed)
+Field report: a task marked done remained in active.txt. Audited
+transform_done and commit(): every success path on the task/goal branch
+sets status=done and returns the store; commit() repartitions every
+record by partition_file() on every write, so the tool cannot itself
+leave a done-stamped record in active.txt. Excluded code cause;
+attributed to pre-fix USB sync rewriting active.txt between commits.
+Note the persistence mechanism: read-only commands (today, list, week)
+return store=None and never commit, so a sync-created inconsistency
+survives until the next writing command runs and self-heals it.
+Related edge, observed not fixed: if sync duplicates the same ID into
+both active.txt and done.txt, tsk done stamps the active copy and the
+next commit writes two copies to done.txt. Requires external file
+corruption as a precondition; no code change. A verify_store round-trip
+case (transform_done -> commit -> load_store against a temp dir) now
+pins the guarantee: absent from active, present exactly once in done
+with status/completed/updated stamped.

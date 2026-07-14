@@ -1753,6 +1753,52 @@ def verify_store() -> int:
         commit(loaded, paths)
         check("commit is idempotent on its own output", load_store(paths) == loaded)
 
+        # done-path write guarantee (field report 2026-06-01): a task marked
+        # done must leave active.txt and land in done.txt, exactly once, in
+        # one transform_done -> commit -> load_store trip against real files.
+        done_clock = {"today": date(2026, 6, 1), "now": None}
+        commit(
+            {
+                "active": [
+                    {
+                        "id": "T0601a",
+                        "type": "task",
+                        "summary": "gamma",
+                        "status": "active",
+                    },
+                ],
+                "calendar": [],
+                "done": [],
+                "habit_log": [],
+            },
+            paths,
+        )
+        done_store = load_store(paths)
+        done_effects = transform_done(done_store, ["T0601a"], done_clock)
+        check(
+            "done transform reports success and a store to write",
+            done_effects["exit"] == 0 and done_effects["store"] is not None,
+        )
+        commit(done_effects["store"], paths)
+        done_reloaded = load_store(paths)
+        active_copies = [
+            r for r in done_reloaded["active"] if r.get("id") == "T0601a"
+        ]
+        done_copies = [r for r in done_reloaded["done"] if r.get("id") == "T0601a"]
+        check(
+            "done task absent from active after round trip",
+            active_copies == [],
+            f"still in active: {active_copies}",
+        )
+        check(
+            "done task present exactly once in done with stamps",
+            len(done_copies) == 1
+            and done_copies[0].get("status") == "done"
+            and done_copies[0].get("completed") == "2026-06-01"
+            and done_copies[0].get("updated") == "2026-06-01",
+            f"done bucket: {done_copies}",
+        )
+
         # no temp droppings left behind
         leftovers = [
             p.name for p in Path(temp_dir).iterdir() if p.name.endswith(".tmp")
