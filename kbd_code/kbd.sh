@@ -24,7 +24,7 @@ fi
 # SECTION 1: LOCAL CONFIGURATION (always available, no USB dependency)
 # =============================================================================
 # Used as fallback source for KBD_DIR. Not referenced directly in functions or aliases.
-KBD_DIR="${USB_KBD_LOCAL_DIR:-$HOME/personal_repos/kbd}"
+KBD_DIR="${USB_KBD_LOCAL_DIR:-$HOME/personal_repos/usb-repos/kbd}"
 
 _kvim_usage() {
   cat <<EOF
