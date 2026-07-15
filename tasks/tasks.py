@@ -557,8 +557,8 @@ def habit_streak(
 
 
 # ============================================================================
-# TRANSFORMS  (pure: (Store, args, Clock) -> Effects; no IO, no prints,
-#              no exits, no clock reads anywhere below this line)
+# PURE TRANSFORMS  (pure: (Store, args, Clock) -> Effects; no IO, no prints,
+#                   no exits, no clock reads anywhere below this line)
 # ============================================================================
 def transform_done(store: dict, arguments: list[str], clock: dict) -> dict:
     """Complete a task/goal, log a habit, or batch-archive past events.
@@ -797,47 +797,15 @@ def handle_help(arguments: list[str]) -> None:
     """
     if arguments:
         requested_command = arguments[0]
-        known_commands = {
-            "help",
-            "init",
-            "add",
-            "edit",
-            "done",
-            "retire",
-            "today",
-            "list",
-            "week",
-            "review",
-            "stale",
-            "search",
-            "tomorrow",
-            "goals",
-        }
-        if requested_command not in known_commands:
+        if requested_command not in COMMANDS:
             print(f"unknown command: {requested_command}", file=sys.stderr)
             print("run 'tsk help' for available commands", file=sys.stderr)
             sys.exit(1)
         print_command_help(requested_command)
         return
-    descriptions = {
-        "help": "show this help",
-        "init": "create the data directory and files",
-        "add": "create a new record (task, goal, habit, or event)",
-        "edit": "edit a record in $EDITOR",
-        "done": "complete a task or log a habit",
-        "retire": "deactivate a habit or goal",
-        "today": "daily dashboard (default)",
-        "list": "list active records",
-        "week": "7-day forward view of events and deadlines",
-        "review": "(not implemented)",
-        "stale": "(not implemented)",
-        "search": "(not implemented)",
-        "tomorrow": "(not implemented)",
-        "goals": "(not implemented)",
-    }
     print("available commands:")
-    for command_name, description in descriptions.items():
-        print(f"  {command_name:<10}{description}")
+    for command_name, command_entry in COMMANDS.items():
+        print(f"  {command_name:<10}{command_entry['description']}")
     print("run 'tsk help <command>' for usage and flags")
 
 
@@ -1314,24 +1282,12 @@ def transform_list(store: dict, arguments: list[str], clock: dict) -> dict:
 # ============================================================================
 # HELP REGISTRIES
 # ============================================================================
-# Usage strings and field descriptions for per-command help. Flag names are
-# NOT duplicated here -- handle_help reads them from the flag dicts below via
-# COMMAND_FLAG_SETS, so the set of flags has a single source of truth.
-COMMAND_USAGE = {
-    "add": "tsk add <task|goal|habit|event> <summary> [flags]",
-    "edit": "tsk edit <id>",
-    "done": "tsk done <id>",
-    "retire": "tsk retire <id>",
-    "today": "tsk today",
-    "week": "tsk week",
-    "list": "tsk list [flags]",
-    "init": "tsk init",
-    "help": "tsk help [command]",
-}
-COMMAND_FLAG_SETS = {
-    "add": CREATION_FLAGS,
-    "list": LIST_FLAGS,
-}
+# Per-command usage strings, descriptions, and flag dicts live in COMMANDS
+# (defined in the SHELL section, after all transforms and handlers exist).
+# Field descriptions below are genuinely shared across commands and stay
+# separate. Flag names are NOT duplicated here -- help reads them from the
+# flag dict referenced by each COMMANDS entry, so the set of flags has a
+# single source of truth.
 FIELD_HELP = {
     "date": "event date, YYYY-MM-DD (required)",
     "due": "due date, YYYY-MM-DD",
@@ -1368,25 +1324,19 @@ FLAG_TYPE_ANNOTATIONS = {
 def render_command_help(command_name: str) -> list[str]:
     """Build usage, description, and annotated flags for one command. Pure.
 
-    Reads flag names from COMMAND_FLAG_SETS, descriptions from FIELD_HELP,
-    and type annotations from FLAG_TYPE_ANNOTATIONS. Returns display lines
-    so transforms can embed help text in Effects; print_command_help is the
-    thin printing wrapper for the legacy help command.
+    Reads usage, description, and the flag dict from the command's COMMANDS
+    entry, field descriptions from FIELD_HELP, and type annotations from
+    FLAG_TYPE_ANNOTATIONS. Returns display lines so transforms can embed
+    help text in Effects; print_command_help is the thin printing wrapper.
     """
-    descriptions = {
-        "add": "create a new record (task, goal, habit, or event)",
-        "edit": "edit a record in $EDITOR",
-        "done": "complete a task or log a habit",
-        "retire": "deactivate a habit or goal",
-        "today": "daily dashboard (default)",
-        "week": "7-day forward view of events and deadlines",
-        "list": "list active records",
-        "init": "create the data directory and files",
-        "help": "show this help",
-    }
-    output_lines = [f"usage: {COMMAND_USAGE.get(command_name, f'tsk {command_name}')}"]
-    output_lines.append(f"  {descriptions.get(command_name, command_name)}")
-    command_flags = COMMAND_FLAG_SETS.get(command_name)
+    command_entry = COMMANDS.get(command_name, {})
+    output_lines = [
+        f"usage: {command_entry.get('usage', f'tsk {command_name}')}"
+    ]
+    output_lines.append(
+        f"  {command_entry.get('description', command_name)}"
+    )
+    command_flags = command_entry.get("flags")
     if not command_flags:
         return output_lines
     field_to_flags = {}
@@ -2192,27 +2142,110 @@ def verify_transforms() -> int:
 # ============================================================================
 # SHELL  (the only place that sequences IO, prints Effects, and exits)
 # ============================================================================
-# Converted commands: pure (Store, args, Clock) -> Effects.
-TRANSFORMS = {
-    "add": transform_add,
-    "done": transform_done,
-    "retire": transform_retire,
-    "today": transform_today,
-    "list": transform_list,
-    "week": transform_week,
-}
-# edit is the one interactive command: handled as a sandwich in main()
-# (pure prepare -> editor IO -> pure apply), not via TRANSFORMS.
-# Remaining legacy: help and init are shell-native (their whole job is
-# printing or creating the data dir), and the not-implemented stubs.
-LEGACY_COMMANDS = {
-    "help": handle_help,
-    "init": handle_init,
-    "review": lambda args: handle_not_implemented("review", args),
-    "stale": lambda args: handle_not_implemented("stale", args),
-    "search": lambda args: handle_not_implemented("search", args),
-    "tomorrow": lambda args: handle_not_implemented("tomorrow", args),
-    "goals": lambda args: handle_not_implemented("goals", args),
+def handle_edit_sandwich(arguments: list[str]) -> int:
+    """Run the one interactive command: pure prepare / editor IO / pure apply.
+
+    Returns the exit code. The only handler that touches the Store; kept as
+    a handler (not a transform) because the editor session in the middle is
+    irreducibly IO.
+    """
+    clock = {"today": date.today(), "now": datetime.now()}
+    store = load_store()
+    prepared = transform_edit_prepare(store, arguments)
+    if "editor" not in prepared:
+        return execute_effects(prepared)
+    for line in prepared["stdout"]:
+        print(line)
+    edited_text = run_editor_session(prepared["editor"]["text"])
+    if edited_text is None:
+        print("edit discarded: editor exited with error", file=sys.stderr)
+        return 1
+    return execute_effects(apply_edit(store, prepared["editor"]["id"], edited_text, clock))
+
+
+# One entry per command; the single source of truth for dispatch, the
+# unknown-command check, the help list, and per-command help. Entry keys:
+#   transform    pure (Store, args, Clock) -> Effects, run via the
+#                load -> transform -> execute_effects pipeline
+#   handler      shell-native (own IO/prints); returns an exit code or None
+#   usage        usage line for help output
+#   description  one-line description for help output
+#   flags        flag dict for per-command help (only where flags exist)
+# Exactly one of transform/handler per entry. Dict order is the display
+# order of the tsk help command list.
+COMMANDS = {
+    "help": {
+        "handler": handle_help,
+        "usage": "tsk help [command]",
+        "description": "show this help",
+    },
+    "init": {
+        "handler": handle_init,
+        "usage": "tsk init",
+        "description": "create the data directory and files",
+    },
+    "add": {
+        "transform": transform_add,
+        "usage": "tsk add <task|goal|habit|event> <summary> [flags]",
+        "description": "create a new record (task, goal, habit, or event)",
+        "flags": CREATION_FLAGS,
+    },
+    "edit": {
+        "handler": handle_edit_sandwich,
+        "usage": "tsk edit <id>",
+        "description": "edit a record in $EDITOR",
+    },
+    "done": {
+        "transform": transform_done,
+        "usage": "tsk done <id>",
+        "description": "complete a task or log a habit",
+    },
+    "retire": {
+        "transform": transform_retire,
+        "usage": "tsk retire <id>",
+        "description": "deactivate a habit or goal",
+    },
+    "today": {
+        "transform": transform_today,
+        "usage": "tsk today",
+        "description": "daily dashboard (default)",
+    },
+    "list": {
+        "transform": transform_list,
+        "usage": "tsk list [flags]",
+        "description": "list active records",
+        "flags": LIST_FLAGS,
+    },
+    "week": {
+        "transform": transform_week,
+        "usage": "tsk week",
+        "description": "7-day forward view of events and deadlines",
+    },
+    "review": {
+        "handler": lambda args: handle_not_implemented("review", args),
+        "usage": "tsk review",
+        "description": "(not implemented)",
+    },
+    "stale": {
+        "handler": lambda args: handle_not_implemented("stale", args),
+        "usage": "tsk stale",
+        "description": "(not implemented)",
+    },
+    "search": {
+        "handler": lambda args: handle_not_implemented("search", args),
+        "usage": "tsk search",
+        "description": "(not implemented)",
+    },
+    "tomorrow": {
+        "handler": lambda args: handle_not_implemented("tomorrow", args),
+        "usage": "tsk tomorrow",
+        "description": "(not implemented)",
+    },
+    "goals": {
+        "handler": lambda args: handle_not_implemented("goals", args),
+        "usage": "tsk goals",
+        "description": "(not implemented)",
+    },
 }
 DEFAULT_COMMAND = "today"
 
@@ -2280,11 +2313,7 @@ def main(argv: list[str]) -> int:
         print(f"unknown flag: {command_name}", file=sys.stderr)
         print("run 'tsk help' for available commands", file=sys.stderr)
         return 1
-    if (
-        command_name not in TRANSFORMS
-        and command_name not in LEGACY_COMMANDS
-        and command_name != "edit"
-    ):
+    if command_name not in COMMANDS:
         print(f"unknown command: {command_name}", file=sys.stderr)
         print("run 'tsk help' for available commands", file=sys.stderr)
         return 1
@@ -2304,32 +2333,17 @@ def main(argv: list[str]) -> int:
     dispatch_start_time = time.time()
     exit_code = 0
     try:
-        if command_name in TRANSFORMS:
+        command_entry = COMMANDS[command_name]
+        if "transform" in command_entry:
             # Time enters the program exactly once, here.
             clock = {"today": date.today(), "now": datetime.now()}
             store = load_store()
-            effects = TRANSFORMS[command_name](store, arguments, clock)
+            effects = command_entry["transform"](store, arguments, clock)
             exit_code = execute_effects(effects)
-        elif command_name == "edit":
-            # The sandwich: pure prepare / editor IO / pure apply.
-            clock = {"today": date.today(), "now": datetime.now()}
-            store = load_store()
-            prepared = transform_edit_prepare(store, arguments)
-            if "editor" not in prepared:
-                exit_code = execute_effects(prepared)
-            else:
-                for line in prepared["stdout"]:
-                    print(line)
-                edited_text = run_editor_session(prepared["editor"]["text"])
-                if edited_text is None:
-                    print("edit discarded: editor exited with error", file=sys.stderr)
-                    exit_code = 1
-                else:
-                    exit_code = execute_effects(
-                        apply_edit(store, prepared["editor"]["id"], edited_text, clock)
-                    )
         else:
-            LEGACY_COMMANDS[command_name](arguments)
+            # Shell-native handlers own their IO; a returned int is the
+            # exit code, None means 0 (edit returns its sandwich result).
+            exit_code = command_entry["handler"](arguments) or 0
     except SystemExit as exit_error:
         exit_code = exit_error.code if exit_error.code is not None else 0
         raise
