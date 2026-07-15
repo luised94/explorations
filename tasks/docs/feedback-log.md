@@ -98,3 +98,19 @@ registry as a defaulted parameter or drop the claim; run_editor_session
 requires $EDITOR to be a bare executable (no arguments) -- a command
 string like "code -w" raises OSError; worth a README line or shlex
 split someday.
+
+### 2026-07-15: nvim docs first use surfaced the function-vs-argv seam
+The bare `:!tsk ...` examples from the first nvim docs draft failed with
+exit 127 in real use: tsk is a bash function sourced from interactive
+shell config, and nvim's `:!` runs a non-interactive shell that never
+sources it. Notably this is the tool's central design seam biting
+exactly where function and executable diverge -- and the fix was to
+call the argv interface directly (uv run --no-project tasks.py ...),
+which just worked. Evidence FOR the decomplected design, not against:
+because the tool is argv in / files + stdout out, an integration that
+cannot see the shell function reaches the same behavior with zero extra
+machinery. Resolved by rewriting the README into three tiers (terminal
+split / direct-script :! / the tsk.lua module) and adding
+integrations/tsk.lua. The shell and nvim entry points now live together
+under integrations/, which names them for what they are: ways in from
+other environments, not core artifacts.
