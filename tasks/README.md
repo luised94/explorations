@@ -268,6 +268,52 @@ If you only ever use tsk on a single machine, the git repository in the data
 directory is optional -- you can leave it uninitialized or remove it entirely.
 The tool does not depend on git in any way; it just needs a writable directory.
 
+## Using tsk from nvim
+
+`tsk` is a bash *function* (defined in `integrations/tsk.sh`, sourced from
+your interactive shell config). nvim's `:!cmd` spawns a **non-interactive**
+shell, which does not source that config -- so `:!tsk ...` fails with
+`command not found` and exit 127. There are three ways to drive tsk from
+nvim, in increasing order of integration; pick per use.
+
+**1. A terminal split (works immediately, no setup).** `:terminal` -- or
+`:split | terminal` for a persistent dashboard beside your notes -- starts
+an interactive shell that *does* source your config, so the `tsk` function
+is present. Run `tsk today` after each capture to keep the dashboard
+current. Editor capture (`tsk add ... --edit`) must happen here: it opens
+$EDITOR as a child, and inside a `:terminal` that is a normal nested nvim
+(`:wq` applies the capture, `:cq` aborts and nothing is created). This is
+the only place `--edit` works from within nvim.
+
+**2. Call the script directly in `:!` (one-offs, no shell function).**
+Because tsk is just argv in, files and stdout out, you can bypass the
+function and run the script the way the function does:
+
+```
+:!uv run --no-project ~/personal_repos/explorations/tasks/tasks.py today
+:r !uv run --no-project ~/personal_repos/explorations/tasks/tasks.py week
+```
+
+The second reads the week view into the current buffer at the cursor -- a
+planning workflow: pull the week in, annotate it, keep it as a note. tsk's
+exit codes (0 ok, 1 validation, 3 data dir missing -- see Exit codes) show
+up in `:!` output, so a bad field tells you at once. This form is verbose
+but has zero dependency on shell config and cannot 127.
+
+**3. The nvim module (real integration).** `integrations/tsk.lua` is a
+plugin-free module that wraps the direct-script call in `:Tsk` and
+`:TskRead` commands plus `<leader>t` maps, using `vim.system` (no shell,
+no quoting hazards). See that file's header for the loader contract and
+`docs/nvim-integration-strategy.md` for the design and alternatives. Note
+that `:Tsk add ... --edit` cannot open an interactive editor (no
+controlling TTY); use the terminal split from option 1 for capture.
+
+Concurrency: tsk reads and writes files atomically per invocation, so nvim
+commands and a shell on the same machine interleave safely. The
+single-writer rule in the Sync section is about machines, not processes
+started at different times -- just do not run two writing commands at the
+same instant.
+
 ## Notes
 
 Writes are atomic (temp file + rename), so an interrupted write or a yanked USB
