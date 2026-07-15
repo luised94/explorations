@@ -979,11 +979,17 @@ def transform_add(store: dict, arguments: list[str], clock: dict) -> dict:
                     field_name, f"error: invalid value for {field_name}"
                 )
             )
-    for required_field in config.get("required", set()):
-        if required_field not in flags:
-            return effects_fail(
-                f"error: --{required_field} is required for {entity_type}s"
-            )
+    # Required fields (event date) are deferred under --edit: the editor
+    # template offers them as blank lines and apply_add_capture enforces
+    # them after editing -- the whole point of --edit is filling fields
+    # there instead of at the shell. Flag *values* given now are still
+    # validated now (a bad --date fails fast either way).
+    if not edit_capture_requested:
+        for required_field in config.get("required", set()):
+            if required_field not in flags:
+                return effects_fail(
+                    f"error: --{required_field} is required for {entity_type}s"
+                )
 
     # Parse --time HH:MM-HH:MM into start and end (events)
     event_time_start = None
@@ -1061,14 +1067,18 @@ def transform_add(store: dict, arguments: list[str], clock: dict) -> dict:
 def build_capture_template(record: dict, entity_type: str) -> str:
     """Serialize a new record plus blank fill-in lines for the editor. Pure.
 
-    The formatted record comes first, then a 'field =' line for each
-    CAPTURE_TEMPLATE_FIELDS entry of this entity type not already set.
-    Reparsing the unedited template yields the record plus empty-string
-    fields, which apply_add_capture strips -- so saving without changes
-    creates exactly the record the flags built.
+    The formatted record comes first, then a 'field =' line for each unset
+    required field of this entity type (required-ness is enforced by
+    apply_add_capture after editing, not at the shell, under --edit),
+    then one for each unset CAPTURE_TEMPLATE_FIELDS entry. Reparsing the
+    unedited template yields the record plus empty-string fields, which
+    apply_add_capture strips -- so saving without changes creates exactly
+    the record the flags built (when no required field was deferred).
     """
     template_lines = [format_record(record)]
-    for field_name in CAPTURE_TEMPLATE_FIELDS.get(entity_type, []):
+    required_fields = sorted(ENTITY_CONFIG[entity_type].get("required", set()))
+    common_fields = CAPTURE_TEMPLATE_FIELDS.get(entity_type, [])
+    for field_name in required_fields + list(common_fields):
         if field_name not in record:
             template_lines.append(f"{field_name} =")
     return "\n".join(template_lines) + "\n"
@@ -1082,13 +1092,24 @@ def apply_add_capture(store: dict, new_record_id: str, edited_text: str, clock: 
     re-checked (the editor can change anything, so add's guarantees must
     hold again); updated refreshed to today. The record is appended, not
     spliced -- it did not exist before this function.
+
+    Every discard echoes the edited text back to stderr: typed capture
+    content must never be lost to a format error.
     """
+
+    def discard(*reasons: str) -> dict:
+        messages = list(reasons)
+        if edited_text.strip():
+            messages.append("your text, for recovery:")
+            messages.extend(edited_text.rstrip("\n").split("\n"))
+        return effects_fail(*messages)
+
     edited_records = parse_records(edited_text)
     if len(edited_records) != 1:
-        return effects_fail("add discarded: expected exactly one record")
+        return discard("add discarded: expected exactly one record")
     edited_record = edited_records[0]
     if edited_record.get("id") != new_record_id:
-        return effects_fail("add discarded: ID cannot be changed")
+        return discard("add discarded: ID cannot be changed")
 
     # Strip fields left blank in the template. Duplicate field lines parse
     # as lists: drop empty elements, unwrap a single survivor.
@@ -1106,36 +1127,41 @@ def apply_add_capture(store: dict, new_record_id: str, edited_text: str, clock: 
             del edited_record[field_name]
 
     if not edited_record.get("summary"):
-        return effects_fail("add discarded: summary required")
+        return discard("add discarded: summary required")
 
     prefix_to_entity = {
         config["prefix"]: name for name, config in ENTITY_CONFIG.items()
     }
     entity_type = prefix_to_entity.get(new_record_id[:1])
     if entity_type is None:
-        return effects_fail("add discarded: unknown ID prefix")
+        return discard("add discarded: unknown ID prefix")
     config = ENTITY_CONFIG[entity_type]
     for field_name, validator in config.get("validations", {}).items():
         field_value = edited_record.get(field_name)
         if field_value is None:
             continue
         if isinstance(field_value, list) or not validator(field_value):
-            return effects_fail(
+            return discard(
                 VALIDATION_ERRORS.get(
                     field_name, f"error: invalid value for {field_name}"
-                )
+                ),
+                f"add discarded: {field_name} = {field_value}",
             )
     for required_field in config.get("required", set()):
         if required_field not in edited_record:
-            return effects_fail(
-                f"error: --{required_field} is required for {entity_type}s"
+            return discard(
+                f"add discarded: {required_field} is required for {entity_type}s"
+                " (fill the blank line in the editor)"
             )
     for time_field in ("time_start", "time_end"):
         time_value = edited_record.get(time_field)
         if time_value is not None and (
             isinstance(time_value, list) or not validate_time_of_day(time_value)
         ):
-            return effects_fail("error: time must be HH:MM (24hr)")
+            return discard(
+                f"error: {time_field} must be a single HH:MM (24hr),"
+                f" got: {time_value}",
+            )
 
     edited_record["updated"] = clock["today"].isoformat()
     store[partition_file(edited_record)].append(edited_record)
@@ -2334,6 +2360,31 @@ def verify_transforms() -> int:
             store, "E0609a", "id = E0609a\ntype = meeting\nsummary = standup\n",
             fixed_clock,
         )["exit"] == 1,
+    )
+
+    # event --edit with no --date: required check deferred to the editor,
+    # template offers the blank date line
+    store = make_store()
+    effects = transform_add(store, ["event", "standup", "--edit"], fixed_clock)
+    check(
+        "add event --edit defers required date to the template",
+        effects["exit"] == 0
+        and "editor" in effects
+        and "\ndate =\n" in effects["editor"]["text"],
+        f"effects={effects}",
+    )
+
+    # discards echo the typed buffer to stderr -- capture text is never lost
+    store = make_store()
+    typed_text = "id = T0609a\nsummary = precious capture\npriority = 9\n"
+    effects = apply_add_capture(store, "T0609a", typed_text, fixed_clock)
+    check(
+        "apply_add_capture discard echoes buffer for recovery",
+        effects["exit"] == 1
+        and any("your text, for recovery:" in line for line in effects["stderr"])
+        and any("summary = precious capture" in line for line in effects["stderr"])
+        and any("priority = 9" in line for line in effects["stderr"]),
+        f"stderr={effects['stderr']}",
     )
 
     if failures > 0:

@@ -74,3 +74,27 @@ corruption as a precondition; no code change. A verify_store round-trip
 case (transform_done -> commit -> load_store against a temp dir) now
 pins the guarantee: absent from active, present exactly once in done
 with status/completed/updated stamped.
+
+### 2026-07-15: add --edit field reports (day one) and carried observations
+Field session surfaced four items minutes after the feature landed.
+Fixed in the follow-up commit: (1) required fields (event date) blocked
+--edit at the shell, contradicting the feature's premise; now deferred
+to a blank template line and enforced by apply_add_capture after
+editing. (2) A validation failure after editing discarded the whole
+typed buffer -- the most expensive failure a capture tool can have;
+discards now echo the edited text to stderr under "your text, for
+recovery:", and the time error names the field and offending value
+(time_start/time_end each take a single HH:MM, not a range).
+Open question, revisit with usage data: should summary also be
+deferrable under --edit (tsk add task --edit -> blank summary line)?
+Arguments both ways; if the log shows --edit becoming the default
+capture mode, defer it for consistency with date.
+Related pre-existing property, observed not fixed: tsk edit has the
+same discard-loses-buffer behavior; lower stakes (the record still
+exists) but the same recovery echo would fit there.
+Carried code observations for a future pass: render_command_help is
+documented Pure but reads the COMMANDS global -- either take the
+registry as a defaulted parameter or drop the claim; run_editor_session
+requires $EDITOR to be a bare executable (no arguments) -- a command
+string like "code -w" raises OSError; worth a README line or shlex
+split someday.
