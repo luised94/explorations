@@ -24,7 +24,7 @@ To install the `tsk` command, source the alias file from your shell config (or
 symlink it into your config's extensions directory):
 
 ```bash
-source ~/personal_repos/explorations/tasks/tsk.sh
+source ~/personal_repos/explorations/tasks/integrations/tsk.sh
 ```
 
 This defines a `tsk` shell function and exports `TASKS_LOCAL_DIR`. The alias
@@ -40,8 +40,11 @@ before sourcing.
 ```
 explorations/tasks/        (code repo)
   tasks.py                 the tsk script
-  tsk.sh                   shell alias / function definition
   README.md                this file
+  integrations/            entry points into tsk from other environments
+    tsk.sh                 shell function definition (source from your shell)
+    tsk.lua                nvim module (see Using tsk from nvim)
+  docs/                    spec, coding style, feedback log, plans
 
 personal_repos/tasks/      (data repo, USB-synced)
   active.txt               tasks, goals, and habits (all active entities)

@@ -2,7 +2,7 @@
 # tsk -- task, calendar & habit tracker
 #
 # Usage: uv run tasks.py <command> [args]
-# Alias: tsk (defined in tsk.sh)
+# Alias: tsk (defined in integrations/tsk.sh)
 #
 # Code:  ~/personal_repos/explorations/tasks/tasks.py
 # Data:  ~/personal_repos/tasks/ (set via TASKS_LOCAL_DIR)
