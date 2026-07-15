@@ -925,6 +925,17 @@ ADD_CONFIRMATIONS = {
 # Fields consumed by special handling in transform_add, never copied
 # verbatim into the record.
 ADD_HANDLED_FIELDS = {"label", "time"}
+# Common fields offered as blank fill-in lines when a record is captured
+# with add --edit. Record field names, not flag names (the editor text is
+# parsed as a record, so e.g. events get time_start/time_end, and the
+# event subtype is the already-present type field). A field already set
+# by flags or defaults is not offered again.
+CAPTURE_TEMPLATE_FIELDS = {
+    "task": ["project", "due", "priority", "tags", "parent", "notes"],
+    "goal": ["project", "review", "priority", "tags", "notes"],
+    "habit": ["frequency", "tags", "notes"],
+    "event": ["time_start", "time_end", "location", "notes"],
+}
 
 
 def transform_add(store: dict, arguments: list[str], clock: dict) -> dict:
@@ -934,9 +945,14 @@ def transform_add(store: dict, arguments: list[str], clock: dict) -> dict:
     per-type prefix, defaults, validations, and required fields. The new
     record is appended to the bucket partition_file selects; commit
     repartitions anyway, so the append target is a courtesy to readers,
-    not a correctness requirement.
+    not a correctness requirement. With --edit, nothing is appended:
+    the built record is returned as an editor session (see the
+    edit-capture block below) and apply_add_capture appends it after.
     """
-    parse_result = parse_flags(arguments, CREATION_FLAGS)
+    parse_result = parse_flags(
+        [a for a in arguments if a != "--edit"], CREATION_FLAGS
+    )
+    edit_capture_requested = "--edit" in arguments
     if parse_result[0] == "error":
         return effects_fail(parse_result[1])
     _, positional_args, flags = parse_result
@@ -1019,9 +1035,114 @@ def transform_add(store: dict, arguments: list[str], clock: dict) -> dict:
         if default_field not in new_record:
             new_record[default_field] = default_value
 
+    # --edit: hand the built record to the editor before it exists anywhere.
+    # Nothing is appended to the store and store=None, so no commit happens
+    # on this path; apply_add_capture appends the edited record afterwards.
+    # Same sandwich shape as edit: pure prepare / editor IO / pure apply.
+    if edit_capture_requested:
+        effects = effects_ok(
+            stdout=[f"capturing: {new_record_id} {record_summary}"]
+        )
+        effects["editor"] = {
+            "id": new_record_id,
+            "text": build_capture_template(new_record, entity_type),
+            "apply": apply_add_capture,
+            "abort_message": "add discarded: editor exited with error",
+        }
+        return effects
+
     store[partition_file(new_record)].append(new_record)
     confirmation = ADD_CONFIRMATIONS[entity_type].format(
         id=new_record_id, summary=record_summary, date=flags.get("date", "")
+    )
+    return effects_ok(store=store, stdout=[confirmation])
+
+
+def build_capture_template(record: dict, entity_type: str) -> str:
+    """Serialize a new record plus blank fill-in lines for the editor. Pure.
+
+    The formatted record comes first, then a 'field =' line for each
+    CAPTURE_TEMPLATE_FIELDS entry of this entity type not already set.
+    Reparsing the unedited template yields the record plus empty-string
+    fields, which apply_add_capture strips -- so saving without changes
+    creates exactly the record the flags built.
+    """
+    template_lines = [format_record(record)]
+    for field_name in CAPTURE_TEMPLATE_FIELDS.get(entity_type, []):
+        if field_name not in record:
+            template_lines.append(f"{field_name} =")
+    return "\n".join(template_lines) + "\n"
+
+
+def apply_add_capture(store: dict, new_record_id: str, edited_text: str, clock: dict) -> dict:
+    """Validate editor-captured text and append it as a new record. Pure.
+
+    Rules: exactly one record; ID unchanged; fields left blank in the
+    template are stripped; per-type validations and required fields are
+    re-checked (the editor can change anything, so add's guarantees must
+    hold again); updated refreshed to today. The record is appended, not
+    spliced -- it did not exist before this function.
+    """
+    edited_records = parse_records(edited_text)
+    if len(edited_records) != 1:
+        return effects_fail("add discarded: expected exactly one record")
+    edited_record = edited_records[0]
+    if edited_record.get("id") != new_record_id:
+        return effects_fail("add discarded: ID cannot be changed")
+
+    # Strip fields left blank in the template. Duplicate field lines parse
+    # as lists: drop empty elements, unwrap a single survivor.
+    for field_name in list(edited_record):
+        field_value = edited_record[field_name]
+        if isinstance(field_value, list):
+            kept_values = [v for v in field_value if v != ""]
+            if not kept_values:
+                del edited_record[field_name]
+            elif len(kept_values) == 1:
+                edited_record[field_name] = kept_values[0]
+            else:
+                edited_record[field_name] = kept_values
+        elif field_value == "":
+            del edited_record[field_name]
+
+    if not edited_record.get("summary"):
+        return effects_fail("add discarded: summary required")
+
+    prefix_to_entity = {
+        config["prefix"]: name for name, config in ENTITY_CONFIG.items()
+    }
+    entity_type = prefix_to_entity.get(new_record_id[:1])
+    if entity_type is None:
+        return effects_fail("add discarded: unknown ID prefix")
+    config = ENTITY_CONFIG[entity_type]
+    for field_name, validator in config.get("validations", {}).items():
+        field_value = edited_record.get(field_name)
+        if field_value is None:
+            continue
+        if isinstance(field_value, list) or not validator(field_value):
+            return effects_fail(
+                VALIDATION_ERRORS.get(
+                    field_name, f"error: invalid value for {field_name}"
+                )
+            )
+    for required_field in config.get("required", set()):
+        if required_field not in edited_record:
+            return effects_fail(
+                f"error: --{required_field} is required for {entity_type}s"
+            )
+    for time_field in ("time_start", "time_end"):
+        time_value = edited_record.get(time_field)
+        if time_value is not None and (
+            isinstance(time_value, list) or not validate_time_of_day(time_value)
+        ):
+            return effects_fail("error: time must be HH:MM (24hr)")
+
+    edited_record["updated"] = clock["today"].isoformat()
+    store[partition_file(edited_record)].append(edited_record)
+    confirmation = ADD_CONFIRMATIONS[entity_type].format(
+        id=new_record_id,
+        summary=edited_record.get("summary", ""),
+        date=edited_record.get("date", ""),
     )
     return effects_ok(store=store, stdout=[confirmation])
 
@@ -2132,6 +2253,89 @@ def verify_transforms() -> int:
         "\n".join(effects["stdout"]),
     )
 
+    # --- add --edit capture (pure halves of the sandwich) ---
+
+    # template: formatted record first, blank lines only for unset fields
+    template_record = {
+        "id": "T0609a",
+        "type": "task",
+        "summary": "capture me",
+        "status": "active",
+        "priority": "2",
+    }
+    template_text = build_capture_template(template_record, "task")
+    check(
+        "capture template has record and blank unset fields",
+        "summary = capture me" in template_text
+        and "\nproject =\n" in template_text
+        and "\nnotes =\n" in template_text
+        and "priority =\n" not in template_text,
+        template_text,
+    )
+
+    # add --edit prepares an editor session and commits nothing
+    store = make_store()
+    active_count_before = len(store["active"])
+    effects = transform_add(store, ["task", "flagless capture", "--edit"], fixed_clock)
+    check(
+        "add --edit returns editor effects, no store write",
+        effects["exit"] == 0
+        and effects["store"] is None
+        and "editor" in effects
+        and effects["editor"]["apply"] is apply_add_capture
+        and len(store["active"]) == active_count_before,
+        f"effects={effects}",
+    )
+
+    # apply: filled fields kept, blanks stripped, updated stamped, appended
+    captured_id = effects["editor"]["id"]
+    store = make_store()
+    edited_text = (
+        f"id = {captured_id}\ntype = task\nsummary = flagless capture\n"
+        "status = active\ncreated = 2026-06-09\nupdated = 2026-06-09\n"
+        "project = home\ndue =\npriority =\ntags =\nparent =\nnotes =\n"
+    )
+    effects = apply_add_capture(store, captured_id, edited_text, fixed_clock)
+    captured = [r for r in store["active"] if r.get("id") == captured_id]
+    check(
+        "apply_add_capture strips blanks, appends, stamps updated",
+        effects["exit"] == 0
+        and len(captured) == 1
+        and captured[0].get("project") == "home"
+        and "due" not in captured[0]
+        and "notes" not in captured[0]
+        and captured[0]["updated"] == "2026-06-09",
+        f"record={captured} effects={effects}",
+    )
+
+    # apply aborts are data: empty buffer, changed ID, blanked summary,
+    # bad validated value -- store never grows
+    store = make_store()
+    active_count_before = len(store["active"])
+    check(
+        "apply_add_capture discards bad buffers, store unchanged",
+        apply_add_capture(store, "T0609a", "", fixed_clock)["exit"] == 1
+        and apply_add_capture(
+            store, "T0609a", "id = T9999z\nsummary = x\n", fixed_clock
+        )["exit"] == 1
+        and apply_add_capture(
+            store, "T0609a", "id = T0609a\nsummary =\n", fixed_clock
+        )["exit"] == 1
+        and apply_add_capture(
+            store, "T0609a", "id = T0609a\nsummary = x\npriority = 9\n", fixed_clock
+        )["exit"] == 1
+        and len(store["active"]) == active_count_before,
+    )
+
+    # event capture: date deleted in the editor is caught by required check
+    check(
+        "apply_add_capture re-enforces event required date",
+        apply_add_capture(
+            store, "E0609a", "id = E0609a\ntype = meeting\nsummary = standup\n",
+            fixed_clock,
+        )["exit"] == 1,
+    )
+
     if failures > 0:
         print(f"\n{failures} transform test(s) FAILED", file=sys.stderr)
     else:
@@ -2186,7 +2390,7 @@ COMMANDS = {
     },
     "add": {
         "transform": transform_add,
-        "usage": "tsk add <task|goal|habit|event> <summary> [flags]",
+        "usage": "tsk add <task|goal|habit|event> <summary> [flags] [--edit]",
         "description": "create a new record (task, goal, habit, or event)",
         "flags": CREATION_FLAGS,
     },
@@ -2328,6 +2532,8 @@ def main(argv: list[str]) -> int:
     logged_command = command_name
     if command_name == "add" and arguments and arguments[0] in ENTITY_TYPES:
         logged_command = f"add:{arguments[0]}"
+        if "--edit" in arguments:
+            logged_command += ":edit"
     primary_arg = arguments[0] if arguments else "-"
 
     dispatch_start_time = time.time()
@@ -2339,7 +2545,23 @@ def main(argv: list[str]) -> int:
             clock = {"today": date.today(), "now": datetime.now()}
             store = load_store()
             effects = command_entry["transform"](store, arguments, clock)
-            exit_code = execute_effects(effects)
+            if "editor" in effects:
+                # Editor-capture sandwich (currently only add --edit): the
+                # transform prepared the session and named its own apply.
+                for line in effects["stdout"]:
+                    print(line)
+                edited_text = run_editor_session(effects["editor"]["text"])
+                if edited_text is None:
+                    print(effects["editor"]["abort_message"], file=sys.stderr)
+                    exit_code = 1
+                else:
+                    exit_code = execute_effects(
+                        effects["editor"]["apply"](
+                            store, effects["editor"]["id"], edited_text, clock
+                        )
+                    )
+            else:
+                exit_code = execute_effects(effects)
         else:
             # Shell-native handlers own their IO; a returned int is the
             # exit code, None means 0 (edit returns its sandwich result).
