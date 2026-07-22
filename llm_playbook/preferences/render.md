@@ -11,10 +11,15 @@ render collapses the authoring-time precedence chain
 a thread sees one consistent authority.
 
 TARGETS, IN PRIORITY ORDER
-  R-A. CONTEXT.md at the project root. THE primary target:
-       pointed at in repo-access chats, pasted whole in plain
-       chats. Ceiling 250 lines, enforced by scripts/check.sh.
-  R-B. CLAUDE.md and AGENTS.md at the project root. SECONDARY,
+  R-A. CONTEXT.md in the project's instance dir, at
+       <project>/llm/CONTEXT.md (ADR-020). THE primary target:
+       pointed at in repo-access chats, packed whole in plain
+       chats. Ceiling 250 lines, enforced by scripts/check.sh on
+       any staged CONTEXT.md. It is committed instance state,
+       beside the project's other llm/ instance docs (STATUS.md,
+       decisions.md, refinements.md), and serves the NEXT thread.
+  R-B. CLAUDE.md and AGENTS.md beside R-A in <project>/llm/.
+       SECONDARY,
        GENERATED from the same sources in the same render pass at
        zero marginal maintenance; they future-proof an eventual
        agentic environment and are never authored independently.
@@ -67,8 +72,8 @@ RENDER PASS, BY HAND (v0.x; automation is deferred work)
      precisely.
   4. Prepend lines 1-2; compute the hash with the command above;
      fill the stamp.
-  5. Copy the result to CLAUDE.md and AGENTS.md unchanged; update
-     the platform settings block if persona or constraint items
-     changed.
+  5. Copy the result to CLAUDE.md and AGENTS.md unchanged, beside
+     CONTEXT.md in <project>/llm/; update the platform settings
+     block if persona or constraint items changed.
   6. Run scripts/check.sh (the 250-line ceiling is checked on
      staged CONTEXT.md files).
