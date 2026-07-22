@@ -361,8 +361,11 @@ T-004 [LANDED] [S] protocol/precedence.md (restructured per AF3)
   Accept: one screen; the worked example demonstrates both chains.
 
 T-005 [LANDED] [M] preferences/layers.md
-  Persona / Constraint / Criteria / Convention layers extracted
-  from knowledge-capture.md. Each item self-contained (statelessness:
+  Persona / Constraint / Criteria / Convention layers extracted from
+  knowledge-capture.md, PLUS toolkit base-context items (ADR-025):
+  user-identity facts as Persona items, workflow ground truth W1-W8 as
+  Constraint/Convention items, each with a LAYER-NNN id, forming the
+  base layer for composition. Watch the 200-line budget. Each item self-contained (statelessness:
   an item must survive being pasted in isolation) and carrying a
   stable id per T-003 grammar. Overlay composition rule: ITEM-LEVEL
   shadowing -- a private overlay item with the same id replaces the
@@ -379,8 +382,11 @@ T-006 [LANDED] [M] preferences/style-contract.md
   a vibe.
 
 T-007 [LANDED][REOPENED->PLAYBOOK-IMPL-003] [S] preferences/render.md (inverted priority per W1/W2, AF4)
-  Render targets in priority order: (1) CONTEXT.md at project root
-  -- pointed at in repo-access chats, pasted whole in others;
+  Render targets in priority order: (1) CONTEXT.md located at
+  <project>/llm/CONTEXT.md (ADR-020) -- authored/updated BY HAND from
+  the sources (no automated generator in v0.1; the stamp is the only
+  mechanical step), committed as instance state, pointed at in
+  repo-access chats and packed whole in others;
   (2) CLAUDE.md / AGENTS.md, GENERATED from the same sources in the
   same render pass, for future agentic environments; (3) platform
   settings block. Ceiling: 250 lines (AF9), enforced by check.sh.
@@ -393,29 +399,36 @@ T-007 [LANDED][REOPENED->PLAYBOOK-IMPL-003] [S] preferences/render.md (inverted 
   is sufficient. DO-NOT-EDIT header mandatory on every render;
   mid-thread fixes go to refinements.md and the render is
   regenerated, never patched.
-  Accept: hand-rendering CONTEXT.md from T-005/T-006 reproduces
+  Accept: hand-authoring <project>/llm/CONTEXT.md from T-005/T-006 reproduces
   current drill context-block intent minus drill specifics; hash
   check catches a deliberate one-character edit.
 
-T-007b [LANDED][REOPENED->PLAYBOOK-IMPL-003] [S] scripts/bootstrap.sh (new in r3; before G-1 so the gate
-  tests the real channel)
-  Takes project name plus optional SHA (defaults to current main,
-  recording whatever it resolves). Performs one clone of
-  the parent repo with sparse-checkout of TOOLKIT/ plus the project
-  directory AT the recorded SHA -- this makes the recorded SHA
-  ground truth rather than forensic decoration (AF6). Writes the
-  SHA and render stamp into a kickoff skeleton stub; prints the
-  paste-ready block for Tier C chats.
-  Accept: running it twice with the same SHA is idempotent; the
-  printed block contains the stamp.
+T-007b [LANDED][REOPENED->PLAYBOOK-IMPL-003] [S] scripts/pack helper (RETIRES the sparse-checkout bootstrap
+  per ADR-021; before G-1 so the gate tests the real channel)
+  Transport is archive-or-paste, scratch-only, committed-read. Archive
+  mode: git archive --format=tar.gz of a chosen (possibly SUBSET) file
+  set at HEAD, echoing the SHA. Paste mode: same set composed to a /tmp
+  temp file, opened in nvim under --edit/-e. Writes ONLY to /tmp, never
+  the git tree. Reads ONLY committed files -- CONTEXT.md must be
+  committed before packing. Composition is cheap, idempotent,
+  reproducible.
+  Accept: running twice at the same SHA is byte-idempotent; the printed
+  block carries the stamp; packing before committing CONTEXT.md is
+  caught (documented gotcha).
 
-G-1 EARLY-USE GATE (no further commits until done)
-  Render CONTEXT.md for ONE live project via the real channel (run
-  bootstrap.sh, paste or point per tier) and run one real thread.
-  File findings as refinement entries in the project. Purpose:
-  break the meta-work attractor; test the render path while the
-  repo is cheap.
-  FAILURE BRANCH: reopen T-005..T-007b only.
+  G-1 EARLY-USE GATE, two parts (no further commits until both done):
+  G-1a TRANSPORT/RENDER: re-land the T-007/T-007b/T-015b refactors;
+    author and COMMIT <project>/llm/CONTEXT.md; pack it via archive-or-
+    paste. The refactor IS the test -- it exercises the corrected
+    transport path (committed-read, scratch-only, idempotent compose).
+    Findings -> refinements.
+  G-1b REAL THREAD: run one real thread (the bitwise-arithmetic task
+    from drill's feature-backlog-2026-07.md) through the packed context.
+    Tests whether the rendered context carries preferences into working
+    code.
+  Both must pass to close G-1. FAILURE BRANCH: reopen T-005..T-007b
+  only. Purpose unchanged: break the meta-work attractor; test the
+  render path while the repo is cheap.
 
 T-008 [M] protocol/classification.md
   Complexity rubric ([S]/[M]/[L]) plus topological-plan format;
@@ -498,8 +511,9 @@ T-014 [M] entry/ENTRY.md plus README routing plus MANIFEST
   makes a future split mechanical if G-2 shows threads are
   role-pure enough to warrant it, while merging three files later
   would orphan kickoff skeletons; splitting is cheap, merging is
-  not. Kickoff skeleton: role line, FILL-IN block, instincts,
-  render stamp statement, and the SCOPE RULE (W4): "declare role at
+  not. Kickoff skeleton: role line, FILL-IN block, instincts, render stamp statement, the
+  ASK-THE-TASK invariant (ADR-025: state the thread's task; if unclear,
+  ask before proceeding), and the SCOPE RULE (W4): "declare role at
   kickoff; if implementation reveals the fix is trivial, the thread
   may absorb it without re-kickoff; if design reveals scope beyond
   the declared thread, flag it as a CANDIDATE NEW THREAD -- do not
@@ -513,11 +527,13 @@ T-014 [M] entry/ENTRY.md plus README routing plus MANIFEST
 T-015b [S] preferences/transport.md plus scripts/pack-repo.sh
   (new in r3 per W6)
   The three transport situations (in-the parent repo, own-GitHub,
-  private-local) each with their concrete recipe; pack-repo.sh
-  wraps git archive / tar for private repos with no remote,
-  producing a chat-ready artifact. Explicitly firewalled from the
-  preferences overlay: this file moves CONTENT, the overlay moves
-  private PREFERENCES; neither references the other's mechanism.
+  private-local) each with their concrete recipe; . Explicitly firewalled from the
+  pack-repo.sh implements transport in TWO increments (ADR-022 staging,
+  W4 scope-counteraction): (1) archive-or-paste of a chosen file set;
+  (2) base-plus-overlay COMPOSITION at pack time -- playbook base
+  (including the layers.md base-context items, ADR-025) with each
+  project's CONTEXT.md as overlay, item-id shadowing per ADR-008. Do
+  not bundle the two increments. preferences overlay: this file moves CONTENT, the overlay moves private PREFERENCES; neither references the other's mechanism.
   Accept: pack-repo.sh run on a scratch repo produces an artifact
   whose contents match the working tree.
 
