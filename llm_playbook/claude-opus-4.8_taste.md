@@ -9,3 +9,4 @@
   complete updated file and let the author's real repo produce the patch
 - verification: treat a patch as unverified until it has been applied
   to a clean copy and diffed against the intended result
+- shell/sandbox-git: after git init on a scratch repo, set user.email and user.name in the same command chain before any commit; verify patches with git apply --check, and use only POSIX sh constructs (no <(...)).
