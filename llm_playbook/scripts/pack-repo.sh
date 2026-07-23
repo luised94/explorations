@@ -5,7 +5,10 @@
 #     HEAD, written to /tmp; the HEAD SHA is echoed.
 #   paste mode (-p): the same set concatenated into one text block in a
 #     /tmp temp file; with -e the file opens in an editor first,
-#     otherwise its path is printed for the author to copy out.
+#     otherwise its path is printed for the author to copy out. Each
+#     file is fenced with %%%%% BEGIN <path> (<n> lines) and %%%%% END
+#     <path>; the marker is chosen to be greppable and to never occur
+#     at line start in markdown, Python, or JavaScript.
 #
 # INVARIANTS (ADR-021):
 #   scratch-only    -- writes ONLY under /tmp, NEVER into the git tree.
@@ -128,9 +131,14 @@ else
     echo "# file set: $*"
     echo ""
     echo "$FILES" | grep . | while read -r f; do
-      echo "===== BEGIN $f ====="
-      git show "HEAD:$f"
-      echo "===== END $f ====="
+      # Capture once so the line count and the body come from the same
+      # read; %%%%% is the boundary marker because it cannot collide
+      # with markdown, Python, or JavaScript at line start.
+      BODY="$(git show "HEAD:$f")"
+      N=$(printf '%s\n' "$BODY" | wc -l | tr -d ' ')
+      echo "%%%%% BEGIN $f ($N lines)"
+      printf '%s\n' "$BODY"
+      echo "%%%%% END $f"
       echo ""
     done
   } > "$OUT"
