@@ -20,10 +20,15 @@ DOCUMENT INDEX
   class. Directory names are shelving only; never cite a document
   by its directory.
 
-BOOTSTRAP
-  scripts/bootstrap.sh (arrives at commit T-007b) performs a
-  sparse checkout of this directory plus one project directory at
-  a recorded commit SHA and prints the paste-ready kickoff block.
+TRANSPORT (getting content INTO a chat)
+  scripts/pack-repo.sh (arrives at commit T-015b) packs a chosen
+  file set at a recorded commit SHA and echoes the SHA. Two modes:
+  archive (git archive --format=tar.gz to /tmp) and paste (the same
+  set composed to a /tmp temp file). It writes ONLY to scratch space
+  and reads ONLY committed files, so a render must be committed
+  before it is packed. It never materializes a second on-disk copy
+  of the repository; the earlier sparse-checkout bootstrap was
+  retired for this reason (ADR-021).
 
 CHECKS AND HOOK INSTALLATION
   scripts/check.sh enforces line budgets, token estimates, and
