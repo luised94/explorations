@@ -23,26 +23,37 @@
 set -u
 
 usage() {
-  echo "usage: pack-repo.sh [-p] [-e] [-o OUTDIR] PATH [PATH ...]" >&2
+  echo "usage: pack-repo.sh [-p] [-e] [-n] [-o OUTDIR] PATH [PATH ...]" >&2
   echo "  -p        paste mode (text block) instead of archive mode" >&2
-  echo "  -e        paste mode: open the temp file in \$EDITOR/nvim first" >&2
+  echo "  -e        paste mode only: open the temp file in \$EDITOR/nvim" >&2
+  echo "  -n        list the files that WOULD be packed, then exit" >&2
   echo "  -o OUTDIR scratch dir for output (must be under /tmp; default /tmp)" >&2
+  echo "  PATH may be a file or a directory; directories expand to their" >&2
+  echo "  committed files." >&2
   exit 2
 }
 
 MODE=archive
 EDIT=0
+DRYRUN=0
 OUTDIR=/tmp
-while getopts "peo:" opt; do
+while getopts "peno:" opt; do
   case "$opt" in
     p) MODE=paste ;;
     e) EDIT=1 ;;
+    n) DRYRUN=1 ;;
     o) OUTDIR="$OPTARG" ;;
     *) usage ;;
   esac
 done
 shift $((OPTIND - 1))
 [ $# -ge 1 ] || usage
+
+# --- -e is meaningful only in paste mode; never accept it silently ----
+if [ "$EDIT" -eq 1 ] && [ "$MODE" != paste ]; then
+  echo "pack-repo.sh: -e applies to paste mode only; add -p (or drop -e)" >&2
+  exit 2
+fi
 
 # --- scratch-only guard: refuse any OUTDIR not under /tmp -------------
 case "$OUTDIR" in
@@ -59,16 +70,44 @@ SHA="$(git rev-parse HEAD 2>/dev/null)" || {
   echo "pack-repo.sh: repository has no commits (nothing to pack)" >&2; exit 1; }
 SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
 
-# --- committed-read guard: every requested path must exist AT HEAD ----
-# Catches the documented gotcha: packing a render before committing it.
+# --- committed-read guard + directory expansion -----------------------
+# Every requested path must exist AT HEAD (catches the documented
+# gotcha: packing a render before committing it). A directory expands
+# to its committed files, so paste mode emits CONTENTS, not a tree
+# listing. FILES holds the newline-separated expanded set.
 MISSING=0
+FILES=""
 for p in "$@"; do
   if ! git cat-file -e "HEAD:$p" 2>/dev/null; then
     echo "pack-repo.sh: '$p' is not committed at HEAD -- commit it before packing" >&2
     MISSING=1
+    continue
+  fi
+  TYPE="$(git cat-file -t "HEAD:$p" 2>/dev/null)"
+  if [ "$TYPE" = tree ]; then
+    EXPANDED="$(git ls-tree -r --name-only HEAD -- "$p")"
+    if [ -z "$EXPANDED" ]; then
+      echo "pack-repo.sh: '$p' is an empty directory at HEAD" >&2
+      MISSING=1
+      continue
+    fi
+    FILES="$FILES$EXPANDED
+"
+  else
+    FILES="$FILES$p
+"
   fi
 done
 [ "$MISSING" -eq 0 ] || exit 1
+
+# --- dry run: show the expanded set and its size, then stop ----------
+if [ "$DRYRUN" -eq 1 ]; then
+  COUNT=$(printf '%s' "$FILES" | grep -c .)
+  echo "$FILES" | grep . 
+  echo "--"
+  echo "$COUNT files would be packed at SHA $SHA"
+  exit 0
+fi
 
 if [ "$MODE" = archive ]; then
   # --- archive mode -------------------------------------------------
@@ -88,10 +127,10 @@ else
     echo "# pack at SHA $SHA"
     echo "# file set: $*"
     echo ""
-    for p in "$@"; do
-      echo "===== BEGIN $p ====="
-      git show "HEAD:$p"
-      echo "===== END $p ====="
+    echo "$FILES" | grep . | while read -r f; do
+      echo "===== BEGIN $f ====="
+      git show "HEAD:$f"
+      echo "===== END $f ====="
       echo ""
     done
   } > "$OUT"
