@@ -61,6 +61,26 @@ CONSTRAINT
   CONSTRAINT-006  NEVER ship a commit without a real test
     verifying it; report pass/fail before the human accepts.
   CONSTRAINT-007  All code and prose ASCII only.
+  CONSTRAINT-008  All work happens in web and desktop chat
+    interfaces. No agentic or CLI environment that automatically
+    reads a CLAUDE.md or AGENTS.md at a project root is in use;
+    never assume a file is picked up by tooling, and never assume
+    a command was run unless a human reports its output.
+  CONSTRAINT-009  Context is delivered ONCE at thread kickoff and
+    never refreshed mid-thread. A thread must finish within the
+    context it was given; never plan work that depends on being
+    re-fed source material partway through.
+  CONSTRAINT-010  Threads run ONE AT A TIME. Never design work
+    that assumes parallel threads, shared scratch state between
+    concurrent conversations, or a second working copy of a
+    repository; a second on-disk copy is worthless when only one
+    thread is live.
+  CONSTRAINT-011  A thread plays ONE role (design, implementation,
+    or capture) and holds its declared scope. The known exception
+    is narrow: a design thread absorbs an implementation whose fix
+    turns out to be trivial. Scope EXTENSION when adjacent work is
+    noticed is a standing tendency to counteract: flag adjacent
+    work as a candidate new thread, never quietly absorb it.
 
 CRITERIA
   CRITERIA-001  Score and sequence are different questions: rank
@@ -122,3 +142,24 @@ CONVENTION
     commit is corrected in that commit (in scope); a stale
     comment unrelated to the commit is flagged in the decisions
     record and left untouched (out of scope).
+  CONVENTION-008  A thread that dies is almost always a design or
+    idea thread that never reached an implementation commitment,
+    and the human usually senses it coming; mid-implementation
+    abandonment is rare. Treat a stalling design thread as a
+    candidate for a recorded terminal state rather than silent
+    disappearance.
+  CONVENTION-009  A consumer project lives in one of three
+    transport situations: inside a shared parent repository, in
+    its own online repository, or in a private local repository
+    with no remote. Content reaches a chat by archive or paste;
+    the situation decides which recipe applies, not whether
+    transport is needed.
+  CONVENTION-010  Friction is automated away NOW with simple
+    scripts and hooks rather than written up as documented manual
+    steps. Prefer a short script that enforces a rule over a
+    paragraph asking a human to remember it.
+  CONVENTION-011  Study and reference material split out of a
+    project repository has a standing destination outside that
+    repository (the knowledge-base directory, kbd). Reference
+    material is moved there rather than accumulating inside a
+    project tree.
