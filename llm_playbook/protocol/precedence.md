@@ -55,3 +55,18 @@ READ-ONLY CHECKOUT
   never repaired by editing the playbook mid-thread: fixes travel
   as live human messages now and refinement entries for later, and
   reach the playbook only through a human editorial pass.
+
+WORKFLOW PROMPTS
+  A workflow prompt (protocol/prompts/) is a METHOD, not an
+  authority. It says how to go about a kind of work -- plan commits,
+  review a plan, run a spike, review adversarially, verify against a
+  live tree. It never overrides a rule.
+  Standing, lowest to highest: workflow prompt < playbook items <
+  project instance rules < the render < the live human message.
+  In practice this means: where a prompt's procedure conflicts with
+  the render or with a project's instance rules, the prompt yields
+  and the thread flags the conflict. A prompt that appears to
+  contradict an instance rule is a finding, not a license.
+  Note the render collapses everything below it at authoring time
+  (chain 1), so from inside a thread the practical comparison is
+  prompt versus render, and the render wins.
