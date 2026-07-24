@@ -1,6 +1,7 @@
 KICKOFF
 =======
 date: 2026-07
+type: kickoff
 scope: the KICKOFF and HANDOFF templates. A kickoff opens a thread
 and states what binds it; a handoff closes one and states what the
 next thread inherits. Both were previously retyped as prose per
@@ -30,6 +31,8 @@ answered with "none", not removed. The binding sentence and the
 stamp statement are NOT optional in either delivery mode.
 
   THREAD <PROJ-ROLE-NNN>
+  date:  <YYYY-MM>
+  type:  kickoff
   role:  <DESIGN | IMPL | CAPTURE>
   scope: <one or two sentences: what this thread does, and the
          boundary it must not cross>
@@ -85,13 +88,17 @@ NOTES ON USE
 --------------------------------------------------------------------
 HANDOFF TEMPLATE
 --------------------------------------------------------------------
-Filename: handoff-<FROM>-to-<TO>.md in the project's llm/handoffs/
-directory, where FROM is the sending thread id in full form and TO
-is the receiving thread id if known, else the receiving ROLE word
-(naming.md). One handoff, one file; a revision supersedes in place.
+Filename: <FROM>-to-<TO>.md in the project's handoff/ directory,
+where FROM is the sending thread id in full form and TO is the
+receiving thread id if known, else the receiving ROLE word
+(naming.md). The directory carries the classification, so the
+filename does not repeat it; the type field below keeps the file
+self-describing when it is read away from its directory. One
+handoff, one file; a revision supersedes in place.
 
   HANDOFF -- <FROM> to <TO>
   date: <YYYY-MM>
+  type: handoff
   from: <sending thread id> (<role>; <gate or plan position>)
   to:   <receiving thread id or ROLE> (<what it may and may not do>)
   why a <ROLE> thread: <why this role and not another. If the work
