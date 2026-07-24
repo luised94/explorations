@@ -93,6 +93,8 @@ PLAYBOOK ARTIFACTS
   project tags). Renders at a project root: CONTEXT.md, plus
   generated CLAUDE.md / AGENTS.md; never any other name.
 
+  Workflow prompts: protocol/prompts/<verb-phrase>.md, lowercase, dateless, hyphenated (commit-planning.md, clone-and-verify.md). The name states WHAT THE PROMPT DOES, as a verb phrase, not the phase it belongs to -- a phase name goes stale when the process changes, a verb does not. Each carries type: prompt in frontmatter. A prompt is a METHOD and never an authority; precedence.md places it below the render and below project instance rules.
+
 CLASSIFICATION NOTE
   Existing artifacts predating this grammar are classifiable
   against it and most are NONCONFORMANT (the drill handoffs above;
