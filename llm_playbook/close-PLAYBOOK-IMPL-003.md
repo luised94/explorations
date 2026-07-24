@@ -8,11 +8,21 @@ predecessor: PLAYBOOK-DESIGN-002 (produced ADR-020..029 and the plan
 edits; Stage A landed the plan and the ADRs in two commits).
 bootstrap SHA: 69ae0609b575b885afb51ffe1c1445eba07b884f
 
-RESULT: G-1a PASSES.
+RESULT: G-1a PASSES ON TRANSPORT, FAILS ON RENDER EFFECT.
   The corrected transport path was exercised end to end on real
   content: a hand-authored render was committed, packed, unpacked,
-  and verified intact with its stamp. G-1 as a whole does NOT close
-  until G-1b also passes.
+  and verified intact with its stamp. That half holds.
+  The author then ran the G-1b real-thread test. It FAILED on its
+  stated question. A design thread given the entire drill archive
+  never opened CONTEXT.md; it followed drill's own
+  CODING_CONVENTIONS.md, found by its own initiative. Six of seven
+  style checks passed anyway, sourced from that competing document
+  and the surrounding code -- which is the trap: a pass rate can be
+  produced entirely by sources other than the artifact under test.
+  Transport is sound. Nothing tells a thread the render binds it.
+  G-1 does NOT close. T-008+ stays SHUT. The remaining work is
+  protocol change and document consolidation, handed off to
+  PLAYBOOK-DESIGN-004 (see HANDOFF below).
 
 WHAT LANDED (six commits, plan order)
   B2a  T-007 re-land. render.md relocates the primary render target
@@ -32,6 +42,15 @@ WHAT LANDED (six commits, plan order)
        against a 250 ceiling, composing all 34 preference items and
        all 25 style clauses plus 3 deviations, each cited by id.
   B5   Gate run and findings -> drill/llm/g1-findings.md.
+  ---  After the six commits, on real use, the packer was found
+       broken for directory arguments in paste mode and its boundary
+       marker collided with content 342 times in drill. Both were
+       fixed in a follow-up commit (directory expansion, -e rejected
+       outside paste mode, -n dry run, five-percent-sign markers with
+       per-file line counts). Findings F6-F8 record the defects and
+       the test-shape lesson: seven invariant tests passed against a
+       tool that failed its primary use case, because only
+       single-FILE paths were ever exercised.
 
 WHAT WAS VERIFIED
   Committed-read, scratch-only, and idempotence all hold on the real
@@ -83,7 +102,19 @@ WHAT DOES NOT OPEN YET
   opens only when G-1a AND G-1b have both passed. G-1b was not
   started in this thread and no work beyond B6 was performed.
 
-NEXT: G-1b REAL THREAD
+HANDOFF
+  llm_playbook/handoff-PLAYBOOK-IMPL-003-to-DESIGN-004.md carries the
+  remaining work in dependency order: merge and retire drill's
+  competing style document (blocking), close the protocol gap with an
+  ADR so a kickoff names the render as binding, then re-test on an
+  IMPLEMENTATION thread evaluated cold by a fresh thread. Also:
+  promote the generic workflow prompts into the playbook, and decide
+  whether the render ceiling should be tier-dependent.
+  The G-1b instructions below are retained as the record of what was
+  run and how. The method held up; the result was a failure, which is
+  the correct outcome for a gate that was doing its job.
+
+NEXT: G-1b REAL THREAD (AS RUN -- RESULT ABOVE)
   Run ONE real thread through the packed context and see whether the
   rendered preferences reach working code. The task is fixed by the
   plan: BITWISE ARITHMETIC from drill's feature-backlog-2026-07.md
