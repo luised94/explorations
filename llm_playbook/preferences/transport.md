@@ -80,6 +80,26 @@ THE THREE TRANSPORT SITUATIONS (W6)
      Archive mode also works when the chat accepts a file upload;
      paste mode is the fallback when only text can cross the gap.
 
+WHEN A CHECKOUT IS STILL THE RIGHT TOOL
+  This document covers getting content INTO A CHAT, and for that the
+  packer is PRIMARY: most work is read-and-reason, and a second
+  working tree buys nothing (ADR-021). That is the common case and
+  the default.
+  It is not the only case. A thread that must RUN something -- a test
+  suite, a build, a migration -- needs a real working tree, which the
+  packer cannot supply: it is scratch-only and committed-read by
+  design and produces no tree at all. For that, clone or check out
+  normally.
+  ADR-021 retired sparse-checkout as a CONTEXT-DELIVERY mechanism. It
+  did not retire checkouts. Read the decision narrowly: the claim is
+  that copying a tree to READ it is waste, not that trees are
+  obsolete.
+  A verification workflow is the standard example: pin an exact
+  40-char SHA, confirm the branch, establish a green baseline BEFORE
+  changing anything, and stop if the count does not match. Only the
+  first step resembles transport; the rest is why a tree exists.
+  Rule of thumb: READING is a pack; EXECUTING is a checkout.
+
 GOTCHAS
   - Pack a render and it is missing: it was not committed. The
     packer reads HEAD, so commit CONTEXT.md first (committed-read).
