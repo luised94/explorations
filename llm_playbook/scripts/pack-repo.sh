@@ -264,10 +264,26 @@ fi
 
 # --- dry run: show the expanded set and its size, then stop ----------
 if [ "$DRYRUN" -eq 1 ]; then
-  COUNT=$(printf '%s' "$FILES" | grep -c .)
-  echo "$FILES" | grep . 
+  # The list is the body and stays first; the summary goes AFTER it so
+  # it survives a scroll on a repo with many files. Both the list and
+  # the count go through one pipeline -- they used to differ (printf
+  # '%s' vs echo) and could disagree by one on an empty set.
+  printf '%s\n' "$FILES" | grep .
   echo "--"
-  echo "$COUNT files would be packed at SHA $SHA"
+  echo "repo:   $ROOT"
+  echo "SHA:    $SHA"
+  if [ -n "$CHANGED" ]; then
+    # Only targets whose FORM actually changed, so the ordinary
+    # repo-relative invocation stays quiet.
+    echo "normalized:"
+    printf '%s' "$CHANGED"
+  fi
+  if [ -n "$SKIPPED" ]; then
+    echo "skipped:"
+    printf '%s' "$SKIPPED" | grep . | sed 's/^/  /;s/$/ (submodule)/'
+  fi
+  COUNT=$(printf '%s\n' "$FILES" | grep -c .)
+  echo "$COUNT files would be packed"
   exit 0
 fi
 
@@ -289,7 +305,7 @@ if [ "$MODE" = archive ]; then
   # (idempotent).
   git archive --format=tar.gz -o "$OUT" HEAD -- "$@" || {
     echo "pack-repo.sh: git archive failed" >&2; exit 1; }
-  echo "packed (archive) at SHA $SHA"
+  echo "packed (archive) from $ROOT at SHA $SHA"
   echo "  $OUT"
 else
   # --- paste mode ---------------------------------------------------
@@ -320,7 +336,7 @@ else
       echo "pack-repo.sh: editor '$ED' not found; temp file left at path below" >&2
     fi
   fi
-  echo "packed (paste) at SHA $SHA"
+  echo "packed (paste) from $ROOT at SHA $SHA"
   echo "  $OUT"
 fi
 exit 0
