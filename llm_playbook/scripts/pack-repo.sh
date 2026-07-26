@@ -76,6 +76,8 @@ esac
 ORIGDIR="$(pwd -P)"
 NEWROOT=""
 ROOTSRC=""
+NORM=""
+CHANGED=""
 for p in "$@"; do
   T="$p"
   while [ "${T%/}" != "$T" ] && [ "$T" != / ]; do T="${T%/}"; done
@@ -122,11 +124,44 @@ for p in "$@"; do
     echo "  $TOP  <- $p" >&2
     exit 3
   fi
+
+  # Re-express root-relative. The prefix is quoted inside the parameter
+  # expansion because the operand is a PATTERN: an unquoted root
+  # containing [ * or ? would silently fail to strip. A target that is
+  # the root itself becomes "." -- never the empty string, which git
+  # rejects as a pathspec.
+  if [ "$ABS" = "$NEWROOT" ]; then
+    REL="."
+  elif [ "$NEWROOT" = / ]; then
+    REL="${ABS#/}"
+  else
+    REL="${ABS#"$NEWROOT"/}"
+  fi
+  NORM="$NORM$REL
+"
+  if [ "$REL" != "$p" ]; then
+    CHANGED="$CHANGED  $p  ->  $REL
+"
+  fi
 done
 
-# --- must be inside a git repo; resolve HEAD as ground truth ----------
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "pack-repo.sh: not inside a git repository" >&2; exit 1; }
+# --- adopt the inferred root; everything below is root-relative -------
+# From here on the script speaks ONE dialect of path: root-relative.
+# cwd is moved to the root so pathspecs mean the same thing to every
+# git invocation below, including git archive.
+ROOT="$NEWROOT"
+cd "$ROOT" || { echo "pack-repo.sh: cannot enter $ROOT" >&2; exit 1; }
+
+# Replace the positional parameters with the normalized set. Field
+# splitting on newline with globbing off is safe because a path
+# containing a newline is unsupported (see header).
+set -f
+IFS='
+'
+set -- $NORM
+unset IFS
+set +f
+
 SHA="$(git rev-parse HEAD 2>/dev/null)" || {
   echo "pack-repo.sh: repository has no commits (nothing to pack)" >&2; exit 1; }
 SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
