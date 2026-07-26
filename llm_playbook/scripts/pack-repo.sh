@@ -95,6 +95,17 @@ for p in "$@"; do
     exit 3
   fi
   if [ -n "$SUFFIX" ]; then ABS="$PHYS/$SUFFIX"; else ABS="$PHYS"; fi
+
+  # Which working tree encloses this target? Inferring from the TARGET
+  # rather than from cwd is what allows invocation from anywhere. A
+  # linked worktree and a submodule each report their own toplevel,
+  # which is correct: each has its own HEAD.
+  TOP="$(cd "$PHYS" && git rev-parse --show-toplevel 2>/dev/null)" || TOP=""
+  if [ -z "$TOP" ]; then
+    echo "pack-repo.sh: '$p' is not inside a git repository" >&2
+    exit 1
+  fi
+  TOP="$(cd "$TOP" && pwd -P)"
 done
 
 # --- must be inside a git repo; resolve HEAD as ground truth ----------
