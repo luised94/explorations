@@ -66,6 +66,37 @@ case "$OUTDIR" in
 esac
 [ -d "$OUTDIR" ] || mkdir -p "$OUTDIR"
 
+# --- normalize each target's FORM -------------------------------------
+# Strip trailing slashes, make absolute against the invocation cwd, and
+# resolve symlinks physically. `cd ... && pwd -P` is used rather than
+# realpath, which is neither POSIX nor present on a stock macOS. A
+# target need not exist on disk (it may be tracked at HEAD and deleted
+# locally), so walk up to the deepest ancestor that DOES exist, resolve
+# that, and re-attach the walked-off suffix.
+ORIGDIR="$(pwd -P)"
+for p in "$@"; do
+  T="$p"
+  while [ "${T%/}" != "$T" ] && [ "$T" != / ]; do T="${T%/}"; done
+  case "$T" in
+    /*) ABS="$T" ;;
+    *)  ABS="$ORIGDIR/$T" ;;
+  esac
+  DIR="$ABS"
+  SUFFIX=""
+  while [ ! -d "$DIR" ] && [ "$DIR" != / ]; do
+    BASE="${DIR##*/}"
+    DIR="${DIR%/*}"
+    [ -n "$DIR" ] || DIR=/
+    if [ -z "$SUFFIX" ]; then SUFFIX="$BASE"; else SUFFIX="$BASE/$SUFFIX"; fi
+  done
+  PHYS="$(cd "$DIR" 2>/dev/null && pwd -P)" || PHYS=""
+  if [ -z "$PHYS" ]; then
+    echo "pack-repo.sh: cannot resolve '$p' (no readable ancestor directory)" >&2
+    exit 3
+  fi
+  if [ -n "$SUFFIX" ]; then ABS="$PHYS/$SUFFIX"; else ABS="$PHYS"; fi
+done
+
 # --- must be inside a git repo; resolve HEAD as ground truth ----------
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "pack-repo.sh: not inside a git repository" >&2; exit 1; }
