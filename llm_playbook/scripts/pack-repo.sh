@@ -74,6 +74,8 @@ esac
 # locally), so walk up to the deepest ancestor that DOES exist, resolve
 # that, and re-attach the walked-off suffix.
 ORIGDIR="$(pwd -P)"
+NEWROOT=""
+ROOTSRC=""
 for p in "$@"; do
   T="$p"
   while [ "${T%/}" != "$T" ] && [ "$T" != / ]; do T="${T%/}"; done
@@ -106,6 +108,20 @@ for p in "$@"; do
     exit 1
   fi
   TOP="$(cd "$TOP" && pwd -P)"
+
+  # One pack, one SHA. Targets that land in different working trees have
+  # different HEADs, so the pack could not be traced to a single commit.
+  # This is the property the old "run from inside the repo" rule bought,
+  # kept explicitly now that cwd no longer decides.
+  if [ -z "$NEWROOT" ]; then
+    NEWROOT="$TOP"
+    ROOTSRC="$p"
+  elif [ "$TOP" != "$NEWROOT" ]; then
+    echo "pack-repo.sh: targets span two working trees (one pack, one SHA):" >&2
+    echo "  $NEWROOT  <- $ROOTSRC" >&2
+    echo "  $TOP  <- $p" >&2
+    exit 3
+  fi
 done
 
 # --- must be inside a git repo; resolve HEAD as ground truth ----------
