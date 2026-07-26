@@ -186,6 +186,7 @@ SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
 # listing. FILES holds the newline-separated expanded set.
 REJECT=0
 FILES=""
+SKIPPED=""
 for p in "$@"; do
   # "." is the root tree; HEAD:. is not a valid object name.
   if [ "$p" = . ]; then OBJ="HEAD^{tree}"; else OBJ="HEAD:$p"; fi
@@ -223,7 +224,19 @@ for p in "$@"; do
 
   TYPE="$(git cat-file -t "$OBJ" 2>/dev/null)"
   if [ "$TYPE" = tree ]; then
-    EXPANDED="$(git ls-tree -r --name-only HEAD -- "$p")"
+    # Blobs only. ls-tree also emits gitlinks (mode 160000, type
+    # commit) for nested submodules; paste mode would then run
+    # git show on one and get no file content, while archive mode
+    # skips it silently -- so the two modes disagreed. quotePath=false
+    # stops git C-quoting non-ASCII paths into an unusable literal.
+    EXPANDED="$(git -c core.quotePath=false ls-tree -r HEAD -- "$p" \
+      | awk -F'\t' '{ split($1, a, " "); if (a[2] == "blob") print $2 }')"
+    LINKS="$(git -c core.quotePath=false ls-tree -r HEAD -- "$p" \
+      | awk -F'\t' '{ split($1, a, " "); if (a[2] == "commit") print $2 }')"
+    if [ -n "$LINKS" ]; then
+      SKIPPED="$SKIPPED$LINKS
+"
+    fi
     if [ -z "$EXPANDED" ]; then
       echo "pack-repo.sh: '$p' is an empty directory at HEAD" >&2
       REJECT=1
@@ -237,6 +250,17 @@ for p in "$@"; do
   fi
 done
 [ "$REJECT" -eq 0 ] || exit 3
+
+# A nested submodule is a separate working tree with its own HEAD, so
+# it cannot be part of this pack. Not an error -- the pack is still
+# complete for what it claims to cover -- but noted, so nobody assumes
+# the submodule's contents are in the file. Under -n the summary block
+# lists these instead, so do not say it twice.
+if [ -n "$SKIPPED" ] && [ "$DRYRUN" -eq 0 ]; then
+  printf '%s' "$SKIPPED" | grep . | while read -r s; do
+    echo "pack-repo.sh: note: skipped submodule '$s' (pack it separately)" >&2
+  done
+fi
 
 # --- dry run: show the expanded set and its size, then stop ----------
 if [ "$DRYRUN" -eq 1 ]; then
