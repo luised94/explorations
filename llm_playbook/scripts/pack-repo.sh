@@ -274,8 +274,19 @@ fi
 if [ "$MODE" = archive ]; then
   # --- archive mode -------------------------------------------------
   OUT="$OUTDIR/pack-$SHORT.tar.gz"
-  # git archive output is deterministic for a fixed SHA and path set,
-  # so rerunning overwrites with byte-identical content (idempotent).
+  # "$@" is the NORMALIZED, root-relative set, and cwd is the root, so
+  # git archive resolves the same pathspecs the guard validated. It
+  # previously received the raw arguments and resolved them against
+  # cwd while the guard resolved against the root, so from a
+  # subdirectory the two could pack different sets.
+  #
+  # The targets are passed, not the expanded FILES list: the two cover
+  # the same content (git archive skips gitlinks as the expansion now
+  # does), and the short list cannot run into ARG_MAX on a large tree.
+  #
+  # git archive output is deterministic for a fixed SHA, path set and
+  # git version, so rerunning overwrites with byte-identical content
+  # (idempotent).
   git archive --format=tar.gz -o "$OUT" HEAD -- "$@" || {
     echo "pack-repo.sh: git archive failed" >&2; exit 1; }
   echo "packed (archive) at SHA $SHA"
