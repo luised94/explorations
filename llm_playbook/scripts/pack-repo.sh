@@ -18,6 +18,12 @@
 #                      documented gotcha, caught below.
 #   idempotent      -- same SHA and same file set produce byte-identical
 #                      output; never appends or mutates in place.
+#
+# EXIT CODES:
+#   0  packed (or listed, under -n)
+#   1  environment / git failure (no repo, no commits, bad OUTDIR)
+#   2  usage error
+#   3  input rejected (untracked, dirty, targets in two working trees)
 # This increment does archive-or-paste ONLY. Base-plus-overlay
 # COMPOSITION is a separate later increment (ADR-022 staging); this
 # script deliberately does not compose.
@@ -178,20 +184,49 @@ SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
 # gotcha: packing a render before committing it). A directory expands
 # to its committed files, so paste mode emits CONTENTS, not a tree
 # listing. FILES holds the newline-separated expanded set.
-MISSING=0
+REJECT=0
 FILES=""
 for p in "$@"; do
-  if ! git cat-file -e "HEAD:$p" 2>/dev/null; then
-    echo "pack-repo.sh: '$p' is not committed at HEAD -- commit it before packing" >&2
-    MISSING=1
+  # "." is the root tree; HEAD:. is not a valid object name.
+  if [ "$p" = . ]; then OBJ="HEAD^{tree}"; else OBJ="HEAD:$p"; fi
+
+  if ! git cat-file -e "$OBJ" 2>/dev/null; then
+    if git ls-files --error-unmatch -- "$p" >/dev/null 2>&1; then
+      echo "pack-repo.sh: '$p' is staged but not committed at HEAD -- commit it before packing" >&2
+    else
+      echo "pack-repo.sh: '$p' is not tracked in $ROOT at HEAD" >&2
+    fi
+    REJECT=1
     continue
   fi
-  TYPE="$(git cat-file -t "HEAD:$p" 2>/dev/null)"
+
+  # Dirty check. --porcelain rather than diff --quiet HEAD because it
+  # also reports UNTRACKED files: the trap that otherwise omits a new
+  # render from the pack in silence, with nothing printed at all.
+  # Ignored files are excluded by default, so build artifacts and
+  # editor droppings do not trip it.
+  ST="$(git status --porcelain -- "$p")"
+  if [ -n "$ST" ]; then
+    if printf '%s\n' "$ST" | grep -q -e '^D' -e '^.D'; then
+      echo "pack-repo.sh: '$p' has uncommitted changes -- commit them (or restore deleted files) before packing" >&2
+    else
+      echo "pack-repo.sh: '$p' has uncommitted changes -- commit them before packing" >&2
+    fi
+    printf '%s\n' "$ST" | head -n 10 | sed 's/^/    /' >&2
+    NST=$(printf '%s\n' "$ST" | grep -c .)
+    if [ "$NST" -gt 10 ]; then
+      echo "    ... and $((NST - 10)) more" >&2
+    fi
+    REJECT=1
+    continue
+  fi
+
+  TYPE="$(git cat-file -t "$OBJ" 2>/dev/null)"
   if [ "$TYPE" = tree ]; then
     EXPANDED="$(git ls-tree -r --name-only HEAD -- "$p")"
     if [ -z "$EXPANDED" ]; then
       echo "pack-repo.sh: '$p' is an empty directory at HEAD" >&2
-      MISSING=1
+      REJECT=1
       continue
     fi
     FILES="$FILES$EXPANDED
@@ -201,7 +236,7 @@ for p in "$@"; do
 "
   fi
 done
-[ "$MISSING" -eq 0 ] || exit 1
+[ "$REJECT" -eq 0 ] || exit 3
 
 # --- dry run: show the expanded set and its size, then stop ----------
 if [ "$DRYRUN" -eq 1 ]; then
