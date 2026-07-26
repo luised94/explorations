@@ -14,8 +14,11 @@
 #   scratch-only    -- writes ONLY under /tmp, NEVER into the git tree.
 #   committed-read  -- reads ONLY committed content (git archive / git
 #                      show see HEAD). A file must be committed BEFORE
-#                      it can be packed; an uncommitted render is a
-#                      documented gotcha, caught below.
+#                      it can be packed. This is ENFORCED, not merely
+#                      documented: a target whose working-tree state
+#                      differs from HEAD -- modified, staged, deleted,
+#                      or containing untracked files -- is rejected
+#                      rather than packed silently from HEAD.
 #   idempotent      -- same SHA and same file set produce byte-identical
 #                      output; never appends or mutates in place.
 #
@@ -24,6 +27,19 @@
 #   1  environment / git failure (no repo, no commits, bad OUTDIR)
 #   2  usage error
 #   3  input rejected (untracked, dirty, targets in two working trees)
+# PATHS AND REPO SELECTION:
+#   Targets may be absolute or relative, with or without a trailing
+#   slash; all are normalized to repo-root-relative before use.
+#   WHICH repo is inferred from the TARGETS, not from cwd, so the
+#   script runs from anywhere. All targets in one invocation must
+#   resolve to the SAME working tree: one pack, one SHA, which is the
+#   property that makes a pack traceable to a single commit. Targets
+#   that straddle are an error.
+#   A submodule is a separate working tree with its own HEAD. A target
+#   inside one packs that submodule at ITS HEAD; a submodule nested
+#   under a packed directory is skipped with a note.
+#   Paths containing newlines or tabs are NOT supported.
+#
 # This increment does archive-or-paste ONLY. Base-plus-overlay
 # COMPOSITION is a separate later increment (ADR-022 staging); this
 # script deliberately does not compose.
@@ -38,7 +54,11 @@ usage() {
   echo "  -n        list the files that WOULD be packed, then exit" >&2
   echo "  -o OUTDIR scratch dir for output (must be under /tmp; default /tmp)" >&2
   echo "  PATH may be a file or a directory; directories expand to their" >&2
-  echo "  committed files." >&2
+  echo "  committed files. PATH may be absolute or relative and is" >&2
+  echo "  normalized to repo-root-relative; the repo is inferred from" >&2
+  echo "  PATH, so this may be run from anywhere, but all PATHs must be" >&2
+  echo "  in the same working tree." >&2
+  echo "exit: 0 ok, 1 environment, 2 usage, 3 input rejected" >&2
   exit 2
 }
 
