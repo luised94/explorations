@@ -137,6 +137,13 @@ for p in "$@"; do
   else
     REL="${ABS#"$NEWROOT"/}"
   fi
+  # Drop an exact repeat, keeping first-seen order (the file set order
+  # is author-meaningful, so sort -u is wrong). Normalization makes
+  # repeats likelier: ~/dev/x/drill/ and drill now collapse to one
+  # string and can no longer be told apart by eye.
+  if printf '%s' "$NORM" | grep -Fxq -e "$REL"; then
+    continue
+  fi
   NORM="$NORM$REL
 "
   if [ "$REL" != "$p" ]; then
