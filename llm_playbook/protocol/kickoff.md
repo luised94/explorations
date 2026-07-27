@@ -107,10 +107,16 @@ supersedes in place.
   type: handoff
   from: <sending thread id> (<role>; <gate or plan position>)
   to:   <receiving thread id or ROLE> (<what it may and may not do>)
-  why a <ROLE> thread: <why this role and not another. If the work
-    needs decisions recorded before execution, say so: an
-    implementation thread would have to invent the design silently,
-    which the deviation rule forbids.>
+  role: <DESIGN | IMPL | CAPTURE>
+  scope: <one line: what the receiving thread inherits, and what it
+    does not>
+  status: current
+
+  WHY A <ROLE> THREAD
+    <why this role and not another. If the work needs decisions
+    recorded before execution, say so: an implementation thread would
+    have to invent the design silently, which the deviation rule
+    forbids.>
 
   READ FIRST
     <the two or three documents this handoff assumes and does not

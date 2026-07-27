@@ -343,6 +343,29 @@ F-25  THE TREE DOES NOT GO GREEN AT C-06, AS THIS PLAN CLAIMED. The
       run: with the five moved into llm/, check.sh reports clean and
       exits 0.
 
+F-26  THE UNNAMED-FIELD PROBLEM WAS THREE TIMES LARGER THAN COUNTED.
+      This plan listed six live findings against naming.md's fixed
+      field set. The five close and handoff artifacts alone carried
+      nine: thread, gate, predecessor, bootstrap SHA, purpose,
+      governs, "what this is", "companion to", "applies to", "how to
+      use", plus revision and the placement rule. All were real
+      content, so none was discarded: they moved into the document
+      body as THREAD RECORD or WHAT THIS WAS blocks, where they are
+      content rather than classification.
+
+F-27  kickoff.md's OWN HANDOFF TEMPLATE EMITS AN UNNAMED FIELD. The
+      template's header block includes "why a <ROLE> thread:", which
+      the fixed field set does not name. Now that role: exists, that
+      line is the justification for role: and belongs in the body.
+      The template is NOT fixed in C-07 or C-08 -- it is a separate
+      concern in a file two earlier commits already touched. OWED.
+
+F-28  A CLOSE ARTIFACT CARRIES NO from:. The field set scopes from
+      and to to the handoff category, and a close artifact's thread
+      id is its filename -- which is exactly the reasoning DEC-2 gave
+      for retiring thread:. Discovered while writing the frontmatter,
+      not while designing the field set.
+
 --------------------------------------------------------------------------
 ADVERSARIAL PASS
 --------------------------------------------------------------------------
