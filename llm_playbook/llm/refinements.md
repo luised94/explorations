@@ -66,6 +66,21 @@ RF-PLAYBOOK-006  the sandbox shell is dash, not bash
     delivered scripts; this extends the same constraint to throwaway
     verification work, where it was being forgotten.
 
+RF-PLAYBOOK-008  a partial edit script that still gets committed
+  OBSERVED  A script applied three replacements in sequence, asserting
+    each anchor immediately before its own write. The second anchor was
+    wrong -- a comma in the source text the anchor omitted -- so the
+    script died after the first write, leaving the file half-edited.
+    The commit command was on the next line rather than chained with
+    &&, so it ran regardless, and a commit landed whose message
+    described nine items when two were present.
+  FIX  Assert EVERY anchor before performing ANY write, so a bad
+    anchor fails before the file is touched. Chain a commit to the
+    script's exit status, never merely place it afterwards. And check
+    that what landed matches what the message claims before moving on.
+  PROMOTED  not yet. The verify-by-executing item (CONSTRAINT-014)
+    covers the general principle; this is the specific mechanism.
+
 RF-PLAYBOOK-007  destructive git commands against uncommitted work
   OBSERVED  git reset --hard was run to undo a dry run while an
     unrelated file rewrite sat uncommitted in the same tree. The
