@@ -55,13 +55,47 @@ COMMIT PREFIXES
   grammar (phase letter, hyphen, number) and are never renumbered.
 
 
-HANDOFF FILENAMES Form: <FROM>-to-<TO>.md in the project's handoff/ directory. FROM the sending thread id, full form. TO the receiving thread id if known, else the receiving ROLE word. Example: handoff/DRILL-DESIGN-007-to-IMPL.md. One handoff, one file; a revised handoff supersedes in place (git keeps history).
+HANDOFF FILENAMES
+  Form: <FROM>-to-<TO>.md in the project's handoff/ directory.
+    FROM  the sending thread id, full form.
+    TO    the receiving thread id if known, else the receiving ROLE
+          word.
+  Example: handoff/DRILL-DESIGN-007-to-IMPL.md. One handoff, one
+  file; a revised handoff supersedes in place (git keeps history).
 
-THE DIRECTORY CARRIES THE CLASSIFICATION. The containing directory is named handoff/, so a handoff- prefix on the filename inside it would restate what the path already says. The file states its own type in frontmatter instead (see below), so a handoff detached from its directory -- pasted into a chat, packed into an archive, quoted in another document -- still declares what it is.
+  THE DIRECTORY CARRIES THE CLASSIFICATION. The containing directory
+  is named handoff/, so a handoff- prefix on the filename inside it
+  would restate what the path already says. The file states its own
+  type in frontmatter instead (see below), so a handoff detached from
+  its directory -- pasted into a chat, packed into an archive, quoted
+  in another document -- still declares what it is.
 
-Superseded form: handoff-<FROM>-to-<TO>.md in llm/handoffs/. Files already bearing that form are classifiable and are NOT renamed in bulk (see the classification note); they are brought to the current form only if touched for another reason.
+  Superseded form: handoff-<FROM>-to-<TO>.md in llm/handoffs/. Files
+  already bearing that form are classifiable and are NOT renamed in
+  bulk (see the classification note); they are brought to the current
+  form only if touched for another reason.
 
-FRONTMATTER FIELDS Frontmatter is the small fixed set below, and it is not extended ad hoc. A document carries the fields that apply to it and omits the rest; no field is invented at authoring time. date YYYY-MM. Required on every playbook and instance document. Dates NEVER appear in filenames (N2); the sole exception is decisions era shards, whose era IS the filename. type what kind of document this is, where the filename alone would not say: handoff, close, kickoff, plan, decisions, render, prompt, instance-rules. Required where the directory rather than the filename carries the classification. scope one line on what the document governs and what it does not. Required on playbook protocol and preference documents. from sending thread id. Handoffs only. to receiving thread id or ROLE word. Handoffs only. version semantic version, where the document is versioned independently of the playbook VERSION file. A field this list does not name is a finding, not an exception.
+FRONTMATTER FIELDS
+  Frontmatter is the small fixed set below, and it is not extended
+  ad hoc. A document carries the fields that apply to it and omits
+  the rest; no field is invented at authoring time.
+    date     YYYY-MM. Required on every playbook and instance
+             document. Dates NEVER appear in filenames (N2); the
+             sole exception is decisions era shards, whose era IS
+             the filename.
+    type     what kind of document this is, where the filename
+             alone would not say: handoff, close, kickoff, plan,
+             decisions, render, prompt, instance-rules. Required
+             where the directory rather than the filename carries
+             the classification.
+    scope    one line on what the document governs and what it
+             does not. Required on playbook protocol and preference
+             documents.
+    from     sending thread id. Handoffs only.
+    to       receiving thread id or ROLE word. Handoffs only.
+    version  semantic version, where the document is versioned
+             independently of the playbook VERSION file.
+  A field this list does not name is a finding, not an exception.
 
 REFINEMENT IDS
   Form: RF-PROJ-NNN, assigned in the project's refinements.md at
@@ -93,7 +127,14 @@ PLAYBOOK ARTIFACTS
   project tags). Renders at a project root: CONTEXT.md, plus
   generated CLAUDE.md / AGENTS.md; never any other name.
 
-  Workflow prompts: protocol/prompts/<verb-phrase>.md, lowercase, dateless, hyphenated (commit-planning.md, clone-and-verify.md). The name states WHAT THE PROMPT DOES, as a verb phrase, not the phase it belongs to -- a phase name goes stale when the process changes, a verb does not. Each carries type: prompt in frontmatter. A prompt is a METHOD and never an authority; precedence.md places it below the render and below project instance rules.
+  Workflow prompts: protocol/prompts/<verb-phrase>.md, lowercase,
+  dateless, hyphenated (commit-planning.md, clone-and-verify.md).
+  The name states WHAT THE PROMPT DOES, as a verb phrase, not the
+  phase it belongs to -- a phase name goes stale when the process
+  changes, a verb does not. Each carries type: prompt in
+  frontmatter. A prompt is a METHOD and never an authority;
+  precedence.md places it below the render and below project
+  instance rules.
 
 CLASSIFICATION NOTE
   Existing artifacts predating this grammar are classifiable
