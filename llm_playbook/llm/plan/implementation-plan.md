@@ -1,8 +1,21 @@
 LLM WORKFLOW TOOLKIT -- V1 IMPLEMENTATION PLAN (r3)
 ====================================================
-revision r3
+date: 2026-07
+type: plan
+scope: the V1 buildout of llm_playbook and the skeleton its consumer
+  projects adopt, as tasks T-001..T-024. Superseded in part by later
+  ADRs and by the current consolidation; read the decisions record
+  before following any task here.
 status: outdated
-governs: llm_playbook and its consumer projects
+
+  Revision r3. The revision field is retired -- git carries it -- and
+  is recorded here so a reader of the old header knows which draft
+  this is. NAMING NOTE: implementation-plan.md names its genre and not
+  its subject, so it fails N6. It is NOT renamed: it is status
+  outdated, nothing supersedes it, and thirty-one references across
+  six documents point at this name. naming.md's own classification
+  note governs -- nonconformance of a pre-grammar artifact is
+  recorded, not repaired.
 
 STATUS: DRAFT r3. Lineage: r1 (initial plan) -> r2 (self-review, findings
 RF1-RF8) -> fresh-instance adversarial review (findings AF1-AF13) ->

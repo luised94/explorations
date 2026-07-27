@@ -1,15 +1,20 @@
 PLAN EDITS -- PLAYBOOK-DESIGN-002
 ==================================
 date: 2026-07
-companion to: consolidation-PLAYBOOK-DESIGN-002.md
-applies to: implementation-plan.md (the renamed r3 plan)
-how to use: each edit is LOCATE (find this text) / REPLACE WITH (swap
-  for this). Applied during Stage A Commit 2. After applying, scrub any
-  "explorations" these introduce -> "the parent monorepo". Each edit
-  traces to one ADR (cited).
+type: plan
+scope: the verbatim LOCATE/REPLACE edits applied to the r3
+  implementation plan during PLAYBOOK-DESIGN-002 Stage A, Commit 2.
+  SPENT -- every edit here is already in the plan. Kept as the record
+  of what changed and which ADR each change traces to.
+status: outdated
 
-NOTE on placement: keep this file OUTSIDE llm_playbook/ (it quotes the
-parent-repo name in old plan text). Repo root or drill/llm/.
+WHAT THIS WAS
+  Companion to the PLAYBOOK-DESIGN-002 close artifact. Each edit is
+  LOCATE (find this text) / REPLACE WITH (swap for this), and each
+  traces to one ADR, cited. Applied during Stage A Commit 2.
+  The placement rule that required this file to sit OUTSIDE
+  llm_playbook/ is RETIRED; containment is now scoped to the toolkit
+  layer and llm/ is exempt.
 
 ------------------------------------------------------------------------
 EDIT 1 -- T-007 CONTEXT.md location and verb (ADR-020)

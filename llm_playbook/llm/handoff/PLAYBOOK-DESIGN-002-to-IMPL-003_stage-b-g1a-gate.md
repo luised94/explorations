@@ -1,4 +1,15 @@
-THREAD KICKOFF -- id: PLAYBOOK-IMPL-003
+KICKOFF -- PLAYBOOK-DESIGN-002 to PLAYBOOK-IMPL-003
+====================================================
+date: 2026-07
+type: kickoff
+from: PLAYBOOK-DESIGN-002
+to:   PLAYBOOK-IMPL-003
+role: IMPL
+scope: opens thread PLAYBOOK-IMPL-003 to re-land the reopened commits
+  in their new form and produce the first CONTEXT.md. SPENT -- the
+  thread it opened has run and closed.
+status: outdated
+
 ROLE: implementation. You execute a fixed plan. You do not redesign.
 SPEC: implementation-plan.md (the renamed r3 plan), plus
 consolidation-PLAYBOOK-DESIGN-002.md and

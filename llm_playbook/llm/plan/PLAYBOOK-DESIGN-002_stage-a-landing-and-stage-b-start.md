@@ -1,19 +1,30 @@
 RUNBOOK -- PLAYBOOK-DESIGN-002 HANDOFF
 =======================================
 date: 2026-07
-what this is: a self-contained, numbered checklist to (Stage A) update
-  the repo in two commits, then (handoff) start the Stage B refactor
-  thread. Each STEP is independently followable. Do them in order.
-companions (all should be committed in STEP A0):
-  - consolidation-PLAYBOOK-DESIGN-002.md   (decisions record)
-  - plan-edits-PLAYBOOK-DESIGN-002.md      (verbatim LOCATE/REPLACE)
-  - kickoff-PLAYBOOK-IMPL-003.md           (Stage B start prompt)
-placement rule: keep these three companions + this runbook OUTSIDE
-  llm_playbook/ (they quote the parent-repo name). Put them at repo root
-  or in drill/llm/.
-ground truth SHA at handoff: f7a320b2900550e472facb39565e1b200b983a5d
-  (if you have moved past this, substitute your current HEAD everywhere
-  and re-pack in the Stage B bootstrap.)
+type: plan
+scope: the numbered checklist that landed the PLAYBOOK-DESIGN-002
+  decisions in two commits and then started the Stage B refactor
+  thread. SPENT -- Stage A landed and Stage B ran as PLAYBOOK-IMPL-003.
+  Kept as the record of what was done, not as instructions to follow.
+status: outdated
+
+WHAT THIS WAS
+  A self-contained, numbered checklist to (Stage A) update the repo in
+  two commits, then (handoff) start the Stage B refactor thread. Each
+  STEP was independently followable, in order.
+  Companions, committed together in STEP A0, under the names they then
+  had. All three have since moved under llm/ and been renamed; the
+  filenames throughout this document are historical, not current, and
+  are deliberately left as they stood.
+    - consolidation-PLAYBOOK-DESIGN-002.md   (decisions record)
+    - plan-edits-PLAYBOOK-DESIGN-002.md      (verbatim LOCATE/REPLACE)
+    - kickoff-PLAYBOOK-IMPL-003.md           (Stage B start prompt)
+  The placement rule that required this file and its companions to sit
+  OUTSIDE llm_playbook/ is RETIRED. Containment is now scoped to the
+  toolkit layer and llm/ is exempt, so a thread artifact may name the
+  parent repository where it describes work done inside it.
+  ground truth SHA at handoff:
+    f7a320b2900550e472facb39565e1b200b983a5d
 
 ========================================================================
 STAGE A -- UPDATE THE REPO (two commits: C1 then C2)
