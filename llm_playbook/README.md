@@ -45,6 +45,6 @@ LITE MODE
   entry file.
 
 ROLE ROUTING
-  Threads declare one role: DESIGN, IMPLEMENTATION, or CAPTURE.
+  Threads declare one role: DESIGN, IMPL, or CAPTURE.
   The entry file entry/ENTRY.md (arrives at commit T-014) carries
   the common invariants and the three role sections.
