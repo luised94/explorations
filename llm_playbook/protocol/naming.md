@@ -97,19 +97,50 @@ FRONTMATTER FIELDS
              document. Dates NEVER appear in filenames (N2); the
              sole exception is decisions era shards, whose era IS
              the filename.
-    type     what kind of document this is, where the filename
-             alone would not say: handoff, close, kickoff, plan,
-             decisions, render, prompt, instance-rules. Required
-             where the directory rather than the filename carries
-             the classification.
+    type     what kind of document this is: design, plan, handoff,
+             kickoff, close, decisions, refinements, render, prompt,
+             instance-rules. Required on every non-sentinel
+             document, because the frontmatter and not the path is
+             what carries the classification.
     scope    one line on what the document governs and what it
              does not. Required on playbook protocol and preference
              documents.
-    from     sending thread id. Handoffs only.
-    to       receiving thread id or ROLE word. Handoffs only.
+    status   current, superseded or outdated. Required on every
+             non-sentinel document; see STATUS below.
+    from     sending thread id. The handoff category only, and
+             omitted by a project's first kickoff, which has no
+             sending thread.
+    to       receiving thread id or ROLE word. The handoff category
+             only.
+    role     the RECEIVING thread's role: DESIGN, IMPL or CAPTURE.
+             The handoff category only. This is the same word the
+             filename's TO slot holds while the receiving id is
+             still unknown.
+    supersedes
+             the document this one replaces, by path. Required
+             where a document replaces a named predecessor.
     version  semantic version, where the document is versioned
              independently of the playbook VERSION file.
   A field this list does not name is a finding, not an exception.
+
+  STATUS answers exactly one question: DOES THIS DOCUMENT BIND ME?
+    current     it governs now.
+    superseded  it does not; follow the successor, which names this
+                document in its supersedes field.
+    outdated    it does not, and there is no successor.
+  A document that does not say whether it is current is the drift
+  this grammar exists to remove. status is orthogonal to type: a
+  close artifact is status: current, because it is an accurate
+  record that has not been corrected, and it takes its
+  non-authority from type: close and not from its status. A close
+  artifact later found wrong becomes superseded by the correction.
+
+  RETIRED FIELDS, listed so a reader meeting one in an older file
+  knows it was removed rather than forgotten:
+    revision  git has it.
+    purpose   that is scope.
+    governs   that is scope.
+    thread    that is from, or the filename.
 
 REFINEMENT IDS
   Form: RF-PROJ-NNN, assigned in the project's refinements.md at
