@@ -1,11 +1,18 @@
 CLOSE -- PLAYBOOK-DESIGN-004
 ============================
 date: 2026-07
-thread: PLAYBOOK-DESIGN-004 (design role)
-gate: G-1 -- closes the PROTOCOL gap behind G-1a/G-1b; does NOT itself
-close G-1, which requires a re-test (handed off).
-predecessor: PLAYBOOK-IMPL-003 (ran G-1a/G-1b; passed transport, failed
-render effect).
+type: close
+scope: the terminal record of thread PLAYBOOK-DESIGN-004, which closed
+  the protocol gap behind G-1a and G-1b. Records what that thread
+  landed. It governs nothing.
+status: current
+
+THREAD RECORD
+  gate         G-1 -- closes the PROTOCOL gap behind G-1a/G-1b; does
+               NOT itself close G-1, which requires a re-test (handed
+               off).
+  predecessor  PLAYBOOK-IMPL-003 (ran G-1a/G-1b; passed transport,
+               failed render effect).
 
 RESULT: THE PROTOCOL GAP IS CLOSED; G-1 REMAINS OPEN PENDING RE-TEST.
   G-1b failed because nothing made the render authoritative: a thread

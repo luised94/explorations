@@ -1,9 +1,17 @@
 HANDOFF -- PLAYBOOK-DESIGN-004 to IMPL
+======================================
 date: 2026-07
 type: handoff
-from: PLAYBOOK-DESIGN-004 (design; closed the protocol gap behind G-1a/G-1b)
-to:   PLAYBOOK-IMPL (executes the G-1 re-test; may NOT redesign the protocol)
-why a two-thread test, not a self-check: the thread that does drill
+from: PLAYBOOK-DESIGN-004
+to:   IMPL
+role: IMPL
+scope: the G-1 render-effect re-test. The receiving thread executes it
+  and may NOT redesign the protocol. The sending thread closed the
+  protocol gap behind G-1a and G-1b.
+status: current
+
+WHY A TWO-THREAD TEST, NOT A SELF-CHECK
+  The thread that does drill
   work under the render must NOT know it is a render test, or it will
   perform binding and prove nothing. The thread that EVALUATES must not
   be the thread that authored the render or read this conversation, or

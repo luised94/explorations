@@ -119,6 +119,15 @@ Decided in this session:
          implementation-plan.md T-009, which specifies it, rather than
          reconstructed from drill's copy.
   DEC-16 Delivery follows ADR-023 MODE A. See DELIVERY below.
+  DEC-18 A KICKOFF IS A HANDOFF -- a member of the category, not a
+         separate genre. Same directory, same <FROM>-to-<TO>.md form,
+         same from and to fields; it differs by type, and that
+         difference is load-bearing, because type: kickoff is what
+         obliges the document to carry the binding sentence and the
+         stamp statement (ADR-030). The two documents on one edge do
+         not collide: TO is the ROLE word before the receiving id is
+         known and the id after. Closes the kickoff half of OPEN-1
+         without a fifth lifecycle directory.
   DEC-17 The era-sharding trigger in ADR-012 has fired and is
          DEFERRED with the trigger recorded. Sharding mid-effort is
          what ADR-012's own note warns against, and this thread
@@ -313,6 +322,27 @@ F-22  TWO DOCUMENT TYPES HAVE NO HOME IN THE SCHEME.
         R-C artifact, which needs a path.
       See OPEN-1.
 
+F-23  THE ADR-034 INDEX ENTRY WAS DAMAGED IN CONTENT. It dropped "is
+      built" from the title and carried an appended fragment about
+      transport.md where a title continuation belongs. Found only
+      because the 1203-character line beside it was rewrapped. Fixed
+      in its own commit, separate from the no-op rewraps.
+
+F-24  F-17'S PROJECTION WAS LOW, AND naming.md IS NOW OVER ITS
+      CEILING. Projected ~190; actual 229 against a ceiling of 200.
+      The rewrap alone took it from 104 to 145, not the ~134
+      estimated. Under DEC-11 this warns rather than fails and is
+      recorded, not hidden. Whether naming.md should be SPLIT is a
+      real question and is deliberately not answered here -- see
+      OPEN-4.
+
+F-25  THE TREE DOES NOT GO GREEN AT C-06, AS THIS PLAN CLAIMED. The
+      five containment failures are on files that are correct to keep
+      and merely wrong to place; the llm/ exemption clears them only
+      once they are moved. Green arrives at C-08. Verified by dry
+      run: with the five moved into llm/, check.sh reports clean and
+      exits 0.
+
 --------------------------------------------------------------------------
 ADVERSARIAL PASS
 --------------------------------------------------------------------------
@@ -482,13 +512,16 @@ OUT OF SCOPE -- named, and staying out
 OPEN -- decide before the commits they gate
 --------------------------------------------------------------------------
 
-OPEN-1  (gates C-07, C-08, C-12) Where do kickoffs and R-C output live?
-        F-22. Options: add llm/kickoff/ as a fifth lifecycle directory;
-        or treat a kickoff as thread-ephemeral and delete it once its
-        thread closes, since the close artifact is the durable trace
-        (R13's own wording); or fold kickoffs into llm/design/. R-C
-        needs a path regardless -- render.md gives one to R-A and R-B
-        and none to R-C.
+OPEN-1  (gates C-12) Where does render.md's R-C output live? render.md
+        gives R-A and R-B a path (<project>/llm/) and gives R-C none;
+        it is described only by where it is pasted. DEC-14 makes
+        default_system_prompt.md an R-C artifact, which needs one.
+        The kickoff half of this question is closed by DEC-18.
+
+OPEN-4  (gates nothing; decide when convenient) naming.md is 229 lines
+        against a 200-line ceiling (F-24). Split it, accept the warn,
+        or recalibrate the ceiling once there is data? Splitting is
+        out of scope for this thread and is not done unilaterally.
 
 OPEN-2  (gates C-08) implementation-plan.md: rename or keep the name?
 

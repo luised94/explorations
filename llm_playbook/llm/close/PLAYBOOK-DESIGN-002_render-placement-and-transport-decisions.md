@@ -1,13 +1,19 @@
-CONSOLIDATION -- PLAYBOOK-DESIGN-002
-=====================================
+CLOSE -- PLAYBOOK-DESIGN-002
+============================
 date: 2026-07
-thread: PLAYBOOK-DESIGN-002 (a design thread; it produced decisions and
-        plan edits, not plan-id commits)
-purpose: freeze every gain and decision from this thread so none of it
-         depends on the chat surviving. This IS the thread's close
-         artifact (R12: a design thread's artifacts are its close).
-governs the immediate work: Stage A (repo update), Stage B (the G-1
-         refactor = PLAYBOOK-IMPL-003), Stage C (the two G-1 tests).
+type: close
+scope: the terminal record of thread PLAYBOOK-DESIGN-002, a design
+  thread that produced decisions and plan edits rather than plan-id
+  commits. It froze the thread's gains so none of them depended on the
+  chat surviving. The work it governed is done.
+status: current
+
+THREAD RECORD
+  This IS the thread's close artifact (R12: a design thread's
+  artifacts are its close). The title said CONSOLIDATION while the
+  document said close artifact; the title now agrees with the type.
+  governed  Stage A (repo update), Stage B (the G-1 refactor =
+            PLAYBOOK-IMPL-003), Stage C (the two G-1 tests).
 
 ------------------------------------------------------------------------
 PART 1. WHAT THIS THREAD ESTABLISHED (the story)

@@ -1,12 +1,22 @@
 HANDOFF -- PLAYBOOK-IMPL-003 to PLAYBOOK-DESIGN-004
 ====================================================
 date: 2026-07
-from: PLAYBOOK-IMPL-003 (implementation; gate G-1a)
-to:   PLAYBOOK-DESIGN-004 (design; must propose ADRs, not execute)
-why a DESIGN thread: what remains is protocol change and document
-consolidation. There is no fixed plan to execute -- the work needs
-decisions recorded as ADRs first. An implementation thread would have
-to invent the design silently, which the deviation rule forbids.
+type: handoff
+from: PLAYBOOK-IMPL-003
+to:   PLAYBOOK-DESIGN-004
+role: DESIGN
+scope: what PLAYBOOK-DESIGN-004 inherits from the G-1a gate run --
+  protocol change and document consolidation. It does not carry the
+  gate result itself; that is in the IMPL-003 close artifact.
+status: current
+
+WHY A DESIGN THREAD
+  What remains is protocol change and document consolidation. There is
+  no fixed plan to execute -- the work needs decisions recorded as ADRs
+  first. An implementation thread would have to invent the design
+  silently, which the deviation rule forbids.
+  Sending thread: implementation, gate G-1a. Receiving thread: design,
+  and it must propose ADRs, not execute.
 
 READ FIRST
   drill/llm/g1-findings.md   findings F1-F13, the gate result, and

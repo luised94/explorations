@@ -1,12 +1,20 @@
 CLOSE -- PLAYBOOK-IMPL-003
 ==========================
 date: 2026-07
-thread: PLAYBOOK-IMPL-003 (implementation role)
-gate: G-1a TRANSPORT/RENDER -- the transport/render half of the split
-G-1 early-use gate (ADR-020..023, plan Edit 7).
-predecessor: PLAYBOOK-DESIGN-002 (produced ADR-020..029 and the plan
-edits; Stage A landed the plan and the ADRs in two commits).
-bootstrap SHA: 69ae0609b575b885afb51ffe1c1445eba07b884f
+type: close
+scope: the terminal record of thread PLAYBOOK-IMPL-003, which ran the
+  G-1a transport and render gate. Records what that thread landed and
+  what it failed. It governs nothing.
+status: current
+
+THREAD RECORD
+  gate         G-1a TRANSPORT/RENDER -- the transport/render half of
+               the split G-1 early-use gate (ADR-020..023, plan
+               Edit 7).
+  predecessor  PLAYBOOK-DESIGN-002 (produced ADR-020..029 and the
+               plan edits; Stage A landed the plan and the ADRs in
+               two commits).
+  bootstrap    69ae0609b575b885afb51ffe1c1445eba07b884f
 
 RESULT: G-1a PASSES ON TRANSPORT, FAILS ON RENDER EFFECT.
   The corrected transport path was exercised end to end on real
