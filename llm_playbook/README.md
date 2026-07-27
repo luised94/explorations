@@ -31,10 +31,23 @@ TRANSPORT (getting content INTO a chat)
   retired for this reason (ADR-021).
 
 CHECKS AND HOOK INSTALLATION
-  scripts/check.sh enforces line budgets, token estimates, and
-  containment (no upward path references, no parent-repository
-  name in prose). Install as a pre-commit hook from the repository
-  root with this one line:
+  scripts/check.sh runs at two severities, and the difference
+  matters. It FAILS, blocking the commit, on containment (no
+  upward path references, no parent-repository name in prose) and
+  on non-ASCII bytes -- correctness, objectively checkable. It
+  WARNS, without blocking, on line ceilings and REQREAD token
+  budgets: those numbers were hand-set without measurement
+  (ADR-028) and are kept as an accretion signal rather than a
+  gate. A warning is information, not a defect to be silenced by
+  editing the work to fit.
+
+  Containment is scoped to the TOOLKIT layer. llm/ is exempt: it
+  holds this project's own thread history, which travels with the
+  project either way and legitimately names the parent repository
+  where it describes work done inside it.
+
+  Install as a pre-commit hook from the repository root with this
+  one line:
 
     ln -s "$PWD/llm_playbook/scripts/check.sh" .git/hooks/pre-commit
 
