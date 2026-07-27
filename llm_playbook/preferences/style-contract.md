@@ -23,14 +23,21 @@ NAMES
       words: USB, URL, ID, HTTP, HTML, CSS, SQL, JSON, CSV, TTS,
       UTC, API, DOM, UI. When in doubt, write it out: response
       not resp, connection not conn, index not idx.
-  S2. A helper called by exactly one function is prefixed with
-      its caller's name (parse_import -> parse_import_row), so
-      the call graph is legible from names alone.
+  S2. Where a single-call-site helper exists at all -- S28 says
+      inline by default -- it is prefixed with its caller's name
+      (parse_import -> parse_import_row), so the call graph is
+      legible from names alone.
   S3. Booleans read as assertions (is_ready, has_entries);
       collections read as plurals (entries, categories). NEVER
       overload one name with context-dependent meanings.
   S4. Related names take the same length where natural so they
       read as a set: source/target, first/final, before/after.
+  S30. A rename is NEVER performed by blind pattern
+      substitution. Before renaming, search the token in prose,
+      comments, user-facing messages, ticket references, and
+      output format strings; after renaming, re-run the tests. A
+      substitution that matched a word inside a sentence leaves
+      damage that still compiles.
 
 CONTROL FLOW
   S5. Standard, boring control flow. NEVER a clever or idiomatic
@@ -70,6 +77,14 @@ ABSTRACTION
       scalars).
   S14. Quarantine an awkward external dependency behind a tiny
       wrapper that is the ONLY code touching it.
+  S28. Flat procedural by default. A helper, wrapper, or
+      abstraction built for a SINGLE call site is not created;
+      the logic is inlined where it is used. Extract when the
+      second real call site exists (S12), not before.
+  S29. NEVER add indirection or nesting that does not pay for
+      itself. One longer readable block beats three short ones
+      that force a reader to jump between them to follow a
+      single path.
 
 STATE AND BOUNDARIES
   S15. In-memory state has one source of truth; NEVER duplicate
