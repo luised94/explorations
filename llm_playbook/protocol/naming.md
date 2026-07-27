@@ -9,10 +9,12 @@ or filenames (separator undecided); candidate future thread.
 
 GENERAL RULES
   N1. ASCII only; UPPERCASE id components; hyphen "-" is the only
-      separator inside ids and filenames. Filenames are lowercase,
-      except SENTINEL files, fixed-name files whose name is their
-      role: README.md, LICENSE, VERSION, MANIFEST.md, PROJECT.md,
-      STATUS.md, CONTEXT.md, CLAUDE.md, AGENTS.md, ENTRY.md. New
+      separator inside ids and filenames (amended by N8, which
+      admits the underscore at one boundary only). Filenames are
+      lowercase, except SENTINEL files, fixed-name files whose name is
+      their role: README.md, LICENSE, VERSION, MANIFEST.md,
+      PROJECT.md, STATUS.md, CONTEXT.md, CLAUDE.md, AGENTS.md,
+      ENTRY.md. New
       sentinels are not invented ad hoc; the set is exactly the
       names listed in this grammar and the project skeleton.
   N2. Dates live in frontmatter, never in filenames. Sole
@@ -180,6 +182,43 @@ PLAYBOOK ARTIFACTS
   frontmatter. A prompt is a METHOD and never an authority;
   precedence.md places it below the render and below project
   instance rules.
+
+DESCRIPTIVE SEGMENT
+
+  N6. A filename must name its SUBJECT. It must not name its genre
+      (plan, design, notes, findings, doc, guide) nor its position
+      in a process (phase0, wave1, step2, design-A). Genre is
+      carried by the type field, and a position goes stale the
+      first time the process changes. This is the rule already
+      applied to workflow prompts -- the name states WHAT THE
+      PROMPT DOES, as a verb phrase, not the phase it belongs to --
+      generalized from verbs to subjects.
+      Tiebreaker where two candidates both pass: prefer the one
+      that lets a reader decide whether to open the file without
+      opening it.
+
+  N7. Where a filename is an ID, the id names nothing on its own,
+      so a descriptive segment is appended after an UNDERSCORE:
+
+        <ID>_<descriptive>.md
+
+      Underscore and not hyphen, because ids already contain
+      hyphens (PLAYBOOK-DESIGN-004) and a hyphenated suffix would
+      leave no parseable boundary between the id and the
+      description. One split on "_" recovers the id. This decides
+      the separator ADR-026 left open.
+      Applies to close artifacts and to the handoff category.
+      Does NOT apply to a file whose whole name is already its
+      subject (style-contract.md, commit-planning.md); appending
+      an id to those would be the reverse error.
+      Examples:
+        close/PLAYBOOK-IMPL-003_g1a-transport-render-gate.md
+        handoff/PLAYBOOK-DESIGN-004-to-IMPL_g1-render-retest.md
+
+  N8. Amends N1: the hyphen is the only separator WITHIN an id and
+      WITHIN a descriptive segment; the underscore separates the
+      two from each other, at that one boundary. No other
+      separator is used.
 
 CLASSIFICATION NOTE
   Existing artifacts predating this grammar are classifiable
