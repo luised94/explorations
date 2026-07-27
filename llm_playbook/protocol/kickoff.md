@@ -77,6 +77,11 @@ stamp statement are NOT optional in either delivery mode.
 NOTES ON USE
   - One kickoff opens one thread; a thread declares its id in its
     first message (rule R13, thread-protocol.md).
+  - A kickoff IS a handoff (naming.md): same directory, same
+    <FROM>-to-<TO>.md form, same from and to fields. It differs by
+    type, and that difference is load-bearing -- type: kickoff is
+    what obliges the document to carry WHAT BINDS YOU and STATE THE
+    STAMP.
   - The binding sentence is one sentence and it is load-bearing.
     Shortening it to "context is attached" reproduces exactly the
     failure this file exists to prevent.
@@ -91,10 +96,11 @@ HANDOFF TEMPLATE
 Filename: <FROM>-to-<TO>.md in the project's handoff/ directory,
 where FROM is the sending thread id in full form and TO is the
 receiving thread id if known, else the receiving ROLE word
-(naming.md). The directory carries the classification, so the
+(naming.md). The frontmatter carries the classification, so the
 filename does not repeat it; the type field below keeps the file
-self-describing when it is read away from its directory. One
-handoff, one file; a revision supersedes in place.
+self-describing when it is read away from its directory, which is
+the normal transport path here. One handoff, one file; a revision
+supersedes in place.
 
   HANDOFF -- <FROM> to <TO>
   date: <YYYY-MM>

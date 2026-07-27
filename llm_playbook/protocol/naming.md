@@ -63,12 +63,26 @@ HANDOFF FILENAMES
   Example: handoff/DRILL-DESIGN-007-to-IMPL.md. One handoff, one
   file; a revised handoff supersedes in place (git keeps history).
 
-  THE DIRECTORY CARRIES THE CLASSIFICATION. The containing directory
-  is named handoff/, so a handoff- prefix on the filename inside it
-  would restate what the path already says. The file states its own
-  type in frontmatter instead (see below), so a handoff detached from
-  its directory -- pasted into a chat, packed into an archive, quoted
-  in another document -- still declares what it is.
+  THE FRONTMATTER CARRIES THE CLASSIFICATION. A handoff- prefix on a
+  file inside handoff/ restates what the type field already says, so
+  the prefix is dropped. The classification lives in frontmatter and
+  not in the path because the path does not survive transport: these
+  documents are routinely packed into an archive or pasted whole into
+  a chat (README, Tier C), and a file whose type is carried by its
+  directory arrives in a chat with no type at all. The directory is
+  shelving; the frontmatter is the claim.
+
+  A KICKOFF IS A HANDOFF. Same directory, same filename form, same
+  from and to fields; it differs only in type. A handoff is written by
+  the sending thread at its close and looks back; a kickoff is written
+  when the receiving thread opens, and it must additionally carry the
+  binding sentence and the stamp statement (kickoff.md, ADR-030). The
+  two documents on one edge do not collide, because TO is the ROLE
+  word while the receiving id is unknown and the id once it is known:
+    handoff, written at close  PLAYBOOK-DESIGN-004-to-IMPL.md
+    kickoff, written at open   PLAYBOOK-DESIGN-004-to-IMPL-005.md
+  A kickoff with no sending thread -- a project's first -- omits from
+  and is named <TO>.md.
 
   Superseded form: handoff-<FROM>-to-<TO>.md in llm/handoffs/. Files
   already bearing that form are classifiable and are NOT renamed in
