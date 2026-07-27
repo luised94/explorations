@@ -24,9 +24,9 @@ REQUIRED-READ LISTS
   then adds the method documents that role reaches for. One line per
   role; a line is not wrapped, because check.sh reads it whole.
 
-REQREAD DESIGN 10000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/prompts/adversarial-review.md llm_playbook/protocol/prompts/plan-review.md llm_playbook/protocol/prompts/spike-and-verify.md
-REQREAD IMPL 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/prompts/commit-planning.md llm_playbook/protocol/prompts/clone-and-verify.md llm_playbook/protocol/prompts/runtime-verification.md
-REQREAD CAPTURE 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md
+REQREAD DESIGN 10000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/close.md llm_playbook/protocol/prompts/adversarial-review.md llm_playbook/protocol/prompts/plan-review.md llm_playbook/protocol/prompts/spike-and-verify.md
+REQREAD IMPL 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/close.md llm_playbook/protocol/prompts/commit-planning.md llm_playbook/protocol/prompts/clone-and-verify.md llm_playbook/protocol/prompts/runtime-verification.md
+REQREAD CAPTURE 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/close.md
 
   CAPTURE'S LIST IS PROVISIONAL. The role is named in five documents
   and DEFINED in none: entry/ENTRY.md was to carry the three role
@@ -38,10 +38,10 @@ REQREAD CAPTURE 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/prec
   ALL THREE BUDGETS ARE EXCEEDED, measured here for the first time:
 
     load-always alone                      4877 tokens
-    load-always + kickoff.md               6501 tokens
-    DESIGN   10768 vs budget 10000   over by   768
-    IMPL      9932 vs budget  6000   over by  3932
-    CAPTURE   6501 vs budget  6000   over by   501
+    + kickoff.md and close.md              7424 tokens
+    DESIGN   11690 vs budget 10000   over by  1690
+    IMPL     10854 vs budget  6000   over by  4854
+    CAPTURE   7424 vs budget  6000   over by  1424
 
   The lists are NOT trimmed to fit. The budgets were hand-set without
   measurement (ADR-028) and warn rather than gate; trimming a correct
@@ -78,6 +78,7 @@ DOCUMENT TABLE
   LOAD-PER-ROLE
     preferences/render.md  toolkit-rules
     preferences/transport.md  toolkit-rules
+    protocol/close.md  toolkit-rules
     protocol/kickoff.md  toolkit-rules
     protocol/prompts/adversarial-review.md  prompt
     protocol/prompts/clone-and-verify.md  prompt
