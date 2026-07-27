@@ -25,10 +25,21 @@ TARGETS, IN PRIORITY ORDER
        agentic environment and are never authored independently.
        Content: identical to R-A (the filename, not the content,
        is what those environments key on).
-  R-C. The platform settings block: a condensed extract (persona
-       and constraint items only) pasted once into a chat
-       platform's standing-preferences setting. Regenerated
-       whenever R-A is.
+  R-C. The platform settings block, at
+       preferences/platform-settings-block.md in the playbook: a
+       condensed extract (persona and constraint items only)
+       pasted once into a chat platform's standing-preferences
+       setting. Regenerated whenever R-A is.
+       It lives in the TOOLKIT layer and not in any project's
+       llm/, because it is not project state. It is generated
+       from layers.md alone, with no instance rules, and one
+       block serves every chat whatever project the thread is
+       about; filing it under one project would misname it and
+       filing a copy under each would duplicate it. It is
+       committed rather than regenerated on demand because a
+       committed copy is the only thing the stamp can be
+       compared against -- without one, a settings block that has
+       drifted from its sources is undetectable.
 
 STAMP
   Line 2 of every render, exactly:
@@ -41,6 +52,18 @@ STAMP
   runnable from the project root:
 
     tail -n +3 CONTEXT.md | sha1sum | cut -c1-8
+
+  R-C IS STAMPED AGAINST ITS SOURCES, NOT AGAINST ITSELF. R-A is
+  generated from the playbook into a project, so the playbook
+  commit it cites is external and knowable when the render is
+  written. R-C is generated from the playbook INTO the playbook,
+  so citing the commit that contains it would be circular -- the
+  sha is not known until after the commit exists. R-C therefore
+  cites the playbook commit that last changed its SOURCES
+  (layers.md, or the private overlay). That is knowable before
+  writing, and it is the more useful fact anyway: the question a
+  reader has is which version of the sources this was built
+  from.
 
   The kickoff skeleton requires the model to STATE the stamp it
   sees at thread start. This one statement catches both failure
@@ -73,7 +96,9 @@ RENDER PASS, BY HAND (v0.x; automation is deferred work)
   4. Prepend lines 1-2; compute the hash with the command above;
      fill the stamp.
   5. Copy the result to CLAUDE.md and AGENTS.md unchanged, beside
-     CONTEXT.md in <project>/llm/; update the platform settings
-     block if persona or constraint items changed.
+     CONTEXT.md in <project>/llm/. If persona or constraint items
+     changed, regenerate preferences/platform-settings-block.md
+     from those items alone and re-paste it into the platform
+     setting; it carries no instance rules and no style clauses.
   6. Run scripts/check.sh (the 250-line ceiling is checked on
      staged CONTEXT.md files).
