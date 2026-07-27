@@ -1,6 +1,7 @@
 NAMING
 ======
 date: 2026-07
+type: toolkit-rules
 scope: the naming grammar for thread ids, commit prefixes, handoff
 filenames, refinement ids, close-artifact filenames, preference item
 ids, and the playbook's own artifacts. DEFERRED, out of scope here:
@@ -99,11 +100,22 @@ FRONTMATTER FIELDS
              document. Dates NEVER appear in filenames (N2); the
              sole exception is decisions era shards, whose era IS
              the filename.
-    type     what kind of document this is: design, plan, handoff,
-             kickoff, close, decisions, refinements, render, prompt,
-             instance-rules. Required on every non-sentinel
-             document, because the frontmatter and not the path is
-             what carries the classification.
+    type     what kind of document this is. Required on every
+             non-sentinel document, because the frontmatter and not
+             the path is what carries the classification.
+               toolkit-rules     rules governing how the toolkit is
+                                 used: this file, precedence.md,
+                                 kickoff.md, render.md, transport.md
+               preference-source the item sets a render composes
+                                 from: layers.md, style-contract.md
+               instance-rules    one project's rules: PROJECT.md
+               prompt            a method, never an authority
+               design plan handoff kickoff close   thread artifacts
+               decisions refinements render        records and output
+             toolkit-rules and preference-source are distinguished
+             because one governs authoring and the other is the
+             material composed into a render -- a difference in
+             kind, not in shelving.
     scope    one line on what the document governs and what it
              does not. Required on playbook protocol and preference
              documents.

@@ -2,6 +2,7 @@ STYLE CONTRACT
 ==============
 date: 2026-07
 version: 0.1.0
+type: preference-source
 scope: the diff-checkable coding standard. Every clause is written
 so a reviewer can point at lines of a diff and say "this clause,
 violated" -- no clause is a vibe. Project-specific invariants (for

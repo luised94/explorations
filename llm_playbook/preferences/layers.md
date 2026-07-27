@@ -2,6 +2,7 @@ PREFERENCE LAYERS
 =================
 date: 2026-07
 version: 0.1.0
+type: preference-source
 scope: the four persistent preference layers -- Persona, Constraint,
 Criteria, Convention -- composed of self-contained ITEMS. Instance
 and thread-scoped material (project context, phase instructions)

@@ -1,6 +1,7 @@
 PRECEDENCE
 ==========
 date: 2026-07
+type: toolkit-rules
 scope: who wins when rules conflict. There are TWO separate chains;
 confusing them was the original defect this document repairs. A
 stateless model cannot arbitrate a chain whose lower links it never

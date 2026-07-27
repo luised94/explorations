@@ -1,7 +1,7 @@
 KICKOFF
 =======
 date: 2026-07
-type: kickoff
+type: toolkit-rules
 scope: the KICKOFF and HANDOFF templates. A kickoff opens a thread
 and states what binds it; a handoff closes one and states what the
 next thread inherits. Both were previously retyped as prose per

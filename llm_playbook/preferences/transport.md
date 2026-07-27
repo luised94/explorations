@@ -2,6 +2,7 @@ TRANSPORT
 =========
 date: 2026-07
 version: 0.1.0
+type: toolkit-rules
 scope: how a chosen file set reaches a chat thread. Transport moves
 CONTENT; it is firewalled from the preferences overlay, which moves
 private PREFERENCES (layers.md, ADR-008). Neither references the
