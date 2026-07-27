@@ -92,6 +92,7 @@ DOCUMENT TABLE
     README.md  sentinel
     VERSION  sentinel
     decisions/era-2026-q3.md  decisions
+    llm/close/PLAYBOOK-IMPL-004_repo-consolidation-and-check-rework.md  close
     llm/close/PLAYBOOK-DESIGN-002_render-placement-and-transport-decisions.md  close
     llm/close/PLAYBOOK-DESIGN-004_kickoff-binding-and-prompt-promotion.md  close
     llm/close/PLAYBOOK-IMPL-003_g1a-transport-pass-render-fail.md  close
