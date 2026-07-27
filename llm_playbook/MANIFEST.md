@@ -96,6 +96,7 @@ DOCUMENT TABLE
     llm/close/PLAYBOOK-DESIGN-002_render-placement-and-transport-decisions.md  close
     llm/close/PLAYBOOK-DESIGN-004_kickoff-binding-and-prompt-promotion.md  close
     llm/close/PLAYBOOK-IMPL-003_g1a-transport-pass-render-fail.md  close
+    llm/handoff/PLAYBOOK-IMPL-004-to-DRILL-DESIGN_inherited-rules-and-rerender-obligation.md  handoff
     llm/handoff/PLAYBOOK-DESIGN-002-to-IMPL-003_stage-b-g1a-gate.md  kickoff
     llm/handoff/PLAYBOOK-DESIGN-004-to-IMPL_g1-render-effect-retest.md  handoff
     llm/handoff/PLAYBOOK-IMPL-003-to-DESIGN-004_protocol-gap-and-doc-consolidation.md  handoff
