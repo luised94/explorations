@@ -61,6 +61,23 @@ stamp statement are NOT optional in either delivery mode.
     so; do not proceed on general knowledge or on another document
     you found instead.
 
+  DECLARE WHAT YOU WILL PRODUCE
+    In the same first message, and before planning anything, state:
+      - your THREAD ID, in the form PROJ-ROLE-NNN (R13). Derive the
+        NNN from the highest existing thread id for this project.
+      - THE TASK, in one sentence, in your own words. If your
+        sentence and the scope line above disagree, say so now.
+      - THE FILENAMES you expect to produce, derived from the
+        naming grammar and not invented: your close artifact, and
+        any handoff. Give the full paths.
+    If you cannot construct those names from the grammar, you have
+    not read naming.md, and that is the finding -- say so and STOP,
+    exactly as with the stamp above.
+    Provisional by design. A thread often discovers that its real
+    subject is not the one it was opened on; the descriptive segment
+    is corrected at close, and the correction is worth noticing
+    because it means the kickoff scope was wrong.
+
   READ NEXT
     <STATUS.md for live status; the governing plan; anything the
     task specifically needs. Everything here is subordinate to the
@@ -77,6 +94,13 @@ stamp statement are NOT optional in either delivery mode.
 NOTES ON USE
   - One kickoff opens one thread; a thread declares its id in its
     first message (rule R13, thread-protocol.md).
+  - DECLARE WHAT YOU WILL PRODUCE is the same mechanism as STATE
+    THE STAMP and exists for the same reason. The stamp catches a
+    thread that did not open the render; the declaration catches a
+    thread that did not read the naming grammar. Both are cheap to
+    state and impossible to fake without having read the source,
+    which is what makes them worth asking for. Neither is a
+    formality: a wrong answer is the diagnostic.
   - A kickoff IS a handoff (naming.md): same directory, same
     <FROM>-to-<TO>.md form, same from and to fields. It differs by
     type, and that difference is load-bearing -- type: kickoff is

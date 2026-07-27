@@ -38,10 +38,10 @@ REQREAD CAPTURE 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/prec
   ALL THREE BUDGETS ARE EXCEEDED, measured here for the first time:
 
     load-always alone                      4877 tokens
-    + kickoff.md and close.md              7424 tokens
-    DESIGN   11690 vs budget 10000   over by  1690
-    IMPL     10854 vs budget  6000   over by  4854
-    CAPTURE   7424 vs budget  6000   over by  1424
+    + kickoff.md and close.md              7771 tokens
+    DESIGN   12038 vs budget 10000   over by  2038
+    IMPL     11202 vs budget  6000   over by  5202
+    CAPTURE   7771 vs budget  6000   over by  1771
 
   The lists are NOT trimmed to fit. The budgets were hand-set without
   measurement (ADR-028) and warn rather than gate; trimming a correct
