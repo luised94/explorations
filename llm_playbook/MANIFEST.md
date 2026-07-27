@@ -19,6 +19,42 @@ MACHINE-READABLE BLOCK FORMAT (parsed by scripts/check.sh)
   total characters divided by 4. Roles and budgets:
   DESIGN 10000, IMPL 6000, CAPTURE 6000.
 
+REQUIRED-READ LISTS
+  Every list opens with the load-always set plus the kickoff template,
+  then adds the method documents that role reaches for. One line per
+  role; a line is not wrapped, because check.sh reads it whole.
+
+REQREAD DESIGN 10000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/prompts/adversarial-review.md llm_playbook/protocol/prompts/plan-review.md llm_playbook/protocol/prompts/spike-and-verify.md
+REQREAD IMPL 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md llm_playbook/protocol/prompts/commit-planning.md llm_playbook/protocol/prompts/clone-and-verify.md llm_playbook/protocol/prompts/runtime-verification.md
+REQREAD CAPTURE 6000: llm_playbook/protocol/naming.md llm_playbook/protocol/precedence.md llm_playbook/protocol/thread-protocol.md llm_playbook/protocol/kickoff.md
+
+  CAPTURE'S LIST IS PROVISIONAL. The role is named in five documents
+  and DEFINED in none: entry/ENTRY.md was to carry the three role
+  sections and does not exist yet (T-014). Its list is therefore the
+  common set and nothing role-specific, because there is no basis for
+  choosing anything role-specific. Filling it by analogy would be
+  inventing the role.
+
+  ALL THREE BUDGETS ARE EXCEEDED, measured here for the first time:
+
+    load-always alone                      4877 tokens
+    load-always + kickoff.md               6501 tokens
+    DESIGN   10768 vs budget 10000   over by   768
+    IMPL      9932 vs budget  6000   over by  3932
+    CAPTURE   6501 vs budget  6000   over by   501
+
+  The lists are NOT trimmed to fit. The budgets were hand-set without
+  measurement (ADR-028) and warn rather than gate; trimming a correct
+  required-read list to satisfy an uncalibrated number would be fitting
+  the work to the guess. CAPTURE is over on the common set alone, with
+  nothing role-specific in it at all, which is the clearest evidence
+  the figures are wrong rather than the lists.
+
+  naming.md is 3013 tokens by itself -- half the IMPL budget -- having
+  grown from 104 to 241 lines in this thread. If any single change
+  would bring these numbers back into range it is splitting that file,
+  which is recorded as open and not done here.
+
 LOAD CLASSES
   load-always | load-per-role | on-demand
 
