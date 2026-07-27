@@ -66,6 +66,24 @@ RF-PLAYBOOK-006  the sandbox shell is dash, not bash
     delivered scripts; this extends the same constraint to throwaway
     verification work, where it was being forgotten.
 
+RF-PLAYBOOK-009  a GENERATED file must never be delivered as a patch
+  OBSERVED  A render was shipped as a git patch with a placeholder in
+    its stamp, to be filled by one command after applying, because the
+    source sha differs between sandbox and real repository. The fill
+    worked. But the next change to that file could no longer be
+    delivered: the committed content had diverged by one line, so the
+    follow-up patch failed, and failed again under three-way merge with
+    a conflict in the stamp.
+  FIX  Deliver a generated file as its BODY plus the generation
+    command, never as a diff. A diff assumes both sides share a base;
+    a generated file's base is its SOURCES, not its previous text, and
+    the two sides can legitimately differ in provenance lines while
+    being equally correct. render.md already says a render is never
+    patched in place -- that rule applies to delivery, not only to
+    hand-editing.
+  PROMOTED  not yet. Sits directly against S26, which sets delivery
+    form by case and does not yet name the generated-file case.
+
 RF-PLAYBOOK-008  a partial edit script that still gets committed
   OBSERVED  A script applied three replacements in sequence, asserting
     each anchor immediately before its own write. The second anchor was
