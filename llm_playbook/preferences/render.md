@@ -27,9 +27,18 @@ TARGETS, IN PRIORITY ORDER
        is what those environments key on).
   R-C. The platform settings block, at
        preferences/platform-settings-block.md in the playbook: a
-       condensed extract (persona and constraint items only)
+       CONDENSED extract of all four layers, plus the style
+       clauses that bind every thread whatever it is about,
        pasted once into a chat platform's standing-preferences
        setting. Regenerated whenever R-A is.
+       SCOPE. R-C carries what should bind a thread that has NO
+       project render at all -- which is most chats. That is all
+       four layers, and from the style contract only the
+       always-on clauses: S1 names, S18 comments, S28 flat
+       procedural, S29 no unpaid indirection, S30 no blind
+       rename. The rest of the style contract is code-shaped and
+       reaches a thread with the project render, where code is
+       actually in play.
        It lives in the TOOLKIT layer and not in any project's
        llm/, because it is not project state. It is generated
        from layers.md alone, with no instance rules, and one
@@ -52,6 +61,19 @@ STAMP
   runnable from the project root:
 
     tail -n +3 CONTEXT.md | sha1sum | cut -c1-8
+
+  CONDENSATION, and it is the difference between R-C and R-A.
+  layers.md L2 requires every item to survive being pasted alone,
+  so each item restates its own justification. That is right for
+  the source and wrong for a settings box, where length is paid
+  for in attention. R-C emits each item's IMPERATIVE and keeps
+  its ID, dropping the because-clauses, worked examples and
+  restatements. Nothing is lost: the id is what a refinement
+  targets and what recovers the full item from layers.md, one
+  lookup away. Condense by removing justification; NEVER by
+  merging two items, and NEVER by dropping an imperative. If an
+  item has no imperative left once its justification is removed,
+  that is a finding about the item, not a licence to cut it.
 
   R-C IS STAMPED AGAINST ITS SOURCES, NOT AGAINST ITSELF. R-A is
   generated from the playbook into a project, so the playbook
