@@ -272,6 +272,50 @@ WORK, IN DEPENDENCY ORDER
       case. The supplement ships either way, because an unsent handoff
       is indistinguishable from a forgotten one.
 
+  12. THE PLAYBOOK HAS NEITHER OF ITS OWN INSTANCE DOCUMENTS.
+      llm_playbook/llm/CONTEXT.md does not exist and neither does
+      STATUS.md. DEC-6 makes the playbook a project like any other and
+      it is the only project that has neither. This is not cosmetic:
+      protocol/kickoff.md's WHAT BINDS YOU section names
+      <project>/llm/CONTEXT.md and CANNOT BE FILLED HONESTLY for the
+      playbook's own threads. Your own kickoff had to point at R-C, the
+      platform settings block, and explain why -- read it; it is the
+      worked example of the gap.
+      Create both. CONTEXT.md is R-A per render.md, authored from
+      layers.md and style-contract.md with the stamp computed the same
+      way R-C's was. STATUS.md is item 9 and the close artifact's own
+      NEXT STEPS item 1; record PLAYBOOK-IMPL-004's terminal state in
+      it retroactively, which is the positive record R12 required and
+      could not get.
+      DO THIS EARLY. Every later item in this list is easier to write
+      against a render than against three source files, and the thread
+      after you will be the first playbook thread whose kickoff can be
+      filled as the template intends.
+
+  13. MANIFEST.md. It is the sole authoritative index -- per-role
+      required-read lists with token budgets, and each document's load
+      class -- and items 1 through 12 add rules, change two templates
+      and create at least two documents. Every one of those is a
+      MANIFEST edit. Drill flags this rather than specifying it,
+      because drill has never seen MANIFEST.md: it was not in the pack
+      DRILL-DESIGN-001 worked from. Treat the list above as incomplete
+      in exactly this one respect and reconcile it against the index
+      yourself.
+      EXPECT THE BUDGETS TO GET WORSE. They are already exceeded on the
+      common set alone -- DESIGN by 2038 tokens, IMPL by 5202, CAPTURE
+      by 1771 -- and this thread adds documents. Do not trim the lists
+      to fit; that is the failure PLAYBOOK-IMPL-004 refused twice and
+      DEC-11 exists so the budgets warn rather than gate.
+
+A NOTE ON SIZE, WHICH IS A DECISION AND NOT A WARNING
+  Items 4, 5, 6 and 7 all amend naming.md. It is 241 lines against a
+  200-line ceiling and 3013 tokens, and PLAYBOOK-IMPL-004's close
+  artifact names splitting it as the single change most likely to bring
+  the budgets back into range, deferred and not rejected. Four more
+  rules put it near 300. Split it in this thread or accept it going
+  further over, but decide it rather than discovering it: the ceiling
+  warns and does not gate (DEC-11), so nothing will stop you.
+
 WHAT NOT TO DO
   Do not reconstruct origin failures for R1-R10 from drill's history.
     They are not recorded in the source file. Ten invented origins
