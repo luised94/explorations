@@ -5,6 +5,9 @@ type: prompt
 scope: adversarial critique of a DESIGN, through a fixed set of
 lenses, before it becomes a plan.
 
+BINDS HERE: R8 adversarial pass, R4 decision-framed docs, R7 stop
+points (delivery questions). A prompt is a method; these rules are the authority.
+
 A reusable design-critique pass. Born in D1 (the questions.metadata thread),
 where it flipped one real decision (defer grading_kind) and confirmed the rest.
 

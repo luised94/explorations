@@ -6,6 +6,9 @@ scope: establishing a trustworthy working tree and a green baseline
 BEFORE any change, for a thread that must EXECUTE against a live
 tree. Not a transport mechanism.
 
+BINDS HERE: R1 repo wins, R10 state the turn, R11 declare absence.
+A prompt is a method; these rules are the authority.
+
 WHEN TO USE THIS
   Use it when the thread must RUN something -- a test suite, a build,
   a server -- against a real working tree. Reading and reasoning does

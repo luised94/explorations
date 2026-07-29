@@ -5,6 +5,9 @@ type: prompt
 scope: proving risky assumptions with cheap experiments, between an
 agreed design and a locked plan.
 
+BINDS HERE: R3 spike before spec, R11 declare absence. A prompt is
+a method; these rules are the authority.
+
 Between a converged DESIGN (adversarial-review) and a locked PLAN
 (commit-planning) sits the phase where you PROVE the risky assumptions with the
 cheapest possible experiments, instead of discovering them mid-implementation.

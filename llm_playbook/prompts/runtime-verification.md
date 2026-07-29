@@ -7,6 +7,9 @@ NOT catch -- a change to how code LOADS, PACKAGES, STARTS, ROUTES, or
 crosses a client/server boundary -- and the smoke test that catches
 it. Generalized from a real incident.
 
+BINDS HERE: R1 repo wins, R10 state the turn. A prompt is a method;
+these rules are the authority.
+
 USE THIS WHEN
   The change alters TRANSPORT, PACKAGING, STARTUP, ROUTING, or the
   client/server boundary. Symptoms that you are in this territory:

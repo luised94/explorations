@@ -5,6 +5,9 @@ type: prompt
 scope: turning an agreed design into an ordered, each-commit-green
 implementation plan.
 
+BINDS HERE: R6 one commit at a time, R5 docs land first, R3 spike
+before spec. A prompt is a method; these rules are the authority.
+
 Turn an agreed design into an ordered, each-commit-green implementation plan.
 Born in D1, where it exposed two things the prose plan hid: a commit that was
 secretly two (the "opus"), and a shared-assumption change whose blast radius

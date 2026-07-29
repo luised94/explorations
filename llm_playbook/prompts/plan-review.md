@@ -4,6 +4,9 @@ date: 2026-07
 type: prompt
 scope: adversarial critique of a SORTED COMMIT PLAN, before it executes.
 
+BINDS HERE: R8 adversarial pass, R6 one commit at a time, R7 stop
+points (delivery questions). A prompt is a method; these rules are the authority.
+
 The sibling of adversarial-review, aimed at a SORTED COMMIT PLAN rather than a
 design. Kept a SEPARATE file on purpose: load it only when reviewing a plan, so
 design-review lenses do not bleed into the wrong phase. Some framing is
