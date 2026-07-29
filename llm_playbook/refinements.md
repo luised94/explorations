@@ -1,6 +1,7 @@
 REFINEMENTS
 ===========
 date: 2026-07
+type: refinements
 scope: observed failures of a model working in this repository, each
   with the fix that resolved it. An accreting log, not a rule set.
   Nothing here binds until it is promoted.
@@ -66,6 +67,22 @@ RF-PLAYBOOK-004  editing without git present
   PROMOTED  yes, in substance. R12 makes baseline fidelity the
     discriminator, which is the general form of this entry. Kept
     because the mechanism is still needed.
+  SECOND OCCURRENCE 2026-07: an eight-commit drill consolidation was
+    delivered as "git checkout e3aabfb; git am patches/*.patch".
+    e3aabfb is a SANDBOX commit; git rev-parse on it in the author's
+    repository returns "Invalid revision range". The patches were
+    byte-verified in the sandbox and were undeliverable. The fallback
+    document, ten replacement files and the reasoning behind one
+    reversed decision were pasted into the chat and lost with it.
+    NOTE WHAT THIS SECOND OCCURRENCE MEANS. The usual reading of a
+    second occurrence is "promote it", and this entry was ALREADY
+    promoted, into R12. So the promotion is not the fix and R12 is
+    not where the hole is: R12 says which FORM to deliver and says
+    nothing about which baseline a form may cite. The missing rule is
+    narrower -- never cite a SHA the author's repository does not
+    contain -- and its home is the kickoff template's delivery
+    paragraph, where the sender states the baseline, rather than a
+    thirteenth rule.
 
 RF-PLAYBOOK-005  a throwaway repository has no commit identity
   OBSERVED  A fresh git init has no user.email or user.name, and the
@@ -134,3 +151,33 @@ RF-PLAYBOOK-009  a GENERATED file must never be delivered as a patch
     pack, which is exactly the failure above, and the hole was found
     only when this file was read before deletion. Kept as the record
     of why R12 carries an exception that otherwise looks arbitrary.
+
+RF-PLAYBOOK-010  a name copied from a neighbor instead of from a rule
+  OBSERVED  The drill project's handoff directory accreted four
+    coexisting filename shapes -- 1-to-implementation.md,
+    handoff-2-to-implementation.md, handoff-D1-to-arithmetic.md,
+    launch-2-ui-selector.md -- because each new file imitated
+    whichever neighbor its author saw last. Imitation compounds
+    drift; a rule does not.
+  FIX  A name is conformant because it follows a rule written in
+    protocol.md IDENTITY AND NAMING, not because it resembles a
+    neighbor. A file the naming section cannot classify is a finding,
+    not an exception.
+  PROMOTED  not yet. ONE occurrence, and it is the pre-reset naming.md
+    N4 rule arriving without its document. Under accretion rule ONE it
+    waits here for a second.
+
+RF-PLAYBOOK-011  pasting a committed document into a thread
+  OBSERVED  Committed files are pasted into a chat that could have
+    cited them by path, which spends context on material the thread
+    could already reach and makes it unclear whether the paste or the
+    repository is current.
+  FIX  Do not paste a committed document. Where it must be pasted --
+    it is unpushed, or the reader has no checkout -- say that it is
+    unpushed, so the reader knows the repository does not hold it.
+  PROMOTED  not yet. ONE occurrence. Residue of drill's F-18; the
+    other F-18 item (never improve a shipped policy by taste instead
+    of by a metric named in advance) has no recorded occurrence in
+    this repository at all and is not entered here, because this file
+    takes OBSERVED failures and an entry with no observation would be
+    a rule wearing a refinement's clothes.

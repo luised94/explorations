@@ -19,7 +19,7 @@ WHAT IS HERE
   settled.md               closed questions and roads not taken.
   refinements.md           observed model failures awaiting promotion.
                            The intake for accretion rule ONE.
-  RESET-2026-07.md         the one-time reset this tree came out of,
+  docs/RESET-2026-07.md    the one-time reset this tree came out of,
                            and how to reach what preceded it.
   scripts/render.sh        stamp a composed render; verify one.
   scripts/pack-repo.sh     transport a chosen file set into a chat.
@@ -112,7 +112,7 @@ TRANSPORT
 ACCRETION, AND THE THREE RULES THAT FIGHT IT
 
   This playbook was rewritten from scratch once already. See
-  RESET-2026-07.md for what happened and why. The short version: it
+  docs/RESET-2026-07.md for what happened and why. The short version: it
   reached 36 files and 84,000 tokens against its own measured
   required-read budget of 6,000, half of it was the record of
   building it, and it had never been used on a project.

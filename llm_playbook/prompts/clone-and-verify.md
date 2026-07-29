@@ -12,16 +12,17 @@ A prompt is a method; these rules are the authority.
 WHEN TO USE THIS
   Use it when the thread must RUN something -- a test suite, a build,
   a server -- against a real working tree. Reading and reasoning does
-  NOT need this: that is a pack (transport.md, ADR-032). Rule of
-  thumb: reading is a pack, executing is a checkout.
+  NOT need this: that is a pack (README, TRANSPORT). Rule of thumb,
+  and settled.md states it: reading is a pack, executing is a
+  checkout.
 
   Five of the six steps below are VERIFICATION, not transport: pin an
   exact SHA, confirm the branch, establish a green baseline before
   changing anything, distinguish collection and import errors from
   failures, and declare an explicit file scope. Only step 1 resembles
-  transport. ADR-021 retired the sparse-checkout BOOTSTRAP as a way
-  of getting context INTO a chat; it did not retire checkouts, and it
-  did not retire this discipline.
+  transport. The sparse-checkout BOOTSTRAP was retired as a way of
+  getting context INTO a chat (README, TRANSPORT); that did not
+  retire checkouts, and it did not retire this discipline.
 
 SETUP -- do this before anything else, and STOP if any check fails.
 Report results back at each numbered step before proceeding.

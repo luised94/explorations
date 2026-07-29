@@ -1,6 +1,7 @@
 SETTLED
 =======
 date: 2026-07
+type: decisions
 scope: closed questions and roads not taken. Rules carry their own
   reasoning inline, so this file holds only what no rule can carry:
   the alternatives that were rejected, and the things deliberately
@@ -33,8 +34,10 @@ SETTLED, WITH THE ROAD NOT TAKEN
   ADR-022 is SUPERSEDED: composition does NOT happen at pack time.
     It decided that the pack step assembles base plus project overlay
     and emits a composed result, so the reader receives resolved
-    preferences. This session decided the opposite before knowing
-    ADR-022 existed, and the decision stands on its own reasoning: a
+    preferences. The reset restored an EARLIER decision rather than
+    overruling a settled one blind: ADR-009 already had the render
+    pass composing public plus overlay, and ADR-022 overturned that
+    silently. The decision stands on its own reasoning: a
     render must be COMMITTED for its stamp to be verifiable, and a
     render composed during a pack is ephemeral, so nothing could ever
     detect that it had drifted. Noted because a reader finding ADR-022
@@ -88,7 +91,7 @@ SETTLED, WITH THE ROAD NOT TAKEN
 
   Filenames are dateless, with one exception: a record OF a dated
   event.
-    RESET-2026-07.md carries its date because the date is its
+    docs/RESET-2026-07.md carries its date because the date is its
     subject. The rule exists because names describing a position in a
     process go stale; a historical record cannot.
 
@@ -125,6 +128,23 @@ DELIBERATELY NOT DONE
   append-only records, stable-forever ids, bulk-rename prohibitions
   -- retired.
     All of it duplicated git, badly. See README, RECOVERING WITH GIT.
+    NARROWED 2026-07: "stable-forever ids" was too broad as written.
+    It holds for THREAD and DOCUMENT ids, where git holds the old
+    numbers and every citing document is rewritten in the same pass.
+    It does NOT hold for PREFERENCE ITEM ids, which are cited from
+    every committed render and therefore from repositories this one
+    cannot rewrite, nor for REFINEMENT ids, which refinements.md
+    already argues for on exactly that ground. layers.md L1 is
+    correct and is not a defect to be repaired.
+
+  Retyping docs/RESET-2026-07.md -- not done.
+    Its type: field reads "one-time migration record", which the
+    type vocabulary (protocol.md) does not name, so by that
+    vocabulary's own closure clause it is a finding. It stays a
+    finding rather than becoming a fix, because the file states that
+    it is historical and is not amended, and that self-description is
+    worth more than a conformant frontmatter line. Recorded so the
+    next reader meets it as a decision and not as drift.
 
   Sunset dates and periodic review -- rejected.
     Calendar-driven mechanisms need discipline nobody sustains, and
@@ -133,7 +153,14 @@ DELIBERATELY NOT DONE
 
   More authority tiers -- rejected.
     Two (the render, and everything else) are enough. A third is
-    where overengineering starts.
+    where overengineering starts. This is about RUNTIME tiers, the
+    ones a thread arbitrates. protocol.md PRECEDENCE names four
+    links and they are not a fourth tier: chain 1 is the composition
+    the human performed before the thread existed, and the render is
+    what is left of it. The pre-reset precedence.md also carried a
+    five-tier standing that placed workflow prompts below playbook
+    items. That IS a third tier and it is not recovered; "a prompt
+    is a method and never an authority", above, is the whole of it.
 
   An index, taxonomy or tag system for retrieval -- rejected.
     That was MANIFEST and it failed. Retrieval is by workflow stage
@@ -187,6 +214,46 @@ OPEN, AND KNOWN TO BE
     mechanism, because a finding must be able to wait somewhere for
     its second occurrence. Rejected: folding it into settled.md, which
     holds CLOSED questions -- an unpromoted refinement is open.
+
+  protocol.md absorbed the four recovered sections; there is still
+  no second file.
+    PLAYBOOK-DESIGN-006 put chain 1, the read-only checkout rule, the
+    type vocabulary and the refinement-id grammar back into
+    protocol.md rather than restoring protocol/precedence.md and
+    protocol/naming.md. Rejected: a second file, which would have
+    required rewriting protocol.md's own scope line ("there is no
+    second file") and would have reopened seams the reset closed --
+    the consolidation happened because the seams were arbitrary, not
+    because the file was short. The cost is a 334-line file against a
+    150-line target, and that target is not defended: it is a guess
+    of the same species as the retired token budgets, and defending
+    an unmeasured number is the check.sh failure recorded above.
+    Replace it with a measurement or with nothing.
+
+  llm/ was recreated rather than protocol.md amended.
+    The reset deleted llm_playbook/llm/ while protocol.md still
+    specified thread files at llm/<slot>/<id>_<subject>.md, so a
+    playbook thread had nowhere to file its own kickoff or close, and
+    R9 makes the close artifact a thread's only durable trace. The
+    directory went because the PLANS in it were stale, not because
+    the convention was wrong; the convention stands, so the directory
+    comes back. Rejected: amending protocol.md to say where a
+    playbook thread's artifacts go, which would have made the
+    playbook the one project filing differently from every project it
+    governs. The pre-reset handoff filename grammar
+    (handoff/<FROM>-to-<TO>.md) is NOT restored with it: it is
+    superseded, and it depended on the status and role fields the
+    reset correctly removed.
+
+  The playbook has no render of its own, and cannot cheaply get one.
+    Every consumer project has a CONTEXT.md composed from
+    preferences/; the playbook has none, so a playbook thread's
+    kickoff cannot carry the binding sentence or the stamp request
+    that protocol.md KICKOFF requires. Composing one means writing in
+    preferences/, which collides with any open consumer thread
+    through render.sh's stamp SHA. Left open deliberately.
+    protocol.md KICKOFF now says what a renderless thread does
+    instead: declare the absence and name what binds.
 
   Nothing here has been validated on a project that is not this one.
     That is the next thread's job and the only thing that will tell

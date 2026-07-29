@@ -1,6 +1,7 @@
 PROTOCOL
 ========
 date: 2026-07
+type: toolkit-rules
 scope: how a thread runs. Identity, roles, naming, precedence, the
   twelve rules, and the three templates. This is the whole protocol;
   there is no second file.
@@ -13,10 +14,60 @@ but that it forces the comparison, which a size warning never did.
 
 
 PRECEDENCE
-  The live human outranks the render. The render outranks everything
-  else, because it already collapsed the conflicts at authoring time.
-  A thread never re-arbitrates what the render settled; it flags the
-  disagreement and follows observed reality (R1).
+  There are TWO chains, and confusing them was the defect this
+  section exists to repair. A stateless model cannot arbitrate a
+  chain whose lower links it never sees, so the long chain is
+  resolved by the human BEFORE the model is involved, and the model
+  is left a chain of exactly two links.
+
+  CHAIN 1 -- AUTHORING AND RENDER TIME, resolved by the HUMAN
+
+    live human > project instance > playbook > model defaults
+
+  Applied whenever a render is built or a document is written. The
+  human composing CONTEXT.md resolves every conflict between a
+  project instance rule and a playbook rule in the instance's
+  favor, and THE RENDER EMITS ONLY THE WINNER. The losing rule never
+  reaches the model. Model defaults sit at the bottom: a render or a
+  document may explicitly override a model's habitual behavior, and
+  silence means the default stands.
+
+  CHAIN 2 -- RUNTIME, the only chain a model arbitrates
+
+    live human message > whatever was rendered. Full stop.
+
+  A thread never re-resolves chain 1, because the render already
+  collapsed it: from inside a thread the render is a single
+  consistent authority, and the only thing that outranks it is the
+  human speaking now. A thread that starts weighing "playbook versus
+  instance" mid-thread is answering a question that was closed before
+  kickoff. Where the render disagrees with observed reality, follow
+  reality and say so (R1).
+
+  This is still TWO runtime tiers, not four. Chain 1 is not a live
+  hierarchy; it is a composition the human already performed, and it
+  leaves nothing behind for a thread to weigh.
+
+  WORKED EXAMPLE, walking both chains
+    A project instance rule says "commit messages carry no plan ids"
+    while the playbook commit form below expects them. Chain 1: the
+    human building that project's CONTEXT.md resolves instance over
+    playbook; the render states the no-plan-id rule and omits the
+    playbook form entirely. Chain 2: mid-thread the human writes
+    "actually, include plan ids from now on." The live message beats
+    the render immediately, the thread complies for the rest of its
+    life, and the change is filed as a refinement entry (RF-PROJ-NNN)
+    in the project's refinements file. The regenerated render serves
+    the NEXT thread; this one runs to completion on the live
+    correction alone.
+
+
+READ-ONLY CHECKOUT
+  The playbook checkout a thread runs against is read-only from that
+  thread's point of view. A precedence loss is never repaired by
+  editing the playbook mid-thread: fixes travel as live human
+  messages now and refinement entries for later, and reach the
+  playbook only through a human editorial pass.
 
 
 IDENTITY AND NAMING
@@ -35,12 +86,45 @@ IDENTITY AND NAMING
   Thread files   llm/<kickoff|handoff|close|plan>/<id>_<subject>.md.
                  A cross-project slot carries the project code; an
                  unqualified one is self-referencing.
+                 <id> IS THE THREAD THAT WROTE THE FILE. A close or a
+                 handoff carries the sender's id; a kickoff carries
+                 the RECEIVER's, because a kickoff is a handoff
+                 written at the receiving end. So one listing of
+                 llm/ finds everything a given thread authored,
+                 which is the property the id is in the name for.
   Commits        <proj>: <summary>, or <proj>: <plan-id> <summary>
                  where a plan exists.
 
   Git holds provenance. No supersedes field, no status vocabulary, no
   append-only requirement, no rename ceremony: rewrite the file and
   let history carry what it said before (README, RECOVERING WITH GIT).
+
+  THE type FIELD. Every document here carries type: in its
+  frontmatter rather than taking its classification from its
+  directory, because THE PATH DOES NOT SURVIVE TRANSPORT: these
+  documents are packed into an archive or pasted whole into a chat,
+  and a file classified by its directory arrives with no
+  classification at all. The directory is shelving; the frontmatter
+  is the claim. README.md carries no type: -- its name is its role.
+
+    toolkit-rules      rules governing how the toolkit is used:
+                       protocol.md
+    preference-source  the item sets a render composes from:
+                       layers.md, style-contract.md
+    instance-rules     one project's rules: PROJECT.md
+    prompt             a method, never an authority
+    design plan handoff kickoff close    thread artifacts
+    decisions refinements render         records and output
+
+  toolkit-rules and preference-source are distinguished because one
+  governs authoring and the other is the material composed into a
+  render -- a difference in kind, not in shelving. A value this list
+  does not name is a finding, not an exception.
+
+  REFINEMENT IDS. Form RF-PROJ-NNN, assigned in the project's
+  refinements.md at entry time, zero-padded, never reused. A
+  refinement entry that targets a preference item cites that item's
+  id in its body. Example: RF-DRILL-012.
 
 
 BASELINE
@@ -80,9 +164,16 @@ THE RULES
   R5  DOCS LAND FIRST. The governing document is amended before the
       code that departs from it, not after.
 
-  R6  ONE COMMIT AT A TIME. One concern each, each independently
-      valid, the series bisects. The message states WHY. A comment-
-      only or no-op commit says so.
+  R6  ONE COMMIT AT A TIME. One concern each, the series bisects, and
+      the message states WHY. A comment-only or no-op commit says so.
+      A commit MAY be red where the red is decided on purpose and
+      said so in the message: a welded pair that cannot split into
+      two green commits, or a change landed to watch a guard fire
+      before it is fixed, which is the only evidence that the guard
+      catches what it claims to catch. The repair follows in the very
+      next commit, so a deliberate red spans one commit and a bisect
+      skips it rather than reporting it. Never as a way to skip green
+      discipline.
 
   R7  STOP POINTS. Pre-declared checkpoints where the thread
       summarizes what landed, surfaces deviations, asks the open
@@ -184,6 +275,7 @@ KICKOFF
 
     THREAD <PROJ-ROLE-NNN_descriptive>
     date:     <YYYY-MM>
+    type:     kickoff
     from:     <sending thread id, or none>
     role:     <DESIGN | IMPL | CAPTURE>
     baseline: playbook <sha>  project <sha>  [same repo | separate]
@@ -214,6 +306,12 @@ KICKOFF
   document instead -- and most of its style checks still passed, so
   the pass rate concealed a render with zero influence. Placement is
   not salience.
+
+  A PROJECT WITH NO RENDER cannot satisfy those two lines. It says so
+  under R11, in the kickoff, and names what binds instead and in what
+  order. It does not invent a substitute render, which would be a
+  document with the authority of a render and none of the
+  composition.
 
 
 HANDOFF
