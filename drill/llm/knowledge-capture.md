@@ -7,7 +7,7 @@ Convention > Instruction > Context). Strategy, Skills, Principles, and Unsure
 follow.
 
 Companion artifacts (in outputs): thread-launch-kit.md (reusable context +
-per-thread prompts), PHASE0_PLAN.md (execution detail), roadmap.md +
+per-thread prompts), plan/phase-0-1-execution.md (execution detail), roadmap.md +
 roadmap_model.py (the scoring model), dependency_plan.mermaid (the DAG),
 spec.md + decisions.md (the living project record).
 
@@ -155,7 +155,7 @@ ASCII only.
 ## INSTRUCTIONS  (phase-specific behavior during particular work types)
 
 - Starting a new thread: attach the standing four (spec.md, decisions.md, backend,
-  frontend) + PHASE0_PLAN.md for design work; read the relevant spec/DECISIONS
+  frontend) + plan/phase-0-1-execution.md for design work; read the relevant spec/DECISIONS
   sections BEFORE coding so you match existing patterns rather than inventing.
 - Before any file/code work: read the relevant skill/spec section first; do not
   start from memory of how the code probably looks -- verify against the file.

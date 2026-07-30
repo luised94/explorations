@@ -148,9 +148,9 @@ freely; the point is each thread owns a disjoint ID range.
 
 ### THREAD-TEST (C-020) -- start first
 THREAD-TEST (T1) DONE - tests/ suite, 159 assertions green (backend 84: logic 35, http 40, db 7, property 2; frontend 75). Baseline for all post-merge "re-run the suite" checks. Unlocks A2, M2, M1.
-Attach: drill.py, index.html, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py, index.html, spec.md, decisions.md, plan/phase-0-1-execution.md
 
-> Commit C-020. Per PHASE0_PLAN.md Section B, set up the permanent test suite by
+> Commit C-020. Per plan/phase-0-1-execution.md Section B, set up the permanent test suite by
 > recovering the throwaway harnesses we have been writing. Create a tests/
 > directory: test_logic.py (pure LOGIC -- generator validity incl. integer
 > results and no forbidden identities, validate_answer, summarize_correctness,
@@ -166,9 +166,9 @@ Attach: drill.py, index.html, spec.md, decisions.md, PHASE0_PLAN.md
 Post-merge protocol (all threads touching tested code): after merging into the integration branch, run bash tests/run.sh from the merged tree (not just the feature branch). Expect 159 green. A red test is a real contract change to reconcile, not a merge artifact. If a thread deliberately changes a pinned contract, update the test and note it in decisions.md in the same commit.
 
 ### THREAD-MIGRATE (C-021)
-Attach: drill.py, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py, spec.md, decisions.md, plan/phase-0-1-execution.md
 
-> Commit C-021. Add a version-aware schema migration runner per PHASE0_PLAN.md
+> Commit C-021. Add a version-aware schema migration runner per plan/phase-0-1-execution.md
 > Section B / roadmap item #11. The schema_version table already exists; add a
 > migrate(connection) that reads the current version and applies ordered
 > ALTER-style steps to reach SCHEMA_VERSION, idempotent and safe to call on
@@ -190,10 +190,10 @@ Attach: drill.py, spec.md, decisions.md
 > (only docstrings/comments may differ). ASCII only.
 
 ### THREAD-ARITH (C-023, C-024, C-025) -- sequential within the thread
-Attach: drill.py, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py, spec.md, decisions.md, plan/phase-0-1-execution.md
 Note: start C-023 now; C-024 after THREAD-TEST lands (it needs the generator tests).
 
-> Commit C-023. Per PHASE0_PLAN.md Section D step 1, add new arithmetic
+> Commit C-023. Per plan/phase-0-1-execution.md Section D step 1, add new arithmetic
 > operators (exponentiation and modulo) by adding entries to OPERATOR_CONFIG
 > and the LOGIC operator table -- data plus one generate/eval/render hookup
 > each, no structural change (the evaluator/renderer already handle any
@@ -203,10 +203,10 @@ Note: start C-023 now; C-024 after THREAD-TEST lands (it needs the generator tes
 > C-025 (difficulty) are separate commits I will request next.
 
 ### THREAD-MODEL (C-026)
-Attach: drill.py, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py, spec.md, decisions.md, plan/phase-0-1-execution.md
 Prereq: THREAD-MIGRATE (C-021) landed.
 
-> Commit C-026. Per PHASE0_PLAN.md Section F, do the data-model design pass
+> Commit C-026. Per plan/phase-0-1-execution.md Section F, do the data-model design pass
 > before we add drill types. (1) Name a grading-kind enum (string-equality,
 > numeric, speed, spatial, set/order) and make validate_answer dispatch on it --
 > it already special-cases arithmetic, so this names the existing pattern rather
@@ -218,10 +218,10 @@ Prereq: THREAD-MIGRATE (C-021) landed.
 > the migration.
 
 ### THREAD-MODFE (C-027)
-Attach: index.html, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: index.html, spec.md, decisions.md, plan/phase-0-1-execution.md
 Prereq: THREAD-TEST (C-020) landed.
 
-> Commit C-027. Per PHASE0_PLAN.md Section A, split index.html's single script
+> Commit C-027. Per plan/phase-0-1-execution.md Section A, split index.html's single script
 > block into ES modules (state.js, api.js, drill.js, session.js, stats.js,
 > speech.js, timing.js, boot.js) loaded via <script type="module">. No build
 > step, no framework. State stays a single shared object imported where needed
@@ -231,10 +231,10 @@ Prereq: THREAD-TEST (C-020) landed.
 > CORS caveat (must be served, which it already is).
 
 ### THREAD-MODBE (C-028)
-Attach: drill.py, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py, spec.md, decisions.md, plan/phase-0-1-execution.md
 Prereq: THREAD-TEST (C-020) landed. Soft-prefer after C-025.
 
-> Commit C-028. Per PHASE0_PLAN.md Section A, split drill.py into a package
+> Commit C-028. Per plan/phase-0-1-execution.md Section A, split drill.py into a package
 > (config.py, db.py, logic.py, http.py, main.py) one-to-one with the existing
 > sections, preserving the layering invariant via import direction (http imports
 > db+logic; logic imports config; db imports config; nothing imports http). Move
@@ -244,22 +244,22 @@ Prereq: THREAD-TEST (C-020) landed. Soft-prefer after C-025.
 > must pass unchanged. Report results.
 
 ### THREAD-LOGICDR (C-029) / THREAD-CODEDR (C-030)
-Attach: drill.py (or the package if C-028 landed), index.html, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py (or the package if C-028 landed), index.html, spec.md, decisions.md, plan/phase-0-1-execution.md
 Prereq: THREAD-MODEL (C-026) landed.
 
 > Commit C-029 [or C-030]. Add a logic/deduction drill [or code "what does this
 > output?" drill] as a new bank type that projects onto the general question
-> record (PHASE0_PLAN.md Section F): prompt + string-equality grading, using the
+> record (plan/phase-0-1-execution.md Section F): prompt + string-equality grading, using the
 > grading-kind enum from C-026, with structured content (premises / snippet) in
 > the question metadata JSON slot. Reuse the existing text/multiple_choice
 > rendering; code drill wants <pre> rendering for the snippet. No new grading
 > machinery beyond what C-026 established. Include a small sample bank and tests.
 
 ### THREAD-TUNER (C-032) -- difficulty tuner
-Attach: drill.py (or package), spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py (or package), spec.md, decisions.md, plan/phase-0-1-execution.md
 Prereq: arithmetic difficulty (C-025) landed.
 
-> Commit C-032. Per PHASE0_PLAN.md Section E, add a pure difficulty tuner:
+> Commit C-032. Per plan/phase-0-1-execution.md Section E, add a pure difficulty tuner:
 > next_difficulty(recent_accuracy, current_level) -> level, a simple
 > proportional controller (raise on a hot streak, lower on misses) feeding the
 > C-025 difficulty_to_params mapping. Pure LOGIC, fully unit-tested across
@@ -267,10 +267,10 @@ Prereq: arithmetic difficulty (C-025) landed.
 > thread. Just the controller + tests.
 
 ### THREAD-SCHED (C-033 adaptive, then C-034 seam)
-Attach: drill.py (or package), spec.md, decisions.md, PHASE0_PLAN.md
+Attach: drill.py (or package), spec.md, decisions.md, plan/phase-0-1-execution.md
 Prereq: C-028 + C-026. The seam commit (C-034) also needs SM2 (C-035).
 
-> Commit C-033. Per PHASE0_PLAN.md Section E and the Muratori note, implement an
+> Commit C-033. Per plan/phase-0-1-execution.md Section E and the Muratori note, implement an
 > adaptive-by-accuracy scheduler CONCRETELY -- a pure function that weights
 > selection toward low-recent-accuracy items, taking exactly the inputs it needs
 > (do NOT design a generalized context object yet). It replaces random selection
@@ -279,10 +279,10 @@ Prereq: C-028 + C-026. The seam commit (C-034) also needs SM2 (C-035).
 > extracted only after SM2 (C-035) also exists so the shared shape is real.
 
 ### THREAD-SM2 (C-035)
-Attach: drill.py (or package), spec.md, decisions.md, PHASE0_PLAN.md, plus your SM2 source files
+Attach: drill.py (or package), spec.md, decisions.md, plan/phase-0-1-execution.md, plus your SM2 source files
 Prereq: C-028. Bring your existing SM2 code into this thread.
 
-> Commit C-035. Per PHASE0_PLAN.md Section E, integrate my existing SM2 spaced-
+> Commit C-035. Per plan/phase-0-1-execution.md Section E, integrate my existing SM2 spaced-
 > repetition engine as a scheduler behind the selection seam. SM2 is a selection
 > policy: it reads each item's ease/interval/last-review and decides what is due.
 > Map its state onto per-item fields (use the C-026 metadata slot or a dedicated
@@ -291,10 +291,10 @@ Prereq: C-028. Bring your existing SM2 code into this thread.
 > extracted later (C-034). I will attach my SM2 files to this thread.
 
 ### THREAD-CURRIC (C-036, C-037)
-Attach: drill.py (or package), index.html (or app/ modules), spec.md, decisions.md, PHASE0_PLAN.md, roadmap.md
+Attach: drill.py (or package), index.html (or app/ modules), spec.md, decisions.md, plan/phase-0-1-execution.md, roadmap.md
 Prereq: C-027 + C-028 (modular code makes lessons map to files).
 
-> Commit C-036. Per PHASE0_PLAN.md Section C, generate the self-study curriculum.
+> Commit C-036. Per plan/phase-0-1-execution.md Section C, generate the self-study curriculum.
 > It must LINK INTO the real code and DECISIONS by anchor (Nelson's rule -- never
 > copy/restate, so it cannot drift). Structure per the module list in Section C
 > (Orientation through Capstone), each module: read (worked example) -> explain
@@ -303,17 +303,17 @@ Prereq: C-027 + C-028 (modular code makes lessons map to files).
 > C-037 (the concept-review SM2 bank built from DECISIONS) is a separate commit.
 
 ### THREAD-REVIEW (C-038) -- mistake review
-Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PLAN.md
+Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, plan/phase-0-1-execution.md
 
-> Commit C-038. Add end-of-run mistake review (PHASE0_PLAN.md Section G new
+> Commit C-038. Add end-of-run mistake review (plan/phase-0-1-execution.md Section G new
 > features): at session end, show the items missed this run and offer to drill
 > just those. The run log already holds the data, so this is mostly frontend.
 > Keep it separate from the live stats bar and the stats view. Tests via jsdom.
 
 ### THREAD-GRID (C-039) -- minimal mastery grid (Victor)
-Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PLAN.md, roadmap.md
+Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, plan/phase-0-1-execution.md, roadmap.md
 
-> Commit C-039. Per the Victor reprioritization (PHASE0_PLAN.md Section G), build
+> Commit C-039. Per the Victor reprioritization (plan/phase-0-1-execution.md Section G), build
 > a MINIMAL mastery grid: a static grid of banks colored by accuracy (from
 > /api/stats), each cell clickable to start drilling that bank. Not the full
 > explorable Mode D -- the minimal seed only. Text/CSS-grid, no charting lib.
@@ -325,7 +325,7 @@ Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PL
 
 The standing four -- spec.md, decisions.md, drill.py (or the package once
 C-028 lands), index.html (or app/ modules once C-027 lands) -- plus
-PHASE0_PLAN.md for any thread doing design work. roadmap.md only for the
+plan/phase-0-1-execution.md for any thread doing design work. roadmap.md only for the
 curriculum and grid threads (they reference the prioritization). Add
 thread-specific files (your SM2 source) where noted.
 
