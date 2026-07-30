@@ -1,7 +1,7 @@
 # Use-period plan: information gathering for the feedback phase (2026-07)
 Status: ACTIVE during the use period. The reflection thread that opens the
 feedback phase reads THIS doc first, then the data it names, then
-re-assesses roadmap.md and feature-backlog-2026-07.md against the
+re-assesses roadmap.md and plan/feature-backlog.md against the
 evidence (promote / demote / drop; the backlog is not a queue, it is a
 candidate list awaiting exactly this data).
 
@@ -13,7 +13,7 @@ candidate list awaiting exactly this data).
     drill status     # config, budgets, today's due/new picture
     drill leeches    # what keeps lapsing (false-leech question)
 
-Plus: the observations log (usage-and-study-guide section 4) and the
+Plus: the observations log (docs/daily-use-and-data-collection section 4) and the
 friction log (section "Friction log" below). Nothing else needs setting up;
 this was settled before the use period on purpose so the gathering step is
 mechanical.
@@ -71,7 +71,7 @@ Q6. Grading-pass abandonment: the ungraded count in drill feedback. High
     the wrong way (unload vs explicit End).
 
 Q7. Naming friction: moments where "bank" or "category" misled in the
-    moment. Feeds the evidence section of naming-options-2026-07.md.
+    moment. Feeds the evidence section of design/bank-and-category-naming.md.
 
 Q8. Report reach: which report commands were actually reached for, which
     cuts were missing (-> stats-depth priorities, roadmap).

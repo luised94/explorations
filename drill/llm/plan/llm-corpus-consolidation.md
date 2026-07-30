@@ -62,7 +62,7 @@ R-01  archive/ IS RETIRED, NOT CREATED. DEC-9 and the ADR-012
       handoffs becomes the same. Stage 1's "g1-findings.md is already
       archived; this reads from the archived copy" becomes "read it in
       place, then mark it superseded".
-      This also resolves a live off-by-one: APPLY-BY-HAND.md's prose
+      This also resolves a live off-by-one: plan/consolidation-by-hand-procedure.md's prose
       says ten replacement files and its Step 2 table lists eleven.
       The eleventh is archive/README.md. With archive/ retired there
       are exactly ten, and the discrepancy was never real.
@@ -372,14 +372,14 @@ F-13  THE PARENT-NAME GREP'S FALSE-POSITIVE EVIDENCE IS CITED TWO
       to fix; noted only so a reader does not treat them as two
       separate findings.
 
-F-14  APPLY-BY-HAND.md's STATED STATUS.md SIZE IS OFF BY FOUR.
+F-14  plan/consolidation-by-hand-procedure.md's STATED STATUS.md SIZE IS OFF BY FOUR.
       It records the rewrite as 256 -> 198 lines. The file at the
       verified baseline is 252 lines. Small, but the sending series
       hit a baseline-measurement error once already (close artifact
       D1), so it is recorded rather than rounded away.
 
 F-15  THE FOURTEEN DOCUMENTS SLATED FOR RETIREMENT ARE ENUMERATED, AND
-      ONE FILE IS STILL UNACCOUNTED FOR. APPLY-BY-HAND Step 1 names
+      ONE FILE IS STILL UNACCOUNTED FOR. plan/consolidation-by-hand-procedure Step 1 names
       eleven at the root and three under handoffs/. Cross-checked
       against the tree: all fourteen exist. The only file in drill/llm
       with no disposition in either document is
@@ -568,7 +568,7 @@ Ranked, scored out of ten, one recommendation.
 THE TEN REPLACEMENT FILES
 --------------------------------------------------------------------------
 
-APPLY-BY-HAND.md Step 2 lists eleven; the eleventh is archive/README.md
+plan/consolidation-by-hand-procedure.md Step 2 lists eleven; the eleventh is archive/README.md
 and R-01 removes it. The ten:
 
   1  STATUS.md                    rewritten, 252 -> ~198 lines
@@ -585,7 +585,7 @@ and R-01 removes it. The ten:
   10 v1-completion-guide.md       spike-location note
 
   THE FILE CONTENTS WERE NOT DELIVERED. Only this manifest was. Four
-  of the ten (7-10) are fully reproducible: APPLY-BY-HAND gives the
+  of the ten (7-10) are fully reproducible: plan/consolidation-by-hand-procedure gives the
   inserted paragraph verbatim and it is one paragraph per file. Five
   more (2-6) are mechanically re-derivable from the tree -- headings,
   pointers and citation fixes are all checkable against what they
@@ -818,7 +818,7 @@ content changes rather than as churn.
                     hits. 668 stands; its composition is out of scope.
 
   C-105  decisions.md: THE SEVEN MISSING SECTION HEADINGS.
-         a  SONNET  Identify them. APPLY-BY-HAND says seven and does
+         a  SONNET  Identify them. plan/consolidation-by-hand-procedure says seven and does
                     not say which; they are found structurally, by
                     where a section begins with no heading.
          b  HAIKU   Insert.
@@ -907,7 +907,7 @@ PHASE 4 -- RECORDS.
                     the first write, and chain the commit to the
                     script's exit status (A-7, RF-PLAYBOOK-008).
          THIRTEEN, NOT FOURTEEN. g1-findings.md is the fourteenth on
-         APPLY-BY-HAND's list and it takes status: superseded at
+         plan/consolidation-by-hand-procedure's list and it takes status: superseded at
          C-113d, not outdated. It has a successor.
 
   C-115  THE WORKFLOW-CONTRACT DIFF.

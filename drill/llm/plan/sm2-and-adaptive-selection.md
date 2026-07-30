@@ -1,16 +1,16 @@
 # Implementation plan: SM-2 + adaptive selection consolidation
-## Commit-by-commit execution spec (supersedes consolidation-findings.md
+## Commit-by-commit execution spec (supersedes design/sm2-and-adaptive-selection.md
 ## section 18, which it expands; on conflict, this document wins)
 
 Audience: the implementing thread. Companion documents, both authoritative:
-consolidation-findings.md (design, verification evidence, decided forks)
-and refinements-and-wiring.md (deferred policy and phase D wiring).
+design/sm2-and-adaptive-selection.md (design, verification evidence, decided forks)
+and plan/scheduler-observability-wiring.md (deferred policy and phase D wiring).
 Reference code: scheduler_port.py (landable pure core, target style) and
 four spike test files (acceptance tests to port, all green as of writing).
 
 ## Thread protocol
 
-P1. Verify before trusting. Re-confirm consolidation-findings.md section 1
+P1. Verify before trusting. Re-confirm design/sm2-and-adaptive-selection.md section 1
     (ground truth) against the code FIRST: pick_next_question,
     run_migrations, insert_response signatures; SCHEMA_VERSION location
     and import guard; importable QTYPES excluding arithmetic. If any doc
@@ -39,7 +39,7 @@ P6. STOP points for human review: after D0, after B3, after C4, after A2.
 
 ## Phase D0: documentation lands first
 
-D0. Commit consolidation-findings.md, refinements-and-wiring.md, and this
+D0. Commit design/sm2-and-adaptive-selection.md, plan/scheduler-observability-wiring.md, and this
     plan into drill/llm/. Intent: future threads are self-sufficient; the
     repo convention (STATUS.md, decisions.md live there) extends to these.
     Acceptance: files present, ASCII clean, suite untouched and green.
@@ -83,7 +83,7 @@ B3. Strategy dispatch wired end to end.
 C1. Migration 4: question_schedule.
     Files: drill/db.py, drill/config.py, drill/tests/test_migrate.py,
     drill/tests/test_db.py.
-    Migrate fn creating question_schedule per consolidation-findings.md
+    Migrate fn creating question_schedule per design/sm2-and-adaptive-selection.md
     section 2 (all columns NOT NULL, ordinal-day integers); append
     (4, "add question_schedule (SM2 scheduling state, ADR-025)", fn) to
     MIGRATIONS; SCHEMA_VERSION = 4 in config.py (import guard enforces the
@@ -189,7 +189,7 @@ A3. Content migration and archive.
 
 ## Explicitly out of scope for this thread
 
-Everything marked deferred or phase D in refinements-and-wiring.md (R1,
+Everything marked deferred or phase D in plan/scheduler-observability-wiring.md (R1,
 R2, S3-S5, F1, W1), operational logging (roadmap #17), FSRS, decks,
 minute-grain learning steps, per-bank throttle overrides, multi-line
 authoring values. If the implementing thread believes one should move into

@@ -2,12 +2,12 @@
 ## The complete execution guide, all threads, verified starting state
 
 Companions (all authoritative, all in this handoff set):
-consolidation-findings.md (design + evidence), refinements-and-wiring.md
-(deferred policy, phase D), implementation-plan.md (commit-level spec for
+design/sm2-and-adaptive-selection.md (design + evidence), plan/scheduler-observability-wiring.md
+(deferred policy, phase D), plan/sm2-and-adaptive-selection.md (commit-level spec for
 phases D0/B/C/A), and the spike files. This document is the map ABOVE those:
 the full route from today's repo to a version you would call done, with the
 new backlog items (bitwise rail, epsilon path) prepped and their spike
-findings folded in. On conflict inside phases 1-3, implementation-plan.md
+findings folded in. On conflict inside phases 1-3, plan/sm2-and-adaptive-selection.md
 wins; this guide governs ordering and everything after.
 
 Definition of production-grade v1 for a single-user local tool:
@@ -39,12 +39,12 @@ learning steps, CAS-checked calculus, stored audio.
     sm2 retirement timing (recommended: immediately after content
     migration).
 
-## Phase 1: adaptive selection (implementation-plan.md B1-B3)
+## Phase 1: adaptive selection (plan/sm2-and-adaptive-selection.md B1-B3)
 
 Ships alone, no schema. Commits: stats reader; weighted pure core with
 seeded distribution tests; strategy dispatch in HTTP. STOP: review.
 
-## Phase 2: SM-2 consolidation (implementation-plan.md D0 + C1-C5)
+## Phase 2: SM-2 consolidation (plan/sm2-and-adaptive-selection.md D0 + C1-C5)
 
 D0 lands the three design docs in llm/. C1 migration 4 (question_schedule);
 C2 scheduler pure core + ported invariant tests; C3 partition, overdueness,
@@ -53,7 +53,7 @@ throttle, rebuild; C4 review mode end to end + THE invariant test
 elapsed_ms percentiles, terminal views. STOP: review. After this phase the
 tool schedules, measures, and its state is a cache of its log.
 
-## Phase 3: authoring (implementation-plan.md A1-A3)
+## Phase 3: authoring (plan/sm2-and-adaptive-selection.md A1-A3)
 
 A1 pure transform (flatten the nested close_block); A2 editor loop + stdin
 filter (file:line: stderr contract = nvim quickfix integration); A3 one-off
@@ -124,7 +124,7 @@ rail -- scheduled, throttled, retention-measured for free.
 
 ## Phase 7: measurement depth and phase D wiring
 
-From refinements-and-wiring.md, in order: S3 maturity breakdown +
+From plan/scheduler-observability-wiring.md, in order: S3 maturity breakdown +
 mature-lapse rate (the scheduler-health number); F1 flag-this-question
 (the one new write path, into questions.metadata; joins leeches in one
 triage view feeding the authoring edit loop); W1 session summary; S4
@@ -166,7 +166,7 @@ refinements -- metric first, tweak second.
 ## Suggested thread partitioning (each self-contained, docs pasted or read
 ## from llm/ after phase 0)
 
-Thread 1: phases 0-1-2 (the consolidation thread, implementation-plan.md).
+Thread 1: phases 0-1-2 (the consolidation thread, plan/sm2-and-adaptive-selection.md).
 Thread 2: phase 3 (authoring; small, could fold into thread 1's tail).
 Thread 3: phases 4-5 (arithmetic rail + epsilon; independent seams, can
           run in parallel with thread 1 if desired -- different files).

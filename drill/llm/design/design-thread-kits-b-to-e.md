@@ -2,7 +2,7 @@
 
 STATUS: HANDOFF for DESIGN threads (not implementation). Each section below is
 the starting kit for a PLANNING/STRATEGY thread that will produce a design doc
-(the way design-A-quick-consolidation.md is a design doc). Everything gathered
+(the way design/stats-depth-and-jsonl-export.md is a design doc). Everything gathered
 in the Thread-N + survey session is captured here at high density so the design
 threads do not re-derive it. Rough plans and instincts are marked as such --
 they are STARTING POSITIONS to interrogate, not decisions.
@@ -214,7 +214,7 @@ emit. SEQUENCING NOTE: if Doc A ships A.4 first, D has a concrete, tested target
         roadmap #27 AI-generated content). Likely OUT of a first pass.
 - DIRECTIONALITY. A vocab pair (L1, L2) yields up to 4 question types
   (L1->L2, L2->L1, and with/without a prompt sentence). This is the DEMOTED
-  "direction" idea from vocab-language-futures.md -- it belongs to the
+  "direction" idea from design/vocabulary-and-language-features.md -- it belongs to the
   converter's OUTPUT choices, not drill's runtime. A converter can emit both
   directions as separate questions; drill needs no new concept.
 - PDF TOOLING. Out-of-scope to pick here, but flag: PDF extraction is the risky,
@@ -303,7 +303,7 @@ starting immediately.
   design produce them. Add to adr-index.md when they land.
 - STATUS.md: the phase map (B/C/D threads), keep #3 study-track parallel.
 - roadmap.md: mark #6 (SM2), #7 (adaptive), the vocab importers as they move.
-- vocab-language-futures.md: promote/retire items as consumers appear
+- design/vocabulary-and-language-features.md: promote/retire items as consumers appear
   (direction, per-question language -- D gives direction a home in the converter).
 - knowledge-capture.md: any new runtime-semantics facts (e.g. PDF-extraction
   gotchas are NOT semantics; grade-bridge threshold findings ARE decisions).

@@ -16,7 +16,7 @@ next from real friction, not memory). Five sections:
      period should inform.
 
 Nothing here is committed to a thread; it is a guide to fold future work
-from. Related docs: roadmap.md (ranked plan), feature-backlog-2026-07.md
+from. Related docs: roadmap.md (ranked plan), llm/plan/feature-backlog.md
 (new candidates), decisions.md (the reasoning archive -- ADR-058/059/060
 are the authoring thread's).
 

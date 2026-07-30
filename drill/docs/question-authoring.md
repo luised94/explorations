@@ -1,6 +1,6 @@
 # Authoring guide: choosing qtypes and writing questions
 Status: practical reference for the use period. Written alongside the
-use-period plan (use-period-plan-2026-07.md), which this guide serves --
+use-period plan (llm/plan/use-period-feedback.md), which this guide serves --
 the three use cases here are that doc's Q2 use cases, and the recall
 discipline below is what its Q5/E3 measure.
 

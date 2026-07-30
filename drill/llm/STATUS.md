@@ -115,20 +115,20 @@ CURRENT PLAN (post-reassessment):
   (surface stored hints -- questions carry a hints list the payload never
   forwards) + two quick wins. Per-question-language-in-payload was DEMOTED (it
   is redundant with the client-side C-018a bank lookup; no consumer). The
-  executable commit plan is llm/thread-N-vocab-plan.md (sort: hints -> timing
+  executable commit plan is llm/plan/vocabulary-hints-and-timing.md (sort: hints -> timing
   stats -> ADR index, lead-with-meatier per user steer). Demoted/deferred vocab
-  ideas live in llm/vocab-language-futures.md.
+  ideas live in llm/design/vocabulary-and-language-features.md.
 - Thread N+1: SM2 consolidation (roadmap #6) + adaptive selection (#7). Its own
   focused, schema-invasive thread; both plug the pure swappable pick_next_question
   seam. The SM2 scheduling-fields migration (reserved in ADR-025) lands here.
   DESIGN-FIRST: adaptive (B) and SM2 (C) are to be co-designed then shipped
   separately (B schema-free first, C the migration). Design handoff with all
-  gathered facts + forks + instincts: llm/design-handoffs-BCDE.md (also covers
+  gathered facts + forks + instincts: llm/design/design-thread-kits-b-to-e.md (also covers
   D conversion pipelines and E authored content). The next SAFE build thread
   (schema-free stats-depth + JSONL export) is fully planned in
-  llm/design-A-quick-consolidation.md.
+  llm/design/stats-depth-and-jsonl-export.md.
   ** THREAD N+1 IMPLEMENTATION: B AND C PHASES DONE (this update). ** Commits
-  B1-B3 and C1-C5 per llm/implementation-plan.md, delivered as format-patch
+  B1-B3 and C1-C5 per llm/plan/sm2-and-adaptive-selection.md, delivered as format-patch
   series at the B3, C4, and C5 stop points and applied by the human. Landed:
   B1 per-question response stats reader; B2 miss-rate weighted selection pure
   core; B3 strategy dispatch on GET /api/question (random | weighted); C1
@@ -158,7 +158,7 @@ CURRENT PLAN (post-reassessment):
   coding-conventions formalization. Runs alongside the feature threads, auditing
   each thread's fresh code (per-file audit + encapsulation pass); it is the
   comprehension throttle, NOT a standalone phase. Operating doc:
-  llm/study-curriculum-and-conventions.md (audit axes, the semantics-vs-
+  docs/study-curriculum-and-conventions.md (audit axes, the semantics-vs-
   conventions split, the drafted encapsulation rule + its first-pass audit
   result). FIRST THREAD AUDIT DONE: Thread N (S6 of that doc) -- two curriculum
   entries, one ratified convention (el-node ownership), one fix-backlog item

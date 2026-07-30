@@ -1,5 +1,5 @@
 # Scheduler refinements and observability wiring
-## Companion to consolidation-findings.md
+## Companion to design/sm2-and-adaptive-selection.md
 
 Status: analyzed and decided; NOTHING in this document blocks or belongs to
 the core implementation plan except where explicitly marked LANDS WITH C.
@@ -52,7 +52,7 @@ RISK for all of Part 1: adopting a tweak by taste instead of by metric.
 The mitigation is procedural: any change to the policy inside
 advance_schedule_state or derive_recall_quality requires (a) a retention
 number motivating it and (b) a decided rebuild stance (rebuild applies
-current policy retroactively -- consolidation-findings.md section 8).
+current policy retroactively -- design/sm2-and-adaptive-selection.md section 8).
 
 ---
 

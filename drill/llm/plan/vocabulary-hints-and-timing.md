@@ -33,7 +33,7 @@ Running the workflow prompts against the real code NARROWED it hard:
     capability -- C-018a already sources language from the bank on the client,
     a documented working design. Threading it into the payload would be
     redundancy with no present consumer -> DEMOTED to the futures note
-    (llm/vocab-language-futures.md), not built here.
+    (llm/design/vocabulary-and-language-features.md), not built here.
 - Richer vocab (direction L1<->L2, decks, SRS-for-vocab): NO decided consumer
   exists -> captured as docs in the futures note, NOT scaffolded in code
   (forward-only migrations make speculative schema unrollable; same discipline
@@ -193,5 +193,5 @@ commit; no push.
 ================================================================================
 - Per-question language in the payload (redundant with C-018a; no consumer).
 - Direction (L1<->L2), vocab decks, SRS-for-vocab, importers -> no decided
-  consumer; docs-only in llm/vocab-language-futures.md.
+  consumer; docs-only in llm/design/vocabulary-and-language-features.md.
 - SM2 scheduling fields -> Thread N+1 (ADR-025 reserves the migration there).
