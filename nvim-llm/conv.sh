@@ -3,7 +3,7 @@ set -euo pipefail
 
 CONV_DIR="${CONV_DIR:-$HOME/conversations}"
 API_URL="https://openrouter.ai/api/v1/chat/completions"
-API_KEY="${OPEN_ROUTER_API_KEY}"
+API_KEY="$OPENROUTER_API_KEY"
 MODEL="inclusionai/ling-3.0-flash:free"
 
 active_file() {
@@ -32,7 +32,7 @@ call_llm() {
     -H "Authorization: Bearer $API_KEY" \
     -d "$(jq -n --arg m "$MODEL" --arg p "$prompt" \
       '{model:$m, messages:[{role:"user",content:$p}], stream:false}')" \
-    | jq -r '.choices[0].message.content // "ERROR: " + tostring'
+    | jq -r '.choices[0].message.content // "ERROR: " + (.error.message // "unknown")'
 }
 
 cmd="${1:-help}"
@@ -45,7 +45,7 @@ case "$cmd" in
     ;;
   say)
     f=$(active_file)
-    [[ -z "$f" ]] && { echo "no active session. run: conv new <name>"; exit 1; }
+    [[ -z "$f" ]] && { echo "no active session. run: ./conv new <name>"; exit 1; }
     id=$(next_id "$f")
     parent=$(grep -oP '(?<=^--- )b\d+' "$f" | tail -1 || echo "root")
     echo "${2}" | append_block "$f" "$id" "$parent" "user"
@@ -76,6 +76,6 @@ case "$cmd" in
     grep -P '^--- b' "$f" | sed 's/^--- //' | column -t -s'|'
     ;;
   *)
-    echo "usage: conv {new|say|ask|branch|tree}"
+    echo "usage: ./conv {new <name>|say <text>|ask <text>|branch <parent-id> <text>|tree}"
     ;;
 esac
