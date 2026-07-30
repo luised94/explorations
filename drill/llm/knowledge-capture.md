@@ -6,8 +6,8 @@ layer, placed at its most persistent level (Persona > Constraint > Criteria >
 Convention > Instruction > Context). Strategy, Skills, Principles, and Unsure
 follow.
 
-Companion artifacts (in outputs): THREAD_LAUNCH_KIT.md (reusable context +
-per-thread prompts), PHASE0_PLAN.md (execution detail), ROADMAP.md +
+Companion artifacts (in outputs): thread-launch-kit.md (reusable context +
+per-thread prompts), PHASE0_PLAN.md (execution detail), roadmap.md +
 roadmap_model.py (the scoring model), dependency_plan.mermaid (the DAG),
 spec.md + decisions.md (the living project record).
 
@@ -98,7 +98,7 @@ ASCII only.
 
 - Commit-ID discipline: every change is a commit C-0xx; mark changed regions with
   commit-ID comments; threads own disjoint ID ranges to avoid collision.
-- Maintain spec.md and DECISIONS.md as living records: append (do not rewrite)
+- Maintain spec.md and decisions.md as living records: append (do not rewrite)
   non-spec decisions and flags per commit, tagged [DECIDED]/[NOTE]/[FIX]/[OPEN].
   Version-stamp status lines ([v7], [v8], ...) and mark superseded notes rather
   than deleting history.
@@ -238,7 +238,7 @@ ASCII only.
   the generator if ever wanted); handwriting canvas; AI-generated content.
 - Launch order at archive: Wave 0 = TEST(C-020, first), MIGRATE(C-021),
   DOCS(C-022), ARITH operators(C-023), mistake-review(C-038), mastery grid(C-039).
-  Full waves in THREAD_LAUNCH_KIT.md Section 2.
+  Full waves in thread-launch-kit.md Section 2.
 
 ---
 

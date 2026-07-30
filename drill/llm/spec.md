@@ -4,7 +4,7 @@ Authoritative reference for all implementation work. When in doubt, cite a
 section number or ADR. This is the v2 revision: the original design is intact,
 but resolved ambiguities, as-built decisions, gap-fills, and the hardening
 pass are folded in. Changes from v1 are marked "[v2]". The companion
-DECISIONS.md is the per-commit audit trail; this spec is the steady-state
+decisions.md is the per-commit audit trail; this spec is the steady-state
 description of the system.
 
 Status: backend (drill.py) complete and hardened through C-012, plus the MAIN
@@ -299,7 +299,7 @@ DONE (backend, hardened + integration-tested):
   C-010 Wire handlers to DATABASE + LOGIC (incl. import route)
   C-011 Arithmetic question endpoint (+ session_stats on answer)
   C-012 Bank-based question endpoint
-  HARDENING PASS (post-C-012): see DECISIONS.md
+  HARDENING PASS (post-C-012): see decisions.md
 
 REMAINING (frontend + stats):
   C-013 Minimal HTML page with drill UI                          [sonnet] DONE
@@ -373,7 +373,7 @@ Engine. Handwriting (future): HanziLookupJS, KanjiCanvas.
 - [v2] The backend (drill.py) is FROZEN. The UI is built against the section-6
   contracts. If a UI need exposes a real backend gap, raise it and amend the
   spec before changing drill.py -- do not silently edit the frozen backend.
-- [v2] Maintain DECISIONS.md: append non-spec decisions and flags per commit.
+- [v2] Maintain decisions.md: append non-spec decisions and flags per commit.
 
 ## 12. [v2] Open items carried into the UI thread
 

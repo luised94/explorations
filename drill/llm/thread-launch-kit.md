@@ -41,7 +41,7 @@ ASCII only, consistent with the project.
 > ID; generate only what that commit describes (do not anticipate future
 > commits); when modifying a file, produce the complete updated file; mark
 > changes with commit-ID comments; if the spec seems wrong or incomplete, raise
-> it before coding; keep DECISIONS.md updated by appending non-spec decisions
+> it before coding; keep decisions.md updated by appending non-spec decisions
 > and flags per commit. Verify every commit with a real test (jsdom for
 > frontend, WSGI-over-temp-DB for backend) and report pass/fail before I accept.
 >
@@ -184,7 +184,7 @@ Attach: drill.py, spec.md, decisions.md
 
 > Commit C-022. Documentation-only pass per roadmap item #20. Reconcile stale
 > status lines so the docs are the single source of truth: the drill.py module
-> header, the section comments, and an ADR index appended to DECISIONS.md that
+> header, the section comments, and an ADR index appended to decisions.md that
 > lists every ADR/commit decision with a one-line summary and anchor. No code
 > changes -- prove it with an AST-equality check against the prior drill.py
 > (only docstrings/comments may differ). ASCII only.
@@ -291,7 +291,7 @@ Prereq: C-028. Bring your existing SM2 code into this thread.
 > extracted later (C-034). I will attach my SM2 files to this thread.
 
 ### THREAD-CURRIC (C-036, C-037)
-Attach: drill.py (or package), index.html (or app/ modules), spec.md, decisions.md, PHASE0_PLAN.md, ROADMAP.md
+Attach: drill.py (or package), index.html (or app/ modules), spec.md, decisions.md, PHASE0_PLAN.md, roadmap.md
 Prereq: C-027 + C-028 (modular code makes lessons map to files).
 
 > Commit C-036. Per PHASE0_PLAN.md Section C, generate the self-study curriculum.
@@ -311,7 +311,7 @@ Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PL
 > Keep it separate from the live stats bar and the stats view. Tests via jsdom.
 
 ### THREAD-GRID (C-039) -- minimal mastery grid (Victor)
-Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PLAN.md, ROADMAP.md
+Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PLAN.md, roadmap.md
 
 > Commit C-039. Per the Victor reprioritization (PHASE0_PLAN.md Section G), build
 > a MINIMAL mastery grid: a static grid of banks colored by accuracy (from
@@ -325,7 +325,7 @@ Attach: index.html (or app/ modules), drill.py, spec.md, decisions.md, PHASE0_PL
 
 The standing four -- spec.md, decisions.md, drill.py (or the package once
 C-028 lands), index.html (or app/ modules once C-027 lands) -- plus
-PHASE0_PLAN.md for any thread doing design work. ROADMAP.md only for the
+PHASE0_PLAN.md for any thread doing design work. roadmap.md only for the
 curriculum and grid threads (they reference the prioritization). Add
 thread-specific files (your SM2 source) where noted.
 

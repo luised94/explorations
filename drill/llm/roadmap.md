@@ -294,7 +294,7 @@ green. As-built details in STATUS.md and llm/handoffs/3-to-E10-cutover.md.
 **Phase 3 -- the study curriculum (capstone of the learning goal).**
 Once the code is modular, the codebase becomes the textbook: a guided
 walkthrough that reconstructs the tool commit-by-commit (you already have a
-near-perfect teaching artifact in DECISIONS.md and the spec). Structure it as
+near-perfect teaching artifact in decisions.md and the spec). Structure it as
 "read this layer, here is the principle it demonstrates, now extend it
 yourself" -- the boundary invariant, data-oriented design, the operator-table
 pattern, pure-vs-IO separation, the swappable-policy seam. This is why the
