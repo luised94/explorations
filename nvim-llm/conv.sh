@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# conv - conversation block manager
+# conv.sh -- conversation block manager
 # Appends, branches, queries, and renders conversation blocks in flat .conv files.
-# Part of the Constraint System Engineering conversation buffer tool.
-# See: conversations/README for format spec.
+# Part of the nvim-llm conversation buffer tool.
+# ASCII only. No Unicode characters in this file.
 set -euo pipefail
 
-# 컴 Configuration 컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+# -- Configuration -----------------------------------------------------------
 readonly CONVERSATION_DIRECTORY="${CONVERSATION_DIRECTORY:-$HOME/conversations}"
-readonly OPENROUTER_API_URL="https://openrouter.ai/api/v1/chat/completions"
-readonly OPENROUTER_MODEL="inclusionai/ling-3.0-flash:free"
+readonly OPEN_ROUTER_API_KEY="https://openrouter.ai/api/v1/chat/completions"
+readonly OPEN_ROUTER_MODEL="inclusionai/ling-3.0-flash:free"
 readonly BLOCK_IDENTIFIER_WIDTH=3          # zero-padding: b001, b002, ...
 readonly BLOCK_HEADER_DELIMITER="---"      # change to %%% if collision found
 readonly API_CALL_LOG_FILE="$CONVERSATION_DIRECTORY/api-calls.log"
 
-# 컴 Help 컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴
+# -- Help --------------------------------------------------------------------
 print_help() {
   cat << 'HELP'
-conv - conversation block manager
+conv.sh -- conversation block manager
 
 USAGE
-  conv <command> [arguments]
+  ./conv.sh <command> [arguments]
 
 COMMANDS
   new <session-name>
@@ -46,7 +46,7 @@ COMMANDS
 
 ENVIRONMENT
   CONVERSATION_DIRECTORY   Where .conv files live. Default: ~/conversations
-  OPENROUTER_API_KEY       Required for 'ask'. Exported in current shell.
+  OPENROUTER_API_KEY       Required for 'ask'. Must be exported in current shell.
 
 FILES
   $CONVERSATION_DIRECTORY/*.conv        Session files (flat text, git-tracked)
@@ -62,15 +62,15 @@ FORMAT
   Speaker: 'user' or 'asst'.
 
 EXAMPLES
-  conv new constraint-engineering
-  conv say "First thought: constraint systems are isomorphic."
-  conv branch b001 "Alternate thread: temporal constraints?"
-  conv ask "Define constraint system in two sentences."
-  conv tree
+  ./conv.sh new constraint-engineering
+  ./conv.sh say "First thought: constraint systems are isomorphic."
+  ./conv.sh branch b001 "Alternate thread: temporal constraints?"
+  ./conv.sh ask "Define constraint system in two sentences."
+  ./conv.sh tree
 HELP
 }
 
-# 컴 Pure transformations 컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+# -- Pure transformations ----------------------------------------------------
 # These functions compute values. They do not write files or call APIs.
 
 find_active_conversation_file() {
@@ -109,7 +109,7 @@ format_block_header() {
     "$timestamp"
 }
 
-# 컴 Side effects (isolated) 컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴
+# -- Side effects (isolated) -------------------------------------------------
 # These are the ONLY functions that write to disk or call external services.
 
 write_block_to_file() {
@@ -129,25 +129,25 @@ call_openrouter_api() {
   local prompt_text="$1"
   local request_payload
   request_payload=$(jq -n \
-    --arg model "$OPENROUTER_MODEL" \
+    --arg model "$OPEN_ROUTER_MODEL" \
     --arg prompt "$prompt_text" \
     '{model: $model, messages: [{role: "user", content: $prompt}], stream: false}')
 
-  # Log the call (side effect, but observational, not structural)
+  # Log the call (observational side effect, not structural)
   printf '%s  %s  %s bytes\n' \
     "$(date +%Y-%m-%dT%H:%M:%S)" \
-    "$OPENROUTER_MODEL" \
+    "$OPEN_ROUTER_MODEL" \
     "$(echo "$prompt_text" | wc -c)" \
     >> "$API_CALL_LOG_FILE"
 
-  curl -s "$OPENROUTER_API_URL" \
+  curl -s "$OPEN_ROUTER_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $OPENROUTER_API_KEY" \
     -d "$request_payload" \
     | jq -r '.choices[0].message.content // "ERROR: " + (.error.message // "unknown")'
 }
 
-# 컴 Imperative core: argument processing and dispatch 컴컴컴컴컴컴컴컴컴컴컴컴�
+# -- Imperative core: argument processing and dispatch -----------------------
 
 main() {
   local command="${1:-help}"
@@ -155,7 +155,7 @@ main() {
 
   case "$command" in
     new)
-      local session_name="${1:?usage: conv new <session-name>}"
+      local session_name="${1:?usage: ./conv.sh new <session-name>}"
       mkdir -p "$CONVERSATION_DIRECTORY"
       local conversation_file="$CONVERSATION_DIRECTORY/$(date +%Y-%m-%d)-${session_name}.conv"
       echo "# session: $(date +%Y-%m-%d) ${session_name}" > "$conversation_file"
@@ -163,10 +163,10 @@ main() {
       ;;
 
     say)
-      local user_text="${1:?usage: conv say <text>}"
+      local user_text="${1:?usage: ./conv.sh say <text>}"
       local conversation_file
       conversation_file=$(find_active_conversation_file)
-      [[ -z "$conversation_file" ]] && { echo "no active session. run: conv new <name>"; exit 1; }
+      [[ -z "$conversation_file" ]] && { echo "no active session. run: ./conv.sh new <name>"; exit 1; }
       local block_identifier
       block_identifier=$(compute_next_block_identifier "$conversation_file")
       local parent_block_identifier
@@ -177,7 +177,7 @@ main() {
       ;;
 
     ask)
-      local user_text="${1:?usage: conv ask <text>}"
+      local user_text="${1:?usage: ./conv.sh ask <text>}"
       local conversation_file
       conversation_file=$(find_active_conversation_file)
       [[ -z "$conversation_file" ]] && { echo "no active session"; exit 1; }
@@ -187,7 +187,7 @@ main() {
       parent_block_identifier=$(find_last_block_identifier "$conversation_file")
       echo "$user_text" | write_block_to_file \
         "$conversation_file" "$user_block_identifier" "$parent_block_identifier" "user"
-      echo "user block: $user_block_identifier - calling LLM..."
+      echo "user block: $user_block_identifier -- calling LLM..."
       local assistant_response_text
       assistant_response_text=$(call_openrouter_api "$user_text")
       local assistant_block_identifier
@@ -198,8 +198,8 @@ main() {
       ;;
 
     branch)
-      local parent_block_identifier="${1:?usage: conv branch <parent-id> <text>}"
-      local user_text="${2:?usage: conv branch <parent-id> <text>}"
+      local parent_block_identifier="${1:?usage: ./conv.sh branch <parent-id> <text>}"
+      local user_text="${2:?usage: ./conv.sh branch <parent-id> <text>}"
       local conversation_file
       conversation_file=$(find_active_conversation_file)
       [[ -z "$conversation_file" ]] && { echo "no active session"; exit 1; }
@@ -225,7 +225,7 @@ main() {
 
     *)
       echo "unknown command: $command" >&2
-      echo "run 'conv help' for usage" >&2
+      echo "run './conv.sh help' for usage" >&2
       exit 1
       ;;
   esac
