@@ -277,10 +277,9 @@ obvious. It also directly serves your "understand how concerns separate" goal.
 AS-BUILT: ten frontend ES modules (state, el, api, timing, stage, speech, stats,
 session, drill, boot) + backend config/db/logic/http_layer/drill; the E10 atomic
 cutover shipped with an enforced ownership guard. See STATUS.md and the handoffs.
-DESIGN + SPIKES COMPLETE (C-MOD-design): see llm/roadmap-1-modularization-
-findings.md and llm/roadmap-1-modularization-commit-plan.md, and decisions.md
-ADR-049..052. Implementation (adversarial-review -> commit-planning ->
-plan-review -> execute) is handed to a separate thread; the SHA/baseline for it
+DESIGN + SPIKES COMPLETE (C-MOD-design): the spike findings and the sorted
+commit plan were retired in DRILL-IMPL-002 and are in git history; decisions.md
+ADR-049..052 carries the conclusions. Implementation (adversarial-review ->
 are in STATUS.md.
 DONE (C-MOD-E10, roadmap #1 COMPLETE): both tiers are modular. Backend split
 into config.py/db.py/logic.py/http_layer.py + drill.py (thread one). Frontend

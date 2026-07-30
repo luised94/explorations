@@ -217,15 +217,12 @@ understand cold) and split around a quality pass:
   become structural rather than disciplinary. See handoff-modularization.md.
   DESIGN + SPIKES DONE (C-MOD-design); PLAN REVIEWED (C-MOD-review): the design
   survived adversarial-review and the sorted plan survived plan-review; the
-  commit list is classified, topologically sorted, and thread-split. Read these
-  before implementing:
-    - llm/roadmap-1-modularization-findings.md -- spikes S1-S5 (design) + S6-S9
-      (review addenda: the measured drill<->session cycle; the cycle resolves
-      green under option (b) with the hoisting-vs-TDZ mechanism; reconfirmed
-      analyzer false positives; naming debt is tiny and JS-only).
-    - llm/roadmap-1-modularization-commit-plan.md -- SECTION R is the executable
-      plan (classified/sorted/thread-split). The draft C/D/E below it is design
-      rationale, superseded by R for sequencing.
+   commit list is classified, topologically sorted, and thread-split. The spike
+   findings (S1-S9: the measured drill<->session cycle resolves green under
+   option (b) via the hoisting-vs-TDZ mechanism; analyzer false positives
+   reconfirmed; naming debt tiny and JS-only) and the sorted commit plan
+   (SECTION R was the executable one) were retired in DRILL-IMPL-002 and are in
+   git history. Read before implementing:
     - decisions.md ADR-049..053 -- ADR-049/050 facts; ADR-051 (ownership registry,
       relabelled from "quarantine") + ADR-052 (R1) now DECIDED (pending status
       resolved by the review); ADR-053 NEW (accept the drill<->session cycle,

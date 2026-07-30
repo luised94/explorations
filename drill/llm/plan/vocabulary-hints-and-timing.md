@@ -145,8 +145,7 @@ N.3 -- HAIKU -- ADR index (close the last #20 loop)
 GOAL: #20 (docstring/status-drift + ADR index) is WIP; STATUS + conventions are
 done, only the ADR index remains (STATUS.md:206). Write a navigable index of
 ADR-001..054 (id -> one-line subject -> status DECIDED/SUPERSEDED/DEFERRED).
-Either a new llm/adr-index.md or a top-of-file index block in decisions.md.
-
+A top-of-file index block in decisions.md (C-102 retired the separate index).
 DEPENDENCY EDGES: none. Independent; lands anytime. Sequenced last as the
 closing easy win.
 WHAT PROVES IT GREEN: docs only; suite unchanged. Verify the index matches the
