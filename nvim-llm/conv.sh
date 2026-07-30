@@ -2,9 +2,9 @@
 set -euo pipefail
 
 CONV_DIR="${CONV_DIR:-$HOME/conversations}"
-API_URL="${LLM_API_URL:-https://openrouter.ai/api/v1/chat/completions}"
-API_KEY="${LLM_API_KEY:-}"
-MODEL="${LLM_MODEL:-meta-llama/llama-3.1-8b-instruct:free}"
+API_URL="https://openrouter.ai/api/v1/chat/completions"
+API_KEY="${OPEN_ROUTER_API_KEY}"
+MODEL="inclusionai/ling-3.0-flash:free"
 
 active_file() {
   ls -t "$CONV_DIR"/*.conv 2>/dev/null | head -1
@@ -32,14 +32,14 @@ call_llm() {
     -H "Authorization: Bearer $API_KEY" \
     -d "$(jq -n --arg m "$MODEL" --arg p "$prompt" \
       '{model:$m, messages:[{role:"user",content:$p}], stream:false}')" \
-    | jq -r '.choices[0].message.content // "ERROR: no response"'
+    | jq -r '.choices[0].message.content // "ERROR: " + tostring'
 }
 
 cmd="${1:-help}"
 case "$cmd" in
   new)
     mkdir -p "$CONV_DIR"
-    local f="$CONV_DIR/$(date +%Y-%m-%d)-${2:-session}.conv"
+    f="$CONV_DIR/$(date +%Y-%m-%d)-${2:-session}.conv"
     echo "# session: $(date +%Y-%m-%d) ${2:-session}" > "$f"
     echo "created $f"
     ;;
@@ -76,6 +76,6 @@ case "$cmd" in
     grep -P '^--- b' "$f" | sed 's/^--- //' | column -t -s'|'
     ;;
   *)
-    echo "usage: conv {new <name>|say <text>|ask <text>|branch <parent-id> <text>|tree}"
+    echo "usage: conv {new|say|ask|branch|tree}"
     ;;
 esac

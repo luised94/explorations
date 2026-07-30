@@ -95,3 +95,6 @@ function _G.ConvBlockId()
   local h = vim.api.nvim_buf_get_lines(0, line - 1, line, false)[1] or ""
   return h:match("(b%d+)") or ""
 end
+
+vim.filetype.add({ extension = { conv = "conv" } })
+vim.opt.runtimepath:append("~/conv")
