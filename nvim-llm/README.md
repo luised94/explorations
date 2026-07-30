@@ -37,6 +37,13 @@ OpenRouter (recommended for v0.1-OpenAI-compatible, free models available):
 export LLM_API_URL="https://openrouter.ai/api/v1/chat/completions"
 export LLM_API_KEY="sk-or-v1-YOUR_KEY_HERE"
 export LLM_MODEL="meta-llama/llama-3.1-8b-instruct:free"
+
+# verify it works
+curl -s "$LLM_API_URL" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $LLM_API_KEY" \
+  -d '{"model":"'"$LLM_MODEL"'","messages":[{"role":"user","content":"say hello in 3 words"}],"stream":false}' \
+  | jq -r '.choices[0].message.content'
 ```
 
 ## References
