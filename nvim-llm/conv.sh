@@ -10,7 +10,7 @@ readonly CONVERSATION_DIRECTORY="${CONVERSATION_DIRECTORY:-$HOME/conversations}"
 readonly OPEN_ROUTER_API_KEY="https://openrouter.ai/api/v1/chat/completions"
 readonly OPEN_ROUTER_MODEL="inclusionai/ling-3.0-flash:free"
 readonly BLOCK_IDENTIFIER_WIDTH=3          # zero-padding: b001, b002, ...
-readonly BLOCK_HEADER_DELIMITER="---"      # change to %%% if collision found
+readonly BLOCK_HEADER_DELIMITER="%%%"
 readonly API_CALL_LOG_FILE="$CONVERSATION_DIRECTORY/api-calls.log"
 
 # -- Help --------------------------------------------------------------------

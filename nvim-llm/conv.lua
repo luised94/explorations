@@ -8,8 +8,8 @@
 
 -- -- Configuration -----------------------------------------------------------
 
-local BLOCK_HEADER_LUA_PATTERN = "^%-%-%- b%d+"
-local BLOCK_HEADER_VIM_REGEX = "^--- b\\d\\+"
+local BLOCK_HEADER_LUA_PATTERN = "^%%%%%% b%d+"
+local BLOCK_HEADER_VIM_REGEX = "^%%% b\\d\\+"
 local BLOCK_ID_LUA_PATTERN = "(b%d+)"
 local FOLD_LEVEL_ON_OPEN = 1
 local TREE_SPLIT_WIDTH = 44
@@ -26,7 +26,7 @@ local function parse_all_blocks_from_buffer(buffer_number)
   local blocks = {}
   for line_index, line_content in ipairs(all_lines) do
     local identifier, parent_identifier, speaker, timestamp =
-      line_content:match("^%-%-%- (b%d+) | (%S+) | (%S+) | (%S+)")
+      line_content:match("^%%%%%% (b%d+) | (%S+) | (%S+) | (%S+)")
     if identifier then
       local body_preview = (all_lines[line_index + 1] or ""):sub(1, 56)
       table.insert(blocks, {
@@ -164,7 +164,7 @@ local function open_tree_sidebar()
     end
 
     vim.api.nvim_set_current_win(conversation_window)
-    local target_line = vim.fn.search("^--- " .. target_identifier .. " ", "nw")
+    local target_line = vim.fn.search("^%%% " .. target_identifier .. " ", "nw")
     if target_line > 0 then
       vim.api.nvim_win_set_cursor(conversation_window, { target_line, 0 })
       vim.cmd("normal! zv")
@@ -346,7 +346,7 @@ end
 -- -- Buffer setup (runs on source) -------------------------------------------
 
 vim.opt_local.foldmethod = "expr"
-vim.opt_local.foldexpr = "getline(v:lnum)=~#'^---\\\\ b'?'>1':'='"
+vim.opt_local.foldexpr = "getline(v:lnum)=~#'^%%% b'?'>1':'='"
 vim.opt_local.foldlevel = FOLD_LEVEL_ON_OPEN
 vim.opt_local.commentstring = "# %s"
 vim.opt_local.wrap = true
@@ -354,7 +354,7 @@ vim.opt_local.linebreak = true
 
 -- Syntax highlighting for .conv files (ASCII only)
 vim.cmd [[
-  syn match convHeader /^--- b\d\+ | .*/
+  syn match convHeader /^%%% b\d\+ | .*/
   syn match convId /b\d\+/ contained containedin=convHeader
   syn match convSpeaker /| \(user\|asst\) |/ contained containedin=convHeader
   syn match convTimestamp /| \d\+:\d\+$/ contained containedin=convHeader
@@ -431,7 +431,7 @@ vim.keymap.set("n", "<leader>cb", function()
         if not selected_entry then return end
         local target_identifier = selected_entry.value:match("(b%d+)")
         if target_identifier then
-          local target_line = vim.fn.search("^--- " .. target_identifier .. " ", "nw")
+          local target_line = vim.fn.search("^%%% " .. target_identifier .. " ", "nw")
           if target_line > 0 then
             vim.api.nvim_win_set_cursor(0, { target_line, 0 })
             vim.cmd("normal! zv")
@@ -492,7 +492,7 @@ end, { buffer = true, desc = "preview fork ancestry" })
 local METRICS_LOG_PATH = (os.getenv("CONVERSATION_DIRECTORY")
   or (os.getenv("HOME") .. "/conversations")) .. "/interaction-metrics.log"
 
-local function log_interaction_metric(action_name, block_identifier, detail)
+function log_interaction_metric(action_name, block_identifier, detail)
   -- Side effect: appends one line to the metrics log.
   local timestamp = os.date("%Y-%m-%dT%H:%M:%S")
   local source_file = vim.fn.fnamemodify(vim.fn.bufname(0), ":t")
