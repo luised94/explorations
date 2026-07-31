@@ -143,6 +143,8 @@ local function open_tree_sidebar()
     hi def convTreeConnector guifg=#555555
   ]]
 
+  log_interaction_metric("tree_open", nil, #blocks .. " blocks")
+
   -- Enter: jump to block in conversation buffer
   vim.keymap.set("n", "<CR>", function()
     local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
@@ -206,61 +208,138 @@ local function yank_current_block(register_name)
   local target_register = register_name or '"'
   vim.fn.setreg(target_register, yank_text)
 
+  log_interaction_metric("yank", block_identifier, #block_lines .. " lines")
+
   local block_identifier = all_lines[block_start_line]:match(BLOCK_ID_LUA_PATTERN)
   vim.notify(string.format("yanked %s (%d lines) to register %s",
     block_identifier, #block_lines, target_register), vim.log.levels.INFO)
 end
 
-local function fork_current_block_to_new_session(session_name)
-  local current_buffer = vim.api.nvim_get_current_buf()
-  local all_lines = vim.api.nvim_buf_get_lines(current_buffer, 0, -1, false)
-  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-
-  -- Find block boundaries
-  local block_start_line = cursor_line
-  while block_start_line > 0
-    and not all_lines[block_start_line]:match(BLOCK_HEADER_LUA_PATTERN) do
-    block_start_line = block_start_line - 1
+local function compute_ancestry_path(blocks, target_identifier)
+  -- Pure. Returns ordered list of blocks from root to target_identifier.
+  local block_by_identifier = {}
+  for _, block in ipairs(blocks) do
+    block_by_identifier[block.identifier] = block
   end
-  if block_start_line == 0 then
-    vim.notify("no block header found above cursor", vim.log.levels.WARN)
+
+  local path = {}
+  local current_identifier = target_identifier
+  while current_identifier and current_identifier ~= "root" do
+    local current_block = block_by_identifier[current_identifier]
+    if not current_block then break end
+    table.insert(path, 1, current_block)  -- prepend
+    current_identifier = current_block.parent_identifier
+  end
+  return path
+end
+
+local function preview_ancestry_in_scratch_buffer(ancestry_path)
+  -- Side effect: opens a scratch buffer showing what will be forked.
+  -- Returns nothing. User reads, then runs :ConvFork to confirm.
+  local preview_lines = {
+    "# FORK PREVIEW - ancestry path to be copied:",
+    "# (run :ConvFork <name> to create the new session)",
+    "",
+  }
+  for path_index, block in ipairs(ancestry_path) do
+    local prefix = (path_index < #ancestry_path) and "|  " or "   "
+    table.insert(preview_lines, string.format("%s%s [%s] %s",
+      prefix, block.identifier, block.speaker, block.body_preview))
+  end
+  table.insert(preview_lines, "")
+  table.insert(preview_lines, "# " .. #ancestry_path .. " blocks will be copied.")
+
+  -- Open in a horizontal split, read-only
+  vim.cmd("botright 12split")
+  local preview_buffer = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_win_set_buf(0, preview_buffer)
+  vim.api.nvim_buf_set_lines(preview_buffer, 0, -1, false, preview_lines)
+  vim.opt_local.modifiable = false
+  vim.opt_local.readonly = true
+  vim.opt_local.buftype = "nofile"
+  vim.opt_local.bufhidden = "wipe"
+  vim.opt_local.filetype = "conv-fork-preview"
+end
+
+local function fork_ancestry_to_new_session(session_name)
+  -- Side effect: writes a new .conv file containing the ancestry path.
+  local current_buffer = vim.api.nvim_get_current_buf()
+  local all_blocks = parse_all_blocks_from_buffer(current_buffer)
+  if #all_blocks == 0 then
+    vim.notify("no blocks in buffer", vim.log.levels.WARN)
     return
   end
-  local block_end_line = block_start_line + 1
-  while block_end_line <= #all_lines
-    and not all_lines[block_end_line]:match(BLOCK_HEADER_LUA_PATTERN) do
-    block_end_line = block_end_line + 1
-  end
-  block_end_line = block_end_line - 1
 
-  -- Extract body (skip original header line)
-  local body_lines = vim.api.nvim_buf_get_lines(
-    current_buffer, block_start_line, block_end_line, false)
-  local original_identifier = all_lines[block_start_line]:match(BLOCK_ID_LUA_PATTERN)
-  local source_file_name = vim.fn.bufname(current_buffer)
-
-  -- Build new file
-  local conversation_directory = vim.fn.expand("$CONVERSATION_DIRECTORY")
-  if conversation_directory == "" or conversation_directory == "$CONVERSATION_DIRECTORY" then
-    conversation_directory = vim.fn.expand("$HOME") .. "/conversations"
+  -- Find the block at or above cursor
+  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+  local target_block = nil
+  for _, block in ipairs(all_blocks) do
+    if block.line_number <= cursor_line then
+      target_block = block
+    end
   end
-  local date_string = os.date("%Y-%m-%d")
-  local time_string = os.date("%H:%M")
-  local new_file_path = conversation_directory .. "/" .. date_string .. "-" .. session_name .. ".conv"
+  if not target_block then
+    vim.notify("no block at or above cursor", vim.log.levels.WARN)
+    return
+  end
+
+  local ancestry_path = compute_ancestry_path(all_blocks, target_block.identifier)
+  if #ancestry_path == 0 then
+    vim.notify("could not compute ancestry for " .. target_block.identifier, vim.log.levels.ERROR)
+    return
+  end
+
+  -- Build the new file content
+  local source_file_name = vim.fn.fnamemodify(vim.fn.bufname(current_buffer), ":t")
+  local original_identifiers = {}
+  for _, block in ipairs(ancestry_path) do
+    table.insert(original_identifiers, block.identifier)
+  end
 
   local new_file_lines = {
-    "# session: " .. date_string .. " " .. session_name,
-    "# forked from: " .. source_file_name .. " block " .. original_identifier,
-    "",
-    "--- b001 | root | user | " .. time_string,
+    "# session: " .. os.date("%Y-%m-%d") .. " " .. session_name,
+    "# forked from: " .. source_file_name,
+    "# ancestry: " .. table.concat(original_identifiers, " -> "),
+    "# fork point: " .. target_block.identifier,
   }
-  for _, body_line in ipairs(body_lines) do
-    table.insert(new_file_lines, body_line)
+
+  -- Renumber blocks sequentially, preserve parent chain
+  local identifier_remap = {}
+  for path_index, block in ipairs(ancestry_path) do
+    local new_identifier = string.format("b%03d", path_index)
+    identifier_remap[block.identifier] = new_identifier
   end
 
+  for path_index, block in ipairs(ancestry_path) do
+    local new_identifier = string.format("b%03d", path_index)
+    local new_parent = "root"
+    if path_index > 1 then
+      new_parent = string.format("b%03d", path_index - 1)
+    end
+    table.insert(new_file_lines, "")
+    table.insert(new_file_lines, string.format("--- %s | %s | %s | %s",
+      new_identifier, new_parent, block.speaker, block.timestamp))
+    -- Copy body lines from original buffer
+    local body_start = block.line_number  -- line after header
+    local body_end = body_start
+    local all_buffer_lines = vim.api.nvim_buf_get_lines(current_buffer, 0, -1, false)
+    while body_end < #all_buffer_lines
+      and not all_buffer_lines[body_end + 1]:match(BLOCK_HEADER_PATTERN) do
+      body_end = body_end + 1
+    end
+    for body_line_index = body_start, body_end do
+      table.insert(new_file_lines, all_buffer_lines[body_line_index])
+    end
+  end
+
+  -- Write the file
+  local conversation_directory = os.getenv("CONVERSATION_DIRECTORY")
+    or (os.getenv("HOME") .. "/conversations")
+  local new_file_path = conversation_directory .. "/"
+    .. os.date("%Y-%m-%d") .. "-" .. session_name .. ".conv"
   vim.fn.writefile(new_file_lines, new_file_path)
-  vim.notify(string.format("forked %s -> %s", original_identifier, new_file_path),
-    vim.log.levels.INFO)
+  log_interaction_metric("fork", target_block.identifier, #ancestry_path .. " blocks -> " .. session_name)
+  vim.notify("forked " .. #ancestry_path .. " blocks -> " .. new_file_path, vim.log.levels.INFO)
   vim.cmd("edit " .. new_file_path)
 end
 
@@ -288,10 +367,12 @@ vim.cmd [[
 -- -- Keymaps -----------------------------------------------------------------
 
 vim.keymap.set("n", "]m", function()
+  log_interaction_metric("navigate", nil, "next")   -- or "prev"
   vim.fn.search(BLOCK_HEADER_VIM_REGEX, "W")
 end, { buffer = true, desc = "next block" })
 
 vim.keymap.set("n", "[m", function()
+  log_interaction_metric("navigate", nil, "next")   -- or "prev"
   vim.fn.search(BLOCK_HEADER_VIM_REGEX, "bW")
 end, { buffer = true, desc = "prev block" })
 
@@ -371,10 +452,58 @@ vim.api.nvim_create_user_command("ConvYank", function()
   yank_current_block(nil)
 end, { desc = "Yank current block to default register" })
 
+-- Replace the old ConvFork command:
+vim.api.nvim_create_user_command("ConvForkPreview", function()
+  local current_buffer = vim.api.nvim_get_current_buf()
+  local all_blocks = parse_all_blocks_from_buffer(current_buffer)
+  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
+  local target_block = nil
+  for _, block in ipairs(all_blocks) do
+    if block.line_number <= cursor_line then target_block = block end
+  end
+  if not target_block then
+    vim.notify("no block at cursor", vim.log.levels.WARN)
+    return
+  end
+  local ancestry_path = compute_ancestry_path(all_blocks, target_block.identifier)
+  preview_ancestry_in_scratch_buffer(ancestry_path)
+end, { desc = "Preview what :ConvFork will copy" })
+
 vim.api.nvim_create_user_command("ConvFork", function(opts)
   local session_name = opts.args ~= "" and opts.args or "fork"
-  fork_current_block_to_new_session(session_name)
-end, { nargs = "?", desc = "Fork current block to new session" })
+  fork_ancestry_to_new_session(session_name)
+end, { nargs = "?", desc = "Fork ancestry path to new session" })
+
+-- Keymaps
+vim.keymap.set("n", "<leader>cf", function()
+  vim.ui.input({ prompt = "fork session name: " }, function(session_name)
+    if session_name and session_name ~= "" then
+      fork_ancestry_to_new_session(session_name)
+    end
+  end)
+end, { buffer = true, desc = "fork ancestry to new session" })
+
+vim.keymap.set("n", "<leader>cp", function()
+  vim.cmd("ConvForkPreview")
+end, { buffer = true, desc = "preview fork ancestry" })
+
+---- Metrics (observational side effects) ----------------------------
+
+local METRICS_LOG_PATH = (os.getenv("CONVERSATION_DIRECTORY")
+  or (os.getenv("HOME") .. "/conversations")) .. "/interaction-metrics.log"
+
+local function log_interaction_metric(action_name, block_identifier, detail)
+  -- Side effect: appends one line to the metrics log.
+  local timestamp = os.date("%Y-%m-%dT%H:%M:%S")
+  local source_file = vim.fn.fnamemodify(vim.fn.bufname(0), ":t")
+  local line = string.format("%s\t%s\t%s\t%s\t%s",
+    timestamp, action_name, block_identifier or "-", source_file, detail or "-")
+  local file_handle = io.open(METRICS_LOG_PATH, "a")
+  if file_handle then
+    file_handle:write(line .. "\n")
+    file_handle:close()
+  end
+end
 
 --[[ I had to add this to the init.lua to make sure it loads. Need to update this to the plugin standard I use and then symlink into the mc_extensions directory.
 vim.filetype.add({ extension = { conv = "conv" } })
