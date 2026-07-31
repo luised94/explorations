@@ -375,3 +375,13 @@ vim.api.nvim_create_user_command("ConvFork", function(opts)
   local session_name = opts.args ~= "" and opts.args or "fork"
   fork_current_block_to_new_session(session_name)
 end, { nargs = "?", desc = "Fork current block to new session" })
+
+--[[ I had to add this to the init.lua to make sure it loads. Need to update this to the plugin standard I use and then symlink into the mc_extensions directory.
+vim.filetype.add({ extension = { conv = "conv" } })
+vim.api.nvim_create_autocmd("Filetype", {
+  pattern = "conv",
+  callback = function()
+    dofile(vim.fn.expand("~/personal_repos/explorations--nvim-llm/nvim-llm/conv.lua"))
+  end,
+})
+--]]
