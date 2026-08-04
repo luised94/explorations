@@ -14,10 +14,15 @@
 # Note: daily conversation work happens inside nvim (<leader>cs, <leader>ca).
 # The conv command is for session creation and scripting only.
 
-readonly CONV_SCRIPT_PATH="$HOME/personal_repos/explorations/nvim-llm/conv.sh"
+_conv_file="${BASH_SOURCE[0]}"
+_conv_dir="$(cd -- "$(dirname -- "$_conv_file")" && pwd -P)"
+_conv_script="${CONV_SCRIPT_PATH:-$(cd -- "$_conv_dir/.." && pwd -P)/conv.sh}"
 
-if [[ -x "$CONV_SCRIPT_PATH" ]]; then
-  alias conv="$CONV_SCRIPT_PATH"
+if [[ -x "$_conv_script" ]]; then
+  alias conv="$_conv_script"
 else
-  echo "conv-aliases: $CONV_SCRIPT_PATH not found or not executable" >&2
+  printf 'conv-aliases: %s not found or not executable\n' \
+    "$_conv_script" >&2
 fi
+
+unset _conv_file _conv_dir _conv_script
