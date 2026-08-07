@@ -717,9 +717,10 @@ def test_question_unknown_strategy_is_400_with_error_envelope(app_with_bank):
 # ---- /api/question: arithmetic operator validation -----------------------
 def test_question_arithmetic_unknown_operator_is_400(app_blank):
     m, _ = app_blank
-    # "$" has no operator record, so restricting to it is a 400. (Was "^"
-    # before #4 enabled exponent; "^" is a valid operator now, so the unknown
-    # sentinel must be a symbol that genuinely has no record.)
+    # "$" has no operator record, so restricting to it is a 400. The unknown
+    # sentinel must be a symbol that genuinely has no record: "**" is the valid
+    # exponent operator (renamed from "^" in C-BIT-a, which frees "^" for the
+    # bitwise xor row landing later), so neither "**" nor "^" would serve here.
     status, _ = wsgi_get(m, "/api/question", "category=arithmetic&operators=$")
     assert status.startswith("400")
 

@@ -385,7 +385,7 @@ def test_evaluate_leaf_and_node(m):
 def test_evaluate_modulo_and_exponent(m):
     # #4: modulo uses operator.mod, exponent uses operator.pow.
     assert m.evaluate_expression({"op": "%", "left": 17, "right": 5}) == 2
-    assert m.evaluate_expression({"op": "^", "left": 3, "right": 2}) == 9
+    assert m.evaluate_expression({"op": "**", "left": 3, "right": 2}) == 9
 
 
 def test_render_flat_has_no_parentheses(m):
@@ -395,7 +395,7 @@ def test_render_flat_has_no_parentheses(m):
 def test_render_modulo_and_exponent(m):
     # #4: symbols render infix like the existing operators (server-side only).
     assert m.render_expression({"op": "%", "left": 17, "right": 5}) == "17 % 5"
-    assert m.render_expression({"op": "^", "left": 3, "right": 2}) == "3 ^ 2"
+    assert m.render_expression({"op": "**", "left": 3, "right": 2}) == "3 ** 2"
 
 
 def test_render_nested_parenthesizes_subexpressions(m):
@@ -411,7 +411,7 @@ def test_render_nested_parenthesizes_subexpressions(m):
 # desyncs the displayed question from the stored answer. Test EXHAUSTIVELY with
 # HAND-BUILT trees (decoupled from generator output), table-driven over
 # operator-pair x nested-side, asserting EXACT strings -- not "contains". Some
-# trees here (e.g. anything nesting under / % ^) are NOT generator-reachable in
+# trees here (e.g. anything nesting under / % **) are NOT generator-reachable in
 # #5; the renderer is nonetheless total over all well-formed trees, which is
 # what lets #2 widen generation with zero renderer change.
 # --------------------------------------------------------------------------
@@ -426,20 +426,20 @@ _RENDER_CASES = [
     ("flat mul", _n("*", 3, 4), "3 * 4"),
     ("flat div", _n("/", 12, 4), "12 / 4"),
     ("flat mod", _n("%", 17, 5), "17 % 5"),
-    ("flat pow", _n("^", 3, 2), "3 ^ 2"),
+    ("flat pow", _n("**", 3, 2), "3 ** 2"),
     # --- lower-precedence child under higher-precedence parent: KEEP ---
     # (a + b) * c -- already exercised by the legacy test; here both sides.
     ("sum left of product", _n("*", _n("+", 1, 2), 3), "(1 + 2) * 3"),
     ("sum right of product", _n("*", 3, _n("+", 1, 2)), "3 * (1 + 2)"),
     ("diff left of product", _n("*", _n("-", 5, 2), 4), "(5 - 2) * 4"),
-    ("sum under exponent", _n("^", _n("+", 1, 2), 2), "(1 + 2) ^ 2"),
-    ("product under exponent", _n("^", _n("*", 2, 3), 2), "(2 * 3) ^ 2"),
+    ("sum under exponent", _n("**", _n("+", 1, 2), 2), "(1 + 2) ** 2"),
+    ("product under exponent", _n("**", _n("*", 2, 3), 2), "(2 * 3) ** 2"),
     # --- higher-precedence child under lower-precedence parent: DROP ---
     # a * b + c -> tree (a*b)+c ; product binds tighter, no parens needed.
     ("product left of sum", _n("+", _n("*", 2, 3), 4), "2 * 3 + 4"),
     ("product right of sum", _n("+", 4, _n("*", 2, 3)), "4 + 2 * 3"),
-    ("exponent under product", _n("*", _n("^", 2, 3), 5), "2 ^ 3 * 5"),
-    ("exponent right of product", _n("*", 5, _n("^", 2, 3)), "5 * 2 ^ 3"),
+    ("exponent under product", _n("*", _n("**", 2, 3), 5), "2 ** 3 * 5"),
+    ("exponent right of product", _n("*", 5, _n("**", 2, 3)), "5 * 2 ** 3"),
     # --- same-tier, LEFT-associative parent ---
     # left child on the correct (left) side: DROP.
     ("sub then add: a - b + c", _n("+", _n("-", 8, 3), 2), "8 - 3 + 2"),
@@ -453,9 +453,9 @@ _RENDER_CASES = [
     ("mod right of mul: a * (b % c)", _n("*", 4, _n("%", 9, 2)), "4 * (9 % 2)"),
     # --- same-tier, RIGHT-associative parent (exponent) ---
     # right child on the correct (right) side for right-assoc: DROP.
-    ("pow right-assoc: 2 ^ 3 ^ 2", _n("^", 2, _n("^", 3, 2)), "2 ^ 3 ^ 2"),
+    ("pow right-assoc: 2 ** 3 ** 2", _n("**", 2, _n("**", 3, 2)), "2 ** 3 ** 2"),
     # left child on the wrong (left) side for right-assoc: KEEP.
-    ("pow left-nested: (2 ^ 3) ^ 2", _n("^", _n("^", 2, 3), 2), "(2 ^ 3) ^ 2"),
+    ("pow left-nested: (2 ** 3) ** 2", _n("**", _n("**", 2, 3), 2), "(2 ** 3) ** 2"),
     # --- deeper compositions ---
     # ((1 + 2) * 3) - 4 : product binds tighter than the outer -, so the
     # product needs no wrap on the left of -, but the inner sum still wraps.
@@ -489,13 +489,13 @@ def test_render_roundtrips_through_evaluate(m):
 
 
 # Trees the #5 GENERATOR never builds (a leaf-only operator with a subtree
-# child: / % ^ are nestable=False, ADR-032). The renderer is nonetheless TOTAL
+# child: / % ** are nestable=False, ADR-032). The renderer is nonetheless TOTAL
 # over them -- it parenthesizes by precedence/associativity regardless of which
 # operator owns the subtree. This test locks that totality in: it is the
 # counterpart to the property walk's structural invariant (which pins that the
 # generator never EMITS these). Together they make ADR-033's "renderer is the
 # sole owner of printing, total over well-formed trees" a tested guarantee, so
-# #2 can make / % ^ nestable (ADR-037 deferred door) with ZERO renderer change.
+# #2 can make / % ** nestable (ADR-037 deferred door) with ZERO renderer change.
 # If a future contributor "tightens" the renderer to reject these, this test
 # goes red with the reason attached.
 _UNREACHABLE_RENDER_CASES = [
@@ -504,15 +504,15 @@ _UNREACHABLE_RENDER_CASES = [
     ("div over product", _n("/", 24, _n("*", 2, 3)), "24 / (2 * 3)"),
     # a / (b + c): + (prec 1) under / (prec 2) -> lower precedence -> KEEP.
     ("div over sum", _n("/", 30, _n("+", 2, 3)), "30 / (2 + 3)"),
-    # 2 ^ (a + b): + under ^ (prec 3) -> lower precedence -> KEEP.
-    ("pow over sum", _n("^", 2, _n("+", 1, 2)), "2 ^ (1 + 2)"),
+    # 2 ** (a + b): + under ** (prec 3) -> lower precedence -> KEEP.
+    ("pow over sum", _n("**", 2, _n("+", 1, 2)), "2 ** (1 + 2)"),
     # (a + b) % c: + under % (prec 2) on the left -> lower precedence -> KEEP.
     ("mod of sum", _n("%", _n("+", 7, 6), 5), "(7 + 6) % 5"),
     # a % (b - c): - (prec 1) under % (prec 2) on the right -> KEEP.
     ("mod over diff", _n("%", 20, _n("-", 9, 2)), "20 % (9 - 2)"),
-    # nested leaf-only under leaf-only: (a ^ b) / c -- ^ (prec 3) under / (prec
+    # nested leaf-only under leaf-only: (a ** b) / c -- ** (prec 3) under / (prec
     # 2) on the left -> higher precedence, correct side -> DROP.
-    ("div of power-left", _n("/", _n("^", 2, 3), 4), "2 ^ 3 / 4"),
+    ("div of power-left", _n("/", _n("**", 2, 3), 4), "2 ** 3 / 4"),
 ]
 
 
@@ -613,9 +613,13 @@ def test_generate_default_depth_produces_some_nesting(m):
 
 def test_generate_nested_round_trips_value_through_render(m):
     # The renderer must emit a string that, read under standard precedence and
-    # associativity, parses back to the SAME tree's value. Map ^ -> ** and /
-    # -> // (our division is exact, so // == /), then re-evaluate the rendered
-    # string with Python's grammar and compare to evaluate_expression.
+    # associativity, parses back to the SAME tree's value. Our glyph for
+    # exponent is now ** (Python's own operator), so no symbol translation is
+    # needed for it -- only map / -> // (our division is exact, so // == /),
+    # then re-evaluate the rendered string with Python's grammar and compare to
+    # evaluate_expression. (Before C-BIT-a the exponent glyph was ^, which this
+    # line translated with .replace("^","**"); that half is now a no-op and is
+    # dropped.)
     import random
 
     random.seed(2025)
@@ -623,7 +627,7 @@ def test_generate_nested_round_trips_value_through_render(m):
         node = m.generate_expression()
         expected = m.evaluate_expression(node)
         rendered = m.render_expression(node)
-        reparsed = eval(rendered.replace("^", "**").replace("/", "//"))
+        reparsed = eval(rendered.replace("/", "//"))
         assert reparsed == expected, (rendered, reparsed, expected)
 
 
@@ -756,7 +760,7 @@ def test_operator_records_declare_nesting_fields(m):
         "*": (True, 2, "left"),
         "/": (False, 2, "left"),
         "%": (False, 2, "left"),
-        "^": (False, 3, "right"),
+        "**": (False, 3, "right"),
     }
     for symbol, (nestable, precedence, associativity) in expected.items():
         record = m.OPERATORS[symbol]

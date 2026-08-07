@@ -139,7 +139,7 @@ _EXPONENT_POWER_RANGE = (2, 3)
 # Operators enabled by default, by symbol. Used when a session config does
 # not specify a custom operator set. Every entry must match a record in
 # OPERATOR_DEFINITIONS (validated in C-006).
-OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "^"]
+OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "**"]
 
 # #5 nested-expression generation config. These are MODULE CONSTANTS, not
 # function parameters: generate_expression's signature does not change (Lens 3/4
@@ -189,11 +189,11 @@ _MAX_RESULT_VALUE = None
 # INCOHERENT against this generator, because the operators do not share one
 # range semantics -- + and - draw operands directly, * and / use a narrower
 # range whose meaning differs (/ DERIVES its dividend as divisor*quotient), %
-# carries a separate divisor range, and ^ carries a separate power range with
+# carries a separate divisor range, and ** carries a separate power range with
 # almost no magnitude headroom (12^3 = 1728 is already at the UI ceiling,
 # ADR-028). So each rung declares the values PER OPERATOR, read from the same
 # record fields the operator's own strategy reads (operand_min/max, plus
-# divisor_min/max for %, exponent_min/max for ^). A rung carries NO callables;
+# divisor_min/max for %, exponent_min/max for **). A rung carries NO callables;
 # it is scalar data only (ADR-008 -- CONFIG holds scalars, LOGIC holds the
 # callables that consume them).
 #
@@ -204,14 +204,14 @@ _MAX_RESULT_VALUE = None
 #     rungs raise operator_depth and recurse_probability, so the tree grows more
 #     leaves; leaf_count is monotone non-decreasing across rungs. This is the
 #     near-dominant structural feature that earns shape C for the common case.
-#   - MAGNITUDE regime (leaf-only mixes / % ^, which cannot nest): leaf_count is
+#   - MAGNITUDE regime (leaf-only mixes / % **, which cannot nest): leaf_count is
 #     a CONSTANT point mass (always 2 -- measured, not assumed), so difficulty
 #     rides operand MAGNITUDE instead (wider ranges), pinned by a separate
 #     magnitude-monotonicity assertion.
 #
 # HONESTY CAVEAT (stated so a future reader does not over-trust the number): a
 # rung is a heuristic over STRUCTURAL features, not a validated measure of
-# cognitive load, and it is NOT a cross-mix cardinal scale -- 7 % 3 and 2 ^ 3
+# cognitive load, and it is NOT a cross-mix cardinal scale -- 7 % 3 and 2 ** 3
 # both have leaf_count 2 and are not commensurable by it. A higher rung produces
 # reliably harder questions ON AVERAGE WITHIN a given operator mix.
 #
@@ -224,7 +224,7 @@ _MAX_RESULT_VALUE = None
 #   operator_ranges    -- per-operator scaled range fields, keyed by symbol. Each
 #                         value is a dict of the SAME field names the operator's
 #                         record/strategy reads. Composable + - * and the / base
-#                         use operand_min/max; % adds divisor_min/max; ^ adds
+#                         use operand_min/max; % adds divisor_min/max; ** adds
 #                         exponent_min/max. A rung need not list every operator;
 #                         an operator omitted from a rung keeps its OPERATOR_DEFINITIONS
 #                         default range (so a rung only states what it CHANGES).
@@ -258,7 +258,7 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 2,
                 "divisor_max": 6,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 8,
                 "exponent_min": 2,
@@ -286,7 +286,7 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 2,
                 "divisor_max": 12,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 12,
                 "exponent_min": 2,
@@ -297,7 +297,7 @@ DIFFICULTY_RUNGS: list[dict] = [
     {
         "rung": 3,
         # More coordination (higher recurse) AND wider magnitude for the leaf-only
-        # operators that depth cannot reach. ^ holds its baseline range (no
+        # operators that depth cannot reach. ** holds its baseline range (no
         # headroom: 12^3 already near the UI ceiling, Q2/ADR-039).
         "operator_depth": 2,
         "recurse_probability": 0.7,
@@ -313,7 +313,7 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 3,
                 "divisor_max": 15,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 12,
                 "exponent_min": 2,
@@ -343,7 +343,7 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 3,
                 "divisor_max": 18,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 12,
                 "exponent_min": 2,
@@ -389,7 +389,7 @@ def _check_difficulty_rungs_consistency() -> None:
         "*": {"operand_min", "operand_max"},
         "/": {"operand_min", "operand_max"},
         "%": {"operand_min", "operand_max", "divisor_min", "divisor_max"},
-        "^": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+        "**": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
     }
 
     for rung_record in DIFFICULTY_RUNGS:

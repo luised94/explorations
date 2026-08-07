@@ -214,16 +214,16 @@ def _generate_operands_exponent(
 #                  rejection as one intent.
 #   nestable    -- whether this operator may have SUBTREE children (#5). True
 #                  for the composable operators (+ - *); False for the leaf-only
-#                  operators (/ % ^), whose operands stay integer leaves. NOTE:
+#                  operators (/ % **), whose operands stay integer leaves. NOTE:
 #                  nestable governs whether an operator may have subtree
 #                  CHILDREN; it does NOT govern whether the operator's node may
-#                  itself BE a child -- a / % ^ node is a valid subtree child of
+#                  itself BE a child -- a / % ** node is a valid subtree child of
 #                  a composable parent.
 #   precedence  -- explicit integer binding tier (#5): + - => 1, * / % => 2,
-#                  ^ => 3. Compared with < by the renderer to decide
+#                  ** => 3. Compared with < by the renderer to decide
 #                  parenthesization. Represented, not inferred from list order.
 #   associativity -- "left" or "right" (#5): + - * / % are left-associative;
-#                  ^ is right-associative. Drives same-tier wrong-side
+#                  ** is right-associative. Drives same-tier wrong-side
 #                  parenthesization in the renderer.
 #   eval_fn     -- stdlib operator callable; full namespace, no alias
 #   operand_strategy -- the generator producing this operator's operand pair
@@ -323,7 +323,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "operand_strategy": _generate_operands_modulo,
     },
     {
-        "symbol": "^",
+        "symbol": "**",
         "name": "exponent",
         "arity": 2,
         # Base from the multiplicative range; the power from its own narrow
@@ -535,7 +535,7 @@ def build_subtree(
     is built first (subtree or leaf) so its integer VALUE is known, then the
     operator's constraints are checked against those values and the node is
     assembled -- a built subtree is never mutated to fit a parent; on a
-    constraint failure the whole node is redrawn. Leaf-only operators (/ % ^)
+    constraint failure the whole node is redrawn. Leaf-only operators (/ % **)
     keep their existing paired leaf strategy unchanged (their invariants are
     statements about LEAVES -- divisor >= 2, derived quotient, exponent power
     range -- and must not be lifted to values). A leaf-only operator may still
@@ -585,7 +585,7 @@ def build_subtree(
         symbol = random.choice(symbols)
         operator_record = operator_table[symbol]
 
-        # Leaf-only (/ % ^): integer leaves via the existing paired strategy,
+        # Leaf-only (/ % **): integer leaves via the existing paired strategy,
         # invariants unchanged. Also the only path when no depth budget remains
         # for a composable operator (handled below by the leaf-only operand
         # builder), but a leaf-only operator takes this branch regardless.
@@ -697,7 +697,7 @@ def _apply_rung_ranges(rung_record: dict, base_table: dict) -> dict:
     stays the canonical default and is safe to reuse across requests. This is the
     magnitude lever -- the rung's operator_ranges replace ONLY the range fields
     each operator's strategy reads (operand_min/max for all; divisor_min/max for
-    %; exponent_min/max for ^), leaving every other record field (eval_fn,
+    %; exponent_min/max for **), leaving every other record field (eval_fn,
     operand_strategy, nestable, forbid_identity, precedence, ...) untouched. So
     the generator's behavior is identical except for the magnitudes it draws.
 
@@ -737,7 +737,7 @@ def generate_expression(
 
     Picks operators at random from enabled_symbols (defaulting to the module
     OPERATOR_SYMBOLS) and builds a tree bottom-up via build_subtree. Composable
-    operators (+ - *) may have subtree children; leaf-only operators (/ % ^)
+    operators (+ - *) may have subtree children; leaf-only operators (/ % **)
     keep integer leaves.
 
     DIFFICULTY (C-D2b): difficulty is an optional scalar rung. When None (the
@@ -830,7 +830,7 @@ def leaf_count(node: dict | int) -> int:
     same shape have the same leaf_count). That independence is exactly why it is
     the COORDINATION-regime feature (handoff Q1/S7): for composable-containing
     mixes it moves monotonically with the rung's depth/recurse knobs, while for
-    leaf-only mixes (/ % ^, which cannot nest) it is a CONSTANT 2 and difficulty
+    leaf-only mixes (/ % **, which cannot nest) it is a CONSTANT 2 and difficulty
     must ride magnitude instead.
 
     It is also the NON-DRIFTING fact stored on responses (ADR-040): recomputable

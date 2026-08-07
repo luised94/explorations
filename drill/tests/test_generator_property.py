@@ -11,7 +11,7 @@ the invariant for THAT operator with the correct referent --
 
   - VALUE-based for the composable operators (+ - *): the constraint is lifted
     to evaluate_expression(child), because a child may be a subtree;
-  - LEAF-based for the leaf-only operators (/ % ^): their operands stay integer
+  - LEAF-based for the leaf-only operators (/ % **): their operands stay integer
     leaves and their invariants remain statements about those leaves (divisor
     >= 2, derived quotient exact, exponent power range). A blanket
     evaluate-and-recheck would CORRUPT these -- hence dispatch, not a uniform
@@ -42,7 +42,7 @@ from _support import load_logic  # noqa: E402
 _M = load_logic()
 _ALL_SYMBOLS = list(_M.OPERATOR_SYMBOLS)
 _COMPOSABLE = {"+", "-", "*"}
-_LEAF_ONLY = {"/", "%", "^"}
+_LEAF_ONLY = {"/", "%", "**"}
 
 
 def _nonempty_symbol_subsets():
@@ -65,7 +65,7 @@ def _assert_node_invariants(node, allowed_symbols):
     """Recursive dispatching walk: assert the invariant for each node's operator.
 
     Composable nodes (+ - *) are checked by VALUE (their children may be
-    subtrees); leaf-only nodes (/ % ^) are checked by LEAF (their operands are
+    subtrees); leaf-only nodes (/ % **) are checked by LEAF (their operands are
     integer leaves and their invariants are leaf statements). Leaves are ints.
     """
     if isinstance(node, int):
@@ -82,7 +82,7 @@ def _assert_node_invariants(node, allowed_symbols):
     if op in _LEAF_ONLY:
         # Leaf-only: operands stay integer leaves; invariants are about leaves.
         # This is also the GENERATOR's structural invariant -- it never BUILDS a
-        # leaf-only node with a subtree child (a / (b * c), 2 ^ (a + b) are
+        # leaf-only node with a subtree child (a / (b * c), 2 ** (a + b) are
         # unreachable). nestable governs child-hood of children, not whether the
         # node may be a child (ADR-032). The renderer is nonetheless total over
         # such hand-built trees; see test_render_is_total_over_unreachable_trees
@@ -100,7 +100,7 @@ def _assert_node_invariants(node, allowed_symbols):
             # forbids the DIVISOR (right); divisor >= 2
             assert right >= 2
             assert right not in forbidden
-        elif op == "^":
+        elif op == "**":
             # forbids the EXPONENT (right); narrow power range -> bounded result
             assert right not in forbidden
             assert _M.evaluate_expression(node) == left**right
@@ -133,7 +133,7 @@ def test_generated_expression_holds_invariants(symbols):
     assert 1 <= _operator_depth(node) <= _M._MAX_OPERATOR_DEPTH
 
     # (per-node) every internal node satisfies its operator's invariant, with
-    # the correct referent (value for + - *, leaf for / % ^); leaves are int.
+    # the correct referent (value for + - *, leaf for / % **); leaves are int.
     _assert_node_invariants(node, set(symbols))
 
     # (eval) integer result, deterministic on the same tree
@@ -237,14 +237,14 @@ def test_difficulty_rungs_reference_only_real_operators():
 def test_difficulty_rungs_field_shape_per_operator():
     # A rung may only scale range fields the operator's strategy actually reads:
     # operand_min/max for all; divisor_min/max only for %; exponent_min/max only
-    # for ^. (This mirrors the import-time guard, asserted here for visibility.)
+    # for **. (This mirrors the import-time guard, asserted here for visibility.)
     allowed = {
         "+": {"operand_min", "operand_max"},
         "-": {"operand_min", "operand_max"},
         "*": {"operand_min", "operand_max"},
         "/": {"operand_min", "operand_max"},
         "%": {"operand_min", "operand_max", "divisor_min", "divisor_max"},
-        "^": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+        "**": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
     }
     for rung in _M.DIFFICULTY_RUNGS:
         for symbol, ranges in rung["operator_ranges"].items():
@@ -282,7 +282,7 @@ def _mean_leaf_count(mix, difficulty, samples):
 def test_difficulty_none_is_unchanged_default_path():
     # difficulty=None must use the module constants (byte-identical to pre-#2):
     # operator_depth bounded by _M._MAX_OPERATOR_DEPTH for every mix.
-    for mix in (["+", "-", "*"], ["/"], ["+", "-", "*", "/", "%", "^"]):
+    for mix in (["+", "-", "*"], ["/"], ["+", "-", "*", "/", "%", "**"]):
         for _ in range(500):
             node = _M.generate_expression(enabled_symbols=mix)  # no difficulty
             assert 1 <= _operator_depth(node) <= _M._MAX_OPERATOR_DEPTH
@@ -292,7 +292,7 @@ def test_rung_one_is_flat_for_every_mix():
     # Rung 1 sets operator_depth 1 / recurse 0 -> flat single-operator node with
     # two integer leaves, regardless of symbol set (the difficulty-driven flat
     # anchor, mirroring _MAX_OPERATOR_DEPTH==1, S6).
-    for mix in (["+"], ["+", "-", "*"], ["/", "%", "^"], _ALL_SYMBOLS):
+    for mix in (["+"], ["+", "-", "*"], ["/", "%", "**"], _ALL_SYMBOLS):
         for _ in range(500):
             node = _M.generate_expression(enabled_symbols=mix, difficulty=1)
             assert _operator_depth(node) == 1
@@ -307,7 +307,7 @@ def test_leaf_count_monotone_for_composable_mixes():
     # Use the mean over a large sample: leaf_count is random per draw, but its
     # expectation is monotone in the shape knobs. Strictly non-decreasing, with a
     # tiny tolerance against sampling noise at equal-shape rungs.
-    composable_mixes = [["+", "-", "*"], ["+"], ["+", "-", "*", "/", "%", "^"]]
+    composable_mixes = [["+", "-", "*"], ["+"], ["+", "-", "*", "/", "%", "**"]]
     for mix in composable_mixes:
         means = [_mean_leaf_count(mix, rung, _SAMPLE_PER_RUNG) for rung in _RUNG_LABELS]
         for earlier, later in zip(means, means[1:]):
@@ -319,10 +319,10 @@ def test_leaf_count_monotone_for_composable_mixes():
 
 
 def test_leaf_count_constant_for_leaf_only_mixes():
-    # MAGNITUDE regime (S7): leaf-only mixes (/ % ^) cannot nest, so leaf_count is
+    # MAGNITUDE regime (S7): leaf-only mixes (/ % **) cannot nest, so leaf_count is
     # a CONSTANT point mass (always 2) at EVERY rung. (Magnitude movement is
     # asserted in C-D2d once ranges are rung-driven; here only the constancy.)
-    for mix in (["/"], ["%"], ["^"], ["/", "%", "^"]):
+    for mix in (["/"], ["%"], ["**"], ["/", "%", "**"]):
         for rung in _RUNG_LABELS:
             for _ in range(500):
                 node = _M.generate_expression(enabled_symbols=mix, difficulty=rung)
@@ -358,7 +358,7 @@ def test_unknown_rung_raises_value_error():
 # --- C-D2d: per-operator range overlay (the MAGNITUDE regime) ----------------
 # A rung overlays its per-operator operand ranges onto a COPY of OPERATORS via
 # _apply_rung_ranges, so higher rungs draw larger operands. This is the lever
-# that makes leaf-only mixes (/ % ^) -- whose leaf_count is pinned at 2 -- get
+# that makes leaf-only mixes (/ % **) -- whose leaf_count is pinned at 2 -- get
 # harder at all. These tests assert magnitude movement and the overlay's purity.
 
 
