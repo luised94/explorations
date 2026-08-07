@@ -1113,21 +1113,30 @@ def format_integer_in_base(value: int, base: int, width: int) -> str:
     return sign + prefix + padded
 
 
-def render_expression(node: dict | int) -> str:
+def render_expression(node: dict | int, base: int = 10, width: int = 0) -> str:
     """Render an expression tree as a human-readable infix string.
 
-    Integer leaves render as their digits. Internal nodes render as
-    "left symbol right", with each child parenthesized only when the tree's
-    grouping would otherwise be lost under standard precedence/associativity
-    (see _child_needs_parentheses). A flat single-operator expression (the v1
-    case) has int leaves, so it produces no parentheses. The rendered string is
-    what gets stored in responses.question_text.
+    Integer leaves render via format_integer_in_base in the given base (default
+    10 -> bare digits, exactly the previous str(node) behavior, so every
+    existing caller is unchanged). Internal nodes render as "left symbol right",
+    with each child parenthesized only when the tree's grouping would otherwise
+    be lost under standard precedence/associativity (see
+    _child_needs_parentheses). A flat single-operator expression (the v1 case)
+    has int leaves, so it produces no parentheses. The rendered string is what
+    gets stored in responses.question_text.
+
+    base/width are TREE-UNIFORM (finding H): leaves are bare ints with nowhere
+    to carry per-leaf base, so base is necessarily a parameter to the walk and
+    therefore the same for every leaf. In a mixed session 12 + 5 renders as
+    0b1100 + 0b101; the drill-sequence model (finding J) makes sessions
+    homogeneous, which makes that correct by construction rather than merely
+    tolerated. width is ignored for base 10 (see format_integer_in_base).
     """
     if isinstance(node, int):
-        return str(node)
+        return format_integer_in_base(node, base, width)
     parent_record = OPERATORS[node["op"]]
-    left_text = render_expression(node["left"])
-    right_text = render_expression(node["right"])
+    left_text = render_expression(node["left"], base, width)
+    right_text = render_expression(node["right"], base, width)
     if _child_needs_parentheses(parent_record, node["left"], "left"):
         left_text = "(" + left_text + ")"
     if _child_needs_parentheses(parent_record, node["right"], "right"):
