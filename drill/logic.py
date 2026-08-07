@@ -46,6 +46,7 @@ from config import (
     QTYPE_MULTIPLE_CHOICE,
     QTYPE_TRANSLATE,
     QTYPES,
+    _CONVENTIONAL_PRECEDENCE,
     _DEFAULT_OPERAND_RANGE,
     _EXPONENT_POWER_RANGE,
     _MAX_GENERATION_ATTEMPTS,
@@ -219,8 +220,12 @@ def _generate_operands_exponent(
 #                  CHILDREN; it does NOT govern whether the operator's node may
 #                  itself BE a child -- a / % ** node is a valid subtree child of
 #                  a composable parent.
-#   precedence  -- explicit integer binding tier (#5): + - => 1, * / % => 2,
-#                  ** => 3. Compared with < by the renderer to decide
+#   precedence  -- explicit integer binding tier (#5), one per operator, held
+#                  in the record and checked at import against the conventional
+#                  ladder in config._CONVENTIONAL_PRECEDENCE (the single source):
+#                  + - => 5, * / % => 6, ** => 7. Tiers 1..4 are reserved below
+#                  the additive operators for the bitwise rows (| ^ & << >>)
+#                  landing in C-BIT-e. Compared with < by the renderer to decide
 #                  parenthesization. Represented, not inferred from list order.
 #   associativity -- "left" or "right" (#5): + - * / % are left-associative;
 #                  ** is right-associative. Drives same-tier wrong-side
@@ -242,7 +247,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "operands",
         "result_constraint": None,
         "nestable": True,
-        "precedence": 1,
+        "precedence": 5,
         "associativity": "left",
         "eval_fn": operator.add,
         "operand_strategy": _generate_operands_standard,
@@ -259,7 +264,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         # implements both mechanics (order left >= right; reject equal).
         "result_constraint": "non_negative",
         "nestable": True,
-        "precedence": 1,
+        "precedence": 5,
         "associativity": "left",
         "eval_fn": operator.sub,
         "operand_strategy": _generate_operands_standard,
@@ -274,7 +279,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "operands",
         "result_constraint": None,
         "nestable": True,
-        "precedence": 2,
+        "precedence": 6,
         "associativity": "left",
         "eval_fn": operator.mul,
         "operand_strategy": _generate_operands_standard,
@@ -293,7 +298,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "quotient",
         "result_constraint": None,
         "nestable": False,
-        "precedence": 2,
+        "precedence": 6,
         "associativity": "left",
         # Floor division (operator.floordiv) is always EXACT here: the dividend
         # is a guaranteed multiple of the divisor (ADR-007), so there is no
@@ -317,7 +322,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "divisor",
         "result_constraint": None,
         "nestable": False,
-        "precedence": 2,
+        "precedence": 6,
         "associativity": "left",
         "eval_fn": operator.mod,
         "operand_strategy": _generate_operands_modulo,
@@ -337,7 +342,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "exponent",
         "result_constraint": None,
         "nestable": False,
-        "precedence": 3,
+        "precedence": 7,
         "associativity": "right",
         # Right-associativity (2^2^3) is a #5 concern; the flat v1 generator
         # never associates, so it is a non-issue here.
@@ -427,6 +432,51 @@ def _build_operator_table() -> dict:
 
 # Built once at import. Module-level constant; not rebuilt per request.
 OPERATORS: dict = _build_operator_table()
+
+
+def _check_conventional_precedence() -> None:
+    """Raise at import if any OPERATOR precedence disagrees with the ladder.
+
+    The conventional binding ladder lives in CONFIG as declared data
+    (_CONVENTIONAL_PRECEDENCE); the operator records carry a precedence field
+    that the renderer compares to decide parenthesization. This guard welds the
+    two: it is the machine-enforcement that keeps the ladder from being a
+    comment. Mirrors config._check_difficulty_rungs_consistency's fail-at-import
+    discipline -- a precedence typo is a programming error caught at module
+    load, not a mis-parenthesized question served at request time.
+
+    Checked BOTH directions, so neither table can drift from the other:
+      - every operator record's precedence equals its ladder entry (a record
+        cannot carry a tier the ladder does not name);
+      - every ladder entry names a real operator record (the ladder cannot
+        carry a tier for an operator that does not exist).
+    The second direction is why the ladder is seeded with only the operators
+    that exist today (C-BIT-b/1b): a bitwise entry with no record yet would
+    trip it. C-BIT-e adds the records and the entries together.
+    """
+    for symbol, record in OPERATORS.items():
+        expected = _CONVENTIONAL_PRECEDENCE.get(symbol)
+        if expected is None:
+            raise RuntimeError(
+                "operator " + repr(symbol) + " has no entry in "
+                "_CONVENTIONAL_PRECEDENCE; the ladder must name every operator"
+            )
+        if record["precedence"] != expected:
+            raise RuntimeError(
+                "operator " + repr(symbol) + " precedence "
+                + repr(record["precedence"])
+                + " disagrees with the conventional ladder entry "
+                + repr(expected)
+            )
+    for symbol in _CONVENTIONAL_PRECEDENCE:
+        if symbol not in OPERATORS:
+            raise RuntimeError(
+                "_CONVENTIONAL_PRECEDENCE names operator " + repr(symbol)
+                + " which has no record in OPERATOR_DEFINITIONS"
+            )
+
+
+_check_conventional_precedence()
 
 
 def _draw_composable_leaf(operator_record: dict) -> int:

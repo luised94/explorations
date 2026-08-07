@@ -141,6 +141,29 @@ _EXPONENT_POWER_RANGE = (2, 3)
 # OPERATOR_DEFINITIONS (validated in C-006).
 OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "**"]
 
+# The conventional binding-tier ladder, as declared DATA a checker reads (not a
+# number typed into each operator record and asserted in one test). Symbol ->
+# tier; a SMALLER tier binds LESS tightly (is parenthesized under a larger-tier
+# parent). logic._check_conventional_precedence asserts, at import, that every
+# OPERATOR record's precedence field equals its entry here, both directions --
+# so the ladder cannot silently drift from the records that render by it.
+#
+# The full conventional ladder places the bitwise operators BELOW + - (C and
+# Python both do: shift, then &, then ^, then |, all looser than additive):
+#     | 1, ^ 2, & 3, << >> 4, + - 5, * / % 6, ** 7
+# Only the operators that EXIST today are seeded here (+ - * / % **, at their
+# ladder positions 5/5/6/6/6/7). The bitwise rows and their tiers 1..4 land in
+# C-BIT-e together with their operator records, so the guard stays fully
+# bidirectional at every commit rather than carrying entries with no record.
+_CONVENTIONAL_PRECEDENCE: dict[str, int] = {
+    "+": 5,
+    "-": 5,
+    "*": 6,
+    "/": 6,
+    "%": 6,
+    "**": 7,
+}
+
 # #5 nested-expression generation config. These are MODULE CONSTANTS, not
 # function parameters: generate_expression's signature does not change (Lens 3/4
 # consensus -- a depth parameter with no concrete caller is speculative; #2 adds

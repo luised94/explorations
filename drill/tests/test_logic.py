@@ -502,16 +502,16 @@ _UNREACHABLE_RENDER_CASES = [
     # a / (b * c): division over a product subtree. * (prec 2) under / (prec 2,
     # left-assoc) on the right side -> wrong side -> KEEP.
     ("div over product", _n("/", 24, _n("*", 2, 3)), "24 / (2 * 3)"),
-    # a / (b + c): + (prec 1) under / (prec 2) -> lower precedence -> KEEP.
+    # a / (b + c): + (prec 5) under / (prec 6) -> lower precedence -> KEEP.
     ("div over sum", _n("/", 30, _n("+", 2, 3)), "30 / (2 + 3)"),
-    # 2 ** (a + b): + under ** (prec 3) -> lower precedence -> KEEP.
+    # 2 ** (a + b): + (prec 5) under ** (prec 7) -> lower precedence -> KEEP.
     ("pow over sum", _n("**", 2, _n("+", 1, 2)), "2 ** (1 + 2)"),
-    # (a + b) % c: + under % (prec 2) on the left -> lower precedence -> KEEP.
+    # (a + b) % c: + (prec 5) under % (prec 6) on the left -> lower precedence -> KEEP.
     ("mod of sum", _n("%", _n("+", 7, 6), 5), "(7 + 6) % 5"),
-    # a % (b - c): - (prec 1) under % (prec 2) on the right -> KEEP.
+    # a % (b - c): - (prec 5) under % (prec 6) on the right -> KEEP.
     ("mod over diff", _n("%", 20, _n("-", 9, 2)), "20 % (9 - 2)"),
-    # nested leaf-only under leaf-only: (a ** b) / c -- ** (prec 3) under / (prec
-    # 2) on the left -> higher precedence, correct side -> DROP.
+    # nested leaf-only under leaf-only: (a ** b) / c -- ** (prec 7) under / (prec
+    # 6) on the left -> higher precedence, correct side -> DROP.
     ("div of power-left", _n("/", _n("**", 2, 3), 4), "2 ** 3 / 4"),
 ]
 
@@ -753,17 +753,24 @@ def test_question_text_stays_under_length_bound(m):
 # data and the validator contract.
 # --------------------------------------------------------------------------
 def test_operator_records_declare_nesting_fields(m):
+    # nestable and associativity are hardcoded here (they are structural facts
+    # about each operator, not the ladder). Precedence is NOT hardcoded: it is
+    # DERIVED from config._CONVENTIONAL_PRECEDENCE, the single source the import
+    # guard also checks the records against. Duplicating the ladder values here
+    # would create a second table that could silently disagree with the first;
+    # deriving means this test and the guard read the same numbers (C-BIT-b).
     expected = {
-        # symbol: (nestable, precedence, associativity)
-        "+": (True, 1, "left"),
-        "-": (True, 1, "left"),
-        "*": (True, 2, "left"),
-        "/": (False, 2, "left"),
-        "%": (False, 2, "left"),
-        "**": (False, 3, "right"),
+        # symbol: (nestable, associativity)
+        "+": (True, "left"),
+        "-": (True, "left"),
+        "*": (True, "left"),
+        "/": (False, "left"),
+        "%": (False, "left"),
+        "**": (False, "right"),
     }
-    for symbol, (nestable, precedence, associativity) in expected.items():
+    for symbol, (nestable, associativity) in expected.items():
         record = m.OPERATORS[symbol]
+        precedence = m._CONVENTIONAL_PRECEDENCE[symbol]
         # present
         assert "nestable" in record
         assert "precedence" in record
@@ -780,6 +787,45 @@ def test_operator_records_declare_nesting_fields(m):
         assert record["nestable"] is nestable
         assert record["precedence"] == precedence
         assert record["associativity"] == associativity
+
+
+def test_conventional_precedence_guard_holds_and_bites(m):
+    # The import-time guard welds config._CONVENTIONAL_PRECEDENCE to the operator
+    # records' precedence fields. Assert BOTH directions, per the guard's own
+    # design (a one-directional check is half a guard):
+    #   (1) it PASSES on the real, shipped table -- the module imported at all,
+    #       and re-running it explicitly must not raise;
+    #   (2) it RAISES when a record's precedence disagrees with the ladder;
+    #   (3) it RAISES when the ladder names an operator that has no record.
+    import copy
+
+    # (1) real table: explicit re-run is silent.
+    m._check_conventional_precedence()
+
+    original_ladder = m._CONVENTIONAL_PRECEDENCE
+
+    # (2) record-vs-ladder mismatch: bump one ladder entry off the record value.
+    mismatched = copy.deepcopy(original_ladder)
+    mismatched["**"] = 99
+    try:
+        m._CONVENTIONAL_PRECEDENCE = mismatched
+        with pytest.raises(RuntimeError):
+            m._check_conventional_precedence()
+    finally:
+        m._CONVENTIONAL_PRECEDENCE = original_ladder
+
+    # (3) ladder entry with no operator record: add a phantom symbol.
+    phantom = copy.deepcopy(original_ladder)
+    phantom["@"] = 4
+    try:
+        m._CONVENTIONAL_PRECEDENCE = phantom
+        with pytest.raises(RuntimeError):
+            m._check_conventional_precedence()
+    finally:
+        m._CONVENTIONAL_PRECEDENCE = original_ladder
+
+    # restored: the real table is silent again.
+    m._check_conventional_precedence()
 
 
 def test_operator_record_missing_new_key_fails_table_build(m):
