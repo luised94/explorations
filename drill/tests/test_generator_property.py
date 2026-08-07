@@ -380,6 +380,10 @@ def test_leaf_count_monotone_for_composable_mixes():
     # expectation is monotone in the shape knobs. Strictly non-decreasing, with a
     # tiny tolerance against sampling noise at equal-shape rungs.
     composable_mixes = [["+", "-", "*"], ["+"], ["+", "-", "*", "/", "%", "**"]]
+    # C-BIT-i: bitwise & ^ | nest like + - *, and now have per-rung ranges, so
+    # their mean leaf_count is monotone across rungs too (the mixes were seeded
+    # in C-BIT-f, inert until these ranges existed).
+    composable_mixes = composable_mixes + _BITWISE_COMPOSABLE_MIXES
     for mix in composable_mixes:
         means = [_mean_leaf_count(mix, rung, _SAMPLE_PER_RUNG) for rung in _RUNG_LABELS]
         for earlier, later in zip(means, means[1:]):
@@ -390,11 +394,30 @@ def test_leaf_count_monotone_for_composable_mixes():
         assert means[-1] > means[0], (mix, means)
 
 
+def test_bitwise_generation_never_starves_any_rung():
+    # C-BIT-i headline: _apply_rung_ranges reuses the base record for any
+    # operator a rung omits, and rung 4 carries a max_result_value ceiling
+    # (tuned for *). If bitwise were omitted from the rungs, difficulty would do
+    # nothing to it AND rung 4's ceiling could reject bitwise results, burning
+    # against _MAX_GENERATION_ATTEMPTS until generate_expression raises. With the
+    # per-rung bitwise ranges in place, N=5000 per rung per mix must raise no
+    # RuntimeError, and every result must stay within the 8-bit display width.
+    for rung in _RUNG_LABELS:
+        for mix in _BITWISE_COMPOSABLE_MIXES + _BITWISE_LEAF_ONLY_MIXES:
+            for _ in range(5000):
+                node = _M.generate_expression(enabled_symbols=mix, difficulty=rung)
+                result = _M.evaluate_expression(node)
+                assert isinstance(result, int)
+                assert 0 <= result <= 255, (rung, mix, result)
+
+
 def test_leaf_count_constant_for_leaf_only_mixes():
     # MAGNITUDE regime (S7): leaf-only mixes (/ % **) cannot nest, so leaf_count is
     # a CONSTANT point mass (always 2) at EVERY rung. (Magnitude movement is
     # asserted in C-D2d once ranges are rung-driven; here only the constancy.)
-    for mix in (["/"], ["%"], ["**"], ["/", "%", "**"]):
+    for mix in (["/"], ["%"], ["**"], ["/", "%", "**"]) + tuple(
+        _BITWISE_LEAF_ONLY_MIXES
+    ):
         for rung in _RUNG_LABELS:
             for _ in range(500):
                 node = _M.generate_expression(enabled_symbols=mix, difficulty=rung)

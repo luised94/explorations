@@ -300,6 +300,27 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "exponent_min": 2,
                 "exponent_max": 2,
             },
+            # Bitwise (C-BIT-i). Difficulty for bitwise is bit-WIDTH, not decimal
+            # magnitude (finding D: bit position is the thing being learned), so
+            # the progression widens the operand range across rungs. Rung 1 is
+            # the gentlest: 3-bit operands, small shifts. All results stay within
+            # the 8-bit display width. & ^ | scale operand_min/max; << >> also
+            # scale the shift amount.
+            "&": {"operand_min": 1, "operand_max": 7},
+            "^": {"operand_min": 1, "operand_max": 7},
+            "|": {"operand_min": 1, "operand_max": 7},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 3,
+                "shift_min": 1,
+                "shift_max": 2,
+            },
+            ">>": {
+                "operand_min": 4,
+                "operand_max": 15,
+                "shift_min": 1,
+                "shift_max": 2,
+            },
         },
     },
     {
@@ -328,6 +349,22 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "exponent_min": 2,
                 "exponent_max": 3,
             },
+            # Bitwise rung 2: 4-bit operands, shifts up to 3.
+            "&": {"operand_min": 1, "operand_max": 15},
+            "^": {"operand_min": 1, "operand_max": 15},
+            "|": {"operand_min": 1, "operand_max": 15},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 7,
+                "shift_min": 1,
+                "shift_max": 3,
+            },
+            ">>": {
+                "operand_min": 8,
+                "operand_max": 63,
+                "shift_min": 1,
+                "shift_max": 3,
+            },
         },
     },
     {
@@ -354,6 +391,22 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "operand_max": 12,
                 "exponent_min": 2,
                 "exponent_max": 3,
+            },
+            # Bitwise rung 3: 6-bit operands, full 1..4 shift range.
+            "&": {"operand_min": 1, "operand_max": 63},
+            "^": {"operand_min": 1, "operand_max": 63},
+            "|": {"operand_min": 1, "operand_max": 63},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 15,
+                "shift_min": 1,
+                "shift_max": 4,
+            },
+            ">>": {
+                "operand_min": 16,
+                "operand_max": 127,
+                "shift_min": 1,
+                "shift_max": 4,
             },
         },
     },
@@ -384,6 +437,26 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "operand_max": 12,
                 "exponent_min": 2,
                 "exponent_max": 3,
+            },
+            # Bitwise rung 4: full 8-bit operands. max_result_value (100000) is
+            # tuned for * and does NOT starve bitwise: every bitwise result here
+            # stays <= 255 (& ^ | <= 255; << left<=15 shift<=4 -> 240; >>
+            # left<=255 -> <=255), far under the ceiling. The N=5000 generation
+            # test asserts no RuntimeError against _MAX_GENERATION_ATTEMPTS.
+            "&": {"operand_min": 1, "operand_max": 255},
+            "^": {"operand_min": 1, "operand_max": 255},
+            "|": {"operand_min": 1, "operand_max": 255},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 15,
+                "shift_min": 1,
+                "shift_max": 4,
+            },
+            ">>": {
+                "operand_min": 8,
+                "operand_max": 255,
+                "shift_min": 1,
+                "shift_max": 4,
             },
         },
     },
@@ -474,7 +547,17 @@ def _check_difficulty_rungs_consistency() -> None:
                 + repr(max_result_value)
             )
         for symbol, ranges in rung_record["operator_ranges"].items():
-            if symbol not in OPERATOR_SYMBOLS:
+            # Validate against allowed_range_fields, not OPERATOR_SYMBOLS: a rung
+            # may legitimately scale an operator that ships DARK (bitwise is not
+            # in the default served set OPERATOR_SYMBOLS, but has a real record
+            # and a range-field entry). allowed_range_fields enumerates every
+            # operator that legitimately carries range fields, which is exactly
+            # the "is this a real, scalable operator" question this guard asks.
+            # (Before C-BIT-i this checked OPERATOR_SYMBOLS; the two sets were
+            # identical until bitwise shipped dark. The next line already indexes
+            # allowed_range_fields[symbol], so an operator absent from it would
+            # KeyError there regardless -- this check just fails loudly first.)
+            if symbol not in allowed_range_fields:
                 raise RuntimeError(
                     "DIFFICULTY_RUNGS rung "
                     + str(rung_label)
