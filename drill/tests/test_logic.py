@@ -753,6 +753,25 @@ def test_generate_nested_round_trips_value_through_render(m):
         reparsed = eval(rendered.replace("/", "//"))
         assert reparsed == expected, (rendered, reparsed, expected)
 
+    # Bitwise mixes (C-BIT-f): & ^ | << >> render with our glyphs, which are
+    # Python's own bitwise operators, so the rendered string reparses directly
+    # with NO symbol translation (the / -> // map is arithmetic-only and does
+    # not apply here). This is the exhaustive conventional-parse oracle for the
+    # C-BIT-b ladder: if any bitwise precedence were wrong, a rendered string
+    # would reparse to a different value under Python's grammar.
+    random.seed(4242)
+    bitwise_mixes = [
+        ["&"], ["^"], ["|"], ["<<"], [">>"],
+        ["&", "^", "|"], ["<<", ">>"], ["&", "^", "|", "<<", ">>"],
+    ]
+    for mix in bitwise_mixes:
+        for _ in range(500):
+            node = m.generate_expression(enabled_symbols=mix)
+            expected = m.evaluate_expression(node)
+            rendered = m.render_expression(node)
+            reparsed = eval(rendered)
+            assert reparsed == expected, (mix, rendered, reparsed, expected)
+
 
 def test_generate_retry_exhaustion_raises(m):
     # Bounded retry: when attempts are exhausted, build_subtree raises a clear

@@ -41,8 +41,26 @@ from _support import load_logic  # noqa: E402
 
 _M = load_logic()
 _ALL_SYMBOLS = list(_M.OPERATOR_SYMBOLS)
-_COMPOSABLE = {"+", "-", "*"}
-_LEAF_ONLY = {"/", "%", "**"}
+
+# Bitwise operators ship dark (not in OPERATOR_SYMBOLS), so _ALL_SYMBOLS -- the
+# DEFAULT served set -- excludes them, and the difficulty/default-path tests
+# that sample from it stay pinned to defaults. Bitwise coverage is driven from
+# an explicit universe instead (C-BIT-f, Option 1). & ^ | compose like + - *;
+# << >> are leaf-only like / % **.
+_BITWISE_COMPOSABLE = {"&", "^", "|"}
+_BITWISE_LEAF_ONLY = {"<<", ">>"}
+_BITWISE_SYMBOLS = list(_BITWISE_COMPOSABLE | _BITWISE_LEAF_ONLY)
+
+# Named bitwise mixes. Defined here as the single place they live so C-BIT-i can
+# reuse them when it adds rung ranges: the composable mixes belong in the
+# leaf-count-monotone test, the leaf-only mixes in the leaf-count-constant test.
+# NOT wired into any difficulty-driven test yet -- bitwise has no rung ranges
+# until C-BIT-i, so exercising them through difficulty= would fail. Inert data.
+_BITWISE_COMPOSABLE_MIXES = [["&"], ["^"], ["|"], ["&", "^", "|"]]
+_BITWISE_LEAF_ONLY_MIXES = [["<<"], [">>"], ["<<", ">>"]]
+
+_COMPOSABLE = {"+", "-", "*"} | _BITWISE_COMPOSABLE
+_LEAF_ONLY = {"/", "%", "**"} | _BITWISE_LEAF_ONLY
 
 
 def _nonempty_symbol_subsets():
@@ -105,12 +123,28 @@ def _assert_node_invariants(node, allowed_symbols):
             assert right not in forbidden
             assert _M.evaluate_expression(node) == left**right
             assert _M.evaluate_expression(node) <= 12**3
+        elif op in _BITWISE_LEAF_ONLY:
+            # << >> (C-BIT-f): leaf-only, two-range shape. The right operand is
+            # the SHIFT amount (forbid_identity referent "shift"), drawn from
+            # shift_min..shift_max; the left is a full operand. Evaluation must
+            # match the stdlib operator exactly (our glyphs == Python's).
+            import operator as _operator
+
+            shift_fn = {"<<": _operator.lshift, ">>": _operator.rshift}[op]
+            assert right not in forbidden
+            assert record["shift_min"] <= right <= record["shift_max"]
+            assert record["operand_min"] <= left <= record["operand_max"]
+            assert _M.evaluate_expression(node) == shift_fn(left, right)
     else:
         # Composable: constraints lifted to the operand VALUE (child may nest).
         assert record["nestable"]
         left_value = _M.evaluate_expression(left)
         right_value = _M.evaluate_expression(right)
-        # forbidden-identity by value: + forbids 0; * forbids 0 and 1.
+        # forbidden-identity by value: + forbids 0; * forbids 0 and 1; the
+        # bitwise composables & ^ | forbid 0 (inert -- operands are 1..31 and a
+        # child subtree never evaluates to 0 under the generator, same guarantee
+        # the + branch already relies on). Root results MAY be 0 (12 & 3 == 0,
+        # finding E): that is not an operand, so it is never checked here.
         assert left_value not in forbidden, node
         assert right_value not in forbidden, node
         if op == "-":
@@ -142,6 +176,32 @@ def test_generated_expression_holds_invariants(symbols):
     assert _M.evaluate_expression(node) == result
 
     # (render) renders to a non-empty string and the result is reproducible
+    text = _M.render_expression(node)
+    assert isinstance(text, str) and text != ""
+
+
+def _nonempty_bitwise_subsets():
+    return st.lists(
+        st.sampled_from(_BITWISE_SYMBOLS),
+        min_size=1,
+        max_size=len(_BITWISE_SYMBOLS),
+        unique=True,
+    )
+
+
+@settings(max_examples=300, deadline=None)
+@given(symbols=_nonempty_bitwise_subsets())
+def test_bitwise_generated_expression_holds_invariants(symbols):
+    # The default-set invariant test above cannot reach bitwise (they ship dark,
+    # so _ALL_SYMBOLS excludes them). This drives the SAME invariant walk over an
+    # explicit bitwise universe (C-BIT-f, Option 1): & ^ | as composable nodes
+    # checked by value, << >> as leaf-only nodes checked by leaf and stdlib eval.
+    node = _M.generate_expression(enabled_symbols=symbols)
+    assert 1 <= _operator_depth(node) <= _M._MAX_OPERATOR_DEPTH
+    _assert_node_invariants(node, set(symbols))
+    result = _M.evaluate_expression(node)
+    assert isinstance(result, int)
+    assert _M.evaluate_expression(node) == result
     text = _M.render_expression(node)
     assert isinstance(text, str) and text != ""
 
