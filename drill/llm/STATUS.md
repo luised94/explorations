@@ -9,9 +9,12 @@ made structural: when status changes, edit THIS file only.
 
 ASCII only. Single-user assumption holds throughout.
 
-Last updated: THREAD N+1 (SM2 + adaptive selection) implementation complete
-through C5 -- roadmap #7's B and C phases landed; A phase (authoring) handed
-to a follow-up thread. Previous marker: THREAD THREE complete (E10 cutover).
+Last updated: BITWISE RAIL (v1-completion-guide Phase 4.1) implementation
+complete through C-BIT-k -- the five bitwise operators (& ^ | << >>) ship dark
+(reachable via ?operators=..., not in the default set), with conventional
+machine-enforced precedence, per-rung difficulty scaling, fixed-width base-2/16
+display, and 0b/0x answer normalization. Previous marker: THREAD N+1 (SM2 +
+adaptive selection) complete through C5.
 
 ================================================================================
 BASELINE
@@ -19,11 +22,7 @@ BASELINE
 - Code size: drill.py ~3590 lines (Bottle backend, sections
   CONFIG/DATABASE/LOGIC/HTTP/MAIN); index.html ~2620 lines (single <script>
   block, pre-modularization).
-- Test suite: 311 green, ends "ALL GREEN".
-    backend  197  (pytest: logic, db, http, generator property, migrations)
-    frontend 114  (node + jsdom, real index.html):
-                   drill 10, speech 21, timing 19, stats 30,
-                   stats.integration 6, difficulty 20, import 8
+- Test suite: <TOTAL> green, ends "ALL GREEN". backend <N> (pytest: logic, db, http, generator property, migrations) -- bitwise added: rename/precedence/int-normalization to test_logic; the property + round-trip coverage to test_generator_property; six base tests to test_http. frontend <M> (node + jsdom): -- bitwise added: base_indicator.test (new; DOM node + stylesheet rule text), el.module (registry 28 -> 29, baseIndicator owner drill), drill.test (renderQuestion base 2 badge+mono / base 10 cleared).
 - Tooling: Node v22 (jsdom needs 18+), uv for the Python venv. Run the suite
   with `bash tests/run.sh` (bash, not sh). Frontend tests are glob-discovered
   from tests/frontend/*.test.js (leading-underscore files are skipped).
@@ -247,3 +246,10 @@ KNOWN REMAINING GAPS (real, not yet addressed)
   point-on-map (spatial). Addressed when a spatial or speed drill is built.
 - run.sh glob is done, but the backend pytest side is still a directory run;
   no per-module test split exists yet (arrives naturally with modularization).
+- Runtime smoke: PASSED. A real bitwise question drills end to end
+(?operators=...&base=2 -> monospace binary render + Binary badge + correct
+grading of a binary/decimal/hex answer). Known intended gap: there is NO UI
+affordance to select bitwise (it ships dark, ADR-BIT-1); the "pick a bitwise
+drill" experience is the deferred drill-sequence model (ADR-BIT-7, which carries
+tactics for building the affordance). Answer-format discoverability is unhinted
+(ADR-BIT-8).
