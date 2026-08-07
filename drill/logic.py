@@ -1060,6 +1060,59 @@ def _child_needs_parentheses(parent_record: dict, child: dict | int, side: str) 
     return False
 
 
+def format_integer_in_base(value: int, base: int, width: int) -> str:
+    """Format an integer in base 2, 10, or 16, zero-padded to `width` digits.
+
+    ONE formatter, TWO call sites (finding C): the leaf renderer inside
+    render_expression, and the answer key at the HTTP boundary (the expected
+    value is an int, not a leaf, so a leaf-specific renderer would serve only
+    one site). Both are "format this int in this base at this width".
+
+    - base 2 -> "0b" prefix; base 16 -> "0x" prefix; base 10 -> bare digits
+      (no prefix), matching the existing str(result) and round-tripping through
+      the int(text, 0) answer normalization (C-BIT-c).
+    - width is the DIGIT field (excluding any prefix) and applies ONLY to the
+      fixed-width bit bases (2 and 16), where zero-padding aligns bit position
+      (finding D). Base 10 IGNORES width: decimal has no bit-position semantics,
+      so padding it is meaningless -- and a zero-padded decimal like "00000001"
+      RAISES under int("00000001", 0) (the C-BIT-c leading-zero gotcha), which
+      would break the finding-G round-trip property and alter ordinary
+      arithmetic answers. So format_integer_in_base(5, 2, 8) -> "0b00000101"
+      but format_integer_in_base(5, 10, 8) -> "5".
+    - NEVER truncates. A value needing more than `width` digits renders at its
+      natural width -- padding is a minimum, not a ceiling -- because truncating
+      the answer key would corrupt it. With the shipped 8-bit ranges this never
+      fires (max result 255 -> 8 bits), but the formatter is total regardless.
+
+    width is a required parameter: the width POLICY (config._BITWISE_DISPLAY_
+    WIDTH) lives at the call site, so this function stays pure formatting and
+    ignorant of the constant.
+    """
+    if base == 2:
+        digits = format(value, "b")
+        prefix = "0b"
+    elif base == 16:
+        digits = format(value, "x")
+        prefix = "0x"
+    elif base == 10:
+        # Decimal is never zero-padded (see docstring): bare str, width ignored.
+        return format(value, "d")
+    else:
+        raise ValueError("unsupported display base: " + repr(base))
+
+    # A negative value carries a leading "-" from format(); keep the sign
+    # outside the zero-padding so "-0b0000101" reads correctly rather than
+    # "0b-000101". Bitwise results are non-negative with the shipped ranges, but
+    # the formatter stays total.
+    sign = ""
+    if digits.startswith("-"):
+        sign = "-"
+        digits = digits[1:]
+
+    padded = digits.zfill(width)  # zfill pads to a MINIMUM; never truncates
+    return sign + prefix + padded
+
+
 def render_expression(node: dict | int) -> str:
     """Render an expression tree as a human-readable infix string.
 

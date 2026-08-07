@@ -168,6 +168,15 @@ _CONVENTIONAL_PRECEDENCE: dict[str, int] = {
     "**": 7,
 }
 
+# Bitwise questions render in fixed-width binary so bit position aligns (finding
+# D: 0b00000101 teaches where 0b101 does not). The width is a MODULE constant,
+# not a rung field (finding F): no user has asked for a second width, and
+# putting it on the rung record would braid the DISPLAY model into the
+# DIFFICULTY model. When a drill genuinely needs 16- or 32-bit display it
+# arrives with its caller; until then, 8. The formatter takes width as a
+# parameter (it stays ignorant of this constant); the caller reads this.
+_BITWISE_DISPLAY_WIDTH: int = 8
+
 # #5 nested-expression generation config. These are MODULE CONSTANTS, not
 # function parameters: generate_expression's signature does not change (Lens 3/4
 # consensus -- a depth parameter with no concrete caller is speculative; #2 adds

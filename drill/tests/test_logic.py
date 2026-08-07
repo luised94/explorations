@@ -439,6 +439,57 @@ def test_render_modulo_and_exponent(m):
     assert m.render_expression({"op": "**", "left": 3, "right": 2}) == "3 ** 2"
 
 
+# --------------------------------------------------------------------------
+# format_integer_in_base (C-BIT-g) -- one formatter, two call sites (the leaf
+# renderer and the answer key are wired to it in C-BIT-h; here, the function).
+# --------------------------------------------------------------------------
+def test_format_integer_in_base_binary_zero_padded(m):
+    assert m.format_integer_in_base(5, 2, 8) == "0b00000101"
+    assert m.format_integer_in_base(255, 2, 8) == "0b11111111"
+    assert m.format_integer_in_base(0, 2, 8) == "0b00000000"
+
+
+def test_format_integer_in_base_hex_prefixed(m):
+    assert m.format_integer_in_base(31, 16, 2) == "0x1f"
+    assert m.format_integer_in_base(255, 16, 2) == "0xff"
+
+
+def test_format_integer_in_base_decimal_ignores_width(m):
+    # Decimal is never zero-padded: padding has no bit-position meaning in base
+    # 10, and a zero-padded decimal ("00000001") raises under int(_, 0), which
+    # would break the round-trip and alter ordinary arithmetic answers. Width is
+    # ignored for base 10; the output is the bare str, matching str(result).
+    assert m.format_integer_in_base(5, 10, 8) == "5"
+    assert m.format_integer_in_base(42, 10, 1) == "42"
+    assert m.format_integer_in_base(0, 10, 8) == "0"
+
+
+def test_format_integer_in_base_never_truncates(m):
+    # Padding is a MINIMUM, not a ceiling: a value wider than `width` renders at
+    # its natural width. Truncating the answer key would corrupt it. (Inert with
+    # the shipped 8-bit ranges, where max result is 255 -> 8 bits, but the
+    # formatter must be total.)
+    assert m.format_integer_in_base(256, 2, 8) == "0b100000000"
+    assert m.format_integer_in_base(7, 2, 4) == "0b0111"
+
+
+def test_format_integer_in_base_round_trips_through_int_base_zero(m):
+    # finding G: a base-rendered value must re-parse via int(_, 0) back to the
+    # same integer (this is what keeps question_text re-parseable and leaf_count
+    # recomputable). Holds for all three display bases.
+    for value in (0, 1, 5, 31, 42, 127, 255):
+        for base in (2, 10, 16):
+            rendered = m.format_integer_in_base(value, base, 8)
+            assert int(rendered, 0) == value, (value, base, rendered)
+
+
+def test_format_integer_in_base_rejects_unsupported_base(m):
+    import pytest
+
+    with pytest.raises(ValueError):
+        m.format_integer_in_base(5, 3, 8)
+
+
 def test_render_nested_parenthesizes_subexpressions(m):
     node = {"op": "*", "left": {"op": "+", "left": 1, "right": 2}, "right": 3}
     assert m.render_expression(node) == "(1 + 2) * 3"
