@@ -193,6 +193,37 @@ def _generate_operands_exponent(
         return base, exponent
 
 
+def _generate_operands_shift(
+    operator_record: dict,
+) -> tuple[int, int]:
+    """Generate a (left, shift_amount) pair for a bit-shift operator.
+
+    Mirrors the modulo/exponent two-range shape: the left operand is drawn from
+    the record's [operand_min, operand_max] range, and the shift amount from a
+    SECOND range (shift_min..shift_max) declared on the record. The chosen
+    ranges are 8-bit by construction (<< left 1..15 shift 1..4 -> max 240;
+    >> left 8..255 shift 1..4), keeping results inside the display width.
+
+    The forbidden-identity referent is the SHIFT amount
+    (forbid_identity_referent == "shift"): a shift of 0 is the identity
+    (x << 0 == x), so it is declared forbidden. This is inert given a shift
+    range starting at 1 -- but declared anyway, matching how exponent declares
+    [0, 1] though its range makes them unreachable: the record states what
+    WOULD be trivial, so a later range change cannot silently leak it.
+    """
+    left_minimum = operator_record["operand_min"]
+    left_maximum = operator_record["operand_max"]
+    shift_minimum = operator_record["shift_min"]
+    shift_maximum = operator_record["shift_max"]
+    forbidden = operator_record["forbid_identity"]
+    while True:
+        left_value = random.randint(left_minimum, left_maximum)
+        shift_amount = random.randint(shift_minimum, shift_maximum)
+        if shift_amount in forbidden:
+            continue
+        return left_value, shift_amount
+
+
 # Per-operator records. One record fully defines an operator: the earlier
 # split across OPERATOR_CONFIG + _OPERATOR_EVAL_FUNCTIONS +
 # _OPERATOR_OPERAND_GENERATORS plus hidden `if symbol == "-"` branches is
@@ -349,6 +380,105 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "eval_fn": operator.pow,
         "operand_strategy": _generate_operands_exponent,
     },
+    # Bitwise operators (C-BIT-e). These records EXIST but are not in
+    # OPERATOR_SYMBOLS -- they ship dark, reachable only via ?operators=... (see
+    # finding A: adding them to the default set would make ~half of default
+    # questions bitwise for a user who asked for arithmetic). & ^ | are
+    # composable (nestable, two operands from operand_min/max, like + - *);
+    # << >> are leaf-only (a shift amount is not an expression to nest into),
+    # drawing left from operand_min/max and the shift from shift_min/max. All
+    # ranges are 8-bit by construction; precedence matches the conventional
+    # ladder (| 1, ^ 2, & 3, << >> 4), enforced by _check_conventional_precedence.
+    {
+        "symbol": "&",
+        "name": "bitwise and",
+        "arity": 2,
+        "operand_min": 1,
+        "operand_max": 31,
+        # forbid_identity [0] is INERT: operand ranges start at 1, so 0 never
+        # appears as an operand. Kept for record-shape consistency (finding E);
+        # a real zero-suppression would be a result_constraint, not this.
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "nestable": True,
+        "precedence": 3,
+        "associativity": "left",
+        "eval_fn": operator.and_,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "^",
+        "name": "bitwise xor",
+        "arity": 2,
+        "operand_min": 1,
+        "operand_max": 31,
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "nestable": True,
+        "precedence": 2,
+        "associativity": "left",
+        "eval_fn": operator.xor,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "|",
+        "name": "bitwise or",
+        "arity": 2,
+        "operand_min": 1,
+        "operand_max": 31,
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "nestable": True,
+        "precedence": 1,
+        "associativity": "left",
+        "eval_fn": operator.or_,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "<<",
+        "name": "left shift",
+        "arity": 2,
+        # 8-bit by construction: left 1..15 shifted 1..4 tops out at 240.
+        "operand_min": 1,
+        "operand_max": 15,
+        "shift_min": 1,
+        "shift_max": 4,
+        # Referent is the shift amount: shift 0 (x << 0 == x) is the identity.
+        # Inert given shift_min 1, declared anyway (see _generate_operands_shift).
+        "forbid_identity": [0],
+        "forbid_identity_referent": "shift",
+        "result_constraint": None,
+        # Leaf-only: a shift's operands stay integer leaves. A shift node may
+        # still BE a child of a composable parent; it just has no subtree
+        # children of its own (same as / % **).
+        "nestable": False,
+        "precedence": 4,
+        "associativity": "left",
+        "eval_fn": operator.lshift,
+        "operand_strategy": _generate_operands_shift,
+    },
+    {
+        "symbol": ">>",
+        "name": "right shift",
+        "arity": 2,
+        # 8-bit by construction: left is a full 8-bit value (8..255) shifted
+        # right 1..4. This IS an 8-bit range by declared intent, not accident.
+        "operand_min": 8,
+        "operand_max": 255,
+        "shift_min": 1,
+        "shift_max": 4,
+        "forbid_identity": [0],
+        "forbid_identity_referent": "shift",
+        "result_constraint": None,
+        "nestable": False,
+        "precedence": 4,
+        "associativity": "left",
+        "eval_fn": operator.rshift,
+        "operand_strategy": _generate_operands_shift,
+    },
 ]
 
 # Required keys every record must carry; _build_operator_table validates
@@ -374,7 +504,7 @@ _OPERATOR_RECORD_REQUIRED_KEYS = frozenset(
 # Known forbid-identity referents; a record declaring anything else is a typo
 # or an unimplemented strategy contract.
 _KNOWN_FORBID_IDENTITY_REFERENTS = frozenset(
-    {"operands", "quotient", "divisor", "exponent"}
+    {"operands", "quotient", "divisor", "exponent", "shift"}
 )
 
 

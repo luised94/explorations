@@ -151,11 +151,15 @@ OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "**"]
 # The full conventional ladder places the bitwise operators BELOW + - (C and
 # Python both do: shift, then &, then ^, then |, all looser than additive):
 #     | 1, ^ 2, & 3, << >> 4, + - 5, * / % 6, ** 7
-# Only the operators that EXIST today are seeded here (+ - * / % **, at their
-# ladder positions 5/5/6/6/6/7). The bitwise rows and their tiers 1..4 land in
-# C-BIT-e together with their operator records, so the guard stays fully
-# bidirectional at every commit rather than carrying entries with no record.
+# The bitwise rows and their tiers 1..4 land in C-BIT-e together with their
+# operator records, so the guard stays fully bidirectional at every commit
+# rather than carrying entries with no record.
 _CONVENTIONAL_PRECEDENCE: dict[str, int] = {
+    "|": 1,
+    "^": 2,
+    "&": 3,
+    "<<": 4,
+    ">>": 4,
     "+": 5,
     "-": 5,
     "*": 6,

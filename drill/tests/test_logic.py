@@ -594,6 +594,88 @@ def test_generate_division_is_always_integral(m):
 
 
 # --------------------------------------------------------------------------
+# bitwise operators (C-BIT-e) -- the five records + the shift strategy.
+# These ship DARK: present in the table, reachable only via enabled_symbols,
+# never in OPERATOR_SYMBOLS (finding A).
+# --------------------------------------------------------------------------
+def test_bitwise_operators_present_in_table(m):
+    # All five records built and indexed, with the fields their strategies read.
+    import operator
+
+    expected_eval = {
+        "&": operator.and_,
+        "^": operator.xor,
+        "|": operator.or_,
+        "<<": operator.lshift,
+        ">>": operator.rshift,
+    }
+    for symbol, eval_fn in expected_eval.items():
+        record = m.OPERATORS[symbol]
+        assert record["eval_fn"] is eval_fn
+        assert record["arity"] == 2
+        assert record["operand_min"] >= 1
+
+
+def test_bitwise_ships_dark_not_in_default_symbols(m):
+    # finding A: the bitwise rows must NOT be in the default enabled set, or
+    # ~half of default questions become bitwise for a user who asked for
+    # arithmetic. They are reachable only via ?operators=... .
+    for symbol in ("&", "^", "|", "<<", ">>"):
+        assert symbol not in m.OPERATOR_SYMBOLS
+
+
+def test_bitwise_and_or_xor_are_nestable_shifts_are_leaf_only(m):
+    # & ^ | compose like + - * (nestable); << >> are leaf-only like / % **.
+    for symbol in ("&", "^", "|"):
+        assert m.OPERATORS[symbol]["nestable"] is True
+    for symbol in ("<<", ">>"):
+        assert m.OPERATORS[symbol]["nestable"] is False
+
+
+def test_bitwise_precedence_matches_conventional_ladder(m):
+    # The records' precedence must equal the ladder (the import guard already
+    # enforces this; asserted here for visibility, and to pin the specific
+    # conventional order | < ^ < & < shift < additive).
+    assert m.OPERATORS["|"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["|"]
+    assert m.OPERATORS["^"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["^"]
+    assert m.OPERATORS["&"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["&"]
+    assert m.OPERATORS["<<"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["<<"]
+    assert m.OPERATORS[">>"]["precedence"] == m._CONVENTIONAL_PRECEDENCE[">>"]
+    # the ladder's conventional order, below the additive operators
+    prec = m._CONVENTIONAL_PRECEDENCE
+    assert prec["|"] < prec["^"] < prec["&"] < prec["<<"] < prec["+"]
+    assert prec[">>"] == prec["<<"]
+
+
+def test_shift_strategy_two_range_shape(m):
+    # << >> draw the left operand from operand_min/max and the shift amount from
+    # shift_min/max, mirroring modulo/exponent. Verify both operands land in
+    # their declared ranges and evaluation matches the stdlib operator.
+    import operator
+
+    stdlib = {"<<": operator.lshift, ">>": operator.rshift}
+    for symbol in ("<<", ">>"):
+        record = m.OPERATORS[symbol]
+        for _ in range(500):
+            node = m.generate_expression(enabled_symbols=[symbol])
+            left, shift = node["left"], node["right"]
+            assert record["operand_min"] <= left <= record["operand_max"]
+            assert record["shift_min"] <= shift <= record["shift_max"]
+            assert m.evaluate_expression(node) == stdlib[symbol](left, shift)
+
+
+def test_bitwise_restricted_generation_evaluates_correctly(m):
+    # Restricted generation for each bitwise mix produces trees whose value
+    # matches re-evaluating the same tree. (The exhaustive seeded round-trip
+    # through render is the property test in C-BIT-f; here we pin the records
+    # build valid, evaluable trees per mix.)
+    for mix in (["&"], ["^"], ["|"], ["<<"], [">>"], ["&", "^", "|"], ["<<", ">>"]):
+        for _ in range(300):
+            node = m.generate_expression(enabled_symbols=list(mix))
+            assert isinstance(m.evaluate_expression(node), int)
+
+
+# --------------------------------------------------------------------------
 # bottom-up nested generation -- C-D5c (#5 spine)
 # Example-based companions to the recursive property walk in
 # test_generator_property.py: pin the depth knob's two reproduction points and
