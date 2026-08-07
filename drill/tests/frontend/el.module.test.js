@@ -48,7 +48,7 @@ const ck = (n, c) => { c ? (pass++, console.log("  ok  - " + n)) : (fail++, cons
 
   /* --- registry shape ---------------------------------------------------- */
   const reg = mod.EL_REGISTRY;
-  ck("registry has 28 entries", Object.keys(reg).length === 28);
+  ck("registry has 29 entries", Object.keys(reg).length === 29);
   ck("every entry has id + owner",
     Object.keys(reg).every(k => reg[k] && typeof reg[k].id === "string" && typeof reg[k].owner === "string"));
   ck("ids are unique",
@@ -58,6 +58,11 @@ const ck = (n, c) => { c ? (pass++, console.log("  ok  - " + n)) : (fail++, cons
   ck("feedback owner is drill (E4 reversal)", reg.feedback.owner === "drill");
   ck("note owner is stage", reg.note.owner === "stage");
   ck("answerHint owner is stage", reg.answerHint.owner === "stage");
+  /* C-BIT-j: the base indicator is drill-owned (its sole reader is drill, which
+     also owns the expression it annotates), so no cross-owner read is needed. */
+  ck("baseIndicator present", reg.baseIndicator !== undefined);
+  ck("baseIndicator maps to id 'base-indicator'", reg.baseIndicator.id === "base-indicator");
+  ck("baseIndicator owner is drill", reg.baseIndicator.owner === "drill");
 
   /* --- lazy resolution: first read resolves by id, then memoizes --------- */
   const before = gebiCalls;

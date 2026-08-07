@@ -15,8 +15,8 @@
  *
  * The DOM fixture below mirrors index.html's element ids 1:1 (every id the
  * modules look up via el.<key>, plus the container/badge/help nodes a couple of
- * tests read: active-rung, answer-row, difficulty-note, difficulty-selector,
- * import-help). It is deliberately structural, not styled -- CSS-dependent
+ * tests read: active-rung, base-indicator, answer-row, difficulty-note,
+ * difficulty-selector, import-help). It is deliberately structural, not styled -- CSS-dependent
  * assertions (import.test.js's [hidden] guard) read the real index.html file
  * statically instead, since jsdom does not model that cascade anyway.
  *
@@ -49,6 +49,7 @@ function fixtureHtml() {
     "<div id='hint-reveal' hidden></div>" +
     "<button id='speaker'></button>" +
     "<div id='active-rung' hidden></div>" +
+    "<div id='base-indicator' hidden></div>" +
     "<div id='note'></div>" +
     /* stats / session nodes */
     "<span id='stat-total'></span><span id='stat-accuracy'></span><span id='stat-streak'></span>" +

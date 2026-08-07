@@ -67,5 +67,25 @@ function fetchStub() {
   const built = drill.questionQuery();
   c.ck("questionQuery adds difficulty when set", built.indexOf("difficulty=4") !== -1);
 
+  /* C-BIT-j: a base-2 payload shows the base badge and switches the expression
+     to mono; a base-10 payload clears both (the default decimal path stays
+     serif and unbadged). Drives the real drill.renderQuestion. */
+  drill.renderQuestion({
+    qtype: "arithmetic", question_text: "0b0101 & 0b0011", expected: "0b0001",
+    base: 2, difficulty: null, leaf_count: 2
+  });
+  const badge = doc.getElementById("base-indicator");
+  const expr = doc.getElementById("expression");
+  c.ck("base badge shown for base 2", badge.hidden === false);
+  c.ck("base badge names Binary", badge.textContent === "Binary");
+  c.ck("expression is mono for base 2", expr.classList.contains("mono") === true);
+
+  drill.renderQuestion({
+    qtype: "arithmetic", question_text: "6 + 7", expected: "13",
+    base: 10, difficulty: null, leaf_count: 2
+  });
+  c.ck("base badge hidden for base 10", badge.hidden === true);
+  c.ck("expression not mono for base 10", expr.classList.contains("mono") === false);
+
   c.done();
 })().catch(e => { console.error(e); process.exit(2); });
