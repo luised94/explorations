@@ -237,7 +237,14 @@ def test_difficulty_rungs_reference_only_real_operators():
 def test_difficulty_rungs_field_shape_per_operator():
     # A rung may only scale range fields the operator's strategy actually reads:
     # operand_min/max for all; divisor_min/max only for %; exponent_min/max only
-    # for **. (This mirrors the import-time guard, asserted here for visibility.)
+    # for **; the bitwise operators & ^ | carry only operand_min/max, and the
+    # shift operators << >> add shift_min/max (C-BIT-d). (This mirrors the
+    # import-time guard, asserted here for visibility.)
+    #
+    # DUPLICATION FLAG (C-BIT-d): this table restates config's allowed_range_fields
+    # (inside _check_difficulty_rungs_consistency). Two tables of one fact; a
+    # later thread should import config's table instead of restating it. Kept in
+    # sync by hand for now; recorded in the ADR.
     allowed = {
         "+": {"operand_min", "operand_max"},
         "-": {"operand_min", "operand_max"},
@@ -245,6 +252,11 @@ def test_difficulty_rungs_field_shape_per_operator():
         "/": {"operand_min", "operand_max"},
         "%": {"operand_min", "operand_max", "divisor_min", "divisor_max"},
         "**": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+        "&": {"operand_min", "operand_max"},
+        "^": {"operand_min", "operand_max"},
+        "|": {"operand_min", "operand_max"},
+        "<<": {"operand_min", "operand_max", "shift_min", "shift_max"},
+        ">>": {"operand_min", "operand_max", "shift_min", "shift_max"},
     }
     for rung in _M.DIFFICULTY_RUNGS:
         for symbol, ranges in rung["operator_ranges"].items():

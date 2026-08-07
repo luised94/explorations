@@ -405,7 +405,19 @@ def _check_difficulty_rungs_consistency() -> None:
         )
 
     # The range fields each operator symbol legitimately carries. A rung may
-    # scale any subset of these for an operator, but no others.
+    # scale any subset of these for an operator, but no others. operand_min/max
+    # for all; divisor_min/max only for %; exponent_min/max only for **; the
+    # bitwise operators & ^ | carry only operand_min/max, and the shift
+    # operators << >> add shift_min/max for the shift amount (C-BIT-d). The
+    # bitwise entries are present here before their operator records exist
+    # (records land in C-BIT-e) and before any rung lists them (C-BIT-i); this
+    # is safe because the table is index-only -- the guard below reads
+    # allowed_range_fields[symbol] only for symbols a rung actually names.
+    #
+    # DUPLICATION FLAG (C-BIT-d, do not fix here): this exact table is mirrored
+    # in tests/test_generator_property.py::test_difficulty_rungs_field_shape_per_operator.
+    # Two tables of one fact; a later thread should have the test import this one
+    # rather than restate it. Recorded in the ADR.
     allowed_range_fields = {
         "+": {"operand_min", "operand_max"},
         "-": {"operand_min", "operand_max"},
@@ -413,6 +425,11 @@ def _check_difficulty_rungs_consistency() -> None:
         "/": {"operand_min", "operand_max"},
         "%": {"operand_min", "operand_max", "divisor_min", "divisor_max"},
         "**": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+        "&": {"operand_min", "operand_max"},
+        "^": {"operand_min", "operand_max"},
+        "|": {"operand_min", "operand_max"},
+        "<<": {"operand_min", "operand_max", "shift_min", "shift_max"},
+        ">>": {"operand_min", "operand_max", "shift_min", "shift_max"},
     }
 
     for rung_record in DIFFICULTY_RUNGS:
