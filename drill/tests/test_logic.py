@@ -351,6 +351,47 @@ def test_validate_arithmetic_numeric_within_tolerance(m):
     assert m.validate_answer("13", "14", m.QTYPE_ARITHMETIC) is False
 
 
+def test_validate_arithmetic_decimal_regression_is_byte_identical(m):
+    # C-BIT-c must not perturb the existing decimal path. The int(_, 0) pre-pass
+    # sits in front of the float path, so these plain-decimal cases must behave
+    # exactly as before: exact match required, wrong answer rejected, leading /
+    # trailing whitespace tolerated, non-numeric input is simply incorrect.
+    assert m.validate_answer("42", "42", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("42", "43", m.QTYPE_ARITHMETIC) is False
+    assert m.validate_answer("  42  ", "42", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("xyz", "42", m.QTYPE_ARITHMETIC) is False
+    assert m.validate_answer("", "42", m.QTYPE_ARITHMETIC) is False
+
+
+def test_validate_arithmetic_leading_zero_decimal_falls_through(m):
+    # THE C-BIT-c gotcha: int("010", 0) RAISES in Python 3 (a leading-zero
+    # decimal is rejected as ambiguous), so the int pre-pass must fall THROUGH
+    # to the float path rather than crash or misread. "010" is decimal 10 to
+    # float(), so it validates against 10 and NOT against 8 (it is not octal).
+    assert m.validate_answer("010", "10", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("010", "8", m.QTYPE_ARITHMETIC) is False
+
+
+def test_validate_arithmetic_accepts_binary_and_hex_forms(m):
+    # The reason C-BIT-c exists: a bitwise answer typed in binary or hex must
+    # validate against an integer expected value, via int(_, 0), with no
+    # separate qtype path.
+    assert m.validate_answer("0b111", "7", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("0x7", "7", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("0b110", "7", m.QTYPE_ARITHMETIC) is False
+    # mixed the other way, and both-sides-non-decimal, both parse via int(_, 0):
+    assert m.validate_answer("7", "0b111", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("0x1f", "0b11111", m.QTYPE_ARITHMETIC) is True
+
+
+def test_validate_arithmetic_int_prepass_yields_to_tolerance(m):
+    # The int pre-pass fires only in the exact-match regime (tolerance None/0).
+    # With a positive tolerance the float path owns the comparison, so a value
+    # inside the band is accepted even though the two integers are not equal.
+    assert m.validate_answer("10", "11", m.QTYPE_ARITHMETIC, tolerance=2) is True
+    assert m.validate_answer("10", "13", m.QTYPE_ARITHMETIC, tolerance=2) is False
+
+
 def test_validate_free_response_normalizes_both_sides(m):
     assert m.validate_answer("Paris", "  paris.  ", m.QTYPE_FREE_RESPONSE) is True
 

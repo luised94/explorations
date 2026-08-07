@@ -1003,16 +1003,40 @@ def normalize_text(text: str) -> str:
 def _validate_numeric(given: str, expected: str, tolerance: float | None) -> bool:
     """Compare a numeric answer to the expected value within a tolerance.
 
-    Parses both sides as floats. A tolerance of None (or 0) requires exact
-    equality; a positive tolerance accepts answers within that absolute
-    difference (for future float-producing operators). Non-numeric input
-    (e.g. letters typed for a math question) is simply an incorrect answer,
-    returning False rather than raising.
+    Integer pre-pass (C-BIT-c): when an EXACT match is required (tolerance None
+    or 0) and BOTH sides parse as integers under int(_, 0) -- which accepts
+    0b/0x/0o prefixes as well as plain decimals -- compare them as integers.
+    This is what lets a bitwise answer typed in binary (0b101) or hex (0x1f)
+    validate against an integer expected value, without a separate qtype path.
+    int(_, 0) is deliberately a guarded PRE-pass, not a replacement: it raises
+    on inputs the float path accepts (notably int("010", 0) rejects a
+    leading-zero decimal in Python 3), so on ANY parse failure -- or when a
+    positive tolerance is in play -- it falls straight through to the float
+    path below, which is unchanged. Both sides are required to parse as ints so
+    a future float-producing operator (expected "2.5") never takes this branch.
+
+    Float path (unchanged): parses both sides as floats. A tolerance of None
+    (or 0) requires exact equality; a positive tolerance accepts answers within
+    that absolute difference (for future float-producing operators). Non-numeric
+    input (e.g. letters typed for a math question) is simply an incorrect
+    answer, returning False rather than raising.
 
     A non-numeric tolerance (e.g. a stray string from a client) is treated as
     no tolerance (exact match) rather than raising, so a malformed optional
     field cannot crash the validator.
     """
+    if tolerance is None or tolerance == 0:
+        # Exact-match regime only: an integer answer is right IFF it equals the
+        # integer expected value. A positive tolerance means the float path,
+        # which owns the within-difference comparison.
+        try:
+            given_integer = int(given.strip(), 0)
+            expected_integer = int(str(expected).strip(), 0)
+        except (ValueError, TypeError, AttributeError):
+            pass  # not both integers (or not parseable) -> fall to the float path
+        else:
+            return given_integer == expected_integer
+
     try:
         given_value = float(given.strip())
         expected_value = float(str(expected).strip())
