@@ -273,6 +273,40 @@ for NORMALIZED_TARGET in "$@"; do
 done
 [ "$INPUT_REJECTED" -eq 0 ] || exit 3
 
+# --- paste-mode marker-collision guard --------------------------------
+# The %%%%% BEGIN/END markers delimit files in the pasted block, and the
+# reader (a human or an LLM with no sandbox) splits on them. If a packed
+# blob itself contains a line that looks like a marker, the boundary is
+# ambiguous: the reader cannot tell a real END from one inside a file,
+# and silently reconstructs the wrong bytes -- the exact undetectable
+# corruption this tool must not produce.
+#
+# The header once claimed the marker "cannot collide" with markdown,
+# Python, or JavaScript at line start. That is a statement about those
+# languages' syntax, not about content: any file (a doc about this tool,
+# this script quoted in a README) may legitimately start a line with the
+# marker. So scan and REJECT rather than trust the claim.
+#
+# Reject, not strip or re-encode: altering the bytes would defeat the
+# byte-faithful guarantee just established, and silently packing an
+# ambiguous boundary is worse than refusing. The author decides -- pack
+# the offending file separately, or in archive mode, which has no
+# markers. Archive mode is exempt because it embeds no markers at all.
+if [ "$PACK_MODE" = paste ]; then
+  MARKER_COLLISION_FOUND=0
+  printf '%s\n' "$EXPANDED_FILE_SET" | grep . | while read -r SCANNED_FILE_PATH; do
+    if git cat-file blob "HEAD:$SCANNED_FILE_PATH" \
+        | grep -q '^%%%%% \(BEGIN\|END\) '; then
+      echo "pack-repo.sh: '$SCANNED_FILE_PATH' contains a line matching the paste boundary marker (^%%%%% BEGIN/END); its boundaries would be ambiguous on the way back -- pack it separately or use archive mode" >&2
+      exit 1
+    fi
+  done || MARKER_COLLISION_FOUND=1
+  # The while ran in a pipeline subshell, so a variable set inside it
+  # would not survive; the subshell's exit status is what crosses the
+  # boundary, captured by `|| ...` on the pipeline.
+  [ "$MARKER_COLLISION_FOUND" -eq 0 ] || exit 3
+fi
+
 # A nested submodule is a separate working tree with its own HEAD, so
 # it cannot be part of this pack. Not an error -- the pack is still
 # complete for what it claims to cover -- but noted, so nobody assumes
