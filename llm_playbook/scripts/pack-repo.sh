@@ -389,7 +389,19 @@ else
       # bytes from just after the BEGIN line's newline up to (not
       # including) that separator newline.
       FILE_LINE_COUNT=$(git cat-file blob "HEAD:$PACKED_FILE_PATH" | wc -l | tr -d ' ')
-      echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines)"
+      # wc -l counts newline characters, so a blob with no final newline
+      # reports one fewer than the visible line count -- and, more to the
+      # point for a no-sandbox reader, "no final newline" is itself a byte
+      # fact needed to reproduce the file exactly. Detect it from the last
+      # byte (decimal 10 == newline) without command substitution, which
+      # would strip the very byte under test. An empty blob yields an
+      # empty value and is correctly not flagged.
+      LAST_BYTE_VALUE=$(git cat-file blob "HEAD:$PACKED_FILE_PATH" | tail -c1 | od -An -tu1 | tr -d ' ')
+      if [ -n "$LAST_BYTE_VALUE" ] && [ "$LAST_BYTE_VALUE" -ne 10 ]; then
+        echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines, no final newline)"
+      else
+        echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines)"
+      fi
       git cat-file blob "HEAD:$PACKED_FILE_PATH"
       printf '\n'
       echo "%%%%% END $PACKED_FILE_PATH"
