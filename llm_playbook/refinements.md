@@ -181,3 +181,28 @@ RF-PLAYBOOK-011  pasting a committed document into a thread
     this repository at all and is not entered here, because this file
     takes OBSERVED failures and an entry with no observation would be
     a rule wearing a refinement's clothes.
+RF-PLAYBOOK-012  paste transport corrupted the base bytes before any
+  patch existed
+  OBSERVED  pack-repo.sh paste mode captured each file with
+    CONTENT="$(git show HEAD:path)" and re-emitted it with
+    printf '%s\n'. Command substitution strips every trailing newline
+    and the printf restores exactly one, so a file with no final
+    newline gained one and a file ending in blank lines lost them. The
+    pasted block -- the reader's ONLY copy in the no-sandbox case --
+    therefore differed from HEAD, and a patch built against it was
+    built on a base the author's repository never held. The line count
+    in the BEGIN marker was also wrong by one, computed from the
+    mangled string rather than the blob.
+  FIX  Stream the blob with git cat-file blob, which emits exact bytes
+    with no substitution round-trip; count lines from the same raw
+    blob; mark ", no final newline" when the last byte is not 0x0a so
+    the reader can reproduce the byte state. A single separator newline
+    before the END marker keeps it on its own line without entering the
+    file body. Landed in pack-repo.sh, three commits, byte-identical
+    round-trip verified.
+  PROMOTED  not yet. This is NOT RF-PLAYBOOK-001 or -002: 001 is
+    hand-authored hunk headers drifting from a real body, 002 is a
+    patch unverified until applied. Both assume a correct base and
+    guard the patch. This is the base itself arriving corrupt from
+    transport, upstream of any patch -- a distinct surface, so it waits
+    on its own id rather than as a second occurrence of either.
