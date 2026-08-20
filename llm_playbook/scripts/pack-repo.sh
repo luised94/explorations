@@ -339,13 +339,25 @@ else
     echo "# file set: $*"
     echo ""
     echo "$EXPANDED_FILE_SET" | grep . | while read -r PACKED_FILE_PATH; do
-      # Capture once so the line count and the body come from the same
-      # read; %%%%% is the boundary marker because it cannot collide
-      # with markdown, Python, or JavaScript at line start.
-      FILE_CONTENT_AT_HEAD="$(git show "HEAD:$PACKED_FILE_PATH")"
-      FILE_LINE_COUNT=$(printf '%s\n' "$FILE_CONTENT_AT_HEAD" | wc -l | tr -d ' ')
+      # The body must be the committed blob byte-for-byte: paste mode is
+      # the no-sandbox path, so this text is the ONLY source of truth the
+      # reader gets and cannot be re-derived from disk. The previous
+      # $(git show ...) capture routed content through command
+      # substitution, which strips ALL trailing newlines, and a following
+      # printf '%s\n' then re-added exactly one -- so a blob with no final
+      # newline gained one, and a blob ending in blank lines lost them.
+      # git cat-file blob streams the object's exact bytes with no such
+      # round-trip, so what lands between the markers equals HEAD:path.
+      #
+      # The single newline before the END marker is a SEPARATOR, not part
+      # of the file: it guarantees END starts its own line even when the
+      # blob has no final newline. A reader reconstructs the file as the
+      # bytes from just after the BEGIN line's newline up to (not
+      # including) that separator newline.
+      FILE_LINE_COUNT=$(git cat-file blob "HEAD:$PACKED_FILE_PATH" | wc -l | tr -d ' ')
       echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines)"
-      printf '%s\n' "$FILE_CONTENT_AT_HEAD"
+      git cat-file blob "HEAD:$PACKED_FILE_PATH"
+      printf '\n'
       echo "%%%%% END $PACKED_FILE_PATH"
       echo ""
     done
