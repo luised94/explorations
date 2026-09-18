@@ -717,9 +717,10 @@ def test_question_unknown_strategy_is_400_with_error_envelope(app_with_bank):
 # ---- /api/question: arithmetic operator validation -----------------------
 def test_question_arithmetic_unknown_operator_is_400(app_blank):
     m, _ = app_blank
-    # "$" has no operator record, so restricting to it is a 400. (Was "^"
-    # before #4 enabled exponent; "^" is a valid operator now, so the unknown
-    # sentinel must be a symbol that genuinely has no record.)
+    # "$" has no operator record, so restricting to it is a 400. The unknown
+    # sentinel must be a symbol that genuinely has no record: "**" is the valid
+    # exponent operator (renamed from "^" in C-BIT-a, which frees "^" for the
+    # bitwise xor row landing later), so neither "**" nor "^" would serve here.
     status, _ = wsgi_get(m, "/api/question", "category=arithmetic&operators=$")
     assert status.startswith("400")
 
@@ -798,6 +799,72 @@ def test_question_arithmetic_empty_difficulty_is_default(app_blank):
     status, data = _get_json(m, "/api/question", "category=arithmetic&difficulty=")
     assert status.startswith("200")
     assert data["difficulty"] is None
+
+
+# ---- /api/question: display base (C-BIT-h) --------------------------------
+def test_question_arithmetic_no_base_echoes_decimal(app_blank):
+    # The default path: base is omitted -> payload base is 10, and the rendered
+    # question is plain decimal (no 0b/0x prefix), byte-identical to before.
+    m, _ = app_blank
+    status, data = _get_json(m, "/api/question", "category=arithmetic")
+    assert status.startswith("200")
+    assert data["base"] == 10
+    assert "0b" not in data["question_text"] and "0x" not in data["question_text"]
+
+
+def test_question_arithmetic_base_is_echoed(app_blank):
+    # An explicit supported base is accepted and echoed back on the payload.
+    m, _ = app_blank
+    status, data = _get_json(m, "/api/question", "category=arithmetic&base=10")
+    assert status.startswith("200")
+    assert data["base"] == 10
+
+
+def test_question_bitwise_base_two_renders_binary_and_answer_agrees(app_blank):
+    # A bitwise drill at base 2: the question renders in fixed-width binary, the
+    # payload carries base 2, and the expected answer is in the SAME base (the
+    # question and answer key agree in representation, finding G). The expected
+    # string round-trips through int(_, 0) back to a decimal-equal value, which
+    # is exactly what makes /api/answer accept a decimal-typed response too.
+    #
+    # Operators are xor and or only (%5E, %7C). & is deliberately omitted: its
+    # percent-encoding is %26, i.e. the query-string separator, and the point of
+    # this test is the base rendering, not URL-decoding corner cases.
+    m, _ = app_blank
+    status, data = _get_json(
+        m, "/api/question", "category=arithmetic&operators=%5E,%7C&base=2"
+    )
+    assert status.startswith("200")
+    assert data["base"] == 2
+    # every operand and the answer key are base-2 rendered (0b-prefixed)
+    assert "0b" in data["question_text"]
+    assert data["expected"].startswith("0b")
+    # the expected value re-parses (finding G re-parseability)
+    assert int(data["expected"], 0) >= 0
+
+
+def test_question_arithmetic_unsupported_base_is_400(app_blank):
+    # A syntactically-valid int that is not a supported display base -> 400
+    # (mirrors the unknown-difficulty 400).
+    m, _ = app_blank
+    status, _ = wsgi_get(m, "/api/question", "category=arithmetic&base=7")
+    assert status.startswith("400")
+
+
+def test_question_arithmetic_non_int_base_is_400(app_blank):
+    # A non-integer base -> 400 (not a 500).
+    m, _ = app_blank
+    status, _ = wsgi_get(m, "/api/question", "category=arithmetic&base=binary")
+    assert status.startswith("400")
+
+
+def test_question_arithmetic_empty_base_is_default(app_blank):
+    # base= (present but empty) is treated as omitted -> default decimal, base 10
+    # (mirrors the operators=/difficulty= empty-is-omitted rule).
+    m, _ = app_blank
+    status, data = _get_json(m, "/api/question", "category=arithmetic&base=")
+    assert status.startswith("200")
+    assert data["base"] == 10
 
 
 # ---- /api/banks -----------------------------------------------------------

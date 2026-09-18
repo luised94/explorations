@@ -273,6 +273,40 @@ for NORMALIZED_TARGET in "$@"; do
 done
 [ "$INPUT_REJECTED" -eq 0 ] || exit 3
 
+# --- paste-mode marker-collision guard --------------------------------
+# The %%%%% BEGIN/END markers delimit files in the pasted block, and the
+# reader (a human or an LLM with no sandbox) splits on them. If a packed
+# blob itself contains a line that looks like a marker, the boundary is
+# ambiguous: the reader cannot tell a real END from one inside a file,
+# and silently reconstructs the wrong bytes -- the exact undetectable
+# corruption this tool must not produce.
+#
+# The header once claimed the marker "cannot collide" with markdown,
+# Python, or JavaScript at line start. That is a statement about those
+# languages' syntax, not about content: any file (a doc about this tool,
+# this script quoted in a README) may legitimately start a line with the
+# marker. So scan and REJECT rather than trust the claim.
+#
+# Reject, not strip or re-encode: altering the bytes would defeat the
+# byte-faithful guarantee just established, and silently packing an
+# ambiguous boundary is worse than refusing. The author decides -- pack
+# the offending file separately, or in archive mode, which has no
+# markers. Archive mode is exempt because it embeds no markers at all.
+if [ "$PACK_MODE" = paste ]; then
+  MARKER_COLLISION_FOUND=0
+  printf '%s\n' "$EXPANDED_FILE_SET" | grep . | while read -r SCANNED_FILE_PATH; do
+    if git cat-file blob "HEAD:$SCANNED_FILE_PATH" \
+        | grep -q '^%%%%% \(BEGIN\|END\) '; then
+      echo "pack-repo.sh: '$SCANNED_FILE_PATH' contains a line matching the paste boundary marker (^%%%%% BEGIN/END); its boundaries would be ambiguous on the way back -- pack it separately or use archive mode" >&2
+      exit 1
+    fi
+  done || MARKER_COLLISION_FOUND=1
+  # The while ran in a pipeline subshell, so a variable set inside it
+  # would not survive; the subshell's exit status is what crosses the
+  # boundary, captured by `|| ...` on the pipeline.
+  [ "$MARKER_COLLISION_FOUND" -eq 0 ] || exit 3
+fi
+
 # A nested submodule is a separate working tree with its own HEAD, so
 # it cannot be part of this pack. Not an error -- the pack is still
 # complete for what it claims to cover -- but noted, so nobody assumes
@@ -339,13 +373,37 @@ else
     echo "# file set: $*"
     echo ""
     echo "$EXPANDED_FILE_SET" | grep . | while read -r PACKED_FILE_PATH; do
-      # Capture once so the line count and the body come from the same
-      # read; %%%%% is the boundary marker because it cannot collide
-      # with markdown, Python, or JavaScript at line start.
-      FILE_CONTENT_AT_HEAD="$(git show "HEAD:$PACKED_FILE_PATH")"
-      FILE_LINE_COUNT=$(printf '%s\n' "$FILE_CONTENT_AT_HEAD" | wc -l | tr -d ' ')
-      echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines)"
-      printf '%s\n' "$FILE_CONTENT_AT_HEAD"
+      # The body must be the committed blob byte-for-byte: paste mode is
+      # the no-sandbox path, so this text is the ONLY source of truth the
+      # reader gets and cannot be re-derived from disk. The previous
+      # $(git show ...) capture routed content through command
+      # substitution, which strips ALL trailing newlines, and a following
+      # printf '%s\n' then re-added exactly one -- so a blob with no final
+      # newline gained one, and a blob ending in blank lines lost them.
+      # git cat-file blob streams the object's exact bytes with no such
+      # round-trip, so what lands between the markers equals HEAD:path.
+      #
+      # The single newline before the END marker is a SEPARATOR, not part
+      # of the file: it guarantees END starts its own line even when the
+      # blob has no final newline. A reader reconstructs the file as the
+      # bytes from just after the BEGIN line's newline up to (not
+      # including) that separator newline.
+      FILE_LINE_COUNT=$(git cat-file blob "HEAD:$PACKED_FILE_PATH" | wc -l | tr -d ' ')
+      # wc -l counts newline characters, so a blob with no final newline
+      # reports one fewer than the visible line count -- and, more to the
+      # point for a no-sandbox reader, "no final newline" is itself a byte
+      # fact needed to reproduce the file exactly. Detect it from the last
+      # byte (decimal 10 == newline) without command substitution, which
+      # would strip the very byte under test. An empty blob yields an
+      # empty value and is correctly not flagged.
+      LAST_BYTE_VALUE=$(git cat-file blob "HEAD:$PACKED_FILE_PATH" | tail -c1 | od -An -tu1 | tr -d ' ')
+      if [ -n "$LAST_BYTE_VALUE" ] && [ "$LAST_BYTE_VALUE" -ne 10 ]; then
+        echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines, no final newline)"
+      else
+        echo "%%%%% BEGIN $PACKED_FILE_PATH ($FILE_LINE_COUNT lines)"
+      fi
+      git cat-file blob "HEAD:$PACKED_FILE_PATH"
+      printf '\n'
       echo "%%%%% END $PACKED_FILE_PATH"
       echo ""
     done

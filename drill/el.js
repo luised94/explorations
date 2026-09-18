@@ -53,6 +53,7 @@ export var EL_REGISTRY = {
   difficulty: { id: "difficulty", owner: "boot" },
   difficultyNote: { id: "difficulty-note", owner: "boot" },
   activeRung: { id: "active-rung", owner: "drill" },
+  baseIndicator: { id: "base-indicator", owner: "drill" },
   answerRow: { id: "answer-row", owner: "drill" },
   choices: { id: "choices", owner: "drill" },
   hintReveal: { id: "hint-reveal", owner: "drill" },

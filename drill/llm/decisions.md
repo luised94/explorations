@@ -2533,3 +2533,280 @@ ADR-061 [DECIDED -- QoL + recall thread]: the recall qtype ships as
   grading) do not advance schedules today. Wiring review mode into the UI
   is the same deferred decision as the unified daily-session flow; the
   recall pipeline is ready for it (the grade endpoint honors mode=review).
+
+# Bitwise arithmetic rail -- ADRs (C-BIT-*)
+
+These are authored as standalone output (per the implementation-thread ruling:
+ADRs numbered from 1 as ADR-BIT-n, not written into decisions.md by the
+sandbox). Renumber ADR-BIT-n to your log's next free numbers on insertion --
+the labels are placeholders chosen so a paste cannot collide with an existing
+ADR-0NN. Legend: [DECIDED] a settled choice; [FLAG] a known wart left in place;
+[DEFERRED] out of scope with a named trigger.
+
+Provenance: llm/feature-backlog-2026-07.md (scored 4.04, Tier 1);
+v1-completion-guide Phase 4.1; the handoff's design findings A/B/D/E/F/G/H/I/J.
+Eleven commits, C-BIT-a through C-BIT-k.
+
+---
+
+## ADR-BIT-1 -- Bitwise ships dark: reachable, not default [DECIDED]
+
+The five operators (& ^ | << >>) have records in OPERATOR_DEFINITIONS but are
+NOT in OPERATOR_SYMBOLS, the default served set. They are reachable only via
+?operators=... on /api/question.
+
+Why: OPERATOR_SYMBOLS is what the live endpoint uses when no operators= is
+given. Adding five bitwise symbols to a six-symbol default would make roughly
+HALF of all default questions bitwise -- rendered in binary -- for a user who
+asked for arithmetic. The rail ships reachable-but-not-default, exactly as
+_MAX_RESULT_VALUE shipped dark before it.
+
+Consequence, made concrete during the runtime smoke: there is no UI affordance
+to select bitwise. A user who expects to pick "bitwise" from the category/
+difficulty controls will not find it; the only way in is a hand-built query or
+the drill-sequence model (ADR-BIT-7). This is a DECISION, not an oversight --
+recorded here so the next reader does not "fix" the missing dropdown without
+realizing it was deliberate. The affordance is a feature to be BUILT
+(ADR-BIT-7), not a bug to be patched.
+
+Revisit trigger: the drill-sequence model, which is the natural home for "which
+operators does this drill use" and therefore for default membership. Decide
+default membership THERE, not by editing OPERATOR_SYMBOLS.
+
+---
+
+## ADR-BIT-2 -- Precedence is declared data a checker enforces [DECIDED]
+
+The conventional binding ladder (| 1, ^ 2, & 3, << >> 4, + - 5, * / % 6, ** 7)
+lives in config._CONVENTIONAL_PRECEDENCE as a symbol->tier map. An import-time
+guard (logic._check_conventional_precedence) asserts, both directions, that
+every operator record's precedence equals its ladder entry and every ladder
+entry names a real record.
+
+Why: the exponent rename (^ -> **) freed ^ for xor but the existing ladder had
+only three tiers (+ - =1, * / % =2, ^ =3) with no room below + - where bitwise
+conventionally binds. Renumbering to seven tiers is order-preserving
+(_child_needs_parentheses compares precedence only with < and ==, and
+{1,2,3}->{5,6,7} is strictly monotonic), so no render output changed and the
+43 render/precedence tests passed unmodified. Making the ladder DATA A CHECKER
+READS -- rather than numbers typed into records and asserted in one test -- is
+the machine-enforcement that keeps it from silently drifting. An invariant not
+enforced where it is introduced is a comment, not a constraint.
+
+Note on C vs Python: both agree on the bitwise ladder itself (shift, then &,
+then ^, then |). They DISAGREE on where comparison operators sit relative to it
+-- irrelevant here (no comparisons) but worth knowing before boolean/truth-
+table rows arrive.
+
+---
+
+## ADR-BIT-3 -- Fixed-width display, width 8, as a module constant [DECIDED]
+
+Bitwise questions render in fixed-width binary (0b00000101, not 0b101):
+config._BITWISE_DISPLAY_WIDTH = 8, a module constant, NOT a rung field.
+
+Why width matters: bit position is the thing being learned, so aligned fixed-
+width binary is the readable form -- 0b00000101 teaches where 0b101 does not.
+The chosen ranges are 8-bit by construction (>> left 8..255 IS an 8-bit range
+by declared intent; << left 1..15 shift 1..4 -> max 240; & ^ | operands scale
+to 255 at the top rung), so every result fits 8 bits.
+
+Why a module constant and not a rung field: putting bit_width on the rung record
+would architect for a guessed future (a second width no user has asked for) and
+braid the DISPLAY model into the DIFFICULTY model, which today means structural
+and magnitude knobs and nothing else. The formatter takes width as a parameter
+and stays ignorant of the constant; the caller reads it.
+
+Revisit trigger: a drill that genuinely needs 16- or 32-bit display, at which
+point the width arrives WITH its caller. Hex-at-higher-rungs is deferred on the
+same grounds (see ADR-BIT-6).
+
+The published teaching order is: single-bit truth tables, then fixed-width
+binary (8, then wider), then masking, then shifts, then mixed expressions, then
+signed/two's-complement last. This rail implements the fixed-width and shift
+rungs only. Two's-complement requires presenting a bit pattern before its
+signed interpretation -- a content-design problem, not an operator problem,
+and deferred.
+
+---
+
+## ADR-BIT-4 -- Zero results are accepted; forbid_identity is inert by design [DECIDED]
+
+12 & 3 == 0 is semantically correct and, in a masking drill, is the point. So
+zero results are accepted now. forbid_identity is [0] on & ^ | (referent
+"operands") and on << >> (referent "shift"), but it is INERT: operand ranges
+start at 1 and shift ranges at 1, so 0 never appears as an operand or shift
+amount, and no child subtree evaluates to 0 under the generator (verified: 0
+zero-valued subtree children in 50000 generations, the same guarantee the +
+branch already relies on). The [0] is kept for record-shape consistency; do not
+mistake it for a live constraint.
+
+Why not suppress zero results: a learner at the lowest rung cannot distinguish
+"the answer is zero" from "I made an error" WITHOUT masking framing, and masking
+framing belongs to a later rung. A real zero-suppression, if it earns itself,
+would be a result_constraint (the vocabulary that already holds "non_negative"),
+not a forbid_identity value.
+
+Revisit trigger: the first masking drill.
+
+---
+
+## ADR-BIT-5 -- Base is a per-question served property, carried on the payload [DECIDED]
+
+The display base is resolved from an explicit ?base= query param (validated to
+2/10/16, default 10, mirroring the difficulty param), and echoed on the
+/api/question payload as "base".
+
+Why served-and-explicit, not inferred: base belongs in the same family as
+difficulty and leaf_count -- a fact about the served question. The rejected
+alternative, deriving base from "are all enabled operators bitwise", makes it a
+function of a set-membership test the user never sees, a worse category.
+
+Why carry it on the payload: without the served base recorded, a wrong answer
+cannot be attributed -- a misread base, a mis-parsed precedence, and a genuine
+bit error are indistinguishable. The response row is written once; recording
+base is cheap now and unrecoverable later. The question and the answer key
+render in the SAME base, so they always agree in representation.
+
+Re-parseability survives (cf. the leaf_count ADR): a binary-rendered
+question_text stays re-parseable via int(x, 0), so leaf_count remains
+recomputable -- but only because format_integer_in_base never zero-pads
+decimal (a padded "00000001" would raise under int(_, 0)). A future width change
+would make old rows read differently; that is the cost a width change must pay.
+
+Answer input: because the answer key stores the base-rendered string and
+validation runs int(_, 0) on both sides, a user may answer a bitwise question
+in binary (padded or not), decimal, OR hex -- all grade against the same value.
+See ADR-BIT-8 (FLAG) for the discoverability gap this leaves.
+
+---
+
+## ADR-BIT-6 -- One formatter for both call sites; decimal never pads [DECIDED]
+
+logic.format_integer_in_base(value, base, width) serves BOTH the leaf renderer
+(inside render_expression) and the answer key (an int at the HTTP boundary, not
+a leaf). A leaf-specific renderer would have served only one site; writing the
+caller first showed the answer key needs the same formatting.
+
+Decimal (base 10) IGNORES width and emits bare digits. This is not cosmetic: a
+zero-padded decimal like "00000001" RAISES under int("00000001", 0) (Python 3
+rejects leading-zero decimals), which would break the re-parseability property
+AND alter every ordinary arithmetic answer's format. Caught by exercising the
+round-trip before wiring -- "write the caller first" paying off. The formatter
+never truncates: padding is a minimum, so an answer key can never be corrupted.
+
+---
+
+## ADR-BIT-7 -- The drill-sequence model, and how to build the UI affordance [DEFERRED]
+
+The stated vision is a scheduled sequence of exercise types (arithmetic, then
+bitwise, then geometry) -- a schedulable "drill" object with its own operator
+set, base, and rung. Today there is no such object: the client sends category +
+operators + difficulty + base PER QUESTION. That model is bigger than bitwise
+and must NOT be built to make bitwise easier; bitwise rides the per-question
+path fine. Build the sequence model after two or three real drill types exist,
+so it is designed from instances rather than one instance plus a guess.
+
+The runtime smoke surfaced the concrete gap this leaves: a user expects to pick
+"bitwise" from the UI and cannot. That expectation is legitimate and is now the
+strongest evidence FOR the sequence model -- a real user hitting the wall, not
+an abstract roadmap line. Recorded so the next builder starts from the observed
+gap.
+
+TACTICS TO FACILITATE THE UI AFFORDANCE (so the next thread does not re-derive
+the seams this rail already built):
+
+  1. The backend is DONE for this. /api/question already accepts operators= and
+     base= and validates both (400 on a bad operator, unsupported base, or
+     malformed restriction). A UI affordance needs NO new endpoint -- only a
+     control that composes those two params into the query the client already
+     builds in drill.questionQuery().
+
+  2. The narrowest first step (an interim affordance short of the full sequence
+     model): add a "bitwise" option to the existing difficulty/operators UI
+     region that, when picked, sets the client's operator set to the bitwise
+     symbols and base to 2. This is a client-only change -- state carries the
+     chosen operators/base, questionQuery() appends them. It does NOT need the
+     schedulable-drill object; it is the same shape as the existing difficulty
+     dropdown (state.difficulty -> &difficulty= in the URL).
+
+  3. The el/render seams are already in place: renderQuestion reads payload.base
+     and toggles .expression.mono + the base indicator with zero further wiring.
+     A drill picker only has to make the REQUEST carry base=2; the response path
+     renders it correctly today. Verified end to end via the console smoke.
+
+  4. Operator-set encoding gotcha to hand the next thread: & percent-encodes to
+     %26, which is the query-string separator. When composing an operators=
+     value client-side, encode each symbol with encodeURIComponent -- do NOT
+     hand-build the query string, or an & operator will split the params. (The
+     C-BIT-h http test deliberately used only ^ and | to sidestep this; a real
+     picker including & MUST encode.)
+
+  5. Default membership (which operators a "bitwise drill" enables, and at what
+     base/rung) belongs to THIS model, per ADR-BIT-1's revisit trigger -- decide
+     it here, not by editing OPERATOR_SYMBOLS. Homogeneous sessions (a drill
+     that is all-bitwise) also make base-uniformity correct by construction
+     (see ADR-BIT-9), which is scope RELIEF the sequence model gets for free.
+
+---
+
+## ADR-BIT-8 -- Answer-format discoverability is unhinted [FLAG]
+
+A bitwise question accepts an answer typed in binary (0b101 or 0b00000101),
+decimal (5), or hex (0x5) -- all grade against the same value via the int(_, 0)
+pre-pass. But NOTHING tells the user which forms are accepted: there is no input
+hint, placeholder change, or help text. A learner shown 0b0101 & 0b0011 does not
+know whether to type 0b0001 or 1.
+
+Not fixed here (out of scope: this rail's frontend work was the render path, not
+input affordances). Recorded because the capability exists (C-BIT-c) but its
+discoverability does not. Cheap future win: set the answer input's placeholder
+or a small hint to "answer in binary or decimal" when base != 10 -- the served
+base is already on the payload and already drives the base indicator, so the
+signal is in hand.
+
+Trigger: any pass over the bitwise input UX, or the drill-sequence model
+(ADR-BIT-7), whichever comes first.
+
+---
+
+## ADR-BIT-9 -- Base display is tree-uniform because leaves carry no state [DECIDED]
+
+Every other display concern attaches to an OPERATOR (the record carries
+precedence, ranges, nestability). Base attaches to LEAVES -- and leaves are bare
+ints with nowhere to put it. So base is necessarily a parameter to the render
+walk, and therefore uniform across the whole expression. This is a consequence
+of the node shape, not a choice.
+
+Consequence: in a mixed session, 12 + 5 renders as 0b1100 + 0b101. The drill-
+sequence direction (ADR-BIT-7) makes sessions homogeneous, which makes this
+correct by construction rather than merely tolerated -- but it does NOT dissolve
+the limitation, it hides it.
+
+Cost to lift (if per-leaf base is ever wanted): int leaf -> {value, base},
+touching evaluate_expression, leaf_count, and render_expression. Unary ~ forces
+the SAME node-shape change (it needs a declared width to be well-defined and the
+table assumes arity 2). If both are ever wanted, pay them together.
+
+---
+
+## Deferred, with triggers (summary)
+
+- Unary ~: needs the {value, base} node-shape change of ADR-BIT-9 and a declared
+  width; pay it with per-leaf base if ever.
+- Number-base conversion drill (Phase 4.2): trivial after this rail -- reuses
+  format_integer_in_base and the int(_, 0) normalization. Trigger: this rail
+  green.
+- Boolean / truth-table rows (Phase 4.3): ^ already exists. Trigger: same.
+- Signed / two's-complement content: a content-design problem (ADR-BIT-3).
+- Masking drills: the trigger for ADR-BIT-4's zero-suppression constraint.
+- The allowed_range_fields duplication (config's guard-local table is mirrored
+  by hand in test_generator_property.py): [FLAG] two tables of one fact, kept in
+  sync by hand, flagged at both sites. A later thread should make the test
+  import the config table rather than restate it.
+
+The revisit gate (why this rail was 11 small commits, not a rewrite): an
+operator is "easy" -- addable as a record -- iff it is binary, integer-in/
+integer-out with bounded magnitude, and renders infix. All five bitwise
+operators pass. ~ fails on arity. That gate is the whole reason the feature
+decomposed cleanly.

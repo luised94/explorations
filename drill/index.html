@@ -321,6 +321,28 @@
   }
   .active-rung[hidden] { display: none; }
 
+  /* Base indicator (C-BIT-j): a quiet mono badge naming a non-decimal base,
+     styled like the active-rung badge. Only rendered for base != 10. */
+  .base-indicator {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+  .base-indicator[hidden] { display: none; }
+
+  /* Monospace expression (C-BIT-j): fixed-width binary/hex only reads as
+     aligned columns in a monospace face -- bit position is the pedagogical
+     point (finding H), and a proportional serif does not afford that column
+     alignment. Applied only for a non-decimal base; decimal keeps the serif. */
+  .expression.mono {
+    font-family: var(--mono);
+    font-size: clamp(1.75rem, 7vw, 3.25rem);
+    letter-spacing: 0.02em;
+  }
+
   /* TTS speaker (C-018a): a quiet, secondary control under the prompt. Muted
      by default, brightening toward the focus cyan on hover/focus -- it should
      read as an aid, not compete with the expression or the answer input. */
@@ -848,6 +870,12 @@
            default path stays uncluttered. Read-only; derived from the
            served payload's difficulty (no extra fetch). -->
       <div class="active-rung" id="active-rung" aria-live="polite" hidden></div>
+
+      <!-- Base indicator (C-BIT-j): names the number base the question is
+           served in, shown only for a non-decimal base so the default path
+           stays uncluttered (mirrors the active-rung badge). Read-only;
+           reflects the SERVED payload's base, never a client-inferred label. -->
+      <div class="base-indicator" id="base-indicator" aria-live="polite" hidden></div>
 
       <!-- TTS speaker (C-018a): click to hear the prompt read aloud. Shown
            only for language questions (translate/identify) on a bank that

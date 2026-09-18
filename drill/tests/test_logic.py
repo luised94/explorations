@@ -351,6 +351,47 @@ def test_validate_arithmetic_numeric_within_tolerance(m):
     assert m.validate_answer("13", "14", m.QTYPE_ARITHMETIC) is False
 
 
+def test_validate_arithmetic_decimal_regression_is_byte_identical(m):
+    # C-BIT-c must not perturb the existing decimal path. The int(_, 0) pre-pass
+    # sits in front of the float path, so these plain-decimal cases must behave
+    # exactly as before: exact match required, wrong answer rejected, leading /
+    # trailing whitespace tolerated, non-numeric input is simply incorrect.
+    assert m.validate_answer("42", "42", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("42", "43", m.QTYPE_ARITHMETIC) is False
+    assert m.validate_answer("  42  ", "42", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("xyz", "42", m.QTYPE_ARITHMETIC) is False
+    assert m.validate_answer("", "42", m.QTYPE_ARITHMETIC) is False
+
+
+def test_validate_arithmetic_leading_zero_decimal_falls_through(m):
+    # THE C-BIT-c gotcha: int("010", 0) RAISES in Python 3 (a leading-zero
+    # decimal is rejected as ambiguous), so the int pre-pass must fall THROUGH
+    # to the float path rather than crash or misread. "010" is decimal 10 to
+    # float(), so it validates against 10 and NOT against 8 (it is not octal).
+    assert m.validate_answer("010", "10", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("010", "8", m.QTYPE_ARITHMETIC) is False
+
+
+def test_validate_arithmetic_accepts_binary_and_hex_forms(m):
+    # The reason C-BIT-c exists: a bitwise answer typed in binary or hex must
+    # validate against an integer expected value, via int(_, 0), with no
+    # separate qtype path.
+    assert m.validate_answer("0b111", "7", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("0x7", "7", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("0b110", "7", m.QTYPE_ARITHMETIC) is False
+    # mixed the other way, and both-sides-non-decimal, both parse via int(_, 0):
+    assert m.validate_answer("7", "0b111", m.QTYPE_ARITHMETIC) is True
+    assert m.validate_answer("0x1f", "0b11111", m.QTYPE_ARITHMETIC) is True
+
+
+def test_validate_arithmetic_int_prepass_yields_to_tolerance(m):
+    # The int pre-pass fires only in the exact-match regime (tolerance None/0).
+    # With a positive tolerance the float path owns the comparison, so a value
+    # inside the band is accepted even though the two integers are not equal.
+    assert m.validate_answer("10", "11", m.QTYPE_ARITHMETIC, tolerance=2) is True
+    assert m.validate_answer("10", "13", m.QTYPE_ARITHMETIC, tolerance=2) is False
+
+
 def test_validate_free_response_normalizes_both_sides(m):
     assert m.validate_answer("Paris", "  paris.  ", m.QTYPE_FREE_RESPONSE) is True
 
@@ -385,7 +426,7 @@ def test_evaluate_leaf_and_node(m):
 def test_evaluate_modulo_and_exponent(m):
     # #4: modulo uses operator.mod, exponent uses operator.pow.
     assert m.evaluate_expression({"op": "%", "left": 17, "right": 5}) == 2
-    assert m.evaluate_expression({"op": "^", "left": 3, "right": 2}) == 9
+    assert m.evaluate_expression({"op": "**", "left": 3, "right": 2}) == 9
 
 
 def test_render_flat_has_no_parentheses(m):
@@ -395,7 +436,58 @@ def test_render_flat_has_no_parentheses(m):
 def test_render_modulo_and_exponent(m):
     # #4: symbols render infix like the existing operators (server-side only).
     assert m.render_expression({"op": "%", "left": 17, "right": 5}) == "17 % 5"
-    assert m.render_expression({"op": "^", "left": 3, "right": 2}) == "3 ^ 2"
+    assert m.render_expression({"op": "**", "left": 3, "right": 2}) == "3 ** 2"
+
+
+# --------------------------------------------------------------------------
+# format_integer_in_base (C-BIT-g) -- one formatter, two call sites (the leaf
+# renderer and the answer key are wired to it in C-BIT-h; here, the function).
+# --------------------------------------------------------------------------
+def test_format_integer_in_base_binary_zero_padded(m):
+    assert m.format_integer_in_base(5, 2, 8) == "0b00000101"
+    assert m.format_integer_in_base(255, 2, 8) == "0b11111111"
+    assert m.format_integer_in_base(0, 2, 8) == "0b00000000"
+
+
+def test_format_integer_in_base_hex_prefixed(m):
+    assert m.format_integer_in_base(31, 16, 2) == "0x1f"
+    assert m.format_integer_in_base(255, 16, 2) == "0xff"
+
+
+def test_format_integer_in_base_decimal_ignores_width(m):
+    # Decimal is never zero-padded: padding has no bit-position meaning in base
+    # 10, and a zero-padded decimal ("00000001") raises under int(_, 0), which
+    # would break the round-trip and alter ordinary arithmetic answers. Width is
+    # ignored for base 10; the output is the bare str, matching str(result).
+    assert m.format_integer_in_base(5, 10, 8) == "5"
+    assert m.format_integer_in_base(42, 10, 1) == "42"
+    assert m.format_integer_in_base(0, 10, 8) == "0"
+
+
+def test_format_integer_in_base_never_truncates(m):
+    # Padding is a MINIMUM, not a ceiling: a value wider than `width` renders at
+    # its natural width. Truncating the answer key would corrupt it. (Inert with
+    # the shipped 8-bit ranges, where max result is 255 -> 8 bits, but the
+    # formatter must be total.)
+    assert m.format_integer_in_base(256, 2, 8) == "0b100000000"
+    assert m.format_integer_in_base(7, 2, 4) == "0b0111"
+
+
+def test_format_integer_in_base_round_trips_through_int_base_zero(m):
+    # finding G: a base-rendered value must re-parse via int(_, 0) back to the
+    # same integer (this is what keeps question_text re-parseable and leaf_count
+    # recomputable). Holds for all three display bases.
+    for value in (0, 1, 5, 31, 42, 127, 255):
+        for base in (2, 10, 16):
+            rendered = m.format_integer_in_base(value, base, 8)
+            assert int(rendered, 0) == value, (value, base, rendered)
+
+
+def test_format_integer_in_base_rejects_unsupported_base(m):
+    import pytest
+
+    with pytest.raises(ValueError):
+        m.format_integer_in_base(5, 3, 8)
 
 
 def test_render_nested_parenthesizes_subexpressions(m):
@@ -411,7 +503,7 @@ def test_render_nested_parenthesizes_subexpressions(m):
 # desyncs the displayed question from the stored answer. Test EXHAUSTIVELY with
 # HAND-BUILT trees (decoupled from generator output), table-driven over
 # operator-pair x nested-side, asserting EXACT strings -- not "contains". Some
-# trees here (e.g. anything nesting under / % ^) are NOT generator-reachable in
+# trees here (e.g. anything nesting under / % **) are NOT generator-reachable in
 # #5; the renderer is nonetheless total over all well-formed trees, which is
 # what lets #2 widen generation with zero renderer change.
 # --------------------------------------------------------------------------
@@ -426,20 +518,20 @@ _RENDER_CASES = [
     ("flat mul", _n("*", 3, 4), "3 * 4"),
     ("flat div", _n("/", 12, 4), "12 / 4"),
     ("flat mod", _n("%", 17, 5), "17 % 5"),
-    ("flat pow", _n("^", 3, 2), "3 ^ 2"),
+    ("flat pow", _n("**", 3, 2), "3 ** 2"),
     # --- lower-precedence child under higher-precedence parent: KEEP ---
     # (a + b) * c -- already exercised by the legacy test; here both sides.
     ("sum left of product", _n("*", _n("+", 1, 2), 3), "(1 + 2) * 3"),
     ("sum right of product", _n("*", 3, _n("+", 1, 2)), "3 * (1 + 2)"),
     ("diff left of product", _n("*", _n("-", 5, 2), 4), "(5 - 2) * 4"),
-    ("sum under exponent", _n("^", _n("+", 1, 2), 2), "(1 + 2) ^ 2"),
-    ("product under exponent", _n("^", _n("*", 2, 3), 2), "(2 * 3) ^ 2"),
+    ("sum under exponent", _n("**", _n("+", 1, 2), 2), "(1 + 2) ** 2"),
+    ("product under exponent", _n("**", _n("*", 2, 3), 2), "(2 * 3) ** 2"),
     # --- higher-precedence child under lower-precedence parent: DROP ---
     # a * b + c -> tree (a*b)+c ; product binds tighter, no parens needed.
     ("product left of sum", _n("+", _n("*", 2, 3), 4), "2 * 3 + 4"),
     ("product right of sum", _n("+", 4, _n("*", 2, 3)), "4 + 2 * 3"),
-    ("exponent under product", _n("*", _n("^", 2, 3), 5), "2 ^ 3 * 5"),
-    ("exponent right of product", _n("*", 5, _n("^", 2, 3)), "5 * 2 ^ 3"),
+    ("exponent under product", _n("*", _n("**", 2, 3), 5), "2 ** 3 * 5"),
+    ("exponent right of product", _n("*", 5, _n("**", 2, 3)), "5 * 2 ** 3"),
     # --- same-tier, LEFT-associative parent ---
     # left child on the correct (left) side: DROP.
     ("sub then add: a - b + c", _n("+", _n("-", 8, 3), 2), "8 - 3 + 2"),
@@ -453,9 +545,9 @@ _RENDER_CASES = [
     ("mod right of mul: a * (b % c)", _n("*", 4, _n("%", 9, 2)), "4 * (9 % 2)"),
     # --- same-tier, RIGHT-associative parent (exponent) ---
     # right child on the correct (right) side for right-assoc: DROP.
-    ("pow right-assoc: 2 ^ 3 ^ 2", _n("^", 2, _n("^", 3, 2)), "2 ^ 3 ^ 2"),
+    ("pow right-assoc: 2 ** 3 ** 2", _n("**", 2, _n("**", 3, 2)), "2 ** 3 ** 2"),
     # left child on the wrong (left) side for right-assoc: KEEP.
-    ("pow left-nested: (2 ^ 3) ^ 2", _n("^", _n("^", 2, 3), 2), "(2 ^ 3) ^ 2"),
+    ("pow left-nested: (2 ** 3) ** 2", _n("**", _n("**", 2, 3), 2), "(2 ** 3) ** 2"),
     # --- deeper compositions ---
     # ((1 + 2) * 3) - 4 : product binds tighter than the outer -, so the
     # product needs no wrap on the left of -, but the inner sum still wraps.
@@ -489,30 +581,30 @@ def test_render_roundtrips_through_evaluate(m):
 
 
 # Trees the #5 GENERATOR never builds (a leaf-only operator with a subtree
-# child: / % ^ are nestable=False, ADR-032). The renderer is nonetheless TOTAL
+# child: / % ** are nestable=False, ADR-032). The renderer is nonetheless TOTAL
 # over them -- it parenthesizes by precedence/associativity regardless of which
 # operator owns the subtree. This test locks that totality in: it is the
 # counterpart to the property walk's structural invariant (which pins that the
 # generator never EMITS these). Together they make ADR-033's "renderer is the
 # sole owner of printing, total over well-formed trees" a tested guarantee, so
-# #2 can make / % ^ nestable (ADR-037 deferred door) with ZERO renderer change.
+# #2 can make / % ** nestable (ADR-037 deferred door) with ZERO renderer change.
 # If a future contributor "tightens" the renderer to reject these, this test
 # goes red with the reason attached.
 _UNREACHABLE_RENDER_CASES = [
     # a / (b * c): division over a product subtree. * (prec 2) under / (prec 2,
     # left-assoc) on the right side -> wrong side -> KEEP.
     ("div over product", _n("/", 24, _n("*", 2, 3)), "24 / (2 * 3)"),
-    # a / (b + c): + (prec 1) under / (prec 2) -> lower precedence -> KEEP.
+    # a / (b + c): + (prec 5) under / (prec 6) -> lower precedence -> KEEP.
     ("div over sum", _n("/", 30, _n("+", 2, 3)), "30 / (2 + 3)"),
-    # 2 ^ (a + b): + under ^ (prec 3) -> lower precedence -> KEEP.
-    ("pow over sum", _n("^", 2, _n("+", 1, 2)), "2 ^ (1 + 2)"),
-    # (a + b) % c: + under % (prec 2) on the left -> lower precedence -> KEEP.
+    # 2 ** (a + b): + (prec 5) under ** (prec 7) -> lower precedence -> KEEP.
+    ("pow over sum", _n("**", 2, _n("+", 1, 2)), "2 ** (1 + 2)"),
+    # (a + b) % c: + (prec 5) under % (prec 6) on the left -> lower precedence -> KEEP.
     ("mod of sum", _n("%", _n("+", 7, 6), 5), "(7 + 6) % 5"),
-    # a % (b - c): - (prec 1) under % (prec 2) on the right -> KEEP.
+    # a % (b - c): - (prec 5) under % (prec 6) on the right -> KEEP.
     ("mod over diff", _n("%", 20, _n("-", 9, 2)), "20 % (9 - 2)"),
-    # nested leaf-only under leaf-only: (a ^ b) / c -- ^ (prec 3) under / (prec
-    # 2) on the left -> higher precedence, correct side -> DROP.
-    ("div of power-left", _n("/", _n("^", 2, 3), 4), "2 ^ 3 / 4"),
+    # nested leaf-only under leaf-only: (a ** b) / c -- ** (prec 7) under / (prec
+    # 6) on the left -> higher precedence, correct side -> DROP.
+    ("div of power-left", _n("/", _n("**", 2, 3), 4), "2 ** 3 / 4"),
 ]
 
 
@@ -550,6 +642,88 @@ def test_generate_division_is_always_integral(m):
         node = m.generate_expression(enabled_symbols=["/"])
         assert node["left"] % node["right"] == 0
         assert isinstance(m.evaluate_expression(node), int)
+
+
+# --------------------------------------------------------------------------
+# bitwise operators (C-BIT-e) -- the five records + the shift strategy.
+# These ship DARK: present in the table, reachable only via enabled_symbols,
+# never in OPERATOR_SYMBOLS (finding A).
+# --------------------------------------------------------------------------
+def test_bitwise_operators_present_in_table(m):
+    # All five records built and indexed, with the fields their strategies read.
+    import operator
+
+    expected_eval = {
+        "&": operator.and_,
+        "^": operator.xor,
+        "|": operator.or_,
+        "<<": operator.lshift,
+        ">>": operator.rshift,
+    }
+    for symbol, eval_fn in expected_eval.items():
+        record = m.OPERATORS[symbol]
+        assert record["eval_fn"] is eval_fn
+        assert record["arity"] == 2
+        assert record["operand_min"] >= 1
+
+
+def test_bitwise_ships_dark_not_in_default_symbols(m):
+    # finding A: the bitwise rows must NOT be in the default enabled set, or
+    # ~half of default questions become bitwise for a user who asked for
+    # arithmetic. They are reachable only via ?operators=... .
+    for symbol in ("&", "^", "|", "<<", ">>"):
+        assert symbol not in m.OPERATOR_SYMBOLS
+
+
+def test_bitwise_and_or_xor_are_nestable_shifts_are_leaf_only(m):
+    # & ^ | compose like + - * (nestable); << >> are leaf-only like / % **.
+    for symbol in ("&", "^", "|"):
+        assert m.OPERATORS[symbol]["nestable"] is True
+    for symbol in ("<<", ">>"):
+        assert m.OPERATORS[symbol]["nestable"] is False
+
+
+def test_bitwise_precedence_matches_conventional_ladder(m):
+    # The records' precedence must equal the ladder (the import guard already
+    # enforces this; asserted here for visibility, and to pin the specific
+    # conventional order | < ^ < & < shift < additive).
+    assert m.OPERATORS["|"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["|"]
+    assert m.OPERATORS["^"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["^"]
+    assert m.OPERATORS["&"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["&"]
+    assert m.OPERATORS["<<"]["precedence"] == m._CONVENTIONAL_PRECEDENCE["<<"]
+    assert m.OPERATORS[">>"]["precedence"] == m._CONVENTIONAL_PRECEDENCE[">>"]
+    # the ladder's conventional order, below the additive operators
+    prec = m._CONVENTIONAL_PRECEDENCE
+    assert prec["|"] < prec["^"] < prec["&"] < prec["<<"] < prec["+"]
+    assert prec[">>"] == prec["<<"]
+
+
+def test_shift_strategy_two_range_shape(m):
+    # << >> draw the left operand from operand_min/max and the shift amount from
+    # shift_min/max, mirroring modulo/exponent. Verify both operands land in
+    # their declared ranges and evaluation matches the stdlib operator.
+    import operator
+
+    stdlib = {"<<": operator.lshift, ">>": operator.rshift}
+    for symbol in ("<<", ">>"):
+        record = m.OPERATORS[symbol]
+        for _ in range(500):
+            node = m.generate_expression(enabled_symbols=[symbol])
+            left, shift = node["left"], node["right"]
+            assert record["operand_min"] <= left <= record["operand_max"]
+            assert record["shift_min"] <= shift <= record["shift_max"]
+            assert m.evaluate_expression(node) == stdlib[symbol](left, shift)
+
+
+def test_bitwise_restricted_generation_evaluates_correctly(m):
+    # Restricted generation for each bitwise mix produces trees whose value
+    # matches re-evaluating the same tree. (The exhaustive seeded round-trip
+    # through render is the property test in C-BIT-f; here we pin the records
+    # build valid, evaluable trees per mix.)
+    for mix in (["&"], ["^"], ["|"], ["<<"], [">>"], ["&", "^", "|"], ["<<", ">>"]):
+        for _ in range(300):
+            node = m.generate_expression(enabled_symbols=list(mix))
+            assert isinstance(m.evaluate_expression(node), int)
 
 
 # --------------------------------------------------------------------------
@@ -613,9 +787,13 @@ def test_generate_default_depth_produces_some_nesting(m):
 
 def test_generate_nested_round_trips_value_through_render(m):
     # The renderer must emit a string that, read under standard precedence and
-    # associativity, parses back to the SAME tree's value. Map ^ -> ** and /
-    # -> // (our division is exact, so // == /), then re-evaluate the rendered
-    # string with Python's grammar and compare to evaluate_expression.
+    # associativity, parses back to the SAME tree's value. Our glyph for
+    # exponent is now ** (Python's own operator), so no symbol translation is
+    # needed for it -- only map / -> // (our division is exact, so // == /),
+    # then re-evaluate the rendered string with Python's grammar and compare to
+    # evaluate_expression. (Before C-BIT-a the exponent glyph was ^, which this
+    # line translated with .replace("^","**"); that half is now a no-op and is
+    # dropped.)
     import random
 
     random.seed(2025)
@@ -623,8 +801,27 @@ def test_generate_nested_round_trips_value_through_render(m):
         node = m.generate_expression()
         expected = m.evaluate_expression(node)
         rendered = m.render_expression(node)
-        reparsed = eval(rendered.replace("^", "**").replace("/", "//"))
+        reparsed = eval(rendered.replace("/", "//"))
         assert reparsed == expected, (rendered, reparsed, expected)
+
+    # Bitwise mixes (C-BIT-f): & ^ | << >> render with our glyphs, which are
+    # Python's own bitwise operators, so the rendered string reparses directly
+    # with NO symbol translation (the / -> // map is arithmetic-only and does
+    # not apply here). This is the exhaustive conventional-parse oracle for the
+    # C-BIT-b ladder: if any bitwise precedence were wrong, a rendered string
+    # would reparse to a different value under Python's grammar.
+    random.seed(4242)
+    bitwise_mixes = [
+        ["&"], ["^"], ["|"], ["<<"], [">>"],
+        ["&", "^", "|"], ["<<", ">>"], ["&", "^", "|", "<<", ">>"],
+    ]
+    for mix in bitwise_mixes:
+        for _ in range(500):
+            node = m.generate_expression(enabled_symbols=mix)
+            expected = m.evaluate_expression(node)
+            rendered = m.render_expression(node)
+            reparsed = eval(rendered)
+            assert reparsed == expected, (mix, rendered, reparsed, expected)
 
 
 def test_generate_retry_exhaustion_raises(m):
@@ -749,17 +946,24 @@ def test_question_text_stays_under_length_bound(m):
 # data and the validator contract.
 # --------------------------------------------------------------------------
 def test_operator_records_declare_nesting_fields(m):
+    # nestable and associativity are hardcoded here (they are structural facts
+    # about each operator, not the ladder). Precedence is NOT hardcoded: it is
+    # DERIVED from config._CONVENTIONAL_PRECEDENCE, the single source the import
+    # guard also checks the records against. Duplicating the ladder values here
+    # would create a second table that could silently disagree with the first;
+    # deriving means this test and the guard read the same numbers (C-BIT-b).
     expected = {
-        # symbol: (nestable, precedence, associativity)
-        "+": (True, 1, "left"),
-        "-": (True, 1, "left"),
-        "*": (True, 2, "left"),
-        "/": (False, 2, "left"),
-        "%": (False, 2, "left"),
-        "^": (False, 3, "right"),
+        # symbol: (nestable, associativity)
+        "+": (True, "left"),
+        "-": (True, "left"),
+        "*": (True, "left"),
+        "/": (False, "left"),
+        "%": (False, "left"),
+        "**": (False, "right"),
     }
-    for symbol, (nestable, precedence, associativity) in expected.items():
+    for symbol, (nestable, associativity) in expected.items():
         record = m.OPERATORS[symbol]
+        precedence = m._CONVENTIONAL_PRECEDENCE[symbol]
         # present
         assert "nestable" in record
         assert "precedence" in record
@@ -776,6 +980,45 @@ def test_operator_records_declare_nesting_fields(m):
         assert record["nestable"] is nestable
         assert record["precedence"] == precedence
         assert record["associativity"] == associativity
+
+
+def test_conventional_precedence_guard_holds_and_bites(m):
+    # The import-time guard welds config._CONVENTIONAL_PRECEDENCE to the operator
+    # records' precedence fields. Assert BOTH directions, per the guard's own
+    # design (a one-directional check is half a guard):
+    #   (1) it PASSES on the real, shipped table -- the module imported at all,
+    #       and re-running it explicitly must not raise;
+    #   (2) it RAISES when a record's precedence disagrees with the ladder;
+    #   (3) it RAISES when the ladder names an operator that has no record.
+    import copy
+
+    # (1) real table: explicit re-run is silent.
+    m._check_conventional_precedence()
+
+    original_ladder = m._CONVENTIONAL_PRECEDENCE
+
+    # (2) record-vs-ladder mismatch: bump one ladder entry off the record value.
+    mismatched = copy.deepcopy(original_ladder)
+    mismatched["**"] = 99
+    try:
+        m._CONVENTIONAL_PRECEDENCE = mismatched
+        with pytest.raises(RuntimeError):
+            m._check_conventional_precedence()
+    finally:
+        m._CONVENTIONAL_PRECEDENCE = original_ladder
+
+    # (3) ladder entry with no operator record: add a phantom symbol.
+    phantom = copy.deepcopy(original_ladder)
+    phantom["@"] = 4
+    try:
+        m._CONVENTIONAL_PRECEDENCE = phantom
+        with pytest.raises(RuntimeError):
+            m._check_conventional_precedence()
+    finally:
+        m._CONVENTIONAL_PRECEDENCE = original_ladder
+
+    # restored: the real table is silent again.
+    m._check_conventional_precedence()
 
 
 def test_operator_record_missing_new_key_fails_table_build(m):

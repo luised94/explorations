@@ -32,6 +32,7 @@ import bottle
 from config import (
     DEFAULT_DATABASE_PATH,
     DIFFICULTY_RUNGS,
+    _BITWISE_DISPLAY_WIDTH,
     _MAX_OPERATOR_DEPTH,
     _RECURSE_PROBABILITY,
     NEW_QUESTIONS_PER_BANK_MINIMUM,
@@ -72,6 +73,7 @@ from logic import (
     build_question_payload,
     derive_recall_quality,
     evaluate_expression,
+    format_integer_in_base,
     generate_expression,
     leaf_count,
     parse_import,
@@ -351,13 +353,39 @@ def get_question_endpoint():
                     status=400,
                 )
 
+        # Optional display base. Absent/empty -> 10 (decimal, the default).
+        # Present -> must be one of the supported display bases. Base is a
+        # per-question SERVED property (finding G), resolved from the request
+        # like difficulty and carried on the payload for inspectability -- NOT
+        # inferred from "are all operators bitwise" (a set-membership test the
+        # user never sees, a worse category). Bitwise drills pass base=2.
+        base_raw = bottle.request.query.get("base")
+        display_base = 10
+        if base_raw is not None and base_raw != "":
+            try:
+                display_base = int(base_raw)
+            except ValueError:
+                return _json_error("base must be an integer", status=400)
+            if display_base not in (2, 10, 16):
+                return _json_error(
+                    "unsupported display base "
+                    + str(display_base)
+                    + "; supported bases are 2, 10, 16",
+                    status=400,
+                )
+
         expression = generate_expression(enabled_symbols, difficulty=difficulty)
-        rendered = render_expression(expression)
+        # Question and answer key render in the SAME base (finding G): a wrong
+        # answer is otherwise unattributable between a misread base and a real
+        # error. width is ignored for base 10, so the default path is unchanged.
+        rendered = render_expression(expression, display_base, _BITWISE_DISPLAY_WIDTH)
         result = evaluate_expression(expression)
         return {
             "qtype": QTYPE_ARITHMETIC,
             "question_text": rendered,
-            "expected": str(result),
+            "expected": format_integer_in_base(
+                result, display_base, _BITWISE_DISPLAY_WIDTH
+            ),
             "question_id": None,
             "alternatives": None,
             "media_url": None,
@@ -366,6 +394,10 @@ def get_question_endpoint():
             # /api/answer; capture into responses is C-D2g (needs the v3 cols).
             "difficulty": difficulty,
             "leaf_count": leaf_count(expression),
+            # The served display base (finding G): written once, on the response
+            # row, so a wrong answer can be attributed (misread base vs mis-parsed
+            # precedence vs a real bit error are otherwise indistinguishable).
+            "base": display_base,
         }
 
     # Bank-based question path (C-012). For any non-arithmetic category, draw

@@ -46,6 +46,7 @@ from config import (
     QTYPE_MULTIPLE_CHOICE,
     QTYPE_TRANSLATE,
     QTYPES,
+    _CONVENTIONAL_PRECEDENCE,
     _DEFAULT_OPERAND_RANGE,
     _EXPONENT_POWER_RANGE,
     _MAX_GENERATION_ATTEMPTS,
@@ -192,6 +193,37 @@ def _generate_operands_exponent(
         return base, exponent
 
 
+def _generate_operands_shift(
+    operator_record: dict,
+) -> tuple[int, int]:
+    """Generate a (left, shift_amount) pair for a bit-shift operator.
+
+    Mirrors the modulo/exponent two-range shape: the left operand is drawn from
+    the record's [operand_min, operand_max] range, and the shift amount from a
+    SECOND range (shift_min..shift_max) declared on the record. The chosen
+    ranges are 8-bit by construction (<< left 1..15 shift 1..4 -> max 240;
+    >> left 8..255 shift 1..4), keeping results inside the display width.
+
+    The forbidden-identity referent is the SHIFT amount
+    (forbid_identity_referent == "shift"): a shift of 0 is the identity
+    (x << 0 == x), so it is declared forbidden. This is inert given a shift
+    range starting at 1 -- but declared anyway, matching how exponent declares
+    [0, 1] though its range makes them unreachable: the record states what
+    WOULD be trivial, so a later range change cannot silently leak it.
+    """
+    left_minimum = operator_record["operand_min"]
+    left_maximum = operator_record["operand_max"]
+    shift_minimum = operator_record["shift_min"]
+    shift_maximum = operator_record["shift_max"]
+    forbidden = operator_record["forbid_identity"]
+    while True:
+        left_value = random.randint(left_minimum, left_maximum)
+        shift_amount = random.randint(shift_minimum, shift_maximum)
+        if shift_amount in forbidden:
+            continue
+        return left_value, shift_amount
+
+
 # Per-operator records. One record fully defines an operator: the earlier
 # split across OPERATOR_CONFIG + _OPERATOR_EVAL_FUNCTIONS +
 # _OPERATOR_OPERAND_GENERATORS plus hidden `if symbol == "-"` branches is
@@ -214,16 +246,20 @@ def _generate_operands_exponent(
 #                  rejection as one intent.
 #   nestable    -- whether this operator may have SUBTREE children (#5). True
 #                  for the composable operators (+ - *); False for the leaf-only
-#                  operators (/ % ^), whose operands stay integer leaves. NOTE:
+#                  operators (/ % **), whose operands stay integer leaves. NOTE:
 #                  nestable governs whether an operator may have subtree
 #                  CHILDREN; it does NOT govern whether the operator's node may
-#                  itself BE a child -- a / % ^ node is a valid subtree child of
+#                  itself BE a child -- a / % ** node is a valid subtree child of
 #                  a composable parent.
-#   precedence  -- explicit integer binding tier (#5): + - => 1, * / % => 2,
-#                  ^ => 3. Compared with < by the renderer to decide
+#   precedence  -- explicit integer binding tier (#5), one per operator, held
+#                  in the record and checked at import against the conventional
+#                  ladder in config._CONVENTIONAL_PRECEDENCE (the single source):
+#                  + - => 5, * / % => 6, ** => 7. Tiers 1..4 are reserved below
+#                  the additive operators for the bitwise rows (| ^ & << >>)
+#                  landing in C-BIT-e. Compared with < by the renderer to decide
 #                  parenthesization. Represented, not inferred from list order.
 #   associativity -- "left" or "right" (#5): + - * / % are left-associative;
-#                  ^ is right-associative. Drives same-tier wrong-side
+#                  ** is right-associative. Drives same-tier wrong-side
 #                  parenthesization in the renderer.
 #   eval_fn     -- stdlib operator callable; full namespace, no alias
 #   operand_strategy -- the generator producing this operator's operand pair
@@ -242,7 +278,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "operands",
         "result_constraint": None,
         "nestable": True,
-        "precedence": 1,
+        "precedence": 5,
         "associativity": "left",
         "eval_fn": operator.add,
         "operand_strategy": _generate_operands_standard,
@@ -259,7 +295,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         # implements both mechanics (order left >= right; reject equal).
         "result_constraint": "non_negative",
         "nestable": True,
-        "precedence": 1,
+        "precedence": 5,
         "associativity": "left",
         "eval_fn": operator.sub,
         "operand_strategy": _generate_operands_standard,
@@ -274,7 +310,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "operands",
         "result_constraint": None,
         "nestable": True,
-        "precedence": 2,
+        "precedence": 6,
         "associativity": "left",
         "eval_fn": operator.mul,
         "operand_strategy": _generate_operands_standard,
@@ -293,7 +329,7 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "quotient",
         "result_constraint": None,
         "nestable": False,
-        "precedence": 2,
+        "precedence": 6,
         "associativity": "left",
         # Floor division (operator.floordiv) is always EXACT here: the dividend
         # is a guaranteed multiple of the divisor (ADR-007), so there is no
@@ -317,13 +353,13 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "divisor",
         "result_constraint": None,
         "nestable": False,
-        "precedence": 2,
+        "precedence": 6,
         "associativity": "left",
         "eval_fn": operator.mod,
         "operand_strategy": _generate_operands_modulo,
     },
     {
-        "symbol": "^",
+        "symbol": "**",
         "name": "exponent",
         "arity": 2,
         # Base from the multiplicative range; the power from its own narrow
@@ -337,12 +373,111 @@ OPERATOR_DEFINITIONS: list[dict] = [
         "forbid_identity_referent": "exponent",
         "result_constraint": None,
         "nestable": False,
-        "precedence": 3,
+        "precedence": 7,
         "associativity": "right",
         # Right-associativity (2^2^3) is a #5 concern; the flat v1 generator
         # never associates, so it is a non-issue here.
         "eval_fn": operator.pow,
         "operand_strategy": _generate_operands_exponent,
+    },
+    # Bitwise operators (C-BIT-e). These records EXIST but are not in
+    # OPERATOR_SYMBOLS -- they ship dark, reachable only via ?operators=... (see
+    # finding A: adding them to the default set would make ~half of default
+    # questions bitwise for a user who asked for arithmetic). & ^ | are
+    # composable (nestable, two operands from operand_min/max, like + - *);
+    # << >> are leaf-only (a shift amount is not an expression to nest into),
+    # drawing left from operand_min/max and the shift from shift_min/max. All
+    # ranges are 8-bit by construction; precedence matches the conventional
+    # ladder (| 1, ^ 2, & 3, << >> 4), enforced by _check_conventional_precedence.
+    {
+        "symbol": "&",
+        "name": "bitwise and",
+        "arity": 2,
+        "operand_min": 1,
+        "operand_max": 31,
+        # forbid_identity [0] is INERT: operand ranges start at 1, so 0 never
+        # appears as an operand. Kept for record-shape consistency (finding E);
+        # a real zero-suppression would be a result_constraint, not this.
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "nestable": True,
+        "precedence": 3,
+        "associativity": "left",
+        "eval_fn": operator.and_,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "^",
+        "name": "bitwise xor",
+        "arity": 2,
+        "operand_min": 1,
+        "operand_max": 31,
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "nestable": True,
+        "precedence": 2,
+        "associativity": "left",
+        "eval_fn": operator.xor,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "|",
+        "name": "bitwise or",
+        "arity": 2,
+        "operand_min": 1,
+        "operand_max": 31,
+        "forbid_identity": [0],
+        "forbid_identity_referent": "operands",
+        "result_constraint": None,
+        "nestable": True,
+        "precedence": 1,
+        "associativity": "left",
+        "eval_fn": operator.or_,
+        "operand_strategy": _generate_operands_standard,
+    },
+    {
+        "symbol": "<<",
+        "name": "left shift",
+        "arity": 2,
+        # 8-bit by construction: left 1..15 shifted 1..4 tops out at 240.
+        "operand_min": 1,
+        "operand_max": 15,
+        "shift_min": 1,
+        "shift_max": 4,
+        # Referent is the shift amount: shift 0 (x << 0 == x) is the identity.
+        # Inert given shift_min 1, declared anyway (see _generate_operands_shift).
+        "forbid_identity": [0],
+        "forbid_identity_referent": "shift",
+        "result_constraint": None,
+        # Leaf-only: a shift's operands stay integer leaves. A shift node may
+        # still BE a child of a composable parent; it just has no subtree
+        # children of its own (same as / % **).
+        "nestable": False,
+        "precedence": 4,
+        "associativity": "left",
+        "eval_fn": operator.lshift,
+        "operand_strategy": _generate_operands_shift,
+    },
+    {
+        "symbol": ">>",
+        "name": "right shift",
+        "arity": 2,
+        # 8-bit by construction: left is a full 8-bit value (8..255) shifted
+        # right 1..4. This IS an 8-bit range by declared intent, not accident.
+        "operand_min": 8,
+        "operand_max": 255,
+        "shift_min": 1,
+        "shift_max": 4,
+        "forbid_identity": [0],
+        "forbid_identity_referent": "shift",
+        "result_constraint": None,
+        "nestable": False,
+        "precedence": 4,
+        "associativity": "left",
+        "eval_fn": operator.rshift,
+        "operand_strategy": _generate_operands_shift,
     },
 ]
 
@@ -369,7 +504,7 @@ _OPERATOR_RECORD_REQUIRED_KEYS = frozenset(
 # Known forbid-identity referents; a record declaring anything else is a typo
 # or an unimplemented strategy contract.
 _KNOWN_FORBID_IDENTITY_REFERENTS = frozenset(
-    {"operands", "quotient", "divisor", "exponent"}
+    {"operands", "quotient", "divisor", "exponent", "shift"}
 )
 
 
@@ -427,6 +562,51 @@ def _build_operator_table() -> dict:
 
 # Built once at import. Module-level constant; not rebuilt per request.
 OPERATORS: dict = _build_operator_table()
+
+
+def _check_conventional_precedence() -> None:
+    """Raise at import if any OPERATOR precedence disagrees with the ladder.
+
+    The conventional binding ladder lives in CONFIG as declared data
+    (_CONVENTIONAL_PRECEDENCE); the operator records carry a precedence field
+    that the renderer compares to decide parenthesization. This guard welds the
+    two: it is the machine-enforcement that keeps the ladder from being a
+    comment. Mirrors config._check_difficulty_rungs_consistency's fail-at-import
+    discipline -- a precedence typo is a programming error caught at module
+    load, not a mis-parenthesized question served at request time.
+
+    Checked BOTH directions, so neither table can drift from the other:
+      - every operator record's precedence equals its ladder entry (a record
+        cannot carry a tier the ladder does not name);
+      - every ladder entry names a real operator record (the ladder cannot
+        carry a tier for an operator that does not exist).
+    The second direction is why the ladder is seeded with only the operators
+    that exist today (C-BIT-b/1b): a bitwise entry with no record yet would
+    trip it. C-BIT-e adds the records and the entries together.
+    """
+    for symbol, record in OPERATORS.items():
+        expected = _CONVENTIONAL_PRECEDENCE.get(symbol)
+        if expected is None:
+            raise RuntimeError(
+                "operator " + repr(symbol) + " has no entry in "
+                "_CONVENTIONAL_PRECEDENCE; the ladder must name every operator"
+            )
+        if record["precedence"] != expected:
+            raise RuntimeError(
+                "operator " + repr(symbol) + " precedence "
+                + repr(record["precedence"])
+                + " disagrees with the conventional ladder entry "
+                + repr(expected)
+            )
+    for symbol in _CONVENTIONAL_PRECEDENCE:
+        if symbol not in OPERATORS:
+            raise RuntimeError(
+                "_CONVENTIONAL_PRECEDENCE names operator " + repr(symbol)
+                + " which has no record in OPERATOR_DEFINITIONS"
+            )
+
+
+_check_conventional_precedence()
 
 
 def _draw_composable_leaf(operator_record: dict) -> int:
@@ -535,7 +715,7 @@ def build_subtree(
     is built first (subtree or leaf) so its integer VALUE is known, then the
     operator's constraints are checked against those values and the node is
     assembled -- a built subtree is never mutated to fit a parent; on a
-    constraint failure the whole node is redrawn. Leaf-only operators (/ % ^)
+    constraint failure the whole node is redrawn. Leaf-only operators (/ % **)
     keep their existing paired leaf strategy unchanged (their invariants are
     statements about LEAVES -- divisor >= 2, derived quotient, exponent power
     range -- and must not be lifted to values). A leaf-only operator may still
@@ -585,7 +765,7 @@ def build_subtree(
         symbol = random.choice(symbols)
         operator_record = operator_table[symbol]
 
-        # Leaf-only (/ % ^): integer leaves via the existing paired strategy,
+        # Leaf-only (/ % **): integer leaves via the existing paired strategy,
         # invariants unchanged. Also the only path when no depth budget remains
         # for a composable operator (handled below by the leaf-only operand
         # builder), but a leaf-only operator takes this branch regardless.
@@ -697,7 +877,7 @@ def _apply_rung_ranges(rung_record: dict, base_table: dict) -> dict:
     stays the canonical default and is safe to reuse across requests. This is the
     magnitude lever -- the rung's operator_ranges replace ONLY the range fields
     each operator's strategy reads (operand_min/max for all; divisor_min/max for
-    %; exponent_min/max for ^), leaving every other record field (eval_fn,
+    %; exponent_min/max for **), leaving every other record field (eval_fn,
     operand_strategy, nestable, forbid_identity, precedence, ...) untouched. So
     the generator's behavior is identical except for the magnitudes it draws.
 
@@ -737,7 +917,7 @@ def generate_expression(
 
     Picks operators at random from enabled_symbols (defaulting to the module
     OPERATOR_SYMBOLS) and builds a tree bottom-up via build_subtree. Composable
-    operators (+ - *) may have subtree children; leaf-only operators (/ % ^)
+    operators (+ - *) may have subtree children; leaf-only operators (/ % **)
     keep integer leaves.
 
     DIFFICULTY (C-D2b): difficulty is an optional scalar rung. When None (the
@@ -830,7 +1010,7 @@ def leaf_count(node: dict | int) -> int:
     same shape have the same leaf_count). That independence is exactly why it is
     the COORDINATION-regime feature (handoff Q1/S7): for composable-containing
     mixes it moves monotonically with the rung's depth/recurse knobs, while for
-    leaf-only mixes (/ % ^, which cannot nest) it is a CONSTANT 2 and difficulty
+    leaf-only mixes (/ % **, which cannot nest) it is a CONSTANT 2 and difficulty
     must ride magnitude instead.
 
     It is also the NON-DRIFTING fact stored on responses (ADR-040): recomputable
@@ -880,21 +1060,83 @@ def _child_needs_parentheses(parent_record: dict, child: dict | int, side: str) 
     return False
 
 
-def render_expression(node: dict | int) -> str:
+def format_integer_in_base(value: int, base: int, width: int) -> str:
+    """Format an integer in base 2, 10, or 16, zero-padded to `width` digits.
+
+    ONE formatter, TWO call sites (finding C): the leaf renderer inside
+    render_expression, and the answer key at the HTTP boundary (the expected
+    value is an int, not a leaf, so a leaf-specific renderer would serve only
+    one site). Both are "format this int in this base at this width".
+
+    - base 2 -> "0b" prefix; base 16 -> "0x" prefix; base 10 -> bare digits
+      (no prefix), matching the existing str(result) and round-tripping through
+      the int(text, 0) answer normalization (C-BIT-c).
+    - width is the DIGIT field (excluding any prefix) and applies ONLY to the
+      fixed-width bit bases (2 and 16), where zero-padding aligns bit position
+      (finding D). Base 10 IGNORES width: decimal has no bit-position semantics,
+      so padding it is meaningless -- and a zero-padded decimal like "00000001"
+      RAISES under int("00000001", 0) (the C-BIT-c leading-zero gotcha), which
+      would break the finding-G round-trip property and alter ordinary
+      arithmetic answers. So format_integer_in_base(5, 2, 8) -> "0b00000101"
+      but format_integer_in_base(5, 10, 8) -> "5".
+    - NEVER truncates. A value needing more than `width` digits renders at its
+      natural width -- padding is a minimum, not a ceiling -- because truncating
+      the answer key would corrupt it. With the shipped 8-bit ranges this never
+      fires (max result 255 -> 8 bits), but the formatter is total regardless.
+
+    width is a required parameter: the width POLICY (config._BITWISE_DISPLAY_
+    WIDTH) lives at the call site, so this function stays pure formatting and
+    ignorant of the constant.
+    """
+    if base == 2:
+        digits = format(value, "b")
+        prefix = "0b"
+    elif base == 16:
+        digits = format(value, "x")
+        prefix = "0x"
+    elif base == 10:
+        # Decimal is never zero-padded (see docstring): bare str, width ignored.
+        return format(value, "d")
+    else:
+        raise ValueError("unsupported display base: " + repr(base))
+
+    # A negative value carries a leading "-" from format(); keep the sign
+    # outside the zero-padding so "-0b0000101" reads correctly rather than
+    # "0b-000101". Bitwise results are non-negative with the shipped ranges, but
+    # the formatter stays total.
+    sign = ""
+    if digits.startswith("-"):
+        sign = "-"
+        digits = digits[1:]
+
+    padded = digits.zfill(width)  # zfill pads to a MINIMUM; never truncates
+    return sign + prefix + padded
+
+
+def render_expression(node: dict | int, base: int = 10, width: int = 0) -> str:
     """Render an expression tree as a human-readable infix string.
 
-    Integer leaves render as their digits. Internal nodes render as
-    "left symbol right", with each child parenthesized only when the tree's
-    grouping would otherwise be lost under standard precedence/associativity
-    (see _child_needs_parentheses). A flat single-operator expression (the v1
-    case) has int leaves, so it produces no parentheses. The rendered string is
-    what gets stored in responses.question_text.
+    Integer leaves render via format_integer_in_base in the given base (default
+    10 -> bare digits, exactly the previous str(node) behavior, so every
+    existing caller is unchanged). Internal nodes render as "left symbol right",
+    with each child parenthesized only when the tree's grouping would otherwise
+    be lost under standard precedence/associativity (see
+    _child_needs_parentheses). A flat single-operator expression (the v1 case)
+    has int leaves, so it produces no parentheses. The rendered string is what
+    gets stored in responses.question_text.
+
+    base/width are TREE-UNIFORM (finding H): leaves are bare ints with nowhere
+    to carry per-leaf base, so base is necessarily a parameter to the walk and
+    therefore the same for every leaf. In a mixed session 12 + 5 renders as
+    0b1100 + 0b101; the drill-sequence model (finding J) makes sessions
+    homogeneous, which makes that correct by construction rather than merely
+    tolerated. width is ignored for base 10 (see format_integer_in_base).
     """
     if isinstance(node, int):
-        return str(node)
+        return format_integer_in_base(node, base, width)
     parent_record = OPERATORS[node["op"]]
-    left_text = render_expression(node["left"])
-    right_text = render_expression(node["right"])
+    left_text = render_expression(node["left"], base, width)
+    right_text = render_expression(node["right"], base, width)
     if _child_needs_parentheses(parent_record, node["left"], "left"):
         left_text = "(" + left_text + ")"
     if _child_needs_parentheses(parent_record, node["right"], "right"):
@@ -953,16 +1195,40 @@ def normalize_text(text: str) -> str:
 def _validate_numeric(given: str, expected: str, tolerance: float | None) -> bool:
     """Compare a numeric answer to the expected value within a tolerance.
 
-    Parses both sides as floats. A tolerance of None (or 0) requires exact
-    equality; a positive tolerance accepts answers within that absolute
-    difference (for future float-producing operators). Non-numeric input
-    (e.g. letters typed for a math question) is simply an incorrect answer,
-    returning False rather than raising.
+    Integer pre-pass (C-BIT-c): when an EXACT match is required (tolerance None
+    or 0) and BOTH sides parse as integers under int(_, 0) -- which accepts
+    0b/0x/0o prefixes as well as plain decimals -- compare them as integers.
+    This is what lets a bitwise answer typed in binary (0b101) or hex (0x1f)
+    validate against an integer expected value, without a separate qtype path.
+    int(_, 0) is deliberately a guarded PRE-pass, not a replacement: it raises
+    on inputs the float path accepts (notably int("010", 0) rejects a
+    leading-zero decimal in Python 3), so on ANY parse failure -- or when a
+    positive tolerance is in play -- it falls straight through to the float
+    path below, which is unchanged. Both sides are required to parse as ints so
+    a future float-producing operator (expected "2.5") never takes this branch.
+
+    Float path (unchanged): parses both sides as floats. A tolerance of None
+    (or 0) requires exact equality; a positive tolerance accepts answers within
+    that absolute difference (for future float-producing operators). Non-numeric
+    input (e.g. letters typed for a math question) is simply an incorrect
+    answer, returning False rather than raising.
 
     A non-numeric tolerance (e.g. a stray string from a client) is treated as
     no tolerance (exact match) rather than raising, so a malformed optional
     field cannot crash the validator.
     """
+    if tolerance is None or tolerance == 0:
+        # Exact-match regime only: an integer answer is right IFF it equals the
+        # integer expected value. A positive tolerance means the float path,
+        # which owns the within-difference comparison.
+        try:
+            given_integer = int(given.strip(), 0)
+            expected_integer = int(str(expected).strip(), 0)
+        except (ValueError, TypeError, AttributeError):
+            pass  # not both integers (or not parseable) -> fall to the float path
+        else:
+            return given_integer == expected_integer
+
     try:
         given_value = float(given.strip())
         expected_value = float(str(expected).strip())

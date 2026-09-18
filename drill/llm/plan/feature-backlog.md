@@ -221,3 +221,66 @@ HOW THIS FOLDS INTO THE EXISTING PLAN:
     they are content, so they arrive FOR FREE once the SM2/authoring rail exists.
   - Multimodal + UI/QOL are cross-cutting; schedule images (design-doc-first)
     near the content work, QOL keyboard-flow near SM2, the rest as capstones.
+
+# feature-backlog-2026-07.md note -- C-BIT-k (append into the backlog)
+
+The bitwise arithmetic rail (Tier 1, scored 4.04) is IMPLEMENTED and green
+through C-BIT-k. What it unlocked, and what it deferred, as backlog entries:
+
+--------------------------------------------------------------------------------
+NEW / PROMOTED entries, in priority order (highest first):
+--------------------------------------------------------------------------------
+
+1. UI affordance to select a bitwise drill  [promoted from "someday" to
+   "next, small"]
+   The rail ships dark: bitwise is reachable only by a hand-built
+   ?operators=...&base=2 query. The runtime smoke confirmed a real user expects
+   to pick "bitwise" from the UI and cannot. This is now the strongest evidence
+   for the drill-sequence model -- an observed wall, not a roadmap abstraction.
+   The interim (client-only) version is small and does NOT need the full
+   sequence model: a control that sets the client's operator set to the bitwise
+   symbols and base to 2, appended in drill.questionQuery() exactly like the
+   existing difficulty dropdown. Backend is already done and validated; the
+   render path already reacts to payload.base. See ADR-BIT-7 for the seams and
+   the & -> %26 encoding gotcha. Effort: small (client + one control). Value:
+   turns a working-but-hidden feature into a usable one.
+
+2. Answer-format hint for non-decimal questions  [new, tiny]
+   A bitwise question accepts binary/decimal/hex answers (int(_,0) pre-pass),
+   but nothing tells the user which forms work. Set the answer input's
+   placeholder/help to "answer in binary or decimal" when base != 10 -- the
+   served base already drives the base indicator, so the signal is in hand.
+   See ADR-BIT-8. Effort: tiny. Pairs naturally with entry 1.
+
+3. Number-base conversion drill (Phase 4.2)  [ready, trivial after this rail]
+   Reuses format_integer_in_base and the int(_,0) normalization directly.
+   Trigger met (this rail is green). Effort: small.
+
+4. Boolean / truth-table rows (Phase 4.3, merged with roadmap #9)  [ready]
+   ^ (xor) already exists as a record. Trigger met. Effort: small-medium.
+
+--------------------------------------------------------------------------------
+DEFERRED (unchanged status, triggers restated so they are not lost):
+--------------------------------------------------------------------------------
+
+- Drill-sequence model (the schedulable "drill" object): build AFTER two or
+  three real drill types exist, from instances rather than one instance plus a
+  guess. Entry 1 above is the interim that does NOT require it. (ADR-BIT-7)
+- Unary ~: needs the int-leaf -> {value, base} node-shape change; pay it with
+  per-leaf base if ever wanted. (ADR-BIT-9)
+- Signed / two's-complement content: content-design problem (present a bit
+  pattern before its signed reading), not an operator problem. (ADR-BIT-3)
+- Masking drills: the trigger for turning ADR-BIT-4's zero-suppression from
+  inert-and-declared into a live result_constraint.
+- 16/32-bit or hex-at-higher-rungs display: arrives WITH its caller, not on a
+  guessed-future rung field. (ADR-BIT-3)
+- allowed_range_fields duplication: make the property test import config's table
+  instead of restating it. (small cleanup; flagged in-code at both sites)
+
+--------------------------------------------------------------------------------
+WHY THE RAIL DECOMPOSED CLEANLY (keep as the reusable heuristic):
+--------------------------------------------------------------------------------
+An operator is "easy" -- addable as a record, not a rewrite -- iff it is binary,
+integer-in/integer-out with bounded magnitude, and renders infix. All five
+bitwise operators pass; ~ fails on arity. That gate is why this was eleven small
+commits. Apply it to any future operator before estimating.

@@ -139,7 +139,43 @@ _EXPONENT_POWER_RANGE = (2, 3)
 # Operators enabled by default, by symbol. Used when a session config does
 # not specify a custom operator set. Every entry must match a record in
 # OPERATOR_DEFINITIONS (validated in C-006).
-OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "^"]
+OPERATOR_SYMBOLS: list[str] = ["+", "-", "*", "/", "%", "**"]
+
+# The conventional binding-tier ladder, as declared DATA a checker reads (not a
+# number typed into each operator record and asserted in one test). Symbol ->
+# tier; a SMALLER tier binds LESS tightly (is parenthesized under a larger-tier
+# parent). logic._check_conventional_precedence asserts, at import, that every
+# OPERATOR record's precedence field equals its entry here, both directions --
+# so the ladder cannot silently drift from the records that render by it.
+#
+# The full conventional ladder places the bitwise operators BELOW + - (C and
+# Python both do: shift, then &, then ^, then |, all looser than additive):
+#     | 1, ^ 2, & 3, << >> 4, + - 5, * / % 6, ** 7
+# The bitwise rows and their tiers 1..4 land in C-BIT-e together with their
+# operator records, so the guard stays fully bidirectional at every commit
+# rather than carrying entries with no record.
+_CONVENTIONAL_PRECEDENCE: dict[str, int] = {
+    "|": 1,
+    "^": 2,
+    "&": 3,
+    "<<": 4,
+    ">>": 4,
+    "+": 5,
+    "-": 5,
+    "*": 6,
+    "/": 6,
+    "%": 6,
+    "**": 7,
+}
+
+# Bitwise questions render in fixed-width binary so bit position aligns (finding
+# D: 0b00000101 teaches where 0b101 does not). The width is a MODULE constant,
+# not a rung field (finding F): no user has asked for a second width, and
+# putting it on the rung record would braid the DISPLAY model into the
+# DIFFICULTY model. When a drill genuinely needs 16- or 32-bit display it
+# arrives with its caller; until then, 8. The formatter takes width as a
+# parameter (it stays ignorant of this constant); the caller reads this.
+_BITWISE_DISPLAY_WIDTH: int = 8
 
 # #5 nested-expression generation config. These are MODULE CONSTANTS, not
 # function parameters: generate_expression's signature does not change (Lens 3/4
@@ -189,11 +225,11 @@ _MAX_RESULT_VALUE = None
 # INCOHERENT against this generator, because the operators do not share one
 # range semantics -- + and - draw operands directly, * and / use a narrower
 # range whose meaning differs (/ DERIVES its dividend as divisor*quotient), %
-# carries a separate divisor range, and ^ carries a separate power range with
+# carries a separate divisor range, and ** carries a separate power range with
 # almost no magnitude headroom (12^3 = 1728 is already at the UI ceiling,
 # ADR-028). So each rung declares the values PER OPERATOR, read from the same
 # record fields the operator's own strategy reads (operand_min/max, plus
-# divisor_min/max for %, exponent_min/max for ^). A rung carries NO callables;
+# divisor_min/max for %, exponent_min/max for **). A rung carries NO callables;
 # it is scalar data only (ADR-008 -- CONFIG holds scalars, LOGIC holds the
 # callables that consume them).
 #
@@ -204,14 +240,14 @@ _MAX_RESULT_VALUE = None
 #     rungs raise operator_depth and recurse_probability, so the tree grows more
 #     leaves; leaf_count is monotone non-decreasing across rungs. This is the
 #     near-dominant structural feature that earns shape C for the common case.
-#   - MAGNITUDE regime (leaf-only mixes / % ^, which cannot nest): leaf_count is
+#   - MAGNITUDE regime (leaf-only mixes / % **, which cannot nest): leaf_count is
 #     a CONSTANT point mass (always 2 -- measured, not assumed), so difficulty
 #     rides operand MAGNITUDE instead (wider ranges), pinned by a separate
 #     magnitude-monotonicity assertion.
 #
 # HONESTY CAVEAT (stated so a future reader does not over-trust the number): a
 # rung is a heuristic over STRUCTURAL features, not a validated measure of
-# cognitive load, and it is NOT a cross-mix cardinal scale -- 7 % 3 and 2 ^ 3
+# cognitive load, and it is NOT a cross-mix cardinal scale -- 7 % 3 and 2 ** 3
 # both have leaf_count 2 and are not commensurable by it. A higher rung produces
 # reliably harder questions ON AVERAGE WITHIN a given operator mix.
 #
@@ -224,7 +260,7 @@ _MAX_RESULT_VALUE = None
 #   operator_ranges    -- per-operator scaled range fields, keyed by symbol. Each
 #                         value is a dict of the SAME field names the operator's
 #                         record/strategy reads. Composable + - * and the / base
-#                         use operand_min/max; % adds divisor_min/max; ^ adds
+#                         use operand_min/max; % adds divisor_min/max; ** adds
 #                         exponent_min/max. A rung need not list every operator;
 #                         an operator omitted from a rung keeps its OPERATOR_DEFINITIONS
 #                         default range (so a rung only states what it CHANGES).
@@ -258,11 +294,32 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 2,
                 "divisor_max": 6,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 8,
                 "exponent_min": 2,
                 "exponent_max": 2,
+            },
+            # Bitwise (C-BIT-i). Difficulty for bitwise is bit-WIDTH, not decimal
+            # magnitude (finding D: bit position is the thing being learned), so
+            # the progression widens the operand range across rungs. Rung 1 is
+            # the gentlest: 3-bit operands, small shifts. All results stay within
+            # the 8-bit display width. & ^ | scale operand_min/max; << >> also
+            # scale the shift amount.
+            "&": {"operand_min": 1, "operand_max": 7},
+            "^": {"operand_min": 1, "operand_max": 7},
+            "|": {"operand_min": 1, "operand_max": 7},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 3,
+                "shift_min": 1,
+                "shift_max": 2,
+            },
+            ">>": {
+                "operand_min": 4,
+                "operand_max": 15,
+                "shift_min": 1,
+                "shift_max": 2,
             },
         },
     },
@@ -286,18 +343,34 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 2,
                 "divisor_max": 12,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 12,
                 "exponent_min": 2,
                 "exponent_max": 3,
+            },
+            # Bitwise rung 2: 4-bit operands, shifts up to 3.
+            "&": {"operand_min": 1, "operand_max": 15},
+            "^": {"operand_min": 1, "operand_max": 15},
+            "|": {"operand_min": 1, "operand_max": 15},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 7,
+                "shift_min": 1,
+                "shift_max": 3,
+            },
+            ">>": {
+                "operand_min": 8,
+                "operand_max": 63,
+                "shift_min": 1,
+                "shift_max": 3,
             },
         },
     },
     {
         "rung": 3,
         # More coordination (higher recurse) AND wider magnitude for the leaf-only
-        # operators that depth cannot reach. ^ holds its baseline range (no
+        # operators that depth cannot reach. ** holds its baseline range (no
         # headroom: 12^3 already near the UI ceiling, Q2/ADR-039).
         "operator_depth": 2,
         "recurse_probability": 0.7,
@@ -313,11 +386,27 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 3,
                 "divisor_max": 15,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 12,
                 "exponent_min": 2,
                 "exponent_max": 3,
+            },
+            # Bitwise rung 3: 6-bit operands, full 1..4 shift range.
+            "&": {"operand_min": 1, "operand_max": 63},
+            "^": {"operand_min": 1, "operand_max": 63},
+            "|": {"operand_min": 1, "operand_max": 63},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 15,
+                "shift_min": 1,
+                "shift_max": 4,
+            },
+            ">>": {
+                "operand_min": 16,
+                "operand_max": 127,
+                "shift_min": 1,
+                "shift_max": 4,
             },
         },
     },
@@ -343,11 +432,31 @@ DIFFICULTY_RUNGS: list[dict] = [
                 "divisor_min": 3,
                 "divisor_max": 18,
             },
-            "^": {
+            "**": {
                 "operand_min": 2,
                 "operand_max": 12,
                 "exponent_min": 2,
                 "exponent_max": 3,
+            },
+            # Bitwise rung 4: full 8-bit operands. max_result_value (100000) is
+            # tuned for * and does NOT starve bitwise: every bitwise result here
+            # stays <= 255 (& ^ | <= 255; << left<=15 shift<=4 -> 240; >>
+            # left<=255 -> <=255), far under the ceiling. The N=5000 generation
+            # test asserts no RuntimeError against _MAX_GENERATION_ATTEMPTS.
+            "&": {"operand_min": 1, "operand_max": 255},
+            "^": {"operand_min": 1, "operand_max": 255},
+            "|": {"operand_min": 1, "operand_max": 255},
+            "<<": {
+                "operand_min": 1,
+                "operand_max": 15,
+                "shift_min": 1,
+                "shift_max": 4,
+            },
+            ">>": {
+                "operand_min": 8,
+                "operand_max": 255,
+                "shift_min": 1,
+                "shift_max": 4,
             },
         },
     },
@@ -382,14 +491,31 @@ def _check_difficulty_rungs_consistency() -> None:
         )
 
     # The range fields each operator symbol legitimately carries. A rung may
-    # scale any subset of these for an operator, but no others.
+    # scale any subset of these for an operator, but no others. operand_min/max
+    # for all; divisor_min/max only for %; exponent_min/max only for **; the
+    # bitwise operators & ^ | carry only operand_min/max, and the shift
+    # operators << >> add shift_min/max for the shift amount (C-BIT-d). The
+    # bitwise entries are present here before their operator records exist
+    # (records land in C-BIT-e) and before any rung lists them (C-BIT-i); this
+    # is safe because the table is index-only -- the guard below reads
+    # allowed_range_fields[symbol] only for symbols a rung actually names.
+    #
+    # DUPLICATION FLAG (C-BIT-d, do not fix here): this exact table is mirrored
+    # in tests/test_generator_property.py::test_difficulty_rungs_field_shape_per_operator.
+    # Two tables of one fact; a later thread should have the test import this one
+    # rather than restate it. Recorded in the ADR.
     allowed_range_fields = {
         "+": {"operand_min", "operand_max"},
         "-": {"operand_min", "operand_max"},
         "*": {"operand_min", "operand_max"},
         "/": {"operand_min", "operand_max"},
         "%": {"operand_min", "operand_max", "divisor_min", "divisor_max"},
-        "^": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+        "**": {"operand_min", "operand_max", "exponent_min", "exponent_max"},
+        "&": {"operand_min", "operand_max"},
+        "^": {"operand_min", "operand_max"},
+        "|": {"operand_min", "operand_max"},
+        "<<": {"operand_min", "operand_max", "shift_min", "shift_max"},
+        ">>": {"operand_min", "operand_max", "shift_min", "shift_max"},
     }
 
     for rung_record in DIFFICULTY_RUNGS:
@@ -421,7 +547,17 @@ def _check_difficulty_rungs_consistency() -> None:
                 + repr(max_result_value)
             )
         for symbol, ranges in rung_record["operator_ranges"].items():
-            if symbol not in OPERATOR_SYMBOLS:
+            # Validate against allowed_range_fields, not OPERATOR_SYMBOLS: a rung
+            # may legitimately scale an operator that ships DARK (bitwise is not
+            # in the default served set OPERATOR_SYMBOLS, but has a real record
+            # and a range-field entry). allowed_range_fields enumerates every
+            # operator that legitimately carries range fields, which is exactly
+            # the "is this a real, scalable operator" question this guard asks.
+            # (Before C-BIT-i this checked OPERATOR_SYMBOLS; the two sets were
+            # identical until bitwise shipped dark. The next line already indexes
+            # allowed_range_fields[symbol], so an operator absent from it would
+            # KeyError there regardless -- this check just fails loudly first.)
+            if symbol not in allowed_range_fields:
                 raise RuntimeError(
                     "DIFFICULTY_RUNGS rung "
                     + str(rung_label)

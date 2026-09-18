@@ -131,16 +131,43 @@ export function updateActiveRung(payload) {
   el.activeRung.hidden = false;
 }
 
+/* Show or hide the base indicator (C-BIT-j). The served payload carries the
+   number base the question was rendered in (10 on the default decimal path).
+   For a non-decimal base, name it under the prompt; otherwise hide the badge
+   so the default path stays uncluttered. Read-only; reflects the SERVED base,
+   never inferred from the question text. Bank questions carry no base, so they
+   hide it too. */
+export function updateBaseIndicator(payload) {
+  var base = (payload && payload.base !== undefined) ? payload.base : null;
+  var labels = { 2: "Binary", 16: "Hexadecimal" };
+  if (base === null || base === undefined || base === 10) {
+    el.baseIndicator.hidden = true;
+    el.baseIndicator.textContent = "";
+    return;
+  }
+  el.baseIndicator.textContent = labels[base] || ("Base " + base);
+  el.baseIndicator.hidden = false;
+}
+
 export function renderQuestion(payload) {
   el.expression.textContent = payload.question_text;
   var isArithmetic = payload.qtype === "arithmetic";
   el.expression.classList.toggle("prose", !isArithmetic);
+  /* C-BIT-j: a non-decimal base renders fixed-width binary/hex, which only
+     reads as aligned columns in a monospace face (finding H). Toggle mono for
+     an arithmetic question served in a non-decimal base; decimal keeps serif. */
+  var nonDecimal = isArithmetic
+    && payload.base !== undefined && payload.base !== 10;
+  el.expression.classList.toggle("mono", nonDecimal);
 
   /* C-018a: show the speaker for language prompts on a language bank. */
   updateSpeakerVisibility();
 
   /* C-2U-c: name the active rung under the prompt (non-default rungs only). */
   updateActiveRung(payload);
+
+  /* C-BIT-j: name the served base under the prompt (non-decimal bases only). */
+  updateBaseIndicator(payload);
 
   /* Thread N.1: surface any stored hints for this question (0 -> no control). */
   renderHints(payload.hints || []);
