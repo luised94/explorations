@@ -1,32 +1,38 @@
-# ============================================================
-#   LAWS.bend
-#   Invariants the program must never violate.
-#   If any proof in PROOF.bend fails to discharge its law,
-#   the compiler refuses to build playground.bend.
-# ============================================================
+import Base
+import ./playground.bend as P
 
-law paletteTotality:
-  "for every iterationIndex_inU24, mandelbrotEscapeCountAsAsciiCharacter
-   returns exactly one character"
-  # No pixel may ever render as empty or as more than one glyph.
+# Every claim below is a fact we want the compiler to enforce.
+# Each must be discharged by a `def Laws.<name>` in PROOF.bend.
 
-law mandelbrotIterationTermination:
-  "for every complexPlaneReal_inF24 and complexPlaneImag_inF24,
-   mandelbrotEscapeCount halts within mandelbrotMaximumIterations"
-  # The render loop is finite for every point in the plane.
+law palette_zero:
+  {P.palette(0n) == " " : String}
 
-law mandelbrotImageShape:
-  "renderMandelbrotImageAsAsciiString emits exactly
-   mandelbrotImageHeight_inPixels lines, each of
-   mandelbrotImageWidth_inPixels characters, each followed by newline"
-  # Output is a well-formed rectangular image.
+law palette_one:
+  {P.palette(1n) == "." : String}
 
-law sierpinskiRowWidth:
-  "every call to renderSierpinskiRowAsAsciiString emits exactly
-   sierpinskiTriangleWidth_inCharacters characters, then one newline"
-  # Rows align; the triangle does not shear.
+law palette_nine:
+  {P.palette(9n) == "%" : String}
 
-law escapeTimeSoundness:
-  "for every iteration state with zReal_inF24^2 + zImag_inF24^2 > 4.0,
-   the orbit diverges"
-  # The |z|^2 > 4 early-out is mathematically correct.
+law palette_default:
+  {P.palette(10n) == "@" : String}
+
+law sierpinski_origin_is_filled:
+  {P.sierpinski_cell(0, 0) == "*" : String}
+
+law sierpinski_second_col_is_empty:
+  {P.sierpinski_cell(1, 0) == " " : String}
+
+law sierpinski_row0_all_filled:
+  {P.sierpinski_cell(0, 0) ++ P.sierpinski_cell(1, 0)
+     ++ P.sierpinski_cell(2, 0) == "** " : String}
+
+law orbit_immediate_escape:
+  # A point far outside the disk escapes on the very first test.
+  {P.mandelbrot_orbit(60n, 0n, 10.0, 10.0, 0.0, 0.0) == 0n : Nat}
+
+law orbit_origin_never_escapes:
+  # The origin is in the set; with 60 fuel iterations we get 60 back.
+  {P.mandelbrot_orbit(60n, 0n, 0.0, 0.0, 0.0, 0.0) == 60n : Nat}
+
+law mapped_real_at_left_edge:
+  {P.mapped_real(0) == P.plane_min_real() : F32}

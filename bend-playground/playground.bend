@@ -1,253 +1,187 @@
+import Base
+
 # ============================================================
-#   BEND PARALLEL PLAYGROUND v3
-#   Explicit names. Data-oriented. Law-verified.
-#   Target: WSL on Windows, CPU only (no CUDA).
-# ============================================================
-#   bend run   playground.bend    # interpreter (debugging)
-#   bend run-c playground.bend    # C backend, all cores (recommended)
+#   BEND PARALLEL PLAYGROUND  (Bend 2, WSL / CPU)
+#   Mandelbrot + Sierpinski.
+#   Parallelism via `a b = f(x) g(y)` parallel calls.
+#   Termination via a Nat "fuel" argument counted down by match.
 # ============================================================
 
-# ------------------------------------------------------------
-#   Compile-time configuration
-#   (kept as zero-argument functions so names read as values)
-# ------------------------------------------------------------
+# ---------- Configuration (kept as U32 / Nat values) ----------
 
-def mandelbrotImageWidth_inPixels():        return 100
-def mandelbrotImageHeight_inPixels():       return 40
-def mandelbrotMaximumIterations():          return 60
+def image_width() -> U32:
+  80
 
-def mandelbrotComplexPlaneMinimumReal():    return -2.5
-def mandelbrotComplexPlaneMaximumReal():    return  1.0
-def mandelbrotComplexPlaneMinimumImag():    return -1.2
-def mandelbrotComplexPlaneMaximumImag():    return  1.2
+def image_height() -> U32:
+  40
 
-def sierpinskiTriangleHeight_inRows():      return 30
-def sierpinskiTriangleWidth_inCharacters(): return 60
+def image_width_nat() -> Nat:
+  80n
 
-# Hoisted loop-invariant scale factors (computed once, reused per pixel).
-def mandelbrotComplexPlaneStepRealPerPixel():
-  return (mandelbrotComplexPlaneMaximumReal() - mandelbrotComplexPlaneMinimumReal())
-         / (mandelbrotImageWidth_inPixels() + 0.0)
+def image_height_nat() -> Nat:
+  40n
 
-def mandelbrotComplexPlaneStepImagPerPixel():
-  return (mandelbrotComplexPlaneMaximumImag() - mandelbrotComplexPlaneMinimumImag())
-         / (mandelbrotImageHeight_inPixels() + 0.0)
+def max_iterations() -> Nat:
+  60n
 
-# ------------------------------------------------------------
-#   Flat, unboxed iteration state for the Mandelbrot orbit.
-#   Data-oriented: three primitives, no tag, no pointer.
-# ------------------------------------------------------------
-type MandelbrotIterationState:
-  MandelbrotIterationState {
-    zReal_inF24:            f24,
-    zImag_inF24:            f24,
-    iterationsCompleted:    u24
-  }
+def plane_min_real() -> F32:
+  -2.0
 
-# ------------------------------------------------------------
-#   Palette: iteration count -> one ASCII glyph.
-#   Inlined into the pixel function below; kept as a separate
-#   name here only so LAWS.bend can refer to it symbolically.
-# ------------------------------------------------------------
-def mandelbrotEscapeCountAsAsciiCharacter(iterationCount_inIterations):
-  match iterationCount_inIterations:
-    case 0: return " "
-    case 1: return "."
-    case 2: return ","
-    case 3: return ":"
-    case 4: return ";"
-    case 5: return "!"
-    case 6: return "|"
-    case 7: return "*"
-    case 8: return "#"
-    case 9: return "%"
-    case _: return "@"
+def plane_max_real() -> F32:
+  0.5
 
-# ------------------------------------------------------------
-#   MANDELBROT  --  one pixel, fully inlined.
-#
-#   Fuses into a single function body:
-#     * complexPlane mapping        (from pixel coordinates)
-#     * the z = z^2 + c iteration   (via bend + fork)
-#     * the escape-time test        (|z|^2 > 4.0)
-#     * the palette lookup          (inlined match)
-# ------------------------------------------------------------
-def renderMandelbrotPixelAsAsciiCharacter(
-  pixelColumnIndex_inPixels,
-  pixelRowIndex_inPixels
-):
-  let complexPlaneReal_inF24 =
-    mandelbrotComplexPlaneMinimumReal()
-      + mandelbrotComplexPlaneStepRealPerPixel() * (pixelColumnIndex_inPixels + 0.0)
+def plane_min_imag() -> F32:
+  -1.25
 
-  let complexPlaneImag_inF24 =
-    mandelbrotComplexPlaneMinimumImag()
-      + mandelbrotComplexPlaneStepImagPerPixel() * (pixelRowIndex_inPixels + 0.0)
+def plane_max_imag() -> F32:
+  1.25
 
-  let initialIterationState = MandelbrotIterationState {
-    zReal_inF24:        0.0,
-    zImag_inF24:        0.0,
-    iterationsCompleted: 0
-  }
+def triangle_rows_nat() -> Nat:
+  30n
 
-  bend iterationState = initialIterationState:
-    when iterationState.iterationsCompleted < mandelbrotMaximumIterations():
-      let zRealSquared_inF24 = iterationState.zReal_inF24 * iterationState.zReal_inF24
-      let zImagSquared_inF24 = iterationState.zImag_inF24 * iterationState.zImag_inF24
-      if zRealSquared_inF24 + zImagSquared_inF24 > 4.0:
-        match iterationState.iterationsCompleted:
-          case 0: return " "
-          case 1: return "."
-          case 2: return ","
-          case 3: return ":"
-          case 4: return ";"
-          case 5: return "!"
-          case 6: return "|"
-          case 7: return "*"
-          case 8: return "#"
-          case 9: return "%"
-          case _: return "@"
-      else:
-        let nextZReal_inF24 =
-          zRealSquared_inF24 - zImagSquared_inF24 + complexPlaneReal_inF24
-        let nextZImag_inF24 =
-          2.0 * iterationState.zReal_inF24 * iterationState.zImag_inF24
-            + complexPlaneImag_inF24
-        let nextIterationState = MandelbrotIterationState {
-          zReal_inF24:        nextZReal_inF24,
-          zImag_inF24:        nextZImag_inF24,
-          iterationsCompleted: iterationState.iterationsCompleted + 1
-        }
-        return fork(nextIterationState)
-    else:
-      return "@"
+def triangle_cols_nat() -> Nat:
+  60n
 
-# ------------------------------------------------------------
-#   One Mandelbrot row, accumulator style.
-# ------------------------------------------------------------
-def renderMandelbrotRowAsAsciiString(
-  pixelRowIndex_inPixels,
-  imageWidth_inPixels
-):
-  bend columnAccumulator = 0, stringAccumulator = "":
-    when columnAccumulator < imageWidth_inPixels:
-      let pixelColumnIndex_inPixels = columnAccumulator
-      let pixelGlyphAsString = renderMandelbrotPixelAsAsciiCharacter(
-        pixelColumnIndex_inPixels,
-        pixelRowIndex_inPixels
-      )
-      return fork(
-        columnAccumulator + 1,
-        stringAccumulator + pixelGlyphAsString
-      )
-    else:
-      return stringAccumulator + "\n"
+# ---------- Palette: iteration count -> one ASCII glyph ----------
+# Matched on Nat literals. The wildcard `_` is the default.
 
-# ------------------------------------------------------------
-#   Full Mandelbrot image, one row per fork.
-# ------------------------------------------------------------
-def renderMandelbrotImageAsAsciiString(
-  imageWidth_inPixels,
-  imageHeight_inPixels
-):
-  bend rowAccumulator = 0, stringAccumulator = "":
-    when rowAccumulator < imageHeight_inPixels:
-      let pixelRowIndex_inPixels = rowAccumulator
-      let rowAsAsciiString = renderMandelbrotRowAsAsciiString(
-        pixelRowIndex_inPixels,
-        imageWidth_inPixels
-      )
-      return fork(
-        rowAccumulator + 1,
-        stringAccumulator + rowAsAsciiString
-      )
-    else:
-      return stringAccumulator
+def palette(iteration: Nat) -> String:
+  match iteration:
+    case 0n: " "
+    case 1n: "."
+    case 2n: ","
+    case 3n: ":"
+    case 4n: ";"
+    case 5n: "!"
+    case 6n: "|"
+    case 7n: "*"
+    case 8n: "#"
+    case 9n: "%"
+    case _:  "@"
 
-# ------------------------------------------------------------
-#   SIERPINSKI  --  Lucas's theorem, one cell inlined.
-#   C(n, k) mod 2 == 1  <=>  (k & n) == k.
-# ------------------------------------------------------------
-def renderSierpinskiCellAsAsciiCharacter(
-  triangleColumnIndex_inU24,
-  triangleRowIndex_inU24
-):
-  if (triangleColumnIndex_inU24 & triangleRowIndex_inU24)
-       == triangleColumnIndex_inU24:
-    return "*"
-  else:
-    return " "
+# ---------- Mandelbrot: one pixel ----------
+# Coordinates come in as U32; the fuel is a Nat so the
+# termination checker sees a structurally smaller argument.
 
-def renderSierpinskiRowAsAsciiString(
-  triangleRowIndex_inU24,
-  triangleWidth_inCharacters
-):
-  bend columnAccumulator = 0, stringAccumulator = "":
-    when columnAccumulator < triangleWidth_inCharacters:
-      let triangleColumnIndex_inU24 = columnAccumulator
-      let cellAsAsciiCharacter = renderSierpinskiCellAsAsciiCharacter(
-        triangleColumnIndex_inU24,
-        triangleRowIndex_inU24
-      )
-      return fork(
-        columnAccumulator + 1,
-        stringAccumulator + cellAsAsciiCharacter
-      )
-    else:
-      return stringAccumulator + "\n"
+def mandelbrot_pixel(column: U32, row: U32) -> String:
+  palette(mandelbrot_orbit(max_iterations(), 0n, 0.0, 0.0,
+                           mapped_real(column), mapped_imag(row)))
 
-def renderSierpinskiTriangleAsAsciiString(
-  triangleHeight_inRows,
-  triangleWidth_inCharacters
-):
-  bend rowAccumulator = 0, stringAccumulator = "":
-    when rowAccumulator < triangleHeight_inRows:
-      let triangleRowIndex_inU24 = rowAccumulator
-      let rowAsAsciiString = renderSierpinskiRowAsAsciiString(
-        triangleRowIndex_inU24,
-        triangleWidth_inCharacters
-      )
-      return fork(
-        rowAccumulator + 1,
-        stringAccumulator + rowAsAsciiString
-      )
-    else:
-      return stringAccumulator
+def mapped_real(column: U32) -> F32:
+  let w = U32.to_f32(image_width())
+  let c = U32.to_f32(column)
+  (plane_min_real()
+    + (plane_max_real() - plane_min_real()) * c / w : F32)
 
-# ------------------------------------------------------------
-#   MAIN
-# ------------------------------------------------------------
-def main():
-  let imageWidth_inPixels        = mandelbrotImageWidth_inPixels()
-  let imageHeight_inPixels       = mandelbrotImageHeight_inPixels()
-  let triangleHeight_inRows      = sierpinskiTriangleHeight_inRows()
-  let triangleWidth_inCharacters = sierpinskiTriangleWidth_inCharacters()
+def mapped_imag(row: U32) -> F32:
+  let h = U32.to_f32(image_height())
+  let r = U32.to_f32(row)
+  (plane_min_imag()
+    + (plane_max_imag() - plane_min_imag()) * r / h : F32)
 
-  let headerAsAsciiString =
-    "============================================================\n"
-    + "  BEND PARALLEL PLAYGROUND v3\n"
-    + "  Explicit names. Data-oriented. Law-verified.\n"
-    + "============================================================\n\n"
-    + "--- 1. Mandelbrot Set (inlined palette, hoisted scale) ---\n"
+# -- The orbit. Fuel is the decreasing Nat; everything else is free. --
+# We cannot `match` on a computed Bool, so the escape test is passed
+# to `orbit_decide`, which matches on it as a parameter.
 
-  let mandelbrotImageAsAsciiString = renderMandelbrotImageAsAsciiString(
-    imageWidth_inPixels,
-    imageHeight_inPixels
-  )
+def mandelbrot_orbit(fuel: Nat, count: Nat,
+                     zr: F32, zi: F32, cr: F32, ci: F32) -> Nat:
+  match fuel:
+    case 0n:
+      count
+    case 1n+p:
+      let mag_sq = (zr * zr + zi * zi : F32)
+      orbit_decide(p, count, zr, zi, cr, ci, F32.is_gt(mag_sq, 4.0))
 
-  let separatorAsAsciiString =
-    "\n--- 2. Sierpinski Triangle (inlined Lucas test) ---\n"
+def orbit_decide(fuel: Nat, count: Nat,
+                 zr: F32, zi: F32, cr: F32, ci: F32,
+                 has_escaped: Bool) -> Nat:
+  match has_escaped:
+    case True{}:
+      count
+    case False{}:
+      let next_zr = (zr * zr - zi * zi + cr : F32)
+      let next_zi = (2.0 * zr * zi + ci : F32)
+      mandelbrot_orbit(fuel, Nat.add(count, 1n), next_zr, next_zi, cr, ci)
 
-  let sierpinskiTriangleAsAsciiString = renderSierpinskiTriangleAsAsciiString(
-    triangleHeight_inRows,
-    triangleWidth_inCharacters
-  )
+# ---------- Mandelbrot: one row, parallel over columns ----------
+# `+row` and `+col` because the parallel call uses each twice.
 
-  let footerAsAsciiString =
-    "\n--- Done. Every row forked in parallel by HVM2 on WSL. ---\n"
+def render_mandelbrot_row(+row: U32, cols_left: Nat, +col: U32) -> String:
+  match cols_left:
+    case 0n:
+      "\n"
+    case 1n+p:
+      let ch rest = mandelbrot_pixel(col, row)
+                    render_mandelbrot_row(row, p, U32.add(col, 1))
+      ch ++ rest
 
-  return headerAsAsciiString
-    + mandelbrotImageAsAsciiString
-    + separatorAsAsciiString
-    + sierpinskiTriangleAsAsciiString
-    + footerAsAsciiString
+# ---------- Mandelbrot: whole image, parallel over rows ----------
+
+def render_mandelbrot(rows_left: Nat, +row: U32) -> String:
+  match rows_left:
+    case 0n:
+      ""
+    case 1n+p:
+      let this rest = render_mandelbrot_row(row, image_width_nat(), 0)
+                       render_mandelbrot(p, U32.add(row, 1))
+      this ++ rest
+
+# ---------- Sierpinski: one cell ----------
+# Lucas's theorem: C(n,k) mod 2 == 1  <=>  (k & n) == k.
+# The Bool result is passed to a helper that matches on it.
+
+def sierpinski_cell(col: U32, row: U32) -> String:
+  sierpinski_cell_decide(U32.is_eq(U32.and(col, row), col))
+
+def sierpinski_cell_decide(is_filled: Bool) -> String:
+  match is_filled:
+    case True{}:  "*"
+    case False{}: " "
+
+# ---------- Sierpinski: one row, parallel over columns ----------
+
+def render_sierpinski_row(+row: U32, cols_left: Nat, +col: U32) -> String:
+  match cols_left:
+    case 0n:
+      "\n"
+    case 1n+p:
+      let ch rest = sierpinski_cell(col, row)
+                    render_sierpinski_row(row, p, U32.add(col, 1))
+      ch ++ rest
+
+# ---------- Sierpinski: whole triangle, parallel over rows ----------
+
+def render_sierpinski(rows_left: Nat, +row: U32) -> String:
+  match rows_left:
+    case 0n:
+      ""
+    case 1n+p:
+      let this rest = render_sierpinski_row(row, triangle_cols_nat(), 0)
+                       render_sierpinski(p, U32.add(row, 1))
+      this ++ rest
+
+# ---------- Main ----------
+
+def header() -> String:
+  "============================================================\n"
+  ++ "  BEND PARALLEL PLAYGROUND  (Bend 2, WSL / CPU)\n"
+  ++ "============================================================\n\n"
+  ++ "--- 1. Mandelbrot Set ---\n"
+
+def separator() -> String:
+  "\n--- 2. Sierpinski Triangle ---\n"
+
+def footer() -> String:
+  "\n--- Done. Rows and columns forked via parallel calls. ---\n"
+
+def render_everything() -> String:
+  header()
+  ++ render_mandelbrot(image_height_nat(), 0)
+  ++ separator()
+  ++ render_sierpinski(triangle_rows_nat(), 0)
+  ++ footer()
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    IO.print(render_everything())
+    return Unit{}

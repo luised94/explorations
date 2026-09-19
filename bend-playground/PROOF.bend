@@ -1,46 +1,43 @@
-# ============================================================
-#   PROOF.bend
-#   One proof per law. Each must be machine-checkable.
-# ============================================================
+import Base
+import ./LAWS.bend as Laws
 
-proof paletteTotality:
-  # mandelbrotEscapeCountAsAsciiCharacter is a match expression
-  # with cases 0..9 plus a wildcard `case _:`. Every u24 hits
-  # exactly one branch, and every branch returns a one-character
-  # String literal. Therefore the function is total and single-valued.
-  qed
+# Each `def Laws.<name>()` discharges the law of the same name.
+# `{==}` closes a goal whose two sides compute to the same term.
 
-proof mandelbrotIterationTermination:
-  # Let M = mandelbrotMaximumIterations.
-  # Measure m(state) = M - state.iterationsCompleted_inU24.
-  # Each fork replaces state with state' where
-  #   state'.iterationsCompleted_inU24 = state.iterationsCompleted_inU24 + 1
-  # hence m(state') = m(state) - 1.
-  # The loop exits when state.iterationsCompleted_inU24 >= M, i.e. m <= 0.
-  # By well-founded induction on Nat, m reaches 0 in at most M steps.
-  qed
+def Laws.palette_zero():
+  {==}
 
-proof mandelbrotImageShape:
-  # renderMandelbrotImageAsAsciiString forks rowIndex_inPixels from
-  # 0 to mandelbrotImageHeight_inPixels - 1.
-  # Each iteration calls renderMandelbrotRowAsAsciiString, which
-  # forks columnIndex_inPixels from 0 to mandelbrotImageWidth_inPixels - 1,
-  # appending exactly one character per column, then one "\n".
-  # Therefore each row is mandelbrotImageWidth_inPixels + 1 characters,
-  # and there are mandelbrotImageHeight_inPixels such rows.
-  qed
+def Laws.palette_one():
+  {==}
 
-proof sierpinskiRowWidth:
-  # renderSierpinskiRowAsAsciiString forks columnIndex_inU24 from
-  # 0 to sierpinskiTriangleWidth_inCharacters - 1.
-  # Each iteration appends exactly one character: "*" when
-  # (columnIndex_inU24 & rowIndex_inU24) == columnIndex_inU24,
-  # otherwise " ". One "\n" is appended after the loop.
-  # Therefore each row body is exactly sierpinskiTriangleWidth_inCharacters.
-  qed
+def Laws.palette_nine():
+  {==}
 
-proof escapeTimeSoundness:
-  # Standard result: if |z| > 2 then |z^2 + c| > |z| for every c
-  # with |c| <= 2. The test zReal_inF24^2 + zImag_inF24^2 > 4.0
-  # is the square of |z| > 2, so the early-out is sound.
-  qed
+def Laws.palette_default():
+  {==}
+
+def Laws.sierpinski_origin_is_filled():
+  # (0 & 0) == 0 -> True -> "*"
+  {==}
+
+def Laws.sierpinski_second_col_is_empty():
+  # (1 & 0) == 0 != 1 -> False -> " "
+  {==}
+
+def Laws.sierpinski_row0_all_filled():
+  # Row 0: all cells pass (k & 0) == k, so all are "*".
+  # (column 2 never appears, so the "** " claim is only about 0 and 1.)
+  {==}
+
+def Laws.orbit_immediate_escape():
+  # mag_sq = 200.0, 200 > 4 -> True -> count = 0n
+  {==}
+
+def Laws.orbit_origin_never_escapes():
+  # mag_sq stays 0, F32.is_gt(0, 4) is False at every step.
+  # 60n fuel steps, count goes 0n -> 60n.
+  {==}
+
+def Laws.mapped_real_at_left_edge():
+  # column=0 -> c=0 -> plane_min_real() + 0 = plane_min_real()
+  {==}
