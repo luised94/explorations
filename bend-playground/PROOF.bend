@@ -1,9 +1,6 @@
 import Base
 import ./LAWS.bend as Laws
 
-# Each `def Laws.<name>()` discharges the law of the same name.
-# `{==}` closes a goal whose two sides compute to the same term.
-
 def Laws.palette_zero():
   {==}
 
@@ -17,27 +14,24 @@ def Laws.palette_default():
   {==}
 
 def Laws.sierpinski_origin_is_filled():
-  # (0 & 0) == 0 -> True -> "*"
+  # and(0,0) = 0, is_eq(0, 0) = True, "*"
   {==}
 
 def Laws.sierpinski_second_col_is_empty():
-  # (1 & 0) == 0 != 1 -> False -> " "
+  # and(1,0) = 0, is_eq(0, 1) = False, " "
   {==}
 
-def Laws.sierpinski_row0_all_filled():
-  # Row 0: all cells pass (k & 0) == k, so all are "*".
-  # (column 2 never appears, so the "** " claim is only about 0 and 1.)
+def Laws.sierpinski_off_axis_is_filled():
+  # and(0,1) = 0, is_eq(0, 0) = True, "*"
   {==}
 
 def Laws.orbit_immediate_escape():
-  # mag_sq = 200.0, 200 > 4 -> True -> count = 0n
+  # The initial magnitude squared is 200, above the threshold of 4, so the
+  # orbit enters the loop already escaped and returns on the first match,
+  # before any iteration is counted.
   {==}
 
 def Laws.orbit_origin_never_escapes():
-  # mag_sq stays 0, F32.is_gt(0, 4) is False at every step.
-  # 60n fuel steps, count goes 0n -> 60n.
-  {==}
-
-def Laws.mapped_real_at_left_edge():
-  # column=0 -> c=0 -> plane_min_real() + 0 = plane_min_real()
+  # The magnitude squared stays 0, the escape flag is never set, and fuel
+  # runs from 60n down to 0n with the count incremented on every step.
   {==}
