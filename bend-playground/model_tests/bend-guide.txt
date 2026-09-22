@@ -58,6 +58,11 @@ Here, `is Data` declares that `Shape` may be copied, while `is Type` keeps it
 non-copiable. The `+` annotation before a variable name allows using it more
 than once, if the variable is Data-kinded.
 
+A variable is used once per occurrence in the body: every argument of a call and
+every operand of an operator counts, so `U32.is_eq(U32.and(a, b), a)` reads `a`
+twice and needs `+a` at its binding site. The diagnostic is
+`<name> (consumed more than once)`.
+
 Bend does almost no inference, meaning it requires more annotations than similar
 languages. This is what allows Bend's checker to be significantly faster than
 other provers, and its error messages more precise, at the expense of programs
@@ -107,20 +112,54 @@ list. Bend verifies termination by requiring recursive calls to use smaller
 parts of their inputs, obtained through pattern matching. The check reads the
 arguments of a recursive call from left to right: each must be passed unchanged
 until one is a smaller part of its parameter, and the ones after it are free.
-So, put the parameter that shrinks first. Also, is no `if` syntax yet. Use
-`match` on `True{}` and `False{}` instead.
+So, put the parameter that shrinks first:
 
-Termination is mandatory and mutual recursion is not allowed. Both restrictions
-keep Bend's proofs sound, as a function that never returns could otherwise prove
-anything. A loop bounded by the outside world, like a server's, counts down a
-`Nat` fuel argument instead, and two mutually recursive functions become one def
-with an extra argument selecting which to run. A `def` marked `@unsafe` recurses
-freely, but falls outside Bend's proof guarantees.
+```python
+def go(row: U32, col: U32, left: Nat) -> String:   # rejected
+  go(row, U32.add(col, 1), left_minus_one)         # col changes before a shrink
+
+def go(left: Nat, row: U32, col: U32) -> String:   # accepted
+  go(left_minus_one, row, U32.add(col, 1))         # shrinks first, rest are free
+```
+
+The diagnostic is `expected a decreasing self-call`. Also, is no `if` syntax
+yet. Use `match` on `True{}` and `False{}` instead.
+
+Termination is mandatory, and two ordinary `def`s may not call each other. Both
+restrictions keep Bend's proofs sound, as a function that never returns could
+otherwise prove anything. A loop bounded by the outside world, like a server's,
+counts down a `Nat` fuel argument instead.
+
+Two functions that must call each other have two routes. The first is to make
+them one def with an extra argument selecting which to run. A loop that has to
+branch on a computed `Bool` takes that `Bool` as a parameter and matches it,
+with the caller computing the next one; do not delegate the branch to a helper
+that calls back, which is mutual recursion however it is spelled. The second
+route is to forward-declare the callee as a `law` carrying its type and no
+equation, write the helper that calls it, then fill the law with a `def` below.
+Base does this four times: `Word.adc`/`Word.adc.con`,
+`String.trim_start`/`String.trim_start.if`, `U32.show.go`/`U32.show.fin` and
+`Map.put`/`Map.put.bit`. In all four, the parameter that shrinks is first in the
+law's `for` list. A law that is declared and never filled cannot be called from
+running code: `an unfilled law is a dead claim`.
+
+A name must be declared above the line that uses it; Bend does not hoist. A call
+to a `def` written further down the same file reports `expected a defined name`.
+Move the definition up, or forward-declare it with a `law` as above.
+
+A `def` marked `@unsafe` recurses freely, but falls outside Bend's proof
+guarantees.
 
 A `match` inspects a parameter or a variable bound by a pattern, never a
 computed value: `match sum(xs, 0):` is rejected. Scrutinees follow binder order,
-and a `let` may not precede a `match` on a parameter. To match on a computed
-value, pass it to a helper that matches on its parameter.
+meaning the order the parameters appear in the def's own signature: a def taking
+`(fuel: Nat, stop: Bool)` may write `match fuel stop:`, or nest `match fuel:`
+then `match stop:`, but matching `stop` before `fuel` is rejected with
+`a match on a parameter or field (this name is a def or a consumed binder)`.
+A `let` may not precede a `match` on a parameter. To match on a computed
+value, pass it to a helper that matches on its parameter -- and if the branch
+decides whether to recurse, make the value a parameter of the recursive def
+instead, because a helper that calls back is mutual recursion.
 
 ### Parallelism
 
@@ -219,7 +258,10 @@ always free. Reusable variables require `Data`: functions, arrays and IO handles
 are `Type`, so they can never be copied. Note that `main` marks nothing: you
 write `+` where you need the copies, and `replicate` pays for them with a
 reference count at runtime. Matching a `+` value hands out `+` fields; on a
-plain one, write `+r` in the pattern to make a field reusable.
+plain one, write `+r` in the pattern to make a field reusable. The `1n+p` sugar
+is a constructor pattern, so this applies to it: on a plain `Nat`, `case 1n+p:`
+binds `p` affinely and `case 1n++p:` binds it reusable; on a `+` parameter,
+`case 1n+p:` already hands out a reusable `p`.
 
 ### Kinds
 
@@ -303,8 +345,14 @@ on which humans can state precise specs for AI's to implement. That is, instead
 of writing a natural language prompt such as "implement a function that sorts a
 list", users can write precise laws like "implement a function F such that, for
 every list of numbers, `F(list)` returns the same numbers in ascending order".
-Models are then guaranteed to respond with bug-free code, since Bend will demand
-that they provide an actual proof.
+Bend then demands an actual proof, and guarantees that the code satisfies the
+laws as written -- exactly those, and nothing more. A law weaker than intended
+is discharged just as easily as a strong one: a law that counts the rows a
+function returns is proven even if every row is a duplicate, and a law about a
+function's output length holds whatever the output contains. What is guaranteed
+is only as strong as what the human states, so state the property itself rather
+than a consequence of it, and read a discharged law as what it says, not as what
+it was meant to say.
 
 > We envision that "law-driven development" will eventually become the way humans
 > use AI to write and maintain large codebases, as it is the perfect middle point
@@ -482,8 +530,8 @@ def main() -> U32:
 
 The alias is local to the importing file, and dots inside a name are just
 characters: `U32.show` needs no module. A law left open in one file may be
-filled in another as `def M.name(..)`, so a proof can ship separately from its
-claim. `import 0x<hash>/main.bend as P` imports a package by content hash,
+filled in another as `def M.name(..)`, where `M` is the alias the importing file
+chose, so a proof can ship separately from its claim. `import 0x<hash>/main.bend as P` imports a package by content hash,
 fetched from the hub and checked against it; `bend main.bend --publish` uploads
 a file with everything it imports and prints that line.
 
@@ -575,7 +623,9 @@ do M<xs.., R>:                           # a monadic block over M.bind, M.pure
 Inside `(.. : T)`, `+ - * / %` call `T.add` through `T.mod`, `.&. .|. .^.` the
 bit operations, `<< >>` the shifts (by a `Nat`), and `< <= > >=` the `T.is_lt`
 family; without a `: T` they belong to `Nat`. `&& ||` work on `Bool` and `++` on
-`String` anywhere. Operators need spaces on both sides.
+`String` anywhere. Operators need spaces on both sides. There is no unary minus:
+`-2.0` is not a literal and does not parse. Write `F32.neg(2.0)`, or
+`(0.0 - 2.0 : F32)`, and `Nat.sub` for `Nat`.
 Equality of values is a call, `T.is_eq(a, b)`; `==` is only the type.
 A `Nat` literal past `256n` is `U32.to_nat(n)` underneath, up to `4294967295n`.
 
