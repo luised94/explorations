@@ -80,34 +80,36 @@ def Laws.Sierpinski.render_rows_count(level, row_start, total_columns):
     case 0n:
       {==}
     case 1n+levels_left:
-      # row_start and total_columns are each read four times below (both
-      # halves' render_rows calls, both halves' induction-hypothesis
-      # calls). Marking them + in LAWS.bend's law did not carry through to
-      # this cross-file def -- the checker still reported total_columns
-      # "consumed more than once" at this def's own signature, unlike
-      # row_offset's identical problem below (a same-file let), which +
-      # did fix. Re-binding each to a fresh + let here, the same
-      # mechanism already proven to work twice in this file, sidesteps
-      # the question of whether that's a real cross-file inheritance gap
-      # or just this checker reporting one offending binder per run.
+      # row_start, total_columns and levels_left are each read several
+      # times below (both halves' render_rows calls, both halves'
+      # induction-hypothesis calls, row_offset's own computation). Marking
+      # the law's level/row_start/total_columns + did not carry through to
+      # this cross-file def, or through the match that extracts
+      # levels_left from a +level -- the checker reported each one
+      # individually, one run at a time, as "consumed more than once,"
+      # confirming this is a real gap in cross-file quantity inheritance
+      # rather than a one-off. Re-binding each to a fresh + let here, the
+      # same mechanism already proven to work for row_offset and the
+      # Mandelbrot escape values, sidesteps it entirely.
+      +levels_left_reusable = levels_left
       +row_start_reusable = row_start
       +total_columns_reusable = total_columns
       # Read twice below: once building right_rows, once again inside
       # right_matches_count's induction-hypothesis call. Same class of
       # error as above.
-      +row_offset = U32.pow(2, levels_left)
-      left_rows = Playground.Sierpinski.render_rows(levels_left, row_start_reusable, total_columns_reusable)
-      right_rows = Playground.Sierpinski.render_rows(levels_left, U32.add(row_start_reusable, row_offset), total_columns_reusable)
-      rows_per_half = Playground.Sierpinski.rows_count(levels_left)
+      +row_offset = U32.pow(2, levels_left_reusable)
+      left_rows = Playground.Sierpinski.render_rows(levels_left_reusable, row_start_reusable, total_columns_reusable)
+      right_rows = Playground.Sierpinski.render_rows(levels_left_reusable, U32.add(row_start_reusable, row_offset), total_columns_reusable)
+      rows_per_half = Playground.Sierpinski.rows_count(levels_left_reusable)
       lengths_step = List.append_length(String, left_rows, right_rows)
       left_matches_count = Equal.cong(Nat, Nat,
         count => Nat.add(count, List.length(&2, String, right_rows)),
         List.length(&2, String, left_rows), rows_per_half,
-        Laws.Sierpinski.render_rows_count(levels_left, row_start_reusable, total_columns_reusable))
+        Laws.Sierpinski.render_rows_count(levels_left_reusable, row_start_reusable, total_columns_reusable))
       right_matches_count = Equal.cong(Nat, Nat,
         count => Nat.add(rows_per_half, count),
         List.length(&2, String, right_rows), rows_per_half,
-        Laws.Sierpinski.render_rows_count(levels_left, U32.add(row_start_reusable, row_offset), total_columns_reusable))
+        Laws.Sierpinski.render_rows_count(levels_left_reusable, U32.add(row_start_reusable, row_offset), total_columns_reusable))
       counts_combine = Equal.trans(Nat,
         Nat.add(List.length(&2, String, left_rows), List.length(&2, String, right_rows)),
         Nat.add(rows_per_half, List.length(&2, String, right_rows)),

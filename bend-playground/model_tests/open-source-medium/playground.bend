@@ -138,19 +138,12 @@ def Mandelbrot.character_at(
   )
   Mandelbrot.pick_character(Nat.is_eq(iteration_count, max_iterations))
 
-# column_count is first because the termination checker reads the self-call's
-# arguments left to right. With start_column first, the first argument of the
-# self-call grew (1n+start_column), which the checker rejects. With
-# column_count first, rest is the first argument and it shrinks. start_column
-# still has to be carried because the two parallel halves of a row cannot see
-# each other's state; without it the right half would need to know how many
-# characters the left half produced, which would serialise the two halves.
 def Mandelbrot.row_segment(
   column_count: Nat,
-  start_column: Nat,
-  row_index: Nat,
-  width: Nat,
-  height: Nat,
+  +start_column: Nat,
+  +row_index: Nat,
+  +width: Nat,
+  +height: Nat,
   +max_iterations: Nat
 ) -> String:
   match column_count:
@@ -175,15 +168,11 @@ def Mandelbrot.row_segment(
         )
       }
 
-# Splitting the row in half is what gives the CPU or GPU two independent
-# tasks per row. Without it, one row is one task and every other lane sits
-# idle. half_width is a parameter rather than Nat.div(width, 2n) because
-# matching on the result of Nat.divmod would be a match on a computed value.
 def Mandelbrot.row(
-  row_index: Nat,
-  half_width: Nat,
-  width: Nat,
-  height: Nat,
+  +row_index: Nat,
+  +half_width: Nat,
+  +width: Nat,
+  +height: Nat,
   +max_iterations: Nat
 ) -> String:
   left_half right_half = Mandelbrot.row_segment(
@@ -193,17 +182,12 @@ def Mandelbrot.row(
   )
   String.append(left_half, right_half)
 
-# Rows are processed two at a time so a parallel let can compute them at
-# once. The two rows have identical shape and cost, so they finish together
-# and the join does not stall. The recursion inside the parallel let is on
-# after_second, a strict subterm of remaining_rows, so the termination
-# checker accepts it without an @unsafe marker.
 def Mandelbrot.lines_remaining(
   remaining_rows: Nat,
-  start_row: Nat,
-  half_width: Nat,
-  width: Nat,
-  height: Nat,
+  +start_row: Nat,
+  +half_width: Nat,
+  +width: Nat,
+  +height: Nat,
   +max_iterations: Nat
 ) -> List<&2, String>:
   match remaining_rows:
@@ -231,7 +215,7 @@ def Mandelbrot.lines_remaining(
             )
 
 def Mandelbrot.lines(
-  height: Nat,
+  +height: Nat,
   width: Nat,
   half_width: Nat,
   max_iterations: Nat
@@ -239,6 +223,7 @@ def Mandelbrot.lines(
   Mandelbrot.lines_remaining(
     height, 0n, half_width, width, height, max_iterations
   )
+
 
 # --- Sierpinski ---
 
@@ -261,13 +246,11 @@ def Sierpinski.character(column_index: Nat, actual_row: Nat) -> Char:
     )
   )
 
-# remaining_columns is first for the same reason as in
-# Mandelbrot.row_segment: the self-call must pass a shrinking argument as
-# its first argument, and current_column grows by one each step.
+
 def Sierpinski.row_segment(
   remaining_columns: Nat,
-  current_column: Nat,
-  actual_row: Nat
+  +current_column: Nat,
+  +actual_row: Nat
 ) -> String:
   match remaining_columns:
     case 0n:
@@ -278,16 +261,10 @@ def Sierpinski.row_segment(
         Sierpinski.row_segment(rest, 1n+current_column, actual_row)
       }
 
-def Sierpinski.row(actual_row: Nat, width: Nat) -> String:
-  Sierpinski.row_segment(width, 0n, actual_row)
-
-# Rows are drawn from the widest (height - 1) down to the narrowest (0), so
-# the triangle sits point-up on the terminal. Nat.sub clamps at zero, which
-# is why no guard is needed on the last step.
 def Sierpinski.lines_remaining(
   remaining_rows: Nat,
-  current_actual_row: Nat,
-  width: Nat
+  +current_actual_row: Nat,
+  +width: Nat
 ) -> List<&2, String>:
   match remaining_rows:
     case 0n:
@@ -298,7 +275,7 @@ def Sierpinski.lines_remaining(
           rest, Nat.sub(current_actual_row, 1n), width
         )
 
-def Sierpinski.lines(height: Nat, width: Nat) -> List<&2, String>:
+def Sierpinski.lines(+height: Nat, width: Nat) -> List<&2, String>:
   Sierpinski.lines_remaining(height, Nat.sub(height, 1n), width)
 
 # --- Main ---
