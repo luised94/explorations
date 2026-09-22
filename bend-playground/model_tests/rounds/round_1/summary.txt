@@ -1,0 +1,20 @@
+#### claude-opus-5
+  PROOF.bend: rendered
+  playground.bend: rendered
+
+#### claude-sonnet-5
+  PROOF.bend: rendered
+  playground.bend: rendered
+
+#### gpt5.6-terra
+  PROOF.bend: rendered
+  playground.bend: rendered
+
+#### open-source-large
+  PROOF.bend: rendered
+  playground.bend: rendered
+
+#### open-source-medium
+  PROOF.bend: rendered
+  playground.bend: rendered
+

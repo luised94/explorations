@@ -1,0 +1,45 @@
+Model test run: 2026-09-22 12:44:30 EDT
+Round: 1
+Bend version: ./run_model_tests.sh: line 70: bend: command not found
+Timeout per run: 60s
+
+===== claude-opus-5 / PROOF.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 23 ms
+
+===== claude-opus-5 / playground.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== claude-sonnet-5 / PROOF.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== claude-sonnet-5 / playground.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== gpt5.6-terra / PROOF.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 14 ms
+
+===== gpt5.6-terra / playground.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== open-source-large / PROOF.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== open-source-large / playground.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== open-source-medium / PROOF.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 13 ms
+
+===== open-source-medium / playground.bend =====
+timeout: failed to run command ‘bend’: No such file or directory
+--- exit code 127, 14 ms
+
