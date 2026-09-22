@@ -41,12 +41,14 @@ def print_lines(lines: List<&2, String>) -> IO(Unit):
 
 # --- Mandelbrot ---
 
-# The Mandelbrot set lives in real [-2.0, 0.5], imaginary [-1.25, 1.25];
-# those bounds are chosen so the picture fits the terminal without cropping.
-# The map is linear, so one multiply and one add per axis is enough.
+# A leading minus on a numeric literal is not accepted by the lexer, so the
+# negative real bound goes through F32.neg. The Mandelbrot set lives in real
+# [-2.0, 0.5], imaginary [-1.25, 1.25]; those bounds are chosen so the
+# picture fits the terminal without cropping. The map is linear, so one
+# multiply and one add per axis is enough.
 def Mandelbrot.real_coordinate(column_index: Nat, width: Nat) -> F32:
   F32.add(
-    -2.0,
+    F32.neg(2.0),
     F32.mul(2.5, F32.div(F32.from_nat(column_index), F32.from_nat(width)))
   )
 

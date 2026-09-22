@@ -24,7 +24,7 @@ import Base
 # Nat length index), making this predicate provable by induction.  Recursive
 # subdivision would require Nat subtraction proofs that add complexity
 # without insight.
-def sierpinski_is_filled(row: U32, col: U32) -> Bool:
+def sierpinski_is_filled(row: U32, +col: U32) -> Bool:
   U32.is_eq((col .&. row : U32), col)
 
 # Character for one Sierpinski cell.  '*' (code 42) when filled,

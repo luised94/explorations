@@ -1,11 +1,11 @@
-Model test run: 2026-09-22 00:36:18 EDT
+Model test run: 2026-09-22 01:37:56 EDT
 Bend version: bend 2.0.16
 Timeout per run: 60s
 
 ===== claude-opus-5 / PROOF.bend =====
 All terms check.
 bend 2.0.25 is available: run bend update
---- exit code 0, 93 ms
+--- exit code 0, 85 ms
 
 ===== claude-opus-5 / playground.bend =====
                        ...........................              
@@ -75,103 +75,232 @@ bend 2.0.25 is available: run bend update
 *                               
 
 bend 2.0.25 is available: run bend update
---- exit code 0, 102 ms
+--- exit code 0, 98 ms
 
 ===== claude-sonnet-5 / PROOF.bend =====
 Error:
-- expected : a defined name
-- observed : Sierpinski.cell.from_shared_bits
+- expected : a filled definition (an unfilled law is a dead claim: live code cannot use it)
+- observed : playground.Mandel.escape_count
 Context:
-- row_index    : U32
-- column_index : U32
-Location: playground.Sierpinski.cell
-25 | def Sierpinski.cell(row_index: U32, column_index: U32) -> Char:
-26>|   Sierpinski.cell.from_shared_bits(U32.is_zero(U32.and(row_index, column_index)))
-27 | 
+- constant_real_part      : F32
+- constant_imaginary_part : F32
+- iterations_left         : Nat
+- iterate_real_part       : F32
+- iterate_imaginary_part  : F32
+Location: playground.Mandel.escape_count.branch
+168 |     case False{}:
+169>|       Mandel.escape_count(
+170 |         constant_real_part, constant_imaginary_part, iterations_left,
 bend 2.0.25 is available: run bend update
 --- exit code 1, 77 ms
 
 ===== claude-sonnet-5 / playground.bend =====
 Error:
-- expected : a defined name
-- observed : Sierpinski.cell.from_shared_bits
+- expected : a filled definition (an unfilled law is a dead claim: live code cannot use it)
+- observed : Mandel.escape_count
 Context:
-- row_index    : U32
-- column_index : U32
-Location: Sierpinski.cell
-25 | def Sierpinski.cell(row_index: U32, column_index: U32) -> Char:
-26>|   Sierpinski.cell.from_shared_bits(U32.is_zero(U32.and(row_index, column_index)))
-27 | 
-bend 2.0.25 is available: run bend update
---- exit code 1, 76 ms
-
-===== gpt5.6-terra / PROOF.bend =====
-Error:
-- expected : smaller_remaining_fragment_subdivisions
-- observed : smaller_remaining_fragment_subdivisions (consumed more than once)
-Location: playground.Mandelbrot.fragment_tree
-285 |       }
-286>|     case 1n+smaller_remaining_fragment_subdivisions:
-287 |       +child_column_block_width = U32.shrn(column_block_width, 2n)
-bend 2.0.25 is available: run bend update
---- exit code 1, 78 ms
-
-===== gpt5.6-terra / playground.bend =====
-Error:
-- expected : smaller_remaining_fragment_subdivisions
-- observed : smaller_remaining_fragment_subdivisions (consumed more than once)
-Location: Mandelbrot.fragment_tree
-285 |       }
-286>|     case 1n+smaller_remaining_fragment_subdivisions:
-287 |       +child_column_block_width = U32.shrn(column_block_width, 2n)
+- constant_real_part      : F32
+- constant_imaginary_part : F32
+- iterations_left         : Nat
+- iterate_real_part       : F32
+- iterate_imaginary_part  : F32
+Location: Mandel.escape_count.branch
+168 |     case False{}:
+169>|       Mandel.escape_count(
+170 |         constant_real_part, constant_imaginary_part, iterations_left,
 bend 2.0.25 is available: run bend update
 --- exit code 1, 77 ms
+
+===== gpt5.6-terra / PROOF.bend =====
+All terms check.
+bend 2.0.25 is available: run bend update
+--- exit code 0, 85 ms
+
+===== gpt5.6-terra / playground.bend =====
+Mandelbrot
+
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                #                                                               
+                                                                                                                                
+                                                                                                                                
+                                                            ##                                                                  
+                                                           ###  #                                                               
+                                                         #######                                                                
+                                                         ########                                                               
+                                                         #######                                                                
+                                              ##    #     #####                                                                 
+                                                    ############### #                                                           
+                                               ######################## ##                                                      
+                                               ######################## ###                                                     
+                                           #   ############################                                                     
+                                            # ############################                                                      
+                                           #################################                                                    
+                                           #################################  #                                                 
+                                          #####################################                                                 
+                                #        ####################################                                                   
+                           ## ######     ####################################                                                   
+                           ###########   #####################################                                                  
+                        ###############  ####################################                                                   
+                         ############### ###################################                                                    
+                         ###################################################                                                    
+                    #######################################################                                                     
+#########################################################################                                                       
+                    #######################################################                                                     
+                         ###################################################                                                    
+                         ############### ###################################                                                    
+                        ###############  ####################################                                                   
+                           ###########   #####################################                                                  
+                           ## ######     ####################################                                                   
+                                #        ####################################                                                   
+                                          #####################################                                                 
+                                           #################################  #                                                 
+                                           #################################                                                    
+                                            # ############################                                                      
+                                           #   ############################                                                     
+                                               ######################## ###                                                     
+                                               ######################## ##                                                      
+                                                    ############### #                                                           
+                                              ##    #     #####                                                                 
+                                                         #######                                                                
+                                                         ########                                                               
+                                                         #######                                                                
+                                                           ###  #                                                               
+                                                            ##                                                                  
+                                                                                                                                
+                                                                                                                                
+                                                                #                                                               
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+                                                                                                                                
+
+Sierpinski triangle
+
+                                                                #                                                               
+                                                               # #                                                              
+                                                              #   #                                                             
+                                                             # # # #                                                            
+                                                            #       #                                                           
+                                                           # #     # #                                                          
+                                                          #   #   #   #                                                         
+                                                         # # # # # # # #                                                        
+                                                        #               #                                                       
+                                                       # #             # #                                                      
+                                                      #   #           #   #                                                     
+                                                     # # # #         # # # #                                                    
+                                                    #       #       #       #                                                   
+                                                   # #     # #     # #     # #                                                  
+                                                  #   #   #   #   #   #   #   #                                                 
+                                                 # # # # # # # # # # # # # # # #                                                
+                                                #                               #                                               
+                                               # #                             # #                                              
+                                              #   #                           #   #                                             
+                                             # # # #                         # # # #                                            
+                                            #       #                       #       #                                           
+                                           # #     # #                     # #     # #                                          
+                                          #   #   #   #                   #   #   #   #                                         
+                                         # # # # # # # #                 # # # # # # # #                                        
+                                        #               #               #               #                                       
+                                       # #             # #             # #             # #                                      
+                                      #   #           #   #           #   #           #   #                                     
+                                     # # # #         # # # #         # # # #         # # # #                                    
+                                    #       #       #       #       #       #       #       #                                   
+                                   # #     # #     # #     # #     # #     # #     # #     # #                                  
+                                  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #                                 
+                                 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #                                
+                                #                                                               #                               
+                               # #                                                             # #                              
+                              #   #                                                           #   #                             
+                             # # # #                                                         # # # #                            
+                            #       #                                                       #       #                           
+                           # #     # #                                                     # #     # #                          
+                          #   #   #   #                                                   #   #   #   #                         
+                         # # # # # # # #                                                 # # # # # # # #                        
+                        #               #                                               #               #                       
+                       # #             # #                                             # #             # #                      
+                      #   #           #   #                                           #   #           #   #                     
+                     # # # #         # # # #                                         # # # #         # # # #                    
+                    #       #       #       #                                       #       #       #       #                   
+                   # #     # #     # #     # #                                     # #     # #     # #     # #                  
+                  #   #   #   #   #   #   #   #                                   #   #   #   #   #   #   #   #                 
+                 # # # # # # # # # # # # # # # #                                 # # # # # # # # # # # # # # # #                
+                #                               #                               #                               #               
+               # #                             # #                             # #                             # #              
+              #   #                           #   #                           #   #                           #   #             
+             # # # #                         # # # #                         # # # #                         # # # #            
+            #       #                       #       #                       #       #                       #       #           
+           # #     # #                     # #     # #                     # #     # #                     # #     # #          
+          #   #   #   #                   #   #   #   #                   #   #   #   #                   #   #   #   #         
+         # # # # # # # #                 # # # # # # # #                 # # # # # # # #                 # # # # # # # #        
+        #               #               #               #               #               #               #               #       
+       # #             # #             # #             # #             # #             # #             # #             # #      
+      #   #           #   #           #   #           #   #           #   #           #   #           #   #           #   #     
+     # # # #         # # # #         # # # #         # # # #         # # # #         # # # #         # # # #         # # # #    
+    #       #       #       #       #       #       #       #       #       #       #       #       #       #       #       #   
+   # #     # #     # #     # #     # #     # #     # #     # #     # #     # #     # #     # #     # #     # #     # #     # #  
+  #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   #   # 
+ # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+bend 2.0.25 is available: run bend update
+--- exit code 0, 138 ms
 
 ===== open-source-large / PROOF.bend =====
 Error:
-- expected : col
-- observed : col (consumed more than once)
+- expected : a decreasing self-call (arguments are read left to right: each passed unchanged until one shrinks)
+- observed : playground.sierpinski_render_row_go
 Context:
-- row : U32
-Location: playground.sierpinski_is_filled
-26 | # without insight.
-27>| def sierpinski_is_filled(row: U32, col: U32) -> Bool:
-28 |   U32.is_eq((col .&. row : U32), col)
+- row  : U32
+- col  : U32
+- rest : Nat
+Location: playground.sierpinski_render_row_go
+50 |     SCon{sierpinski_character_for_cell(sierpinski_is_filled(row, col)),
+51>|          sierpinski_render_row_go(row, (col + 1 : U32), rest)}
+52 | 
 bend 2.0.25 is available: run bend update
---- exit code 1, 77 ms
+--- exit code 1, 75 ms
 
 ===== open-source-large / playground.bend =====
 Error:
-- expected : col
-- observed : col (consumed more than once)
+- expected : a decreasing self-call (arguments are read left to right: each passed unchanged until one shrinks)
+- observed : sierpinski_render_row_go
 Context:
-- row : U32
-Location: sierpinski_is_filled
-26 | # without insight.
-27>| def sierpinski_is_filled(row: U32, col: U32) -> Bool:
-28 |   U32.is_eq((col .&. row : U32), col)
+- row  : U32
+- col  : U32
+- rest : Nat
+Location: sierpinski_render_row_go
+50 |     SCon{sierpinski_character_for_cell(sierpinski_is_filled(row, col)),
+51>|          sierpinski_render_row_go(row, (col + 1 : U32), rest)}
+52 | 
 bend 2.0.25 is available: run bend update
---- exit code 1, 74 ms
+--- exit code 1, 76 ms
 
 ===== open-source-medium / PROOF.bend =====
 Error:
-- expected : a term
-- observed : '-'
+- message  : a match on a parameter or field (this name is a def or a consumed binder: give the value its own def)
 Location:
-48 |   F32.add(
-49>|     -2.0,
-50 |     F32.mul(2.5, F32.div(F32.from_nat(column_index), F32.from_nat(width)))
+87 |     case False{}:
+88>|       match remaining_iterations:
+89 |         case 0n:
 bend 2.0.25 is available: run bend update
---- exit code 1, 48 ms
+--- exit code 1, 47 ms
 
 ===== open-source-medium / playground.bend =====
 Error:
-- expected : a term
-- observed : '-'
+- message  : a match on a parameter or field (this name is a def or a consumed binder: give the value its own def)
 Location:
-48 |   F32.add(
-49>|     -2.0,
-50 |     F32.mul(2.5, F32.div(F32.from_nat(column_index), F32.from_nat(width)))
+87 |     case False{}:
+88>|       match remaining_iterations:
+89 |         case 0n:
 bend 2.0.25 is available: run bend update
---- exit code 1, 49 ms
+--- exit code 1, 47 ms
 

@@ -18,24 +18,29 @@ import Base
 
 # --- Sierpinski triangle -------------------------------------------------
 
-# A cell is filled exactly where its row and column indices share no set
-# bit -- the standard bitwise construction of Pascal's triangle mod 2,
-# which is the Sierpinski triangle. Pure U32 arithmetic, no recursion, so
-# it carries no termination obligation of its own.
-def Sierpinski.cell(row_index: U32, column_index: U32) -> Char:
-  Sierpinski.cell.from_shared_bits(U32.is_zero(U32.and(row_index, column_index)))
-
-# Sierpinski.cell needs to branch on a *computed* Bool. "bend guide" is
-# explicit that a match may only inspect a parameter or a variable bound
-# by a pattern, never a computed value ("To match on a computed value,
-# pass it to a helper that matches on its parameter."). This helper is
-# forced by that rule, not chosen for style.
+# Sierpinski.cell (below) needs to branch on a *computed* Bool. "bend
+# guide" is explicit that a match may only inspect a parameter or a
+# variable bound by a pattern, never a computed value ("To match on a
+# computed value, pass it to a helper that matches on its parameter.").
+# This helper is forced by that rule, not chosen for style. It is defined
+# ahead of its caller, not forward-declared via a law, because "a defined
+# name" here means exactly that: unlike Mandel.escape_count/.branch below
+# (a genuine call cycle, which does need a law), this helper never calls
+# back into Sierpinski.cell, so plain define-before-use order is enough --
+# and is in fact required, per the error this ordering originally produced.
 def Sierpinski.cell.from_shared_bits(no_shared_bits: Bool) -> Char:
   match no_shared_bits:
     case True{}:
       '*'
     case False{}:
       ' '
+
+# A cell is filled exactly where its row and column indices share no set
+# bit -- the standard bitwise construction of Pascal's triangle mod 2,
+# which is the Sierpinski triangle. Pure U32 arithmetic, no recursion, so
+# it carries no termination obligation of its own.
+def Sierpinski.cell(row_index: U32, column_index: U32) -> Char:
+  Sierpinski.cell.from_shared_bits(U32.is_zero(U32.and(row_index, column_index)))
 
 # One row's characters, left to right, with no trailing newline (added
 # once, outside this def, by String.join over the row list -- so this

@@ -284,6 +284,8 @@ def Mandelbrot.fragment_tree(
         Mandelbrot.two_columns(row_number, first_column_number)
       }
     case 1n+smaller_remaining_fragment_subdivisions:
+      +reusable_remaining_fragment_subdivisions =
+        smaller_remaining_fragment_subdivisions
       +child_column_block_width = U32.shrn(column_block_width, 2n)
       +second_fragment_first_column_number = U32.add(
         first_column_number,
@@ -299,23 +301,23 @@ def Mandelbrot.fragment_tree(
       )
       leftmost_fragment_tree left_center_fragment_tree right_center_fragment_tree rightmost_fragment_tree =
         Mandelbrot.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           first_column_number,
           child_column_block_width
         ) Mandelbrot.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           second_fragment_first_column_number,
           child_column_block_width
         )
         Mandelbrot.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           third_fragment_first_column_number,
           child_column_block_width
         ) Mandelbrot.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           fourth_fragment_first_column_number,
           child_column_block_width
@@ -345,6 +347,8 @@ def Mandelbrot.row_tree(
         )
       }
     case 1n+smaller_remaining_row_subdivisions:
+      +reusable_remaining_row_subdivisions =
+        smaller_remaining_row_subdivisions
       +child_row_block_height = U32.shrn(row_block_height, 2n)
       +second_row_number = U32.add(
         first_row_number,
@@ -360,20 +364,20 @@ def Mandelbrot.row_tree(
       )
       topmost_row_tree upper_middle_row_tree lower_middle_row_tree bottommost_row_tree =
         Mandelbrot.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           first_row_number,
           child_row_block_height
         ) Mandelbrot.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           second_row_number,
           child_row_block_height
         )
         Mandelbrot.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           third_row_number,
           child_row_block_height
         ) Mandelbrot.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           fourth_row_number,
           child_row_block_height
         )
@@ -433,6 +437,8 @@ def Sierpinski.fragment_tree(
         Sierpinski.two_columns(row_number, first_column_number)
       }
     case 1n+smaller_remaining_fragment_subdivisions:
+      +reusable_remaining_fragment_subdivisions =
+        smaller_remaining_fragment_subdivisions
       +child_column_block_width = U32.shrn(column_block_width, 2n)
       +second_fragment_first_column_number = U32.add(
         first_column_number,
@@ -448,23 +454,23 @@ def Sierpinski.fragment_tree(
       )
       leftmost_fragment_tree left_center_fragment_tree right_center_fragment_tree rightmost_fragment_tree =
         Sierpinski.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           first_column_number,
           child_column_block_width
         ) Sierpinski.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           second_fragment_first_column_number,
           child_column_block_width
         )
         Sierpinski.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           third_fragment_first_column_number,
           child_column_block_width
         ) Sierpinski.fragment_tree(
-          smaller_remaining_fragment_subdivisions,
+          reusable_remaining_fragment_subdivisions,
           row_number,
           fourth_fragment_first_column_number,
           child_column_block_width
@@ -492,6 +498,8 @@ def Sierpinski.row_tree(
         )
       }
     case 1n+smaller_remaining_row_subdivisions:
+      +reusable_remaining_row_subdivisions =
+        smaller_remaining_row_subdivisions
       +child_row_block_height = U32.shrn(row_block_height, 2n)
       +second_row_number = U32.add(
         first_row_number,
@@ -507,20 +515,20 @@ def Sierpinski.row_tree(
       )
       topmost_row_tree upper_middle_row_tree lower_middle_row_tree bottommost_row_tree =
         Sierpinski.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           first_row_number,
           child_row_block_height
         ) Sierpinski.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           second_row_number,
           child_row_block_height
         )
         Sierpinski.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           third_row_number,
           child_row_block_height
         ) Sierpinski.row_tree(
-          smaller_remaining_row_subdivisions,
+          reusable_remaining_row_subdivisions,
           fourth_row_number,
           child_row_block_height
         )
