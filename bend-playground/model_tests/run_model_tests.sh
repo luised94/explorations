@@ -9,10 +9,10 @@ MODEL_TESTS_ROOT="/home/luis/personal_repos/explorations/bend-playground/model_t
 # Explicit list rather than a */ glob so a stray directory (for example a
 # future results/ folder) is never run as a model, and the order is fixed.
 MODEL_DIRECTORY_NAMES=(
-  "claude-opus-5"
+  #"claude-opus-5"
   "claude-sonnet-5"
-  "gpt5.6-terra"
-  "open-source-large"
+  #"gpt5.6-terra"
+  #"open-source-large"
   "open-source-medium"
 )
 

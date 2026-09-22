@@ -119,12 +119,16 @@ def Mandelbrot.escape_iterations(
         imaginary_constant
       )
 
+# max_iterations is marked + because it is read twice: once as the budget
+# passed into escape_iterations and once again in the is_eq that decides
+# whether the point stayed in the set. The default affine rule would reject
+# the second read.
 def Mandelbrot.character_at(
   column_index: Nat,
   row_index: Nat,
   width: Nat,
   height: Nat,
-  max_iterations: Nat
+  +max_iterations: Nat
 ) -> Char:
   +real_coordinate = Mandelbrot.real_coordinate(column_index, width)
   +imaginary_coordinate = Mandelbrot.imaginary_coordinate(row_index, height)
@@ -148,7 +152,7 @@ def Mandelbrot.row_segment(
   row_index: Nat,
   width: Nat,
   height: Nat,
-  max_iterations: Nat
+  +max_iterations: Nat
 ) -> String:
   match column_count:
     case 0n:
@@ -181,7 +185,7 @@ def Mandelbrot.row(
   half_width: Nat,
   width: Nat,
   height: Nat,
-  max_iterations: Nat
+  +max_iterations: Nat
 ) -> String:
   left_half right_half = Mandelbrot.row_segment(
     0n, half_width, row_index, width, height, max_iterations
@@ -201,7 +205,7 @@ def Mandelbrot.lines_remaining(
   half_width: Nat,
   width: Nat,
   height: Nat,
-  max_iterations: Nat
+  +max_iterations: Nat
 ) -> List<&2, String>:
   match remaining_rows:
     case 0n:

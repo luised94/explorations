@@ -12,10 +12,15 @@ import ./LAWS.bend as Laws
 # as "bend guide"'s own add_zero walkthrough, since Nat.add(0n, b) and
 # List.append/List.length's Con cases all unfold by definition alone, with
 # nothing to invent for the base case and exactly one rewrite for the step.
+# +second_list: referenced twice in the step case below (once building the
+# recursive call, once inside that call's own rewrite-target type
+# annotation) -- the same class of double-use LAWS.bend's laws needed +
+# for. first_list is only ever the match scrutinee itself (its head/tail
+# are what get reused, not first_list as a whole), so it stays plain.
 law List.append_length:
   for -element_type: Data
   for first_list: List<&2, element_type>
-  for second_list: List<&2, element_type>
+  for +second_list: List<&2, element_type>
   {List.length(&2, element_type, List.append(&2, element_type, first_list, second_list))
     == Nat.add(List.length(&2, element_type, first_list), List.length(&2, element_type, second_list))
     : Nat}
@@ -75,7 +80,10 @@ def Laws.Sierpinski.render_rows_count(level, row_start, total_columns):
     case 0n:
       {==}
     case 1n+levels_left:
-      row_offset = U32.pow(2, levels_left)
+      # Read twice below: once building right_rows, once again inside
+      # right_matches_count's induction-hypothesis call. Same class of
+      # error as LAWS.bend's laws needed + for.
+      +row_offset = U32.pow(2, levels_left)
       left_rows = Playground.Sierpinski.render_rows(levels_left, row_start, total_columns)
       right_rows = Playground.Sierpinski.render_rows(levels_left, U32.add(row_start, row_offset), total_columns)
       rows_per_half = Playground.Sierpinski.rows_count(levels_left)
