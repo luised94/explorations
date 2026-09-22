@@ -21,11 +21,12 @@ def Laws.repeat_character_length(count, character):
       {==}
 
 # Split on remaining_iterations because that is the first scrutinee of the
-# two-scrutinee match inside escape_iterations. In the 0n branch the first
-# pattern "0n _" matches regardless of the second scrutinee, so the whole
-# call reduces to 0n. In the 1n+rest branch the second scrutinee is True{},
-# so the case "1n+rest True{}" matches and the call reduces to 0n. Neither
-# branch needs to look at an F32 value, which is why {==} closes both.
+# two-scrutinee match inside mandelbrot_escape_iterations. In the 0n branch
+# the first pattern "0n _" matches regardless of the second scrutinee, so
+# the whole call reduces to 0n. In the 1n+rest branch the second scrutinee
+# is True{}, so the case "1n+rest True{}" matches and the call reduces to
+# 0n. Neither branch needs to look at an F32 value, which is why {==}
+# closes both.
 def Laws.mandelbrot_escaped_returns_zero(
   remaining_iterations,
   real_part,
@@ -41,8 +42,8 @@ def Laws.mandelbrot_escaped_returns_zero(
 
 # The first pattern of the inner match is "0n _", so the call reduces to 0n
 # before either escape-flag branch can matter. The split on point_has_escaped
-# is there so the checker sees a concrete Bool in each branch; if the checker
-# already reduces "0n _" without it, the split is harmless.
+# is there so the checker sees a concrete Bool in each branch; if the
+# checker already reduces "0n _" without it, the split is harmless.
 def Laws.mandelbrot_zero_iterations_returns_zero(
   real_part,
   imaginary_part,
@@ -88,7 +89,7 @@ def Laws.mandelbrot_lines_remaining_length(
             {1n+1n+List.length(
               &2,
               String,
-              Playground.Mandelbrot.lines_remaining(
+              Playground.mandelbrot_render_lines_remaining(
                 after_second,
                 2n+start_row,
                 half_width,
@@ -116,7 +117,7 @@ def Laws.sierpinski_lines_remaining_length(
         {1n+List.length(
           &2,
           String,
-          Playground.Sierpinski.lines_remaining(
+          Playground.sierpinski_render_lines_remaining(
             rest, Nat.sub(current_actual_row, 1n), width
           )
         ) == 1n+_ : Nat}
