@@ -14,8 +14,8 @@ law repeat_character_length:
   {String.length(Playground.repeat_character(count, character)) == count : Nat}
 
 # A point that has already escaped costs no further iterations, whatever the
-# remaining budget is. Stated separately from the zero-budget law because
-# both are needed to convince the checker that the escape loop short-circuits.
+# remaining budget is. The escape flag is the first argument to match the
+# parameter order of escape_iterations, which the checker requires.
 law mandelbrot_escaped_returns_zero:
   for remaining_iterations: Nat
   for real_part: F32
@@ -23,12 +23,12 @@ law mandelbrot_escaped_returns_zero:
   for real_constant: F32
   for imaginary_constant: F32
   {Playground.Mandelbrot.escape_iterations(
+    True{},
     remaining_iterations,
     real_part,
     imaginary_part,
     real_constant,
-    imaginary_constant,
-    True{}
+    imaginary_constant
   ) == 0n : Nat}
 
 # A zero budget returns zero regardless of the escape flag. Without this the
@@ -41,12 +41,12 @@ law mandelbrot_zero_iterations_returns_zero:
   for imaginary_constant: F32
   for point_has_escaped: Bool
   {Playground.Mandelbrot.escape_iterations(
+    point_has_escaped,
     0n,
     real_part,
     imaginary_part,
     real_constant,
-    imaginary_constant,
-    point_has_escaped
+    imaginary_constant
   ) == 0n : Nat}
 
 # The row list has exactly as many lines as rows requested. Stated over

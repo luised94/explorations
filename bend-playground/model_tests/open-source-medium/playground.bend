@@ -68,18 +68,22 @@ def Mandelbrot.pick_character(in_set: Bool) -> Char:
     case False{}:
       ' '
 
-# The escape test is carried as a Boolean parameter rather than produced by
-# a match on a computed value. Bend rejects "match F32.is_gt(...)", and the
-# natural workaround, a helper that recurses back into this def, is mutual
-# recursion, which the termination checker also rejects. Passing the bit
-# forward keeps one def calling itself, which is allowed.
+# Scrutinees must follow binder order, so the escape flag is the FIRST
+# parameter: it is the flag the body matches on first, before the budget.
+# With remaining_iterations first, the checker reported "a match on a
+# parameter or field ... a consumed binder", because the second match came
+# after a match on a later parameter. The escape flag is also carried as a
+# parameter rather than produced by "match F32.is_gt(...)", which Bend
+# rejects as a match on a computed value, and a mutual-recursion workaround
+# is rejected by the termination checker. Passing the bit forward keeps one
+# def calling itself.
 def Mandelbrot.escape_iterations(
+  point_has_escaped: Bool,
   remaining_iterations: Nat,
   +real_part: F32,
   +imaginary_part: F32,
   +real_constant: F32,
-  +imaginary_constant: F32,
-  point_has_escaped: Bool
+  +imaginary_constant: F32
 ) -> Nat:
   match point_has_escaped:
     case True{}:
@@ -105,12 +109,12 @@ def Mandelbrot.escape_iterations(
             F32.mul(new_imaginary_part, new_imaginary_part)
           )
           1n+Mandelbrot.escape_iterations(
+            F32.is_gt(new_magnitude_squared, 4.0),
             rest,
             new_real_part,
             new_imaginary_part,
             real_constant,
-            imaginary_constant,
-            F32.is_gt(new_magnitude_squared, 4.0)
+            imaginary_constant
           )
 
 def Mandelbrot.character_at(
@@ -123,12 +127,12 @@ def Mandelbrot.character_at(
   +real_coordinate = Mandelbrot.real_coordinate(column_index, width)
   +imaginary_coordinate = Mandelbrot.imaginary_coordinate(row_index, height)
   +iteration_count = Mandelbrot.escape_iterations(
+    False{},
     max_iterations,
     0.0,
     0.0,
     real_coordinate,
-    imaginary_coordinate,
-    False{}
+    imaginary_coordinate
   )
   Mandelbrot.pick_character(Nat.is_eq(iteration_count, max_iterations))
 

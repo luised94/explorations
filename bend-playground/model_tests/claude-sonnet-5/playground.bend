@@ -140,59 +140,46 @@ def Mandel.image_height() -> Nat:
 # smallest possible escape value, so it doubles as "probably inside the
 # set" for Mandel.density_char with no special case needed).
 #
-# This def and Mandel.escape_count.branch call each other -- exactly the
-# mutual pattern Base itself uses for Word.adc/Word.adc.con (Word.adc's
-# Succ case calls Word.adc.con(p, ...), which calls back Word.adc(p, ...)
-# with that same already-decremented p). "bend guide" says two ordinary
-# defs cannot call each other; Base's own resolution, followed here, is to
-# declare the callee-that-is-called-first via a law before the helper that
-# forward-references it, then give the real def afterward.
-law Mandel.escape_count:
-  for +constant_real_part: F32
-  for +constant_imaginary_part: F32
-  for remaining_iterations: Nat
-  for +iterate_real_part: F32
-  for +iterate_imaginary_part: F32
-  Nat
-
+# A first attempt matched has_escaped by computing it inside this def and
+# dispatching to a second def (declared forward via `law`, since it called
+# back into this one before this def's own body appeared later in the
+# file). The checker rejected that: "an unfilled law is a dead claim: live
+# code cannot use it." "bend guide" already says what to do instead --
+# "two mutually recursive functions become one def with an extra argument
+# selecting which to run" -- so has_escaped is threaded as a real incoming
+# parameter here (computed by the caller: the initial call in Mandel.cell,
+# and this def's own tail call below), matched with a plain nested match,
+# the same way Word.adc in Base matches its own already-computed carry-like
+# Bool parameters (`match a b f:`) instead of recomputing and re-branching
+# them through a second def. One self-recursive def, no forward reference.
+#
 # +real/+imaginary parts: each is read twice on the not-escaped path (once
 # inside the new z's arithmetic, once again passed on to the next
-# iteration), so each needs +.
-def Mandel.escape_count.branch(
-  +constant_real_part: F32, +constant_imaginary_part: F32, iterations_left: Nat,
+# iteration), so each needs +. remaining_iterations and has_escaped are
+# fully consumed by the match that inspects them, so neither needs +.
+def Mandel.escape_count(
+  +constant_real_part: F32, +constant_imaginary_part: F32, remaining_iterations: Nat,
   +iterate_real_part: F32, +iterate_imaginary_part: F32, has_escaped: Bool
 ) -> Nat:
-  match has_escaped:
-    case True{}:
-      iterations_left
-    case False{}:
-      Mandel.escape_count(
-        constant_real_part, constant_imaginary_part, iterations_left,
-        F32.add(
-          F32.sub(F32.square(iterate_real_part), F32.square(iterate_imaginary_part)),
-          constant_real_part),
-        F32.add(
-          F32.mul(2.0, F32.mul(iterate_real_part, iterate_imaginary_part)),
-          constant_imaginary_part))
-
-# remaining_iterations matches on a computed Bool (whether |z|^2 > 4) the
-# same way Sierpinski.cell does above -- another instance of "bend
-# guide"'s "match a computed value only through a helper" rule, this time
-# also serving as the mutual-recursion escape hatch described above.
-def Mandel.escape_count(
-  constant_real_part, constant_imaginary_part, remaining_iterations,
-  iterate_real_part, iterate_imaginary_part
-):
   match remaining_iterations:
     case 0n:
       0n
     case 1n+iterations_left:
-      Mandel.escape_count.branch(
-        constant_real_part, constant_imaginary_part, iterations_left,
-        iterate_real_part, iterate_imaginary_part,
-        F32.is_gt(
-          F32.add(F32.square(iterate_real_part), F32.square(iterate_imaginary_part)),
-          4.0))
+      match has_escaped:
+        case True{}:
+          iterations_left
+        case False{}:
+          new_real_part = F32.add(
+            F32.sub(F32.square(iterate_real_part), F32.square(iterate_imaginary_part)),
+            constant_real_part)
+          new_imaginary_part = F32.add(
+            F32.mul(2.0, F32.mul(iterate_real_part, iterate_imaginary_part)),
+            constant_imaginary_part)
+          Mandel.escape_count(
+            constant_real_part, constant_imaginary_part, iterations_left,
+            new_real_part, new_imaginary_part,
+            F32.is_gt(
+              F32.add(F32.square(new_real_part), F32.square(new_imaginary_part)), 4.0))
 
 # "bend guide shaders" warns against generic Bool.pick on hot per-lane
 # paths (it boxes and heats the type); this grid is 78x32 cells checked
@@ -213,7 +200,8 @@ def Mandel.cell(row_index: Nat, column_index: Nat, image_width: Nat, image_heigh
     F32.mul(F32.sub(Mandel.plane_bottom(), Mandel.plane_top()),
       F32.div(F32.from_nat(row_index), F32.from_nat(image_height))))
   Mandel.density_char(
-    Mandel.escape_count(constant_real_part, constant_imaginary_part, Mandel.max_iterations(), 0.0, 0.0),
+    Mandel.escape_count(constant_real_part, constant_imaginary_part, Mandel.max_iterations(),
+      0.0, 0.0, F32.is_gt(F32.add(F32.square(0.0), F32.square(0.0)), 4.0)),
     Mandel.max_iterations())
 
 # Same shape and same termination argument as Sierpinski.render_row:
