@@ -93,12 +93,12 @@ def mandelbrot_pixel_to_imag(row: U32, image_height: U32) -> F32:
 def mandelbrot_escape_go(+point_real: F32, +point_imag: F32, fuel: Nat,
                          +current_real: F32, +current_imag: F32,
                          iteration_count: U32, escaped: Bool) -> U32:
-  match escaped fuel:
-  case True{} _:
+  match fuel escaped:
+  case 0n _:
     iteration_count
-  case False{} 0n:
+  case 1n+remaining_fuel True{}:
     iteration_count
-  case False{} 1n+remaining_fuel:
+  case 1n+remaining_fuel False{}:
     +real_squared = F32.mul(current_real, current_real)
     +imag_squared = F32.mul(current_imag, current_imag)
     next_real = F32.add(F32.sub(real_squared, imag_squared), point_real)

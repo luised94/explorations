@@ -1,11 +1,11 @@
-Model test run: 2026-09-22 10:38:29 EDT
+Model test run: 2026-09-22 10:23:12 EDT
 Bend version: bend 2.0.16
 Timeout per run: 60s
 
 ===== claude-opus-5 / PROOF.bend =====
 All terms check.
 bend 2.0.25 is available: run bend update
---- exit code 0, 91 ms
+--- exit code 0, 87 ms
 
 ===== claude-opus-5 / playground.bend =====
                        ...........................              
@@ -79,91 +79,44 @@ bend 2.0.25 is available: run bend update
 
 ===== claude-sonnet-5 / PROOF.bend =====
 Error:
-- expected : row_offset
-- observed : row_offset (consumed more than once)
+- expected : new_imaginary_part
+- observed : new_imaginary_part (consumed more than once)
 Context:
-- levels_left   : Nat
-- row_start     : U32
-- total_columns : Nat
-Location: LAWS.Sierpinski.render_rows_count
-77 |     case 1n+levels_left:
-78>|       row_offset = U32.pow(2, levels_left)
-79 |       left_rows = Playground.Sierpinski.render_rows(levels_left, row_start, total_columns)
+- constant_real_part      : F32
+- constant_imaginary_part : F32
+- iterations_left         : Nat
+- iterate_real_part       : F32
+- iterate_imaginary_part  : F32
+- new_real_part           : F32
+Location: playground.Mandel.escape_count
+174 |             constant_real_part)
+175>|           new_imaginary_part = F32.add(
+176 |             F32.mul(2.0, F32.mul(iterate_real_part, iterate_imaginary_part)),
 bend 2.0.25 is available: run bend update
---- exit code 1, 80 ms
+--- exit code 1, 77 ms
 
 ===== claude-sonnet-5 / playground.bend =====
-********************************
-* * * * * * * * * * * * * * * * 
-**  **  **  **  **  **  **  **  
-*   *   *   *   *   *   *   *   
-****    ****    ****    ****    
-* *     * *     * *     * *     
-**      **      **      **      
-*       *       *       *       
-********        ********        
-* * * *         * * * *         
-**  **          **  **          
-*   *           *   *           
-****            ****            
-* *             * *             
-**              **              
-*               *               
-****************                
-* * * * * * * *                 
-**  **  **  **                  
-*   *   *   *                   
-****    ****                    
-* *     * *                     
-**      **                      
-*       *                       
-********                        
-* * * *                         
-**  **                          
-*   *                           
-****                            
-* *                             
-**                              
-*                               
-..............................................................................
-..............................................................................
-.....................................................@#.......................
-...................................................@@@@@+.....................
-..................................................+@@@@@+.....................
-............................................#......@@@@+......................
-..........................................++@@.@@@@@@@@@@@@#..................
-...........................................@@@@@@@@@@@@@@@@@@@@@..............
-...........................................@@@@@@@@@@@@@@@@@@@@+..............
-.........................................@@@@@@@@@@@@@@@@@@@@@@+..............
-........................................+#@@@@@@@@@@@@@@@@@@@@@@+.............
-.............................#+..+.@....+@@@@@@@@@@@@@@@@@@@@@@@@+............
-.............................+@@@@@@+...@@@@@@@@@@@@@@@@@@@@@@@@@.............
-.............................+@@@@@@@@++@@@@@@@@@@@@@@@@@@@@@@@@@.............
-............................@@@@@@@@@@@#@@@@@@@@@@@@@@@@@@@@@@@@#.............
-.........................+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@..............
-............@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@+...............
-.........................+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@..............
-............................@@@@@@@@@@@#@@@@@@@@@@@@@@@@@@@@@@@@#.............
-.............................+@@@@@@@@++@@@@@@@@@@@@@@@@@@@@@@@@@.............
-.............................+@@@@@@+...@@@@@@@@@@@@@@@@@@@@@@@@@.............
-.............................#+..+.@....+@@@@@@@@@@@@@@@@@@@@@@@@+............
-........................................+#@@@@@@@@@@@@@@@@@@@@@@+.............
-.........................................@@@@@@@@@@@@@@@@@@@@@@+..............
-...........................................@@@@@@@@@@@@@@@@@@@@+..............
-...........................................@@@@@@@@@@@@@@@@@@@@@..............
-..........................................++@@.@@@@@@@@@@@@#..................
-............................................#......@@@@+......................
-..................................................+@@@@@+.....................
-...................................................@@@@@+.....................
-.....................................................@#.......................
-..............................................................................
+Error:
+- expected : new_imaginary_part
+- observed : new_imaginary_part (consumed more than once)
+Context:
+- constant_real_part      : F32
+- constant_imaginary_part : F32
+- iterations_left         : Nat
+- iterate_real_part       : F32
+- iterate_imaginary_part  : F32
+- new_real_part           : F32
+Location: Mandel.escape_count
+174 |             constant_real_part)
+175>|           new_imaginary_part = F32.add(
+176 |             F32.mul(2.0, F32.mul(iterate_real_part, iterate_imaginary_part)),
 bend 2.0.25 is available: run bend update
---- exit code 0, 100 ms
+--- exit code 1, 77 ms
 
 ===== gpt5.6-terra / PROOF.bend =====
 All terms check.
 bend 2.0.25 is available: run bend update
---- exit code 0, 87 ms
+--- exit code 0, 85 ms
 
 ===== gpt5.6-terra / playground.bend =====
 Mandelbrot
@@ -301,96 +254,65 @@ Sierpinski triangle
  # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 bend 2.0.25 is available: run bend update
---- exit code 0, 143 ms
+--- exit code 0, 138 ms
 
 ===== open-source-large / PROOF.bend =====
-All terms check.
+Error:
+- message  : a match on a parameter or field (this name is a def or a consumed binder: give the value its own def)
+Location:
+95 |                          iteration_count: U32, escaped: Bool) -> U32:
+96>|   match escaped fuel:
+97 |   case True{} _:
 bend 2.0.25 is available: run bend update
---- exit code 0, 84 ms
+--- exit code 1, 49 ms
 
 ===== open-source-large / playground.bend =====
-############################################################
-############################################################
-############################################################
-############################################################
-############################################################
-############################################################
-############################################################
-###################################### #####################
-####################################    ####################
-#################################  ##  #### ################
-#############################                  #############
-#############################                 ##############
-###########################                    #############
-#################### #####                      ############
-#################       ##                      ############
-################         #                      ############
-                                              ##############
-################         #                      ############
-#################       ##                      ############
-#################### #####                      ############
-###########################                    #############
-#############################                 ##############
-#############################                  #############
-#################################  ##  #### ################
-####################################    ####################
-###################################### #####################
-############################################################
-############################################################
-############################################################
-############################################################
-############################################################
-############################################################
-
-*                               
-**                              
-* *                             
-****                            
-*   *                           
-**  **                          
-* * * *                         
-********                        
-*       *                       
-**      **                      
-* *     * *                     
-****    ****                    
-*   *   *   *                   
-**  **  **  **                  
-* * * * * * * *                 
-****************                
-
+Error:
+- message  : a match on a parameter or field (this name is a def or a consumed binder: give the value its own def)
+Location:
+95 |                          iteration_count: U32, escaped: Bool) -> U32:
+96>|   match escaped fuel:
+97 |   case True{} _:
 bend 2.0.25 is available: run bend update
---- exit code 0, 99 ms
+--- exit code 1, 48 ms
 
 ===== open-source-medium / PROOF.bend =====
 Error:
-- expected : max_iterations
-- observed : max_iterations (consumed more than once)
+- expected : a decreasing self-call (arguments are read left to right: each passed unchanged until one shrinks)
+- observed : playground.Mandelbrot.escape_iterations
 Context:
-- column_index : Nat
-- row_index    : Nat
-- width        : Nat
-- height       : Nat
-Location: playground.Mandelbrot.character_at
-126 |   height: Nat,
-127>|   max_iterations: Nat
-128 | ) -> Char:
+- rest                  : Nat
+- real_part             : F32
+- imaginary_part        : F32
+- real_constant         : F32
+- imaginary_constant    : F32
+- new_real_part         : F32
+- new_imaginary_part    : F32
+- new_magnitude_squared : F32
+Location: playground.Mandelbrot.escape_iterations
+110 |           )
+111>|           1n+Mandelbrot.escape_iterations(
+112 |             F32.is_gt(new_magnitude_squared, 4.0),
 bend 2.0.25 is available: run bend update
---- exit code 1, 78 ms
+--- exit code 1, 76 ms
 
 ===== open-source-medium / playground.bend =====
 Error:
-- expected : max_iterations
-- observed : max_iterations (consumed more than once)
+- expected : a decreasing self-call (arguments are read left to right: each passed unchanged until one shrinks)
+- observed : Mandelbrot.escape_iterations
 Context:
-- column_index : Nat
-- row_index    : Nat
-- width        : Nat
-- height       : Nat
-Location: Mandelbrot.character_at
-126 |   height: Nat,
-127>|   max_iterations: Nat
-128 | ) -> Char:
+- rest                  : Nat
+- real_part             : F32
+- imaginary_part        : F32
+- real_constant         : F32
+- imaginary_constant    : F32
+- new_real_part         : F32
+- new_imaginary_part    : F32
+- new_magnitude_squared : F32
+Location: Mandelbrot.escape_iterations
+110 |           )
+111>|           1n+Mandelbrot.escape_iterations(
+112 |             F32.is_gt(new_magnitude_squared, 4.0),
 bend 2.0.25 is available: run bend update
---- exit code 1, 77 ms
+--- exit code 1, 74 ms
 

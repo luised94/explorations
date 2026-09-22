@@ -68,54 +68,56 @@ def Mandelbrot.pick_character(in_set: Bool) -> Char:
     case False{}:
       ' '
 
-# Scrutinees must follow binder order, so the escape flag is the FIRST
-# parameter: it is the flag the body matches on first, before the budget.
-# With remaining_iterations first, the checker reported "a match on a
-# parameter or field ... a consumed binder", because the second match came
-# after a match on a later parameter. The escape flag is also carried as a
-# parameter rather than produced by "match F32.is_gt(...)", which Bend
-# rejects as a match on a computed value, and a mutual-recursion workaround
-# is rejected by the termination checker. Passing the bit forward keeps one
-# def calling itself.
+# remaining_iterations is first because the termination checker reads the
+# self-call's arguments left to right: each must be passed unchanged until
+# one is a strict subterm of its parameter. With the escape flag first, the
+# first argument of the self-call was the computed value F32.is_gt(...),
+# which is not passed unchanged and is not a subterm, so the checker
+# rejected the call. With remaining_iterations first, rest is the first
+# argument and it is a strict subterm; every argument after it is free.
+#
+# The escape flag is a parameter rather than a match on F32.is_gt(...), which
+# Bend rejects as a match on a computed value, and a helper def that calls
+# back into this one would be mutual recursion, which the termination
+# checker also rejects. A single two-scrutinee match keeps the scrutinees in
+# binder order, which is what the earlier "consumed binder" error asked for.
 def Mandelbrot.escape_iterations(
-  point_has_escaped: Bool,
   remaining_iterations: Nat,
+  point_has_escaped: Bool,
   +real_part: F32,
   +imaginary_part: F32,
   +real_constant: F32,
   +imaginary_constant: F32
 ) -> Nat:
-  match point_has_escaped:
-    case True{}:
+  match remaining_iterations point_has_escaped:
+    case 0n _:
       0n
-    case False{}:
-      match remaining_iterations:
-        case 0n:
-          0n
-        case 1n+rest:
-          +new_real_part = F32.add(
-            F32.sub(
-              F32.mul(real_part, real_part),
-              F32.mul(imaginary_part, imaginary_part)
-            ),
-            real_constant
-          )
-          +new_imaginary_part = F32.add(
-            F32.mul(2.0, F32.mul(real_part, imaginary_part)),
-            imaginary_constant
-          )
-          +new_magnitude_squared = F32.add(
-            F32.mul(new_real_part, new_real_part),
-            F32.mul(new_imaginary_part, new_imaginary_part)
-          )
-          1n+Mandelbrot.escape_iterations(
-            F32.is_gt(new_magnitude_squared, 4.0),
-            rest,
-            new_real_part,
-            new_imaginary_part,
-            real_constant,
-            imaginary_constant
-          )
+    case 1n+rest True{}:
+      0n
+    case 1n+rest False{}:
+      +new_real_part = F32.add(
+        F32.sub(
+          F32.mul(real_part, real_part),
+          F32.mul(imaginary_part, imaginary_part)
+        ),
+        real_constant
+      )
+      +new_imaginary_part = F32.add(
+        F32.mul(2.0, F32.mul(real_part, imaginary_part)),
+        imaginary_constant
+      )
+      +new_magnitude_squared = F32.add(
+        F32.mul(new_real_part, new_real_part),
+        F32.mul(new_imaginary_part, new_imaginary_part)
+      )
+      1n+Mandelbrot.escape_iterations(
+        rest,
+        F32.is_gt(new_magnitude_squared, 4.0),
+        new_real_part,
+        new_imaginary_part,
+        real_constant,
+        imaginary_constant
+      )
 
 def Mandelbrot.character_at(
   column_index: Nat,
@@ -127,8 +129,8 @@ def Mandelbrot.character_at(
   +real_coordinate = Mandelbrot.real_coordinate(column_index, width)
   +imaginary_coordinate = Mandelbrot.imaginary_coordinate(row_index, height)
   +iteration_count = Mandelbrot.escape_iterations(
-    False{},
     max_iterations,
+    False{},
     0.0,
     0.0,
     real_coordinate,

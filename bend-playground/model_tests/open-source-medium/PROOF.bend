@@ -20,8 +20,12 @@ def Laws.repeat_character_length(count, character):
           == 1n+_ : Nat}
       {==}
 
-# No induction: escape_iterations matches on the True{} flag before it ever
-# touches the iteration count, so the whole term computes to 0n.
+# Split on remaining_iterations because that is the first scrutinee of the
+# two-scrutinee match inside escape_iterations. In the 0n branch the first
+# pattern "0n _" matches regardless of the second scrutinee, so the whole
+# call reduces to 0n. In the 1n+rest branch the second scrutinee is True{},
+# so the case "1n+rest True{}" matches and the call reduces to 0n. Neither
+# branch needs to look at an F32 value, which is why {==} closes both.
 def Laws.mandelbrot_escaped_returns_zero(
   remaining_iterations,
   real_part,
@@ -29,12 +33,16 @@ def Laws.mandelbrot_escaped_returns_zero(
   real_constant,
   imaginary_constant
 ):
-  {==}
+  match remaining_iterations:
+    case 0n:
+      {==}
+    case 1n+rest:
+      {==}
 
-# Case split on the escape flag. In the True{} branch the flag is the first
-# match and the result is 0n directly. In the False{} branch the second
-# match sees 0n and returns 0n. Neither branch touches an F32 value, so the
-# checker can close both by computation.
+# The first pattern of the inner match is "0n _", so the call reduces to 0n
+# before either escape-flag branch can matter. The split on point_has_escaped
+# is there so the checker sees a concrete Bool in each branch; if the checker
+# already reduces "0n _" without it, the split is harmless.
 def Laws.mandelbrot_zero_iterations_returns_zero(
   real_part,
   imaginary_part,

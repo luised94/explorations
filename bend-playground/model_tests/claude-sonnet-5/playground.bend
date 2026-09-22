@@ -169,10 +169,14 @@ def Mandel.escape_count(
         case True{}:
           iterations_left
         case False{}:
-          new_real_part = F32.add(
+          # Each is read twice below: once passed on as the next iterate,
+          # once inside the escape check that decides whether there is a
+          # next iteration at all. A plain (affine) let only allows one
+          # read; the checker caught the second as an over-use.
+          +new_real_part = F32.add(
             F32.sub(F32.square(iterate_real_part), F32.square(iterate_imaginary_part)),
             constant_real_part)
-          new_imaginary_part = F32.add(
+          +new_imaginary_part = F32.add(
             F32.mul(2.0, F32.mul(iterate_real_part, iterate_imaginary_part)),
             constant_imaginary_part)
           Mandel.escape_count(
