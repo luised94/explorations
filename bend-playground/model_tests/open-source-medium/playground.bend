@@ -14,9 +14,10 @@ import Base
 
 # --- Shared helpers ---
 
-# Recursion on count gives a chain of cons cells; the checker sees count
-# shrink at each call, so the helper passes termination without a fuel
-# argument. The alternative, building the string with String.append, would
+# count is first because the termination checker reads the self-call's
+# arguments left to right: each must be passed unchanged until one is a
+# strict subterm. With count first, rest is the first argument and it
+# shrinks. The alternative, building the string with String.append, would
 # need an append-length lemma before any length law could be stated, and
 # Base does not supply one.
 def repeat_character(count: Nat, +character: Char) -> String:
@@ -69,18 +70,14 @@ def Mandelbrot.pick_character(in_set: Bool) -> Char:
       ' '
 
 # remaining_iterations is first because the termination checker reads the
-# self-call's arguments left to right: each must be passed unchanged until
-# one is a strict subterm of its parameter. With the escape flag first, the
-# first argument of the self-call was the computed value F32.is_gt(...),
-# which is not passed unchanged and is not a subterm, so the checker
-# rejected the call. With remaining_iterations first, rest is the first
-# argument and it is a strict subterm; every argument after it is free.
-#
+# self-call's arguments left to right. With the escape flag first, the first
+# argument of the self-call was the computed value F32.is_gt(...), which is
+# neither passed unchanged nor a subterm, so the checker rejected the call.
 # The escape flag is a parameter rather than a match on F32.is_gt(...), which
 # Bend rejects as a match on a computed value, and a helper def that calls
 # back into this one would be mutual recursion, which the termination
 # checker also rejects. A single two-scrutinee match keeps the scrutinees in
-# binder order, which is what the earlier "consumed binder" error asked for.
+# binder order.
 def Mandelbrot.escape_iterations(
   remaining_iterations: Nat,
   point_has_escaped: Bool,
@@ -121,8 +118,7 @@ def Mandelbrot.escape_iterations(
 
 # max_iterations is marked + because it is read twice: once as the budget
 # passed into escape_iterations and once again in the is_eq that decides
-# whether the point stayed in the set. The default affine rule would reject
-# the second read.
+# whether the point stayed in the set.
 def Mandelbrot.character_at(
   column_index: Nat,
   row_index: Nat,
@@ -142,13 +138,16 @@ def Mandelbrot.character_at(
   )
   Mandelbrot.pick_character(Nat.is_eq(iteration_count, max_iterations))
 
-# row_segment carries an explicit starting column because the two parallel
-# halves of a row cannot see each other's state. Without that parameter the
-# right half would need to know how many characters the left half produced,
-# which would serialise the two halves.
+# column_count is first because the termination checker reads the self-call's
+# arguments left to right. With start_column first, the first argument of the
+# self-call grew (1n+start_column), which the checker rejects. With
+# column_count first, rest is the first argument and it shrinks. start_column
+# still has to be carried because the two parallel halves of a row cannot see
+# each other's state; without it the right half would need to know how many
+# characters the left half produced, which would serialise the two halves.
 def Mandelbrot.row_segment(
-  start_column: Nat,
   column_count: Nat,
+  start_column: Nat,
   row_index: Nat,
   width: Nat,
   height: Nat,
@@ -167,8 +166,8 @@ def Mandelbrot.row_segment(
           max_iterations
         ),
         Mandelbrot.row_segment(
-          1n+start_column,
           rest,
+          1n+start_column,
           row_index,
           width,
           height,
@@ -188,7 +187,7 @@ def Mandelbrot.row(
   +max_iterations: Nat
 ) -> String:
   left_half right_half = Mandelbrot.row_segment(
-    0n, half_width, row_index, width, height, max_iterations
+    half_width, 0n, row_index, width, height, max_iterations
   ) Mandelbrot.row_segment(
     half_width, half_width, row_index, width, height, max_iterations
   )
@@ -262,9 +261,12 @@ def Sierpinski.character(column_index: Nat, actual_row: Nat) -> Char:
     )
   )
 
+# remaining_columns is first for the same reason as in
+# Mandelbrot.row_segment: the self-call must pass a shrinking argument as
+# its first argument, and current_column grows by one each step.
 def Sierpinski.row_segment(
-  current_column: Nat,
   remaining_columns: Nat,
+  current_column: Nat,
   actual_row: Nat
 ) -> String:
   match remaining_columns:
@@ -273,11 +275,11 @@ def Sierpinski.row_segment(
     case 1n+rest:
       SCon{
         Sierpinski.character(current_column, actual_row),
-        Sierpinski.row_segment(1n+current_column, rest, actual_row)
+        Sierpinski.row_segment(rest, 1n+current_column, actual_row)
       }
 
 def Sierpinski.row(actual_row: Nat, width: Nat) -> String:
-  Sierpinski.row_segment(0n, width, actual_row)
+  Sierpinski.row_segment(width, 0n, actual_row)
 
 # Rows are drawn from the widest (height - 1) down to the narrowest (0), so
 # the triangle sits point-up on the terminal. Nat.sub clamps at zero, which

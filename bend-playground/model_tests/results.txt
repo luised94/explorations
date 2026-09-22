@@ -1,20 +1,17 @@
-Model test run: 2026-09-22 10:46:55 EDT
+Model test run: 2026-09-22 10:53:00 EDT
 Bend version: bend 2.0.16
 Timeout per run: 60s
 
 ===== claude-sonnet-5 / PROOF.bend =====
 Error:
-- expected : total_columns
-- observed : total_columns (consumed more than once)
-Context:
-- levels_left : Nat
-- row_start   : U32
+- expected : levels_left
+- observed : levels_left (consumed more than once)
 Location: LAWS.Sierpinski.render_rows_count
-77 | #     exactly the goal above.
-78>| def Laws.Sierpinski.render_rows_count(level, row_start, total_columns):
-79 |   match level:
+81 |       {==}
+82>|     case 1n+levels_left:
+83 |       # row_start and total_columns are each read four times below (both
 bend 2.0.25 is available: run bend update
---- exit code 1, 80 ms
+--- exit code 1, 93 ms
 
 ===== claude-sonnet-5 / playground.bend =====
 ********************************
@@ -82,41 +79,37 @@ bend 2.0.25 is available: run bend update
 .....................................................@#.......................
 ..............................................................................
 bend 2.0.25 is available: run bend update
---- exit code 0, 105 ms
+--- exit code 0, 101 ms
 
 ===== open-source-medium / PROOF.bend =====
 Error:
-- expected : a decreasing self-call (arguments are read left to right: each passed unchanged until one shrinks)
-- observed : playground.Mandelbrot.row_segment
+- expected : height
+- observed : height (consumed more than once)
 Context:
-- start_column   : Nat
-- rest           : Nat
-- row_index      : Nat
-- width          : Nat
-- height         : Nat
-- max_iterations : Nat
+- rest         : Nat
+- start_column : Nat
+- row_index    : Nat
+- width        : Nat
 Location: playground.Mandelbrot.row_segment
-168 |         ),
-169>|         Mandelbrot.row_segment(
-170 |           1n+start_column,
+152 |   width: Nat,
+153>|   height: Nat,
+154 |   +max_iterations: Nat
 bend 2.0.25 is available: run bend update
---- exit code 1, 77 ms
+--- exit code 1, -1547 ms
 
 ===== open-source-medium / playground.bend =====
 Error:
-- expected : a decreasing self-call (arguments are read left to right: each passed unchanged until one shrinks)
-- observed : Mandelbrot.row_segment
+- expected : height
+- observed : height (consumed more than once)
 Context:
-- start_column   : Nat
-- rest           : Nat
-- row_index      : Nat
-- width          : Nat
-- height         : Nat
-- max_iterations : Nat
+- rest         : Nat
+- start_column : Nat
+- row_index    : Nat
+- width        : Nat
 Location: Mandelbrot.row_segment
-168 |         ),
-169>|         Mandelbrot.row_segment(
-170 |           1n+start_column,
+152 |   width: Nat,
+153>|   height: Nat,
+154 |   +max_iterations: Nat
 bend 2.0.25 is available: run bend update
---- exit code 1, 78 ms
+--- exit code 1, 76 ms
 
