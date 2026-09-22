@@ -1,0 +1,177 @@
+Model test run: 2026-09-22 00:36:18 EDT
+Bend version: bend 2.0.16
+Timeout per run: 60s
+
+===== claude-opus-5 / PROOF.bend =====
+All terms check.
+bend 2.0.25 is available: run bend update
+--- exit code 0, 93 ms
+
+===== claude-opus-5 / playground.bend =====
+                       ...........................              
+                    .......................:..........          
+                 .........................:::::..........       
+               ...........................::++::...........     
+             ...........................::::#+:::............   
+           ...........................::::#####+::............  
+          ........................::::::::#####+::::::......... 
+         .......................::+++::#++####++#+#::::::.......
+        .......................::::+####################:.......
+       ......................::::+:+###################::.......
+      .............::::::::::::::######################:::......
+      ............::+::::+::::::########################+:......
+     .............::::#####++::+########################::......
+     ............:::++########++########################+:......
+     .......:::::+:++##################################+:.......
+     ..::::::::::+####################################+::.......
+     ..::::::::::+####################################+::.......
+     .......:::::+:++##################################+:.......
+     ............:::++########++########################+:......
+     .............::::##+##++::+########################::......
+      ............::+::::+::::::########################+:......
+      .............::::::::::::::######################:::......
+       ......................::::+:+###################::.......
+        .......................::::+####################:.......
+         .......................::+++::#++####++#+#::::::.......
+          ........................::::::::#####+::::::......... 
+           ...........................::::#####+::............  
+             ...........................::::#+:::............   
+               ...........................::++::...........     
+                 .........................:::::..........       
+                    ......................::..........          
+                       ...........................              
+
+********************************
+* * * * * * * * * * * * * * * * 
+**  **  **  **  **  **  **  **  
+*   *   *   *   *   *   *   *   
+****    ****    ****    ****    
+* *     * *     * *     * *     
+**      **      **      **      
+*       *       *       *       
+********        ********        
+* * * *         * * * *         
+**  **          **  **          
+*   *           *   *           
+****            ****            
+* *             * *             
+**              **              
+*               *               
+****************                
+* * * * * * * *                 
+**  **  **  **                  
+*   *   *   *                   
+****    ****                    
+* *     * *                     
+**      **                      
+*       *                       
+********                        
+* * * *                         
+**  **                          
+*   *                           
+****                            
+* *                             
+**                              
+*                               
+
+bend 2.0.25 is available: run bend update
+--- exit code 0, 102 ms
+
+===== claude-sonnet-5 / PROOF.bend =====
+Error:
+- expected : a defined name
+- observed : Sierpinski.cell.from_shared_bits
+Context:
+- row_index    : U32
+- column_index : U32
+Location: playground.Sierpinski.cell
+25 | def Sierpinski.cell(row_index: U32, column_index: U32) -> Char:
+26>|   Sierpinski.cell.from_shared_bits(U32.is_zero(U32.and(row_index, column_index)))
+27 | 
+bend 2.0.25 is available: run bend update
+--- exit code 1, 77 ms
+
+===== claude-sonnet-5 / playground.bend =====
+Error:
+- expected : a defined name
+- observed : Sierpinski.cell.from_shared_bits
+Context:
+- row_index    : U32
+- column_index : U32
+Location: Sierpinski.cell
+25 | def Sierpinski.cell(row_index: U32, column_index: U32) -> Char:
+26>|   Sierpinski.cell.from_shared_bits(U32.is_zero(U32.and(row_index, column_index)))
+27 | 
+bend 2.0.25 is available: run bend update
+--- exit code 1, 76 ms
+
+===== gpt5.6-terra / PROOF.bend =====
+Error:
+- expected : smaller_remaining_fragment_subdivisions
+- observed : smaller_remaining_fragment_subdivisions (consumed more than once)
+Location: playground.Mandelbrot.fragment_tree
+285 |       }
+286>|     case 1n+smaller_remaining_fragment_subdivisions:
+287 |       +child_column_block_width = U32.shrn(column_block_width, 2n)
+bend 2.0.25 is available: run bend update
+--- exit code 1, 78 ms
+
+===== gpt5.6-terra / playground.bend =====
+Error:
+- expected : smaller_remaining_fragment_subdivisions
+- observed : smaller_remaining_fragment_subdivisions (consumed more than once)
+Location: Mandelbrot.fragment_tree
+285 |       }
+286>|     case 1n+smaller_remaining_fragment_subdivisions:
+287 |       +child_column_block_width = U32.shrn(column_block_width, 2n)
+bend 2.0.25 is available: run bend update
+--- exit code 1, 77 ms
+
+===== open-source-large / PROOF.bend =====
+Error:
+- expected : col
+- observed : col (consumed more than once)
+Context:
+- row : U32
+Location: playground.sierpinski_is_filled
+26 | # without insight.
+27>| def sierpinski_is_filled(row: U32, col: U32) -> Bool:
+28 |   U32.is_eq((col .&. row : U32), col)
+bend 2.0.25 is available: run bend update
+--- exit code 1, 77 ms
+
+===== open-source-large / playground.bend =====
+Error:
+- expected : col
+- observed : col (consumed more than once)
+Context:
+- row : U32
+Location: sierpinski_is_filled
+26 | # without insight.
+27>| def sierpinski_is_filled(row: U32, col: U32) -> Bool:
+28 |   U32.is_eq((col .&. row : U32), col)
+bend 2.0.25 is available: run bend update
+--- exit code 1, 74 ms
+
+===== open-source-medium / PROOF.bend =====
+Error:
+- expected : a term
+- observed : '-'
+Location:
+48 |   F32.add(
+49>|     -2.0,
+50 |     F32.mul(2.5, F32.div(F32.from_nat(column_index), F32.from_nat(width)))
+bend 2.0.25 is available: run bend update
+--- exit code 1, 48 ms
+
+===== open-source-medium / playground.bend =====
+Error:
+- expected : a term
+- observed : '-'
+Location:
+48 |   F32.add(
+49>|     -2.0,
+50 |     F32.mul(2.5, F32.div(F32.from_nat(column_index), F32.from_nat(width)))
+bend 2.0.25 is available: run bend update
+--- exit code 1, 49 ms
+
