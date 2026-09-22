@@ -1,11 +1,11 @@
-Model test run: 2026-09-22 11:00:19 EDT
+Model test run: 2026-09-22 11:01:42 EDT
 Bend version: bend 2.0.16
 Timeout per run: 60s
 
 ===== claude-sonnet-5 / PROOF.bend =====
 All terms check.
 bend 2.0.25 is available: run bend update
---- exit code 0, 82 ms
+--- exit code 0, 83 ms
 
 ===== claude-sonnet-5 / playground.bend =====
 ********************************
@@ -73,27 +73,35 @@ bend 2.0.25 is available: run bend update
 .....................................................@#.......................
 ..............................................................................
 bend 2.0.25 is available: run bend update
---- exit code 0, 99 ms
+--- exit code 0, 104 ms
 
 ===== open-source-medium / PROOF.bend =====
 Error:
-- expected : column_index
-- observed : column_index (consumed more than once)
-Location: playground.Sierpinski.character
-240 | # need a parallel let.
-241>| def Sierpinski.character(column_index: Nat, actual_row: Nat) -> Char:
-242 |   Sierpinski.pick_character(
+- expected : a defined name
+- observed : Sierpinski.row
+Context:
+- rest               : Nat
+- current_actual_row : Nat
+- width              : Nat
+Location: playground.Sierpinski.lines_remaining
+272 |     case 1n+rest:
+273>|       Sierpinski.row(current_actual_row, width)
+274 |         <> Sierpinski.lines_remaining(
 bend 2.0.25 is available: run bend update
---- exit code 1, 78 ms
+--- exit code 1, 80 ms
 
 ===== open-source-medium / playground.bend =====
 Error:
-- expected : column_index
-- observed : column_index (consumed more than once)
-Location: Sierpinski.character
-240 | # need a parallel let.
-241>| def Sierpinski.character(column_index: Nat, actual_row: Nat) -> Char:
-242 |   Sierpinski.pick_character(
+- expected : a defined name
+- observed : Sierpinski.row
+Context:
+- rest               : Nat
+- current_actual_row : Nat
+- width              : Nat
+Location: Sierpinski.lines_remaining
+272 |     case 1n+rest:
+273>|       Sierpinski.row(current_actual_row, width)
+274 |         <> Sierpinski.lines_remaining(
 bend 2.0.25 is available: run bend update
---- exit code 1, 75 ms
+--- exit code 1, 79 ms
 

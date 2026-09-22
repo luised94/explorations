@@ -238,7 +238,7 @@ def Sierpinski.pick_character(in_set: Bool) -> Char:
 # (column, row) is filled exactly when column is a bitwise submask of row.
 # That is one AND and one EQ per cell, which is why this picture does not
 # need a parallel let.
-def Sierpinski.character(column_index: Nat, actual_row: Nat) -> Char:
+def Sierpinski.character(+column_index: Nat, actual_row: Nat) -> Char:
   Sierpinski.pick_character(
     U32.is_eq(
       U32.and(U32.from_nat(column_index), U32.from_nat(actual_row)),
