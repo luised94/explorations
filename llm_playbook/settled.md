@@ -1,6 +1,6 @@
 SETTLED
 =======
-date: 2026-07
+date: 2026-09
 type: decisions
 scope: closed questions and roads not taken. Rules carry their own
   reasoning inline, so this file holds only what no rule can carry:
@@ -103,6 +103,39 @@ SETTLED, WITH THE ROAD NOT TAKEN
     turn. Recorded because it is the exact failure that blind
     substitution causes and it happened anyway.
 
+  Design and implement MODES are the in-thread form of the DESIGN and
+  IMPL ROLES.
+    A thread opened by a kickoff plays the one role its kickoff names
+    (protocol.md IDENTITY AND NAMING, CONSTRAINT-011). A chat with no
+    kickoff -- the author's usual case -- may move from design to
+    implement inside one conversation, through the plan-lock
+    adversarial pass (R8), because that is how the work is actually
+    done. Rejected: forbidding the switch, which practice already
+    ignores, and a rule practice ignores teaches that rules are
+    optional; and dropping roles, which a kickoff needs for its id.
+    RULED ON PLAYBOOK-DESIGN-007's LEAN. The author accepted the
+    thread's triage without ruling on this item specifically; reverse
+    it on disagreement.
+
+  A thread's output toward the playbook is TRIAGED against the tree,
+  never placed beside it.
+    PLAYBOOK-DESIGN-007 first agreed to drop its delivered files into
+    the tree and consolidate afterwards, then reversed on reading the
+    tree. Rejected, on README's own ground: duplicated files drift, and
+    the drift is silent because both copies look authoritative -- and a
+    batch of unused files arriving at once is the pre-reset shape. What
+    landed instead is listed in that thread's close.
+
+  A prompt carries its reasoning. Rationale-free bodies were NOT
+  adopted.
+    PLAYBOOK-DESIGN-007 decision [8] held method bodies to operational
+    text only, to save paste weight. Rejected for prompts/: a prompt
+    keeps its origin incident on purpose ("kept concrete on purpose",
+    runtime-verification.md), because the incident is what lets a
+    reader judge WHEN the method applies. Paste weight is real, but it
+    is paid once per paste, and a method applied in the wrong place
+    costs more. The unpromoted drafts keep [8] until one is promoted.
+
 
 DELIBERATELY NOT DONE
 
@@ -116,9 +149,9 @@ DELIBERATELY NOT DONE
   MANIFEST, load classes, required-read lists and token budgets --
   retired.
     They existed to manage context and consumed more than they saved.
-    With seventeen files a reader can see all of them. The budgets
-    were set 87 percent below the figure they were later measured
-    against.
+    A tree small enough to list whole needs no manifest; it was
+    seventeen files at the reset. The budgets were set 87 percent
+    below the figure they were later measured against.
 
   The ADR record -- retired.
     Thirty-six decisions with recorded alternatives, 11,000 tokens.
@@ -186,6 +219,15 @@ DECLARED ASSUMPTIONS
   Worktrees, or the playbook shared with projects outside one tree,
   are the stated near-term direction and are exactly what breaks this.
   Revisit the three as a SET, never one at a time.
+    OBSERVED NOT HOLDING, 2026-09 (PLAYBOOK-DESIGN-007). The author ran
+    parallel branches of one conversation and merged their records
+    afterwards, and describes handing one design to several
+    implementation threads. The assumption no longer describes the
+    practice. None of the three mechanisms has failed yet. Revisit the
+    set in the next thread, together with the conversation graph's
+    shape (llm/handoff/PLAYBOOK-DESIGN-007_harness-interface-and-
+    build.md, open question A): it is the same question asked of the
+    data model.
 
   PROMOTION OUT OF THE MONOREPO IS NOW UNGUARDED. Recovered from
   ADR-002: the playbook lives inside the parent monorepo and
@@ -258,3 +300,53 @@ OPEN, AND KNOWN TO BE
   Nothing here has been validated on a project that is not this one.
     That is the next thread's job and the only thing that will tell
     us which of these rules are real.
+
+  The browser Preferences text is a second authority that nothing
+  composes.
+    Chain 1 exists so a model meets ONE authority: the human composes
+    the render and the losing rule never reaches the model. The
+    Preferences field bypasses that. It is loaded into every chat,
+    including a project thread whose CONTEXT.md was composed without
+    it, and where the two disagree the model holds two authorities
+    that chain 2 does not arbitrate between. That is the competing-
+    document failure the RESET record opens with, arriving by a
+    channel protocol.md does not name. NOT YET OBSERVED as a failure;
+    recorded as a structural finding. It is also, in effect, the third
+    runtime tier that "More authority tiers" above rejects, arrived
+    without being chosen. Candidates for the next thread: treat the
+    Preferences text as the base every project render sits on, so a
+    render carries only what supersedes it -- which would also give the
+    playbook the render it lacks (entry above); or keep the Preferences
+    text minimal whenever a render is attached.
+
+  Whether the Preferences field decays over a long chat is unmeasured.
+    Probe: check whether an early rule still fires 40 or more turns
+    deep. Record the model id and date with the result
+    (RF-PLAYBOOK-013), because the answer belongs to one model and
+    expires with it. If it decays, serious work moves to a channel
+    that re-sends the text every turn.
+
+  Rule TWO trades accretion for collapse.
+    README rule TWO rewrites a document whole, so that a re-read
+    surfaces contradictions. The failure on the other side has two
+    names: "brevity bias, which drops domain insights for concise
+    summaries", and "context collapse, where iterative rewriting erodes
+    details over time" (Zhang et al., Agentic Context Engineering,
+    arXiv 2510.04618). Their remedy is "structured, incremental
+    updates" to an itemized context rather than whole rewrites. It has
+    already happened here twice, both times DURING a rewrite: the
+    reset's first pass judged files from their summaries and nearly
+    deleted refinements.md (docs/RESET-2026-07.md), and ADR bodies were
+    judged from their index lines (PLAYBOOK-DESIGN-006 kickoff,
+    carry-over notes). The tree already holds both mechanisms, in
+    different files: stable item ids in layers.md and the append-only
+    intake in refinements.md resist collapse; whole rewrites everywhere
+    else resist accretion. Unruled: which documents evolve by rewrite
+    and which by itemized delta.
+    Related, and bearing on the always-loaded text specifically:
+    instruction-following accuracy falls as simultaneous instructions
+    grow, with a bias toward EARLIER instructions (Jaroslawicz et al.,
+    How Many Instructions Can LLMs Follow at Once?, arXiv 2507.11538;
+    the best model reached 68 percent at 500). The length and the ORDER
+    of a pasted preference text are therefore part of its correctness,
+    not its style.
