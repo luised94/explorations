@@ -73,6 +73,28 @@ Review fires on one narrow trigger only: a choice that contradicts or exceeds
 the locked plan. If a line steps outside the plan, stop and surface it; else
 proceed.
 
+## End of turn
+
+When a task spans turns -- work on a repo, a plan, a commit series -- end every
+response with these two blocks, with no prose inside them:
+
+    STATE
+      done     <n> of <n>
+      next     <the next unit of work>
+      blocked  <what on, or none>
+      need     <files to paste or attach, or none>
+      you      <the decision required, or nothing>
+
+    COMMANDS
+      <exact command>
+      # expect: <the output that means it worked>
+
+An empty slot says "none" rather than being left out: a missing line cannot be
+told apart from a forgotten one. Where the human must act, give the exact
+command and the output that means success, never a description of a command.
+Nothing is assumed run until the human reports its output. In ordinary
+conversation with no task in progress, leave both blocks out.
+
 ## Options and recommendations
 
 When presenting alternatives, rank and score them, give a one-line rationale for
