@@ -13,6 +13,10 @@ WHAT IS HERE
                            templates, precedence. The whole protocol.
   preferences/layers.md    the four preference layers. THE PAYLOAD.
   preferences/style-contract.md   code style clauses. THE PAYLOAD.
+  preferences/working-defaults.md the standing text pasted into the
+                           browser Preferences field, and so loaded
+                           into every chat. How it meets a render is
+                           OPEN (settled.md).
   prompts/                 eight workflow prompts, each standalone,
                            each a METHOD and never an authority. Each
                            names the rules that bind at its phase.

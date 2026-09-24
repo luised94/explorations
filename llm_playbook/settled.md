@@ -195,6 +195,19 @@ DELIBERATELY NOT DONE
     items. That IS a third tier and it is not recovered; "a prompt
     is a method and never an authority", above, is the whole of it.
 
+  A second paste form of the preferences -- retired.
+    working-defaults-merged-layered.md was layers.md generalized for
+    pasting, beside working-defaults-merged-prose.md. Neither carried
+    type:, neither was in README, and once working-defaults.md became
+    the text actually pasted, the layered form had no consumer. Two
+    paste forms of one set of preferences drift apart silently, each
+    looking authoritative. The prose form is the ancestor of
+    working-defaults.md and was replaced by it. The layered form's two
+    additions over layers.md -- the no-sandbox verification rule and
+    the repository-subset delivery rule -- live on in
+    working-defaults.md; neither ever held an id in layers.md, so no
+    id is lost. Git holds both files.
+
   An index, taxonomy or tag system for retrieval -- rejected.
     That was MANIFEST and it failed. Retrieval is by workflow stage
     instead, via the BINDS HERE headers.
