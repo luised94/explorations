@@ -59,6 +59,35 @@ sandbox, not against the author's live tree)
     - more than one project at once: drill's llm/ and the playbook's
       llm/ are separate listings with no joint view.
 
+  FOUND AFTER THIS THREAD CLOSED, verified by the author on 2026-09-24
+  in his repository:
+    - DRILL-IMPL-002 CLOSED in July 2026, after PLAYBOOK-DESIGN-006.
+      Its close lists eleven commits landed and defers, among others,
+      C-101 (re-render drill/llm/CONTEXT.md) and C-113 (drill's
+      refinements.md, so four RF-DRILL entries sit unfiled in the
+      close). The GATE in this thread's close was therefore moot, and
+      0005-0006 are applied.
+    - Its close names a handoff TO THE PLAYBOOK,
+      drill/llm/handoff/DRILL-IMPL-002-to-playbook.md, "FINDINGS FOR
+      THE PLAYBOOK ... carried in the handoff, not fixed here". No
+      playbook thread has read it: DESIGN-006 closed before it was
+      written, and this thread never saw it. READ IT FIRST.
+    - drill/llm/CONTEXT.md is now stale three ways: stamped in the
+      pre-reset format, asserting drill has no PROJECT.md instance
+      rules (false, per that close), and carrying the CONSTRAINT-005
+      text 0006 replaced. Re-rendering it is drill's IMPL work, not
+      this thread's.
+    - Two small leads from that close for question 1: its terminal
+      state is prose, not one of R9's four words; and its handoff name
+      follows the superseded <FROM>-to-<TO> grammar (settled.md).
+    - An original verbalized-sampling existed. git log --all matches
+      it in three commits adding prompts under llms/ and in ad1004f
+      "Move prompts out of llms"; git grep finds nothing outside
+      llm_playbook at HEAD. --all searches every branch, so locate it
+      with git show --stat ad1004f and read it by path from that
+      commit or its parent, before the draft is ever promoted. The
+      four menu entries removed in 0005 may have bodies there too.
+
 
 SETTLED -- DO NOT REOPEN WITHOUT READING THE ENTRY
 
@@ -142,9 +171,12 @@ OPEN QUESTIONS, EACH WITH THIS THREAD'S LEAN
 
 SUGGESTED SEQUENCE (topological)
 
-  dump (2) -> data model (1) -> artifact-out (3a) -> thread lister
-  (3b) -> precedence and environment (4, 6), which touch protocol.md
-  -> editor probe (3c). Questions 5 and 7 ride along with 1.
+  read DRILL-IMPL-002-to-playbook.md -> dump (2) -> data model (1)
+  -> artifact-out (3a) -> thread lister (3b) -> precedence and
+  environment (4, 6), which touch protocol.md -> editor probe (3c).
+  Questions 5 and 7 ride along with 1. Its findings are triaged
+  against the tree before anything else, the way this thread's own
+  output was.
 
 
 NEXT THREAD
@@ -156,5 +188,7 @@ NEXT THREAD
            llm_playbook/llm/close/PLAYBOOK-DESIGN-007_preferences-split-and-harness.md
            llm_playbook/llm/handoff/PLAYBOOK-DESIGN-007_data-model-and-tooling.md
            llm_playbook/llm/handoff/PLAYBOOK-DESIGN-007_harness-interface-and-build.md
+           drill/llm/handoff/DRILL-IMPL-002-to-playbook.md
+           <drill's IMPL-002 close: git ls-files drill/llm | grep -i close>
   attach   this file travels in the pack; write the kickoff from it
   say      "unpack, skim the tree, read the kickoff"
