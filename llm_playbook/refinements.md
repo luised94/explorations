@@ -206,3 +206,68 @@ RF-PLAYBOOK-012  paste transport corrupted the base bytes before any
     guard the patch. This is the base itself arriving corrupt from
     transport, upstream of any patch -- a distinct surface, so it waits
     on its own id rather than as a second occurrence of either.
+
+RF-PLAYBOOK-013  the model that did the work is not recorded
+  OBSERVED  PLAYBOOK-DESIGN-007 began on a model the author reports as
+    Opus 4.8 and closed on claude-opus-5-5. When the model changed,
+    earlier turns' claims could not be told apart from the current
+    one's: a stated knowledge cutoff that was the older model's, and
+    bets that depend on capability -- decision [9], that models handle
+    cross-language variance without anchoring -- that were placed on
+    the older model and never observed on the newer. The kickoff and
+    close baselines record repository SHAs and nothing about the model.
+  FIX  Record the model id and the date beside the baseline in every
+    kickoff and close, and on any harvested artifact whose claim
+    depends on model behaviour: a decay probe result, a prompt that
+    works around a model's failure. A claim about model behaviour
+    without a model attached expires silently when the model changes.
+  PROMOTED  not yet. ONE occurrence. Its home would be the BASELINE
+    line of protocol.md's KICKOFF template -- a field, not a
+    thirteenth rule. The close artifact of PLAYBOOK-DESIGN-007 already
+    carries the line, as a trial.
+
+RF-PLAYBOOK-014  a thread designed toward the playbook without the tree
+  attached
+  OBSERVED  PLAYBOOK-DESIGN-007 spent most of its turns designing
+    preference files, method prompts and an identifier-schema step
+    with no pack of llm_playbook in context. When the tree was finally
+    attached, it already held most of it: the data-structure and
+    lifecycle analyses were find-the-isomorph PART ONE, the boundary
+    test was adversarial-review's COMPLECTION heuristic word for word,
+    topological ordering was commit-planning step 4, and the
+    identifier schema was protocol.md IDENTITY AND NAMING. Three
+    delivered items contradicted settled decisions: delivery form keyed
+    on operation type (settled: R12 keys on baseline fidelity),
+    method bodies carrying no rationale (the prompt form carries it),
+    and design and implement modes inside one thread (protocol.md: a
+    thread plays exactly one role). The first of the three went live
+    in the author's browser Preferences field.
+  FIX  A thread whose output is meant for the playbook attaches the
+    pack at its start and reads settled.md before proposing, because
+    settled.md is the one file that lists the roads already rejected.
+  PROMOTED  not yet. ONE occurrence. Distinct from the RESET record's
+    incident, where a thread HAD the archive and never opened the
+    render: there the input was present and ignored, here it was
+    absent.
+
+RF-PLAYBOOK-015  artifacts stranded in a chat
+  OBSERVED  PLAYBOOK-DESIGN-007 delivered ten files that lived only
+    in the conversation. When the browser interface stopped offering
+    branch navigation, the author could no longer find the files or
+    several decisions. They were recovered only because the session's
+    output folder happened to survive, verified by the checksums the
+    thread had printed at delivery.
+  FIRST OCCURRENCE is recorded inside RF-PLAYBOOK-004's second-
+    occurrence note: "the fallback document, ten replacement files and
+    the reasoning behind one reversed decision were pasted into the
+    chat and lost with it". That is the same surface -- a chat used as
+    storage -- filed then under a different entry's mechanism. This is
+    therefore its SECOND occurrence.
+  FIX  A chat is transport, never storage. Artifacts reach the
+    repository at each stop (R7), not at close, and a delivery prints
+    checksums so a copy found later can be proven to be the one
+    delivered.
+  PROMOTED  not yet. PROMOTION CANDIDATE: it has cost twice. The
+    likely home is R7 STOP POINTS, as a clause rather than a rule, or
+    the artifact-out tooling the next thread weighs, which would
+    enforce it rather than ask for it (CONVENTION-010).
