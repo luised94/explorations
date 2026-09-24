@@ -87,6 +87,24 @@ sandbox, not against the author's live tree)
       with git show --stat ad1004f and read it by path from that
       commit or its parent, before the draft is ever promoted. The
       four menu entries removed in 0005 may have bodies there too.
+    - The author's LLM material OUTSIDE the repository, observed the
+      same day while searching for the DRILL-IMPL-002 conversation.
+      Input to the dump (question 2), not a ruling:
+        clipboard-page-captures: each captured thread is a PAIR,
+          page-NNN.md (the scraped transcript) and page-NNN.zip (that
+          thread's artifacts, downloaded in bulk, likely out of date,
+          kept on purpose). The pair is keyed by a capture page
+          number, not a thread id, so the chat-title join key never
+          reached the capture step. Zip entries keep sandbox paths
+          (mnt/user-data/outputs/c020a/...) with no link to the commit
+          that landed them: RF-PLAYBOOK-015 at corpus scale.
+        One capture tree existed twice, on the E: drive and as a
+          Desktop copy; diff -rq confirmed them identical.
+        Documents/llm_thread holds 106 .json files, one per chat title.
+        The DRILL-IMPL-002 conversation is in none of these: its
+          sandbox commit e3aabfb matches nowhere. It likely survives
+          only in the claude.ai history, which offers an account data
+          export (Settings, Privacy, Export data).
 
 
 SETTLED -- DO NOT REOPEN WITHOUT READING THE ENTRY
@@ -124,6 +142,11 @@ OPEN QUESTIONS, EACH WITH THIS THREAD'S LEAN
      questions A (graph shape) and B (one model or several). LEAN: do
      it FIRST in the next thread, before any modelling, from real
      sessions -- including this one, which is already one DAG instance.
+     Write it against a READ-ONLY census of where the material lives
+     (the section above lists what is known), and do not move LLM
+     material in the author's workspace reorganization until question
+     1 decides where it goes: moving it first is organizing a spoke
+     before the hub exists, and it would be moved twice.
 
   3  THE SMALLEST TOOLING. LEAN, in dependency order:
        a. artifact-out, the missing half of pack-repo.sh: land files a
