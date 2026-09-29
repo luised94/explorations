@@ -7,6 +7,9 @@ records what comes back so the method can be judged by data.
 
 The files are the system of record. grug.py is a replaceable view over them.
 
+Docs: docs/explanation.md (why it is shaped this way) and
+docs/how-to-use-cycle.md (one task through the cycle, and the data each step writes).
+
 ## Layout
 
     core.md          the constant method (the thing under test)
@@ -19,6 +22,7 @@ The files are the system of record. grug.py is a replaceable view over them.
     runs/            packets, replies, log.jsonl (gitignored: this is data)
     grug.py          pack, call, record, notes, promote, report
     test_smoke.py    end-to-end check against a throwaway copy of the store
+    docs/            explanation and how-to
 
 Python 3.12+, standard library only. uv reads the version from the script
 header: `uv run grug.py ...`. An alias helps:
