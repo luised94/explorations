@@ -12,6 +12,7 @@ Usage: uv run grug.py COMMAND --help
 """
 
 import argparse
+import datetime
 import hashlib
 import json
 import re
@@ -37,6 +38,9 @@ SENSITIVE_NAME_PATTERN = re.compile(
 
 # Above this estimate a packet overflows many small free models.
 PACKET_TOKEN_WARNING = 32000
+
+# A memory note unchecked for longer than this is shown as needing a check.
+MEMORY_STALE_AFTER_DAYS = 90
 
 
 # ---- Run log unit ----------------------------------------------------------
@@ -237,6 +241,81 @@ def command_pack(arguments):
         print(f"         uv run grug.py record {run_identifier} REPLY_FILE")
 
 
+def command_notes(arguments):
+    # Memory note unit, read side: a '# title' line, then 'Key: value' header
+    # lines up to the first blank line, then free text. command_promote is
+    # the write side. The listing is derived from the notes on every call,
+    # never kept as a second record that could drift from them.
+    keywords = [keyword.lower() for keyword in arguments.keywords]
+    for note_path in sorted(MEMORY_DIRECTORY.glob("*.md")):
+        note_text = note_path.read_text(encoding="utf-8")
+        if not all(keyword in note_text.lower() for keyword in keywords):
+            continue
+        note_lines = note_text.splitlines()
+        title = note_lines[0].lstrip("# ").strip() if note_lines else ""
+        header_fields = {}
+        for header_line in note_lines[1:]:
+            if not header_line.strip():
+                if header_fields:
+                    break
+                continue
+            key, separator, value = header_line.partition(":")
+            if not separator:
+                break
+            header_fields[key.strip().lower()] = value.strip()
+        # A note is a lead with a shelf life: flag unedited drafts and notes
+        # nobody has checked against the code for a while.
+        try:
+            checked_age_days = (datetime.date.today() - datetime.date.fromisoformat(header_fields.get("checked", ""))).days
+        except ValueError:
+            checked_age_days = None
+        if "FILL" in note_text:
+            flag = "EDIT  "
+        elif checked_age_days is None or checked_age_days > MEMORY_STALE_AFTER_DAYS:
+            flag = "VERIFY"
+        else:
+            flag = "      "
+        print(f"{flag} {note_path.name}  [{header_fields.get('tags', '')}]  {title}")
+        print(f"       revisit: {header_fields.get('revisit', 'MISSING')}")
+
+
+def command_promote(arguments):
+    run_state = read_runs().get(arguments.run)
+    if run_state is None:
+        raise SystemExit(f"unknown run: {arguments.run}")
+    returned_fields = run_state.get("returned", {})
+    lesson = returned_fields.get("lesson", "")
+    if not lesson or lesson.lower().strip(" .") == "none":
+        raise SystemExit(f"run {arguments.run} proposed no lesson; write a note by hand if one was earned")
+    today = datetime.date.today().isoformat()
+    slug = arguments.slug or "-".join(re.findall(r"[a-z0-9]+", lesson.lower())[:6])
+    note_path = MEMORY_DIRECTORY / f"{today}-{slug}.md"
+    if note_path.exists():
+        raise SystemExit(f"note exists: {note_path} (choose --slug)")
+    # Memory write side; the shape must match what command_notes reads.
+    # Scope and Revisit are left as FILL because only the human knows where
+    # the lesson holds; notes flags the draft until they are filled.
+    failure_text = returned_fields.get("failure", "none")
+    observed_text = failure_text if failure_text.lower() != "none" else returned_fields.get("verified", "not stated")
+    MEMORY_DIRECTORY.mkdir(exist_ok=True)
+    note_path.write_text(
+        f"# {lesson}\n\n"
+        f"Date: {today}\n"
+        f"Checked: {today}\n"
+        f"Tags: {arguments.tags}\n"
+        f"Source: run {arguments.run}, verdict {run_state.get('verdict', 'none')}\n"
+        f"Scope: FILL where this holds and where it does not\n"
+        f"Revisit: FILL the condition that turns this note back into a question\n\n"
+        f"Observed: {observed_text}\n"
+        f"Decided: {lesson}\n"
+        f"Evidence: runs/{arguments.run}/reply.md (archived with runs/)\n",
+        encoding="utf-8",
+    )
+    append_event({"run": arguments.run, "kind": "promote", "note": note_path.name})
+    print(f"note     {note_path}")
+    print("next     edit Scope and Revisit; the note is a draft until then")
+
+
 def command_record(arguments):
     known_runs = read_runs()
     if arguments.run not in known_runs:
@@ -297,6 +376,16 @@ def main():
     record_parser.add_argument("--note", default="", help="one line on why")
     record_parser.add_argument("--replace", action="store_true", help="replace a reply already stored")
     record_parser.set_defaults(handler=command_record)
+
+    notes_parser = subparsers.add_parser("notes", help="list memory notes, filtered by keywords")
+    notes_parser.add_argument("keywords", nargs="*", help="all must appear in a note (case-insensitive)")
+    notes_parser.set_defaults(handler=command_notes)
+
+    promote_parser = subparsers.add_parser("promote", help="draft a memory note from a run's lesson")
+    promote_parser.add_argument("run")
+    promote_parser.add_argument("--tags", default="", help="comma-separated tags")
+    promote_parser.add_argument("--slug", help="file name part; default comes from the lesson")
+    promote_parser.set_defaults(handler=command_promote)
 
     arguments = parser.parse_args()
     arguments.handler(arguments)

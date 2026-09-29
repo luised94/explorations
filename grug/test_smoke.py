@@ -113,4 +113,14 @@ no_reply_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "
                            "--repair", run_identifier_from(second_repair_output), expect_failure=True)
 check("recorded reply" in no_reply_output, "repair refuses a parent with no recorded reply", no_reply_output)
 
+# -- memory: promote drafts a note, notes lists and flags it ------------------
+promote_output = run_grug("promote", first_run, "--tags", "intervals")
+check("touching-intervals-merge" in promote_output, "promote drafts a note named from the lesson", promote_output)
+notes_output = run_grug("notes", "intervals")
+check("EDIT" in notes_output and "provenance" not in notes_output, "notes filters by keyword and flags an unfilled draft", notes_output)
+all_notes_output = run_grug("notes")
+check("harness-style-from-preferences" in all_notes_output, "notes with no keyword lists every note", all_notes_output)
+no_lesson_output = run_grug("promote", repair_run, expect_failure=True)
+check("no lesson" in no_lesson_output, "promote refuses a run that proposed no lesson", no_lesson_output)
+
 print("smoke: all checks passed")
