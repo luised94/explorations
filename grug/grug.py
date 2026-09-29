@@ -67,6 +67,40 @@ def read_runs():
     return runs_by_identifier
 
 
+# ---- Return block unit -----------------------------------------------------
+# contract.md states the block format; this parser is its other half, so a
+# change to one is a change to both. test_smoke.py checks that the keys the
+# report reads still appear in contract.md.
+
+RETURN_BLOCK_PATTERN = re.compile(r"<return>(.*?)</return>", re.DOTALL | re.IGNORECASE)
+REPEATED_RETURN_KEYS = ("run", "expect")
+
+
+def parse_return_block(reply_text):
+    block_matches = RETURN_BLOCK_PATTERN.findall(reply_text)
+    if not block_matches:
+        return None
+    # The last block wins: a reply may quote the contract or an older block
+    # before giving its own.
+    return_fields = {}
+    for raw_line in block_matches[-1].splitlines():
+        # Models decorate: bullets, bold keys, backticks. Strip, do not reject;
+        # a strict parser would measure formatting obedience, not the work.
+        line = raw_line.strip().lstrip("-*` ").replace("**", "")
+        key, separator, value = line.partition(":")
+        key = key.strip().lower()
+        if not separator or not re.fullmatch(r"[a-z_]+", key):
+            continue
+        value = value.strip().strip("`").strip()
+        if key in REPEATED_RETURN_KEYS:
+            return_fields.setdefault(key, []).append(value)
+        elif key == "status":
+            return_fields[key] = (value.split() or ["empty"])[0].strip(".,;|").lower()
+        else:
+            return_fields[key] = value
+    return return_fields
+
+
 # ---- Commands --------------------------------------------------------------
 
 def command_pack(arguments):
@@ -176,6 +210,42 @@ def command_pack(arguments):
         print(f"         uv run grug.py record {run_identifier} REPLY_FILE")
 
 
+def command_record(arguments):
+    known_runs = read_runs()
+    if arguments.run not in known_runs:
+        raise SystemExit(f"unknown run: {arguments.run}")
+    if arguments.reply is None and arguments.verdict is None:
+        raise SystemExit("nothing to record: give a REPLY file (or - for stdin), --verdict, or both")
+
+    if arguments.reply is not None:
+        reply_path = RUNS_DIRECTORY / arguments.run / "reply.md"
+        if reply_path.exists() and not arguments.replace:
+            raise SystemExit(f"run already has a reply: {reply_path} (correct it with --replace)")
+        reply_text = sys.stdin.read() if arguments.reply == "-" else Path(arguments.reply).read_text(encoding="utf-8")
+        reply_path.write_text(reply_text, encoding="utf-8")
+        return_fields = parse_return_block(reply_text)
+        append_event({
+            "run": arguments.run,
+            "kind": "reply",
+            "parsed": return_fields is not None,
+            "returned": return_fields or {},
+            "reply_characters": len(reply_text),
+        })
+        if return_fields is None:
+            print("parsed   no: the reply has no <return> block; recorded as unparsed")
+        else:
+            print("parsed   yes")
+            for key, value in return_fields.items():
+                for single_value in (value if isinstance(value, list) else [value]):
+                    print(f"{key:<8} {single_value}")
+
+    if arguments.verdict is not None:
+        # The verdict is the human's check of the work. The model's own status
+        # is a self-report and is kept apart so the report can compare them.
+        append_event({"run": arguments.run, "kind": "verdict", "verdict": arguments.verdict, "note": arguments.note})
+        print(f"verdict  {arguments.verdict}")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="grug.py", description=__doc__.splitlines()[0])
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -191,6 +261,14 @@ def main():
     pack_parser.add_argument("--ambient", help="what the chat Preferences field held: none, preferences, grug, ...")
     pack_parser.add_argument("--allow-sensitive", action="store_true", help="pack files whose names look like secrets")
     pack_parser.set_defaults(handler=command_pack)
+
+    record_parser = subparsers.add_parser("record", help="store a reply and/or your verdict for a run")
+    record_parser.add_argument("run")
+    record_parser.add_argument("reply", nargs="?", help="file holding the whole reply, or - to read stdin")
+    record_parser.add_argument("--verdict", choices=["pass", "partial", "fail"], help="your judgment after checking the work")
+    record_parser.add_argument("--note", default="", help="one line on why")
+    record_parser.add_argument("--replace", action="store_true", help="replace a reply already stored")
+    record_parser.set_defaults(handler=command_record)
 
     arguments = parser.parse_args()
     arguments.handler(arguments)

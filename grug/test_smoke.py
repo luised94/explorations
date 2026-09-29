@@ -74,4 +74,27 @@ bare_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--in
 bare_packet = (STORE_COPY / "runs" / run_identifier_from(bare_output) / "packet.md").read_text(encoding="utf-8")
 check("# [grug] METHOD" not in bare_packet and "# [grug] RETURN CONTRACT" in bare_packet, "bare arm drops the method but keeps the contract", bare_packet)
 
+# -- record: parse the last return block, keep verdict apart ------------------
+decorated_reply = (
+    "Here is the contract I was given:\n<return>\nstatus: done | partial\n</return>\n"
+    "Work happened.\n```\n<return>\n- **Status**: Done.\n**changed**: merge.py\n"
+    "lesson: `touching intervals merge`\nrun: uv run test_merge.py\nexpect: 5 passed\n"
+    "run: uv run merge.py\nexpect: [(1, 6), (7, 8)]\n</return>\n```\n"
+)
+record_output = run_grug("record", first_run, "-", "--verdict", "pass", "--note", "tests ran", input_text=decorated_reply)
+first_run_state = [json.loads(line) for line in RUN_LOG_COPY.read_text(encoding="utf-8").splitlines() if first_run in line]
+reply_event = next(event for event in first_run_state if event["kind"] == "reply")
+check(reply_event["returned"]["status"] == "done" and reply_event["returned"]["changed"] == "merge.py"
+      and reply_event["returned"]["run"] == ["uv run test_merge.py", "uv run merge.py"],
+      "record parses the last block, strips decoration, keeps run/expect pairs", record_output)
+check(any(event.get("verdict") == "pass" for event in first_run_state), "record stores the human verdict as its own event")
+second_record_output = run_grug("record", first_run, "-", input_text="again", expect_failure=True)
+check("--replace" in second_record_output, "record refuses to overwrite a reply without --replace", second_record_output)
+unparsed_reply = WORK_ROOT / "unparsed.md"
+unparsed_reply.write_text("I did it, trust me.\n", encoding="utf-8")
+unparsed_output = run_grug("record", run_identifier_from(bare_output), str(unparsed_reply))
+check("parsed   no" in unparsed_output, "record keeps a reply with no block as unparsed", unparsed_output)
+contract_text = (STORE_COPY / "contract.md").read_text(encoding="utf-8")
+check(all(f"\n{key}:" in contract_text for key in ("status", "lesson", "run", "expect")), "contract.md still names the keys the harness reads")
+
 print("smoke: all checks passed")
