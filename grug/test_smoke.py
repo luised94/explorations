@@ -177,4 +177,17 @@ check("HTTP 429" in limited_output, "call records an HTTP error and exits nonzer
 check("stub-key-not-real" not in RUN_LOG_COPY.read_text(encoding="utf-8"), "the API key never reaches the run log")
 stub_server.shutdown()
 
+# -- report: a chain solved on the third attempt, a false "done" -------------
+second_repair_run = run_identifier_from(second_repair_output)
+run_grug("record", repair_run, "--verdict", "fail")
+run_grug("record", second_repair_run, "-", "--verdict", "pass", input_text="<return>\nstatus: done\n</return>\n")
+run_grug("record", api_run, "--verdict", "fail", "--note", "claimed done, tests fail")
+report_output = run_grug("report")
+bare_block = report_output.split("method=none  interface=api  model=unstated  ambient=none  mode=build")[1].split("method=")[0]
+check("tasks solved 1/1" in bare_block and "mean attempts to pass 3.0" in bare_block,
+      "report credits the repair chain to its root with 3 attempts", report_output)
+api_block = report_output.split("model=stub/model-a")[1].split("method=")[0]
+check("said done but not passed 1" in api_block and "first try passed 0/1" in api_block,
+      "report separates the model's claim from the human verdict", report_output)
+
 print("smoke: all checks passed")

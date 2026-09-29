@@ -408,6 +408,80 @@ def command_call(arguments):
     print(f"next     check the work, then: uv run grug.py record {arguments.run} --verdict pass|partial|fail --note '...'")
 
 
+def command_report(arguments):
+    known_runs = read_runs()
+    # The group key is everything an experiment varies. Mode is in it so a
+    # good design reply and a good build reply never pool into one pass rate.
+    group_key_by_run = {}
+    for run_identifier, run_state in known_runs.items():
+        if "method" in run_state:
+            group_key_by_run[run_identifier] = (
+                run_state["method"],
+                run_state["interface"],
+                run_state.get("call_model") or run_state.get("model") or "unstated",
+                run_state.get("ambient", "unset"),
+                run_state.get("mode", "unstated"),
+            )
+    if not group_key_by_run:
+        print("no runs yet")
+        return
+
+    # Attempts to pass per chain: walk each passing run back to its root. The
+    # chain is credited to the root's group, where the task was first packed.
+    fewest_attempts_by_root = {}
+    for run_identifier, run_state in known_runs.items():
+        if run_state.get("verdict") != "pass" or run_identifier not in group_key_by_run:
+            continue
+        root_identifier = run_identifier
+        while known_runs.get(root_identifier, {}).get("parent") in known_runs:
+            root_identifier = known_runs[root_identifier]["parent"]
+        attempts = run_state.get("depth", 0) + 1
+        fewest_attempts_by_root[root_identifier] = min(attempts, fewest_attempts_by_root.get(root_identifier, attempts))
+
+    tallies_by_group = {}
+    for run_identifier, group_key in sorted(group_key_by_run.items()):
+        run_state = known_runs[run_identifier]
+        tallies = tallies_by_group.setdefault(group_key, {
+            "runs": 0, "replied": 0, "unparsed": 0, "judged": 0, "passed": 0,
+            "first_try_judged": 0, "first_try_passed": 0, "said_done_not_passed": 0,
+            "roots": 0, "roots_solved": 0, "attempts_to_pass": 0, "packet_tokens": 0,
+        })
+        tallies["runs"] += 1
+        tallies["packet_tokens"] += run_state.get("packet_token_estimate", 0)
+        if "parsed" in run_state:
+            tallies["replied"] += 1
+            tallies["unparsed"] += not run_state["parsed"]
+        is_root = run_state.get("depth", 0) == 0
+        if is_root:
+            tallies["roots"] += 1
+            if run_identifier in fewest_attempts_by_root:
+                tallies["roots_solved"] += 1
+                tallies["attempts_to_pass"] += fewest_attempts_by_root[run_identifier]
+        verdict = run_state.get("verdict")
+        if verdict is None:
+            continue
+        passed = verdict == "pass"
+        tallies["judged"] += 1
+        tallies["passed"] += passed
+        if is_root:
+            tallies["first_try_judged"] += 1
+            tallies["first_try_passed"] += passed
+        # The model's claim against the human's check: the self-grading gap.
+        if run_state.get("returned", {}).get("status") == "done" and not passed:
+            tallies["said_done_not_passed"] += 1
+
+    for group_key, tallies in tallies_by_group.items():
+        method, interface, model, ambient, mode = group_key
+        mean_attempts = f"{tallies['attempts_to_pass'] / tallies['roots_solved']:.1f}" if tallies["roots_solved"] else "-"
+        print(f"method={method}  interface={interface}  model={model}  ambient={ambient}  mode={mode}")
+        print(f"  runs {tallies['runs']}  replied {tallies['replied']}  unparsed {tallies['unparsed']}"
+              f"  judged {tallies['judged']}  passed {tallies['passed']}")
+        print(f"  first try passed {tallies['first_try_passed']}/{tallies['first_try_judged']}"
+              f"  tasks solved {tallies['roots_solved']}/{tallies['roots']}  mean attempts to pass {mean_attempts}")
+        print(f"  said done but not passed {tallies['said_done_not_passed']}"
+              f"  mean packet tokens {tallies['packet_tokens'] // tallies['runs']}")
+
+
 def command_record(arguments):
     known_runs = read_runs()
     if arguments.run not in known_runs:
@@ -471,6 +545,9 @@ def main():
     promote_parser.add_argument("--tags", default="", help="comma-separated tags")
     promote_parser.add_argument("--slug", help="file name part; default comes from the lesson")
     promote_parser.set_defaults(handler=command_promote)
+
+    report_parser = subparsers.add_parser("report", help="compare arms: pass rates, attempts, self-report gap")
+    report_parser.set_defaults(handler=command_report)
 
     arguments = parser.parse_args()
     arguments.handler(arguments)
