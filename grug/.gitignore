@@ -1,0 +1,4 @@
+# Run records hold packets and replies with code and model output. They are
+# the experiment's data: archive them deliberately, do not commit by accident.
+runs/
+__pycache__/
