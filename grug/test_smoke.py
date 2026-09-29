@@ -68,8 +68,10 @@ ambient_digest = hashlib.sha256((STORE_COPY / "ambient.md").read_bytes()).hexdig
 check(pack_event["mode"] == "build" and pack_event["ambient"] == f"sha256:{ambient_digest}" and len(pack_event["sections"][0]["sha256"]) == 64,
       "pack event records mode, the ambient.md hash and file hashes", json.dumps(pack_event, indent=1))
 (STORE_COPY / "ambient.md").rename(WORK_ROOT / "ambient.md.moved")
+run_directory_count_before = len(list((STORE_COPY / "runs").iterdir()))
 missing_ambient_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "chat", expect_failure=True)
-check("mirror the chat Preferences" in missing_ambient_output, "a browser pack refuses to run without ambient.md", missing_ambient_output)
+check("mirror the chat Preferences" in missing_ambient_output and len(list((STORE_COPY / "runs").iterdir())) == run_directory_count_before,
+      "a browser pack refuses to run without ambient.md and leaves no orphan run", missing_ambient_output)
 run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api")
 check(json.loads(RUN_LOG_COPY.read_text(encoding="utf-8").splitlines()[-1])["ambient"] == "none", "an api pack needs no ambient.md")
 (WORK_ROOT / "ambient.md.moved").rename(STORE_COPY / "ambient.md")

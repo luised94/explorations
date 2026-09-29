@@ -139,6 +139,16 @@ def command_pack(arguments):
     if arguments.method == "none" and (arguments.domain or arguments.memory):
         raise SystemExit("--method none is the bare arm: it takes no --domain or --memory")
     run_identifier = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(2)
+    # An API call carries no Preferences field, so its ambient is none. A
+    # browser run gets whatever ambient.md holds now; a missing file is an
+    # error, because an unknown ambient would poison the comparison. Checked
+    # before anything is written, so a refused pack leaves no orphan run.
+    if arguments.interface == "api":
+        ambient_label = "none"
+    elif AMBIENT_PATH.is_file():
+        ambient_label = "sha256:" + hashlib.sha256(AMBIENT_PATH.read_bytes()).hexdigest()[:12]
+    else:
+        raise SystemExit(f"missing {AMBIENT_PATH}: it must mirror the chat Preferences field")
 
     # Order is the payload contract: stable method first, the task and the
     # return contract last where the model reads them freshest.
@@ -239,15 +249,6 @@ def command_pack(arguments):
     # only used to warn, never to cut.
     token_estimate = len(packet_text) // 4
     mode_match = re.search(r"^\s*Mode:\s*(\w+)", task_text, re.MULTILINE | re.IGNORECASE)
-    # An API call carries no Preferences field, so its ambient is none. A
-    # browser run gets whatever ambient.md holds now; a missing file is an
-    # error, because an unknown ambient would poison the comparison.
-    if arguments.interface == "api":
-        ambient_label = "none"
-    elif AMBIENT_PATH.is_file():
-        ambient_label = "sha256:" + hashlib.sha256(AMBIENT_PATH.read_bytes()).hexdigest()[:12]
-    else:
-        raise SystemExit(f"missing {AMBIENT_PATH}: it must mirror the chat Preferences field")
     append_event({
         "run": run_identifier,
         "kind": "pack",
