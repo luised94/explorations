@@ -175,6 +175,8 @@ limited_run = run_identifier_from(run_grug("pack", str(STORE_COPY / "tasks/examp
 limited_output = run_grug("call", limited_run, extra_environment=stub_environment, expect_failure=True)
 check("HTTP 429" in limited_output, "call records an HTTP error and exits nonzero", limited_output)
 check("stub-key-not-real" not in RUN_LOG_COPY.read_text(encoding="utf-8"), "the API key never reaches the run log")
+wrong_interface_output = run_grug("call", first_run, extra_environment=stub_environment, expect_failure=True)
+check("packed for chat" in wrong_interface_output, "call refuses a run packed for chat", wrong_interface_output)
 stub_server.shutdown()
 
 # -- report: a chain solved on the third attempt, a false "done" -------------

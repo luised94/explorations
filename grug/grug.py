@@ -108,6 +108,7 @@ def parse_return_block(reply_text):
             return_fields[key] = value
     return return_fields
 
+
 def store_reply(run_identifier, reply_text):
     # Shared by record (pasted or downloaded replies) and call (API replies):
     # the second real call site is what earned this function.
@@ -344,6 +345,10 @@ def command_call(arguments):
     run_state = read_runs().get(arguments.run)
     if run_state is None:
         raise SystemExit(f"unknown run: {arguments.run}")
+    if run_state["interface"] != "api":
+        # Sending a chat-packed run through the API would log it under the
+        # wrong interface and quietly mix the arms being compared.
+        raise SystemExit(f"run was packed for {run_state['interface']}; pack again with --interface api")
     run_directory = RUNS_DIRECTORY / arguments.run
     if (run_directory / "reply.md").exists():
         raise SystemExit("run already has a reply; pack again for a new sample, so one run is one sample")
