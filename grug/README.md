@@ -30,6 +30,7 @@ header: `uv run grug.py ...`. An alias helps:
     grug pack TASK --interface api|sandbox|chat [--domain code] [--evidence FILE ...] [--memory NOTE]
     # api:          grug call RUN
     # sandbox/chat: paste runs/RUN/packet.md, save the whole reply, grug record RUN REPLY_FILE
+    grug pack NEXT_TASK --after RUN [--evidence FILE ...]         # next turn, same browser thread
     grug record RUN --verdict pass|partial|fail --note "why"      # after you check the work
     grug pack TASK ... --repair RUN --evidence error.txt          # if it failed
     grug promote RUN --tags a,b                                   # if the lesson was earned

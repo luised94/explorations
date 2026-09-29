@@ -202,4 +202,28 @@ api_block = report_output.split("model=stub/model-a")[1].split("method=")[0]
 check("said done but not passed 1" in api_block and "first try passed 0/1" in api_block,
       "report separates the model's claim from the human verdict", report_output)
 
+# -- follow-up turns: same thread, method not resent, decay measured ---------
+second_turn_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--after", first_run,
+                              "--evidence", str(unparsed_reply))
+second_turn = run_identifier_from(second_turn_output)
+second_turn_packet = (STORE_COPY / "runs" / second_turn / "packet.md").read_text(encoding="utf-8")
+check(f"turn 2 of thread {first_run}" in second_turn_packet and "# [grug] METHOD" not in second_turn_packet
+      and "not resent" in second_turn_packet and "# [grug] RETURN CONTRACT" in second_turn_packet,
+      "a follow-up packet names its thread and turn and does not resend the method", second_turn_packet[:400])
+second_turn_event = json.loads(RUN_LOG_COPY.read_text(encoding="utf-8").splitlines()[-1])
+check(second_turn_event["method"] == "core" and second_turn_event["interface"] == "chat" and second_turn_event["link"] == "after",
+      "a follow-up turn inherits method and interface and records its link", json.dumps(second_turn_event))
+override_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--after", first_run, "--interface", "api", expect_failure=True)
+check("inherits" in override_output, "a follow-up turn refuses a different interface", override_output)
+run_grug("record", second_turn, "-", input_text="Sure, fixed it.\n")
+third_turn = run_identifier_from(run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--after", second_turn))
+check(json.loads(RUN_LOG_COPY.read_text(encoding="utf-8").splitlines()[-1])["turn"] == 3, "turns count up along the thread")
+thread_report = run_grug("report")
+chat_block = thread_report.split("interface=chat")[1].split("method=")[0]
+check("threads 1  lost the return block 1 (first at turn 2.0)" in chat_block and "first try passed 1/1" in chat_block,
+      "report counts one thread, finds where it lost the block, keeps first try to the opening packet", thread_report)
+api_follow_up = run_identifier_from(run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--after", api_run))
+api_follow_up_output = run_grug("call", api_follow_up, extra_environment={"GRUG_API_KEY": "unused"}, expect_failure=True)
+check("browser-only" in api_follow_up_output, "call refuses a follow-up turn it could not give history to", api_follow_up_output)
+
 print("smoke: all checks passed")
