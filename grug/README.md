@@ -11,6 +11,7 @@ The files are the system of record. grug.py is a replaceable view over them.
 
     core.md          the constant method (the thing under test)
     contract.md      the return block every reply ends with
+    ambient.md       mirror of the chat Preferences field: a loader, no method
     domains/         code, math, writeup, research, review: pick per task
     memory/          dated lessons, one per file, promoted from runs
     tasks/           task files; a line "Mode: design" or "Mode: build"
@@ -46,9 +47,16 @@ build sandbox, which cannot reach openrouter.ai):
 
     curl -s https://openrouter.ai/api/v1/models | python3 -c "import json,sys; [print(m['id']) for m in json.load(sys.stdin)['data'] if m['id'].endswith(':free')]"
 
-Preferences field (a fourth view, no code): paste the output of
-`cat core.md contract.md domains/code.md` into the chat Preferences field to
-run the method as the ambient system text instead of per packet.
+## Browser setup
+
+The chat Preferences field holds ambient.md and nothing else: a loader that
+says the method arrives with each thread. Chat memory and search of past
+chats stay off. Every browser pack records the hash of ambient.md, so the
+file must match the field byte for byte; edit both together, never one.
+
+Fallback: to go back to the old Preferences, run
+`cp baseline/preferences.md ambient.md`, paste it into the field, and runs
+record the new hash. `git checkout ambient.md` restores the loader.
 
 ## Experiment protocol
 
@@ -57,9 +65,8 @@ midway:
 
 1. Arms. `--method core` (default), `--method baseline/preferences.md`, and
    `--method none` (bare: task, evidence and contract only).
-2. Ambient. In browser chat the Preferences field is always loaded. Pass
-   `--ambient` with what it held (none, preferences, grug) and change the
-   field only between batches, never within one.
+2. Ambient. The Preferences field (ambient.md) is recorded by hash on every
+   browser run. Change it only between batches, never within one.
 3. Sample size and archive rule. For example: 10 build tasks per arm on one
    model; archive grug if core does not beat bare on first-try passes, or
    costs more attempts than the baseline for no gain.

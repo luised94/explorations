@@ -9,6 +9,7 @@ and memory/ are never touched. Prints one ok line per check and stops at the
 first failure with the output that broke it.
 """
 
+import hashlib
 import http.server
 import json
 import os
@@ -63,8 +64,15 @@ fence_close = packet_text.find("\n`````\n", fence_open + 1)
 forged_position = packet_text.find(forged_heading)
 check(fence_open != -1 and fence_open < forged_position < fence_close, "evidence with a 4-backtick run and a forged heading stays inside a 5-backtick fence", packet_text)
 pack_event = json.loads(RUN_LOG_COPY.read_text(encoding="utf-8").splitlines()[-1])
-check(pack_event["mode"] == "build" and pack_event["ambient"] == "unset" and len(pack_event["sections"][0]["sha256"]) == 64,
-      "pack event records mode, ambient and file hashes", json.dumps(pack_event, indent=1))
+ambient_digest = hashlib.sha256((STORE_COPY / "ambient.md").read_bytes()).hexdigest()[:12]
+check(pack_event["mode"] == "build" and pack_event["ambient"] == f"sha256:{ambient_digest}" and len(pack_event["sections"][0]["sha256"]) == 64,
+      "pack event records mode, the ambient.md hash and file hashes", json.dumps(pack_event, indent=1))
+(STORE_COPY / "ambient.md").rename(WORK_ROOT / "ambient.md.moved")
+missing_ambient_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "chat", expect_failure=True)
+check("mirror the chat Preferences" in missing_ambient_output, "a browser pack refuses to run without ambient.md", missing_ambient_output)
+run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api")
+check(json.loads(RUN_LOG_COPY.read_text(encoding="utf-8").splitlines()[-1])["ambient"] == "none", "an api pack needs no ambient.md")
+(WORK_ROOT / "ambient.md.moved").rename(STORE_COPY / "ambient.md")
 
 secret_file = WORK_ROOT / ".env"
 secret_file.write_text("KEY=hunter2\n", encoding="utf-8")

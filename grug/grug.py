@@ -31,6 +31,9 @@ DOMAINS_DIRECTORY = STORE_ROOT / "domains"
 MEMORY_DIRECTORY = STORE_ROOT / "memory"
 CONTRACT_PATH = STORE_ROOT / "contract.md"
 DEFAULT_METHOD_PATH = STORE_ROOT / "core.md"
+# ambient.md mirrors the chat Preferences field, byte for byte. Its hash is
+# recorded on every browser run, so what the field held is known, not typed.
+AMBIENT_PATH = STORE_ROOT / "ambient.md"
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 # A crude guard, not a scanner: a packet leaves the machine (pasted into a
@@ -236,7 +239,15 @@ def command_pack(arguments):
     # only used to warn, never to cut.
     token_estimate = len(packet_text) // 4
     mode_match = re.search(r"^\s*Mode:\s*(\w+)", task_text, re.MULTILINE | re.IGNORECASE)
-    ambient_label = arguments.ambient or ("none" if arguments.interface == "api" else "unset")
+    # An API call carries no Preferences field, so its ambient is none. A
+    # browser run gets whatever ambient.md holds now; a missing file is an
+    # error, because an unknown ambient would poison the comparison.
+    if arguments.interface == "api":
+        ambient_label = "none"
+    elif AMBIENT_PATH.is_file():
+        ambient_label = "sha256:" + hashlib.sha256(AMBIENT_PATH.read_bytes()).hexdigest()[:12]
+    else:
+        raise SystemExit(f"missing {AMBIENT_PATH}: it must mirror the chat Preferences field")
     append_event({
         "run": run_identifier,
         "kind": "pack",
@@ -520,7 +531,6 @@ def main():
     pack_parser.add_argument("--memory", action="extend", nargs="+", default=[], help="memory note names or paths")
     pack_parser.add_argument("--evidence", action="extend", nargs="+", default=[], help="source files, errors, outputs")
     pack_parser.add_argument("--model", default="", help="model id for api, or a label like 'opus-5.5 web'")
-    pack_parser.add_argument("--ambient", help="what the chat Preferences field held: none, preferences, grug, ...")
     pack_parser.add_argument("--repair", metavar="PARENT_RUN", help="retry the task after run PARENT_RUN; pass error output as --evidence")
     pack_parser.add_argument("--allow-sensitive", action="store_true", help="pack files whose names look like secrets")
     pack_parser.set_defaults(handler=command_pack)
