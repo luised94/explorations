@@ -113,26 +113,53 @@ def command_pack(arguments):
     planned_sections = []
     if arguments.method == "core":
         method_label = "core"
-        planned_sections.append(("METHOD", "instruction", DEFAULT_METHOD_PATH))
+        planned_sections.append(("METHOD", "instruction", DEFAULT_METHOD_PATH, None))
     elif arguments.method == "none":
         method_label = "none"
     else:
         method_label = Path(arguments.method).stem
-        planned_sections.append(("METHOD", "instruction", Path(arguments.method)))
+        planned_sections.append(("METHOD", "instruction", Path(arguments.method), None))
     for domain_name in arguments.domain:
-        planned_sections.append((f"DOMAIN {domain_name}", "instruction", DOMAINS_DIRECTORY / f"{domain_name}.md"))
+        planned_sections.append((f"DOMAIN {domain_name}", "instruction", DOMAINS_DIRECTORY / f"{domain_name}.md", None))
     for memory_name in arguments.memory:
         memory_path = Path(memory_name)
         if not memory_path.is_file():
             memory_path = MEMORY_DIRECTORY / (memory_name if memory_name.endswith(".md") else memory_name + ".md")
-        planned_sections.append((f"MEMORY {memory_path.name} (a lead to check, not a rule)", "reference", memory_path))
+        planned_sections.append((f"MEMORY {memory_path.name} (a lead to check, not a rule)", "reference", memory_path, None))
     for evidence_name in arguments.evidence:
         evidence_path = Path(evidence_name)
         if SENSITIVE_NAME_PATTERN.search(evidence_path.name) and not arguments.allow_sensitive:
             raise SystemExit(f"refusing sensitive-looking file name: {evidence_name} (override: --allow-sensitive)")
-        planned_sections.append((f"EVIDENCE {evidence_name}", "reference", evidence_path))
-    planned_sections.append(("TASK", "instruction", Path(arguments.task)))
-    planned_sections.append(("RETURN CONTRACT", "instruction", CONTRACT_PATH))
+        planned_sections.append((f"EVIDENCE {evidence_name}", "reference", evidence_path, None))
+    parent_identifier = None
+    repair_depth = 0
+    if arguments.repair:
+        # Repair is another pack, not a separate machine: the parent's return
+        # block and the human's verdict become reference text, and the parent
+        # link makes each chain a linked list whose length is the attempt count.
+        known_runs = read_runs()
+        parent_state = known_runs.get(arguments.repair)
+        parent_reply_path = RUNS_DIRECTORY / arguments.repair / "reply.md"
+        if parent_state is None or not parent_reply_path.is_file():
+            raise SystemExit(f"repair needs a run with a recorded reply: {arguments.repair}")
+        if parent_state.get("task") != arguments.task:
+            print(f"warning  parent task was {parent_state.get('task')}, this task is {arguments.task}", file=sys.stderr)
+        parent_identifier = arguments.repair
+        repair_depth = parent_state.get("depth", 0) + 1
+        if repair_depth >= 3:
+            print(f"warning  repair attempt {repair_depth} on one chain: question the idea, not the code", file=sys.stderr)
+        parent_reply_text = parent_reply_path.read_text(encoding="utf-8")
+        parent_blocks = RETURN_BLOCK_PATTERN.findall(parent_reply_text)
+        # An unparsed reply has no block; its tail is where a summary would be.
+        parent_summary = f"<return>{parent_blocks[-1]}</return>" if parent_blocks else parent_reply_text[-3000:]
+        repair_text = (
+            f"Previous attempt: run {parent_identifier} (method {parent_state.get('method')}, depth {repair_depth - 1}).\n"
+            f"Human verdict: {parent_state.get('verdict', 'none recorded')}. Note: {parent_state.get('note') or 'none'}\n\n"
+            f"Its reply ended with:\n{parent_summary.strip()}\n"
+        )
+        planned_sections.append((f"REPAIR attempt {repair_depth + 1} at this same task", "reference", parent_reply_path, repair_text))
+    planned_sections.append(("TASK", "instruction", Path(arguments.task), None))
+    planned_sections.append(("RETURN CONTRACT", "instruction", CONTRACT_PATH, None))
 
     packet_parts = [
         f"# [grug] PACKET {run_identifier}\n\n"
@@ -142,12 +169,12 @@ def command_pack(arguments):
     ]
     section_records = []
     task_text = ""
-    for heading, authority, source_path in planned_sections:
+    for heading, authority, source_path, inline_text in planned_sections:
         if not source_path.is_file():
             raise SystemExit(f"missing file for {heading}: {source_path}")
         source_bytes = source_path.read_bytes()
         try:
-            source_text = source_bytes.decode("utf-8")
+            source_text = source_bytes.decode("utf-8") if inline_text is None else inline_text
         except UnicodeDecodeError:
             raise SystemExit(f"not UTF-8 text, cannot pack: {source_path}")
         section_records.append({
@@ -194,8 +221,8 @@ def command_pack(arguments):
         "packet_characters": len(packet_text),
         "packet_token_estimate": token_estimate,
         "packet_sha256": hashlib.sha256(packet_text.encode("utf-8")).hexdigest(),
-        "parent": None,
-        "depth": 0,
+        "parent": parent_identifier,
+        "depth": repair_depth,
     })
 
     print(f"run      {run_identifier}")
@@ -259,6 +286,7 @@ def main():
     pack_parser.add_argument("--evidence", action="extend", nargs="+", default=[], help="source files, errors, outputs")
     pack_parser.add_argument("--model", default="", help="model id for api, or a label like 'opus-5.5 web'")
     pack_parser.add_argument("--ambient", help="what the chat Preferences field held: none, preferences, grug, ...")
+    pack_parser.add_argument("--repair", metavar="PARENT_RUN", help="retry the task after run PARENT_RUN; pass error output as --evidence")
     pack_parser.add_argument("--allow-sensitive", action="store_true", help="pack files whose names look like secrets")
     pack_parser.set_defaults(handler=command_pack)
 

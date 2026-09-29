@@ -97,4 +97,20 @@ check("parsed   no" in unparsed_output, "record keeps a reply with no block as u
 contract_text = (STORE_COPY / "contract.md").read_text(encoding="utf-8")
 check(all(f"\n{key}:" in contract_text for key in ("status", "lesson", "run", "expect")), "contract.md still names the keys the harness reads")
 
+# -- repair: chains carry the parent's block, verdict and depth ---------------
+bare_run = run_identifier_from(bare_output)
+run_grug("record", bare_run, "--verdict", "fail", "--note", "no tests were written")
+repair_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api", "--method", "none", "--repair", bare_run)
+repair_run = run_identifier_from(repair_output)
+repair_packet = (STORE_COPY / "runs" / repair_run / "packet.md").read_text(encoding="utf-8")
+check("# [grug] REPAIR attempt 2" in repair_packet and "trust me" in repair_packet and "no tests were written" in repair_packet,
+      "repair packet carries the parent reply tail and the human's note", repair_packet)
+run_grug("record", repair_run, "-", input_text="<return>\nstatus: failed\nfailure: IndexError\n</return>\n")
+second_repair_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api", "--method", "none", "--repair", repair_run)
+second_repair_state = json.loads(RUN_LOG_COPY.read_text(encoding="utf-8").splitlines()[-1])
+check(second_repair_state["depth"] == 2 and second_repair_state["parent"] == repair_run, "a repair of a repair has depth 2 and links its parent", json.dumps(second_repair_state))
+no_reply_output = run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api",
+                           "--repair", run_identifier_from(second_repair_output), expect_failure=True)
+check("recorded reply" in no_reply_output, "repair refuses a parent with no recorded reply", no_reply_output)
+
 print("smoke: all checks passed")
