@@ -15,10 +15,13 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 import re
 import secrets
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 STORE_ROOT = Path(__file__).resolve().parent
@@ -28,6 +31,7 @@ DOMAINS_DIRECTORY = STORE_ROOT / "domains"
 MEMORY_DIRECTORY = STORE_ROOT / "memory"
 CONTRACT_PATH = STORE_ROOT / "contract.md"
 DEFAULT_METHOD_PATH = STORE_ROOT / "core.md"
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 # A crude guard, not a scanner: a packet leaves the machine (pasted into a
 # chat or sent to an API), so refuse evidence whose name says it holds keys.
@@ -103,6 +107,26 @@ def parse_return_block(reply_text):
         else:
             return_fields[key] = value
     return return_fields
+
+def store_reply(run_identifier, reply_text):
+    # Shared by record (pasted or downloaded replies) and call (API replies):
+    # the second real call site is what earned this function.
+    (RUNS_DIRECTORY / run_identifier / "reply.md").write_text(reply_text, encoding="utf-8")
+    return_fields = parse_return_block(reply_text)
+    append_event({
+        "run": run_identifier,
+        "kind": "reply",
+        "parsed": return_fields is not None,
+        "returned": return_fields or {},
+        "reply_characters": len(reply_text),
+    })
+    if return_fields is None:
+        print("parsed   no: the reply has no <return> block; recorded as unparsed")
+        return
+    print("parsed   yes")
+    for key, value in return_fields.items():
+        for single_value in (value if isinstance(value, list) else [value]):
+            print(f"{key:<8} {single_value}")
 
 
 # ---- Commands --------------------------------------------------------------
@@ -316,6 +340,74 @@ def command_promote(arguments):
     print("next     edit Scope and Revisit; the note is a draft until then")
 
 
+def command_call(arguments):
+    run_state = read_runs().get(arguments.run)
+    if run_state is None:
+        raise SystemExit(f"unknown run: {arguments.run}")
+    run_directory = RUNS_DIRECTORY / arguments.run
+    if (run_directory / "reply.md").exists():
+        raise SystemExit("run already has a reply; pack again for a new sample, so one run is one sample")
+    # The key is read from the environment on each call and never written to
+    # the log, the packet or an error message.
+    api_key = os.environ.get("GRUG_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise SystemExit("set GRUG_API_KEY or OPENROUTER_API_KEY")
+    model = arguments.model or run_state.get("model") or os.environ.get("GRUG_MODEL")
+    if not model:
+        raise SystemExit("no model: pass --model, pack with --model, or set GRUG_MODEL")
+    base_url = (arguments.base_url or os.environ.get("GRUG_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+
+    # The OpenAI-compatible chat shape is the one most providers and local
+    # servers accept. The whole packet is one user message so the model sees
+    # the same bytes a chat paste would give it; system-prompt placement
+    # might follow better, but would break comparison across interfaces.
+    request_body = {"model": model, "messages": [{"role": "user", "content": (run_directory / "packet.md").read_text(encoding="utf-8")}]}
+    if arguments.max_tokens:
+        request_body["max_tokens"] = arguments.max_tokens
+    request = urllib.request.Request(
+        base_url + "/chat/completions",
+        data=json.dumps(request_body).encode("utf-8"),
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    call_event = {"run": arguments.run, "kind": "call", "call_model": model, "base_url": base_url}
+    started_at = time.monotonic()
+    # No automatic retry: a rate limit or outage is recorded and the human
+    # decides whether to call again, so failures stay visible in the data.
+    try:
+        with urllib.request.urlopen(request, timeout=arguments.timeout) as response:
+            response_bytes = response.read()
+    except urllib.error.HTTPError as error:
+        error_body = error.read().decode("utf-8", "replace")[:2000]
+        append_event(call_event | {"http_status": error.code, "call_error": error_body})
+        raise SystemExit(f"HTTP {error.code} from {base_url}: {error_body}")
+    except (urllib.error.URLError, TimeoutError) as error:
+        append_event(call_event | {"http_status": None, "call_error": str(error)})
+        raise SystemExit(f"no response from {base_url}: {error}")
+    call_event["latency_seconds"] = round(time.monotonic() - started_at, 2)
+    (run_directory / "response.json").write_bytes(response_bytes)
+
+    try:
+        response_document = json.loads(response_bytes)
+        first_choice = response_document["choices"][0]
+        reply_text = first_choice["message"]["content"] or ""
+    except (ValueError, KeyError, IndexError, TypeError):
+        # Some providers answer 200 with an error object instead of choices.
+        call_error = "unexpected response shape; see response.json"
+        append_event(call_event | {"http_status": 200, "call_error": call_error})
+        raise SystemExit(f"{call_error}: {response_bytes[:500].decode('utf-8', 'replace')}")
+    append_event(call_event | {
+        "http_status": 200,
+        "call_error": None,
+        "call_model": response_document.get("model", model),
+        "usage": response_document.get("usage", {}),
+        "finish_reason": first_choice.get("finish_reason"),
+    })
+    print(f"model    {response_document.get('model', model)}  ({call_event['latency_seconds']} s, finish {first_choice.get('finish_reason')})")
+    store_reply(arguments.run, reply_text)
+    print(f"next     check the work, then: uv run grug.py record {arguments.run} --verdict pass|partial|fail --note '...'")
+
+
 def command_record(arguments):
     known_runs = read_runs()
     if arguments.run not in known_runs:
@@ -328,22 +420,7 @@ def command_record(arguments):
         if reply_path.exists() and not arguments.replace:
             raise SystemExit(f"run already has a reply: {reply_path} (correct it with --replace)")
         reply_text = sys.stdin.read() if arguments.reply == "-" else Path(arguments.reply).read_text(encoding="utf-8")
-        reply_path.write_text(reply_text, encoding="utf-8")
-        return_fields = parse_return_block(reply_text)
-        append_event({
-            "run": arguments.run,
-            "kind": "reply",
-            "parsed": return_fields is not None,
-            "returned": return_fields or {},
-            "reply_characters": len(reply_text),
-        })
-        if return_fields is None:
-            print("parsed   no: the reply has no <return> block; recorded as unparsed")
-        else:
-            print("parsed   yes")
-            for key, value in return_fields.items():
-                for single_value in (value if isinstance(value, list) else [value]):
-                    print(f"{key:<8} {single_value}")
+        store_reply(arguments.run, reply_text)
 
     if arguments.verdict is not None:
         # The verdict is the human's check of the work. The model's own status
@@ -376,6 +453,14 @@ def main():
     record_parser.add_argument("--note", default="", help="one line on why")
     record_parser.add_argument("--replace", action="store_true", help="replace a reply already stored")
     record_parser.set_defaults(handler=command_record)
+
+    call_parser = subparsers.add_parser("call", help="send a packed run to an OpenAI-compatible chat endpoint")
+    call_parser.add_argument("run")
+    call_parser.add_argument("--model", help="overrides the model given at pack time and GRUG_MODEL")
+    call_parser.add_argument("--base-url", help=f"overrides GRUG_BASE_URL; default {DEFAULT_BASE_URL}")
+    call_parser.add_argument("--max-tokens", type=int, help="reply limit; default is the provider's")
+    call_parser.add_argument("--timeout", type=float, default=600, help="seconds to wait for the reply")
+    call_parser.set_defaults(handler=command_call)
 
     notes_parser = subparsers.add_parser("notes", help="list memory notes, filtered by keywords")
     notes_parser.add_argument("keywords", nargs="*", help="all must appear in a note (case-insensitive)")

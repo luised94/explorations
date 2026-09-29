@@ -9,12 +9,14 @@ and memory/ are never touched. Prints one ok line per check and stops at the
 first failure with the output that broke it.
 """
 
+import http.server
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 SOURCE_ROOT = Path(__file__).resolve().parent
@@ -122,5 +124,57 @@ all_notes_output = run_grug("notes")
 check("harness-style-from-preferences" in all_notes_output, "notes with no keyword lists every note", all_notes_output)
 no_lesson_output = run_grug("promote", repair_run, expect_failure=True)
 check("no lesson" in no_lesson_output, "promote refuses a run that proposed no lesson", no_lesson_output)
+
+# -- call: against a local stub of an OpenAI-compatible endpoint --------------
+# The real endpoint needs a key and network; the stub checks the request
+# shape the harness sends and answers the way OpenRouter does.
+stub_requests = []
+
+
+class StubChatHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        request_body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        stub_requests.append({"path": self.path, "authorization": self.headers["Authorization"], "body": request_body})
+        if request_body["model"] == "stub/rate-limited":
+            response_status, response_document = 429, {"error": {"message": "rate limited"}}
+        else:
+            response_status, response_document = 200, {
+                "model": request_body["model"],
+                "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content":
+                             "Merged.\n<return>\nstatus: done\nlesson: sort before merging\n</return>\n"}}],
+                "usage": {"prompt_tokens": 900, "completion_tokens": 40},
+            }
+        response_bytes = json.dumps(response_document).encode("utf-8")
+        self.send_response(response_status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response_bytes)))
+        self.end_headers()
+        self.wfile.write(response_bytes)
+
+    def log_message(self, *ignored_arguments):
+        pass
+
+
+stub_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), StubChatHandler)
+threading.Thread(target=stub_server.serve_forever, daemon=True).start()
+# no_proxy: a machine with HTTP_PROXY set would otherwise route the stub call
+# through its proxy, and the test would fail for a reason unrelated to grug.
+stub_environment = {"GRUG_API_KEY": "stub-key-not-real", "GRUG_BASE_URL": f"http://127.0.0.1:{stub_server.server_port}/v1",
+                    "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}
+
+api_run = run_identifier_from(run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api",
+                                       "--domain", "code", "--model", "stub/model-a"))
+call_output = run_grug("call", api_run, extra_environment=stub_environment)
+api_packet = (STORE_COPY / "runs" / api_run / "packet.md").read_text(encoding="utf-8")
+check(stub_requests[-1]["path"] == "/v1/chat/completions" and stub_requests[-1]["authorization"] == "Bearer stub-key-not-real"
+      and stub_requests[-1]["body"]["messages"] == [{"role": "user", "content": api_packet}],
+      "call posts the exact packet as one user message with the key as a bearer token", json.dumps(stub_requests[-1])[:400])
+check("status   done" in call_output and (STORE_COPY / "runs" / api_run / "response.json").is_file(),
+      "call stores the raw response and parses the reply", call_output)
+limited_run = run_identifier_from(run_grug("pack", str(STORE_COPY / "tasks/example-build.md"), "--interface", "api", "--model", "stub/rate-limited"))
+limited_output = run_grug("call", limited_run, extra_environment=stub_environment, expect_failure=True)
+check("HTTP 429" in limited_output, "call records an HTTP error and exits nonzero", limited_output)
+check("stub-key-not-real" not in RUN_LOG_COPY.read_text(encoding="utf-8"), "the API key never reaches the run log")
+stub_server.shutdown()
 
 print("smoke: all checks passed")
