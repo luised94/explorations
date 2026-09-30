@@ -103,11 +103,18 @@ at the first line that is not block content.
   see it. `attempt: typed` means: type the answer, then see it. Both commit
   before reveal.
 - Locations follow the kbd location specifiers: `p42`, `pp42-45`, `ch3`,
-  `S2.1`, `fig3`, `t12m34s`. A citekey not in the bib is written with the kbd
-  `??` suffix, for example `@Matsui1980??`.
+  `S2.1`, `fig3`, `t12m34s`, and the pinned-key forms such as `John.3.16`.
+  rep checks only that a location has no spaces; it never reads its parts.
+  A citekey not in the bib is written with the kbd `??` suffix, for example
+  `@Matsui1980??` or `@Matsui1980??:p12`.
 - Tags follow kbd: lowercase, underscore-separated, acronyms uppercase.
 - An unknown field is kept and reported by lint as a warning, so a future
   field needs no migration.
+
+Problems come in two kinds. An error leaves the item out of sessions until
+you fix it: no id, no answer, a `check:` or `attempt:` value rep does not
+know, a key that cannot be graded. A warning never leaves an item out: an
+unknown field, a malformed source or tag, an id not in the form rep writes.
 
 Not in v1, on purpose: `requires:` (its meaning moves to the concept layer in
 M5), variant pools (arrive with generated problems), cloze deletions,
@@ -143,4 +150,6 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 ```
 2026-09-30  First version, locked with PLAN.md.
 2026-09-30  M2: exact-match rule and numeric answer syntax fixed (PLAN.md D20).
+2026-09-30  M2: locations are not validated beyond having no spaces (kbd uses
+            forms beyond its six specifiers); errors and warnings defined.
 ```

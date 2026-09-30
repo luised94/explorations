@@ -40,13 +40,28 @@ INVARIANTS
       on U+2028, U+0085 and form feed, which would move every later line
       number and put lint's quickfix entries on the wrong line.
 
-Meaning (required fields, allowed values, citekeys, IDs) is checked on these
-records separately; the parser only says what each line is.
+  Item: what a session can use, built by check_source_item only when the
+  item has no errors (PLAN.md D14: typed records only after checks pass).
+  Values stay JSON-native strings; a numeric key is kept as its validated
+  text parts, which Decimal reads exactly and without failure.
+
+SEVERITY
+  An error excludes the item from sessions (I10), so errors are only what
+  stops a session from using the item correctly: no id, no answer, a check
+  or attempt value it cannot run, a numeric key it cannot read, a grading
+  key that cannot be typed. Everything else (source, tags, unknown fields,
+  an id not in the form rep writes) is a warning: excluding an item from
+  practice over its metadata would cost learning and protect nothing.
+
+Meaning is checked on the source records by check_source_item; the parser
+only says what each line is.
 """
 
 import re
 import unicodedata
 from typing import Literal, TypedDict
+
+from rep.machine import DEVICE_ID_ALPHABET
 
 
 class Problem(TypedDict):
@@ -73,6 +88,29 @@ class SourceItem(TypedDict):
     problems: list[Problem]
 
 
+class NumericKey(TypedDict):
+    value: str  # matches NUMBER_PATTERN
+    tolerance: str | None  # an unsigned number, or None for equality
+    tolerance_is_percent: bool
+
+
+class Item(TypedDict):
+    id: str
+    line: int
+    question: str
+    answer: str | None  # shown at reveal
+    criteria: list[str] | None  # what a self-graded item is graded against
+    check: Literal["self", "exact", "numeric"]
+    attempt: Literal["recall", "typed"]  # effective: exact and numeric force typed
+    numeric_key: NumericKey | None  # set exactly when check is numeric
+    citekey: str | None  # explicit source, else the `## @citekey` above
+    citekey_is_unverified: bool  # written with the kbd "??" suffix
+    location: str | None
+    tags: list[str]
+    by: str | None
+    open_questions: list[str]
+
+
 # Checked in this order; the first match decides. Every pattern is anchored
 # at column 0, so an indented `A:` is not a field (it would be a silent
 # second answer otherwise) and "#### x" is not an item-level heading.
@@ -84,6 +122,39 @@ OPEN_QUESTION_PATTERN = re.compile(r"^\?:(.*)$")
 # Whitespace or the end of the line must follow the colon: "https://x" in an
 # item is then an unrecognized line to report, not a field named "https".
 FIELD_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9_]*):(?:[ \t]+(.*))?$")
+
+KNOWN_FIELD_KEYS = ("id", "A", "criteria", "source", "tags", "check", "attempt", "by")
+
+# PLAN.md D20. ASCII digits only ([0-9], not \d): \d also matches digits of
+# other scripts, which Decimal accepts, so the syntax the person reads in
+# CONVENTIONS.md would not be the syntax rep accepts. The pattern, not
+# Decimal, is the gate: Decimal also parses "Infinity" and "NaN".
+UNSIGNED_NUMBER = r"(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+NUMBER_PATTERN = re.compile(rf"^[+-]?{UNSIGNED_NUMBER}$")
+NUMERIC_KEY_PATTERN = re.compile(rf"^([+-]?{UNSIGNED_NUMBER})(?:[ \t]*\+-[ \t]*({UNSIGNED_NUMBER})(%)?)?$")
+
+# The form rep writes (CONVENTIONS.md "IDs"): up to three lowercase ASCII
+# words and four alphabet characters, or "q-" and six.
+ITEM_ID_PATTERN = re.compile(
+    rf"^(?:[a-z0-9]+-){{1,3}}[{DEVICE_ID_ALPHABET}]{{4}}$|^q-[{DEVICE_ID_ALPHABET}]{{6}}$"
+)
+# What an id must be to work at all: one word of printable ASCII, since it is
+# the key of an item's whole history in the events (CONVENTIONS.md: IDs are
+# ASCII). Failing ITEM_ID_PATTERN but passing this is only a warning, because
+# the item may already have history under that id.
+USABLE_ITEM_ID_PATTERN = re.compile(r"^[!-~]+$")
+
+# A citekey is anything BibTeX allows in a key except ":" (the location
+# separator) and "?" (the kbd unverified suffix). kbd's README notes that
+# BetterBibTeX auto-keys can hold dots and other punctuation, so the class
+# excludes rather than enumerates. The location is not checked beyond having
+# no whitespace: kbd uses forms beyond its six specifiers (pinned-key verses
+# such as John.3.16), and nothing in rep reads a location's structure.
+SOURCE_PATTERN = re.compile(r"^@([^\s:?,{}%#~\\\"]+)(\?\?)?(?::(\S+))?$")
+SECTION_SOURCE_PATTERN = re.compile(r"^@([^\s:?,{}%#~\\\"]+)(\?\?)?$")
+# kbd README: lowercase and underscore-separated, acronyms uppercase; so each
+# underscore-separated part is all lowercase or all uppercase.
+TAG_PATTERN = re.compile(r"^#(?:[a-z0-9]+|[A-Z0-9]+)(?:_(?:[a-z0-9]+|[A-Z0-9]+))*$")
 
 # Stands for the question while its block is collected. It cannot collide
 # with a field key, which FIELD_PATTERN limits to letters, digits and "_".
@@ -316,3 +387,266 @@ def render_library_items(items: list[SourceItem]) -> str:
             rendered_lines.append(f"?: {open_question['value']}")
         rendered_lines.append("")
     return "\n".join(rendered_lines)
+
+
+def check_source_item(source_item: SourceItem) -> tuple[Item | None, list[Problem]]:
+    """Check one item's meaning and build the record a session can use.
+
+    PRE   source_item came from parse_library_text.
+    POST  returns (item, problems): problems holds the parser's problems for
+          this item followed by the meaning problems found here, in field
+          order; item is None exactly when some problem is an error
+          (SEVERITY in the module docstring). The source item is unchanged.
+    """
+    problems: list[Problem] = list(source_item["problems"])
+    fields = source_item["fields"]
+    item_line = source_item["line"]
+
+    # D4: an unknown field is kept and warned about, so a future field needs
+    # no migration. A case slip ("a:" for "A:") gets a hint, because the same
+    # slip also produces the "no answer" error and the hint names the cause.
+    for field in fields.values():
+        if field["key"] in KNOWN_FIELD_KEYS:
+            continue
+        case_matches = [known for known in KNOWN_FIELD_KEYS if known.lower() == field["key"].lower()]
+        hint = f"; did you mean '{case_matches[0]}:'?" if case_matches else ""
+        problems.append(
+            {
+                "line": field["line"],
+                "column": 1,
+                "severity": "warning",
+                "message": f"unknown field '{field['key']}' is kept but not used{hint}",
+            }
+        )
+
+    # --- id ---
+    item_id = ""
+    id_field = fields.get("id")
+    if id_field is None:
+        problems.append(
+            {
+                "line": item_line,
+                "column": 1,
+                "severity": "error",
+                "message": "no id: save the file in nvim or run `rep stamp` to add one",
+            }
+        )
+    elif id_field["is_block"] or USABLE_ITEM_ID_PATTERN.match(id_field["value"]) is None:
+        problems.append(
+            {
+                "line": id_field["line"],
+                "column": 1,
+                "severity": "error",
+                "message": "id must be one word of printable ASCII on the 'id:' line",
+            }
+        )
+    else:
+        item_id = id_field["value"]
+        if ITEM_ID_PATTERN.match(item_id) is None:
+            problems.append(
+                {
+                    "line": id_field["line"],
+                    "column": 1,
+                    "severity": "warning",
+                    "message": (
+                        f"id '{item_id}' is not in the form rep writes; if the item has no "
+                        "review history yet, delete the line and let `rep stamp` write one"
+                    ),
+                }
+            )
+
+    # --- answer and criteria ---
+    answer_field = fields.get("A")
+    criteria_field = fields.get("criteria")
+    answer = None if answer_field is None else answer_field["value"]
+    criteria: list[str] | None = None
+    if criteria_field is not None:
+        # Each non-blank line is one element of the checklist; a line with
+        # only ">" separates groups and is not an element.
+        criteria = [line.strip() for line in criteria_field["value"].split("\n") if line.strip() != ""]
+        if criteria == []:
+            problems.append(
+                {"line": criteria_field["line"], "column": 1, "severity": "error", "message": "'criteria:' has no elements"}
+            )
+    if answer_field is None and criteria_field is None:
+        problems.append(
+            {
+                "line": item_line,
+                "column": 1,
+                "severity": "error",
+                "message": "no answer: write 'A:' or 'criteria:'",
+            }
+        )
+
+    # --- check and attempt ---
+    check_kind: Literal["self", "exact", "numeric"] = "self"
+    check_field = fields.get("check")
+    if check_field is not None:
+        check_value = check_field["value"]
+        if check_field["is_block"]:
+            check_value = "(a block)"
+        if check_value == "self":
+            check_kind = "self"
+        elif check_value == "exact":
+            check_kind = "exact"
+        elif check_value == "numeric":
+            check_kind = "numeric"
+        else:
+            problems.append(
+                {
+                    "line": check_field["line"],
+                    "column": 1,
+                    "severity": "error",
+                    "message": f"check must be self, exact or numeric, found '{check_value}'",
+                }
+            )
+
+    attempt_kind: Literal["recall", "typed"] = "recall"
+    attempt_field = fields.get("attempt")
+    if attempt_field is not None:
+        attempt_value = attempt_field["value"]
+        if attempt_field["is_block"]:
+            attempt_value = "(a block)"
+        if attempt_value == "recall":
+            attempt_kind = "recall"
+        elif attempt_value == "typed":
+            attempt_kind = "typed"
+        else:
+            problems.append(
+                {
+                    "line": attempt_field["line"],
+                    "column": 1,
+                    "severity": "error",
+                    "message": f"attempt must be recall or typed, found '{attempt_value}'",
+                }
+            )
+
+    numeric_key: NumericKey | None = None
+    if check_kind == "exact" or check_kind == "numeric":
+        # D20: both grade a typed answer against the key, so both imply typed;
+        # an explicit recall is a contradiction the person should resolve,
+        # not one rep should pick a side of.
+        if attempt_field is not None and attempt_field["value"] == "recall":
+            problems.append(
+                {
+                    "line": attempt_field["line"],
+                    "column": 1,
+                    "severity": "error",
+                    "message": f"check: {check_kind} grades a typed answer; remove 'attempt: recall'",
+                }
+            )
+        attempt_kind = "typed"
+        if answer_field is None or answer_field["is_block"]:
+            problems.append(
+                {
+                    "line": item_line if answer_field is None else answer_field["line"],
+                    "column": 1,
+                    "severity": "error",
+                    "message": f"check: {check_kind} needs a one-line 'A:' to grade against (a block cannot be typed)",
+                }
+            )
+        elif check_kind == "numeric":
+            numeric_match = NUMERIC_KEY_PATTERN.match(answer_field["value"])
+            if numeric_match is None:
+                problems.append(
+                    {
+                        "line": answer_field["line"],
+                        "column": 1,
+                        "severity": "error",
+                        "message": (
+                            f"'A: {answer_field['value']}' is not a numeric key; write a number, optionally "
+                            "with '+- tolerance' or '+- percent%', such as 9.81 +- 0.01 (PLAN.md D20)"
+                        ),
+                    }
+                )
+            else:
+                numeric_key = {
+                    "value": numeric_match.group(1),
+                    "tolerance": numeric_match.group(2),
+                    "tolerance_is_percent": numeric_match.group(3) is not None,
+                }
+
+    # --- source: the explicit field wins over the section heading ---
+    citekey: str | None = None
+    citekey_is_unverified = False
+    location: str | None = None
+    source_field = fields.get("source")
+    section_heading = source_item["section_heading"]
+    if source_field is not None:
+        source_match = None if source_field["is_block"] else SOURCE_PATTERN.match(source_field["value"])
+        if source_match is None:
+            problems.append(
+                {
+                    "line": source_field["line"],
+                    "column": 1,
+                    "severity": "warning",
+                    "message": "source must be @citekey, @citekey:location or @citekey??, with no spaces",
+                }
+            )
+        else:
+            citekey = source_match.group(1)
+            citekey_is_unverified = source_match.group(2) is not None
+            location = source_match.group(3)
+    elif section_heading is not None and section_heading.startswith("@"):
+        section_match = SECTION_SOURCE_PATTERN.match(section_heading)
+        if section_match is None:
+            problems.append(
+                {
+                    "line": item_line,
+                    "column": 1,
+                    "severity": "warning",
+                    "message": (
+                        f"the section heading '## {section_heading}' starts with '@' but is not "
+                        "a citekey, so this item has no source"
+                    ),
+                }
+            )
+        else:
+            citekey = section_match.group(1)
+            citekey_is_unverified = section_match.group(2) is not None
+
+    # --- tags ---
+    tags: list[str] = []
+    tags_field = fields.get("tags")
+    if tags_field is not None:
+        for tag in tags_field["value"].split():
+            if TAG_PATTERN.match(tag) is None:
+                problems.append(
+                    {
+                        "line": tags_field["line"],
+                        "column": 1,
+                        "severity": "warning",
+                        "message": (
+                            f"tag '{tag}' is not kbd form: '#' then lowercase or ACRONYM parts "
+                            "joined by '_', such as #genome_stability or #ORC"
+                        ),
+                    }
+                )
+            else:
+                tags.append(tag)
+
+    # The format of by: belongs to its writer, `rep accept` (M4); until then
+    # it is carried as written.
+    by_field = fields.get("by")
+
+    if any(problem["severity"] == "error" for problem in problems):
+        return None, problems
+    assert item_id != "", "no error was reported, so the id was read"
+    assert (check_kind == "numeric") == (numeric_key is not None), "numeric key set exactly for numeric"
+    item: Item = {
+        "id": item_id,
+        "line": item_line,
+        "question": source_item["question"],
+        "answer": answer,
+        "criteria": criteria,
+        "check": check_kind,
+        "attempt": attempt_kind,
+        "numeric_key": numeric_key,
+        "citekey": citekey,
+        "citekey_is_unverified": citekey_is_unverified,
+        "location": location,
+        "tags": tags,
+        "by": None if by_field is None else by_field["value"],
+        "open_questions": [open_question["value"] for open_question in source_item["open_questions"]],
+    }
+    return item, problems

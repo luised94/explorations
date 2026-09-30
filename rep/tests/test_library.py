@@ -5,7 +5,15 @@ import unicodedata
 from hypothesis import given, settings
 from hypothesis import strategies as strategies
 
-from rep.library import Field, SourceItem, parse_library_text, render_library_items
+import pytest
+
+from rep.library import (
+    Field,
+    SourceItem,
+    check_source_item,
+    parse_library_text,
+    render_library_items,
+)
 
 CONVENTIONS_EXAMPLE = """\
 ## @Lehninger2021
@@ -238,7 +246,10 @@ def test_parse_of_render_is_identity_apart_from_line_numbers(items: list[SourceI
 @settings(max_examples=500)
 @given(
     strategies.lists(
-        strategies.sampled_from(["### Q:", "## ", "###", "    >", "\t>", "A:", "?:", "\n", "\r\n", ""]).flatmap(
+        strategies.sampled_from(
+            ["### Q:", "## @", "## ", "###", "    >", "\t>", "A: ", "?:", "\n", "\r\n", "",
+             "check: numeric", "check: exact", "attempt: recall", "id: ", "source: @", "tags: #", "criteria:"]
+        ).flatmap(
             lambda prefix: strategies.text(alphabet=line_characters, max_size=6).map(lambda rest: prefix + rest)
         ),
         max_size=12,
@@ -246,7 +257,158 @@ def test_parse_of_render_is_identity_apart_from_line_numbers(items: list[SourceI
 )
 def test_parser_is_total_and_problem_lines_exist(text: str) -> None:
     line_count = unicodedata.normalize("NFC", text).count("\n") + 1
-    for item in parse_library_text(text):
-        assert 1 <= item["line"] <= line_count
-        for problem in item["problems"]:
+    for source_item in parse_library_text(text):
+        assert 1 <= source_item["line"] <= line_count
+        # Checking is total too, and an Item exists exactly when no error does.
+        item, problems = check_source_item(source_item)
+        for problem in problems:
             assert 1 <= problem["line"] <= line_count
+        has_error = any(problem["severity"] == "error" for problem in problems)
+        assert (item is None) == has_error
+
+
+# --- checks -----------------------------------------------------------------
+
+VALID_ITEM = "### Q: What does Km measure?\nid: km-measure-7q2m\nA: half of Vmax\n"
+
+
+def test_conventions_example_checks_into_session_items() -> None:
+    first_source_item, second_source_item = parse_library_text(CONVENTIONS_EXAMPLE)
+    first_item, first_problems = check_source_item(first_source_item)
+    assert first_problems == []
+    assert first_item == {
+        "id": "km-measure-7q2m",
+        "line": 3,
+        "question": "What does Km measure?",
+        "answer": "The substrate concentration at which velocity is half of Vmax.",
+        "criteria": None,
+        "check": "self",
+        "attempt": "recall",
+        "numeric_key": None,
+        "citekey": "Lehninger2021",
+        "citekey_is_unverified": False,
+        "location": None,
+        "tags": [],
+        "by": None,
+        "open_questions": [],
+    }
+    second_item, second_problems = check_source_item(second_source_item)
+    assert second_problems == []
+    assert second_item is not None
+    assert second_item["criteria"] == [
+        "the electron transport chain builds the H+ gradient",
+        "H+ flows back through Fo, turning the rotor",
+        "rotation drives F1 to phosphorylate ADP",
+    ]
+    assert (second_item["citekey"], second_item["location"]) == ("Lehninger2021", "p712")
+    assert second_item["tags"] == ["#atp", "#chemiosmosis"]
+    assert second_item["attempt"] == "typed"
+    assert second_item["open_questions"] == ["is the c-ring stoichiometry worth its own item?"]
+
+
+def test_parser_problems_pass_through_and_exclude_the_item() -> None:
+    (source_item,) = parse_library_text(VALID_ITEM + "stray line\n")
+    item, problems = check_source_item(source_item)
+    assert item is None
+    assert [(problem["line"], problem["severity"]) for problem in problems] == [(4, "error")]
+
+
+# Each case appends lines to VALID_ITEM (or replaces it) and names the one
+# problem expected: its line, its severity and a fragment of its message.
+@pytest.mark.parametrize(
+    ("item_text", "expected_line", "expected_severity", "message_fragment"),
+    [
+        ("### Q: q\nA: a\n", 1, "error", "no id"),
+        ("### Q: q\nid:\n    > km-7q2m\nA: a\n", 2, "error", "one word of printable ASCII"),
+        ("### Q: q\nid: two words\nA: a\n", 2, "error", "one word of printable ASCII"),
+        ("### Q: q\nid: caf\u00e9-7q2m\nA: a\n", 2, "error", "one word of printable ASCII"),
+        ("### Q: q\nid: km-measure-7q2i\nA: a\n", 2, "warning", "not in the form rep writes"),
+        ("### Q: q\nid: a-b-c-d-7q2m\nA: a\n", 2, "warning", "not in the form rep writes"),
+        ("### Q: q\nid: km-7q2m\n", 1, "error", "no answer"),
+        ("### Q: q\nid: km-7q2m\ncriteria:\n    >\n", 3, "error", "no elements"),
+        (VALID_ITEM + "check: fuzzy\n", 4, "error", "check must be"),
+        (VALID_ITEM + "attempt: spoken\n", 4, "error", "attempt must be"),
+        (VALID_ITEM + "check: exact\nattempt: recall\n", 5, "error", "remove 'attempt: recall'"),
+        ("### Q: q\nid: km-7q2m\ncriteria: c\ncheck: exact\n", 1, "error", "needs a one-line 'A:'"),
+        ("### Q: q\nid: km-7q2m\nA:\n    > 9.81\ncheck: numeric\n", 3, "error", "needs a one-line 'A:'"),
+        ("### Q: q\nid: km-7q2m\nA: 9.81 m/s^2\ncheck: numeric\n", 3, "error", "not a numeric key"),
+        (VALID_ITEM + "a: lowercase answer\n", 4, "warning", "did you mean 'A:'"),
+        (VALID_ITEM + "colour: blue\n", 4, "warning", "unknown field 'colour'"),
+        (VALID_ITEM + "source: Lehninger2021\n", 4, "warning", "source must be"),
+        (VALID_ITEM + "source: @Key two\n", 4, "warning", "source must be"),
+        ("## @Key with words\n\n" + VALID_ITEM, 3, "warning", "is not a citekey"),
+        (VALID_ITEM + "tags: #Genome_stability\n", 4, "warning", "not kbd form"),
+        (VALID_ITEM + "tags: atp\n", 4, "warning", "not kbd form"),
+    ],
+)
+def test_each_injected_violation_is_reported_once(
+    item_text: str, expected_line: int, expected_severity: str, message_fragment: str
+) -> None:
+    (source_item,) = parse_library_text(item_text)
+    item, problems = check_source_item(source_item)
+    assert len(problems) == 1, problems
+    (problem,) = problems
+    assert (problem["line"], problem["severity"]) == (expected_line, expected_severity)
+    assert message_fragment in problem["message"]
+    # SEVERITY: errors exclude the item, warnings never do.
+    assert (item is None) == (expected_severity == "error")
+
+
+@pytest.mark.parametrize(
+    ("answer_text", "expected_key"),
+    [
+        ("9.81", {"value": "9.81", "tolerance": None, "tolerance_is_percent": False}),
+        ("-9.81 +- 0.01", {"value": "-9.81", "tolerance": "0.01", "tolerance_is_percent": False}),
+        ("6.022e23 +- 0.1%", {"value": "6.022e23", "tolerance": "0.1", "tolerance_is_percent": True}),
+        ("+.5+-1E-3", {"value": "+.5", "tolerance": "1E-3", "tolerance_is_percent": False}),
+        ("1000", {"value": "1000", "tolerance": None, "tolerance_is_percent": False}),
+    ],
+)
+def test_numeric_keys_in_d20_syntax_are_read(answer_text: str, expected_key: dict[str, object]) -> None:
+    (source_item,) = parse_library_text(f"### Q: q\nid: km-7q2m\nA: {answer_text}\ncheck: numeric\n")
+    item, problems = check_source_item(source_item)
+    assert problems == []
+    assert item is not None and item["numeric_key"] == expected_key
+    assert item["attempt"] == "typed"
+
+
+@pytest.mark.parametrize(
+    "answer_text",
+    ["1,000", "3,14", "1/3", "Infinity", "NaN", "inf", "9.81 +- -0.01", "9.81 +-", "\u0663", "0x1F", "9.81 +- 1 %", ""],
+)
+def test_numeric_keys_outside_d20_syntax_are_errors(answer_text: str) -> None:
+    (source_item,) = parse_library_text(f"### Q: q\nid: km-7q2m\nA: {answer_text}\ncheck: numeric\n")
+    item, problems = check_source_item(source_item)
+    assert item is None
+    assert any(problem["severity"] == "error" for problem in problems)
+
+
+def test_sources_citekeys_and_locations() -> None:
+    text = (
+        "## @St.AthanasiusOrthodoxAcademy2008orthodox\n"
+        "### Q: a\nid: a-7q2m\nA: x\n"
+        "### Q: b\nid: b-7q2m\nA: x\nsource: @osb:John.3.16\n"
+        "### Q: c\nid: c-7q2m\nA: x\nsource: @Matsui1980??:p12\n"
+        "## @Matsui1980??\n"
+        "### Q: d\nid: d-7q2m\nA: x\n"
+        "## A topic\n"
+        "### Q: e\nid: e-7q2m\nA: x\n"
+    )
+    checked = [check_source_item(source_item) for source_item in parse_library_text(text)]
+    assert all(problems == [] for _item, problems in checked)
+    sources = [
+        (item["citekey"], item["citekey_is_unverified"], item["location"]) for item, _problems in checked if item is not None
+    ]
+    assert sources == [
+        ("St.AthanasiusOrthodoxAcademy2008orthodox", False, None),
+        ("osb", False, "John.3.16"),
+        ("Matsui1980", True, "p12"),
+        ("Matsui1980", True, None),
+        (None, False, None),
+    ]
+
+
+def test_q_form_and_one_word_ids_are_rep_form() -> None:
+    for item_id in ("q-7q2m3x", "km-7q2m", "a-b-c-7q2m"):
+        (source_item,) = parse_library_text(f"### Q: q\nid: {item_id}\nA: a\n")
+        assert check_source_item(source_item)[1] == [], item_id
