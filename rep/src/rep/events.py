@@ -10,8 +10,10 @@ REPRESENTATION
                      width, so string order is time order
     device           the writing device's id (machine.DEVICE_ID_PATTERN)
     kind             which record this is
-  Kinds in M1 are the ones the fold reads. session_start, session_end and
-  item_stamped (PLAN.md D10) are added with their writers in M2 and M3.
+  Kinds in M1 are the ones the fold reads. item_stamped (M2) records when an
+  item was created, for capture measurement (PLAN.md E1); the fold skips it.
+  session_start and session_end (PLAN.md D10) are added with their writer
+  in M3.
 
   ItemState: what the fold knows about one item. FoldResult: every item's
   state plus problems found, as data.
@@ -115,7 +117,18 @@ class UnsuspendEvent(TypedDict):
     item: str
 
 
-Event = AttemptEvent | AmendEvent | UndoEvent | SuspendEvent | UnsuspendEvent
+# Only the item id: what the item says lives in the library, and its source
+# is looked up there when capture is measured (PLAN.md D10).
+class ItemStampedEvent(TypedDict):
+    format_version: int
+    id: str
+    at: str
+    device: str
+    kind: Literal["item_stamped"]
+    item: str
+
+
+Event = AttemptEvent | AmendEvent | UndoEvent | SuspendEvent | UnsuspendEvent | ItemStampedEvent
 
 
 class ItemState(TypedDict):
@@ -273,10 +286,20 @@ def decode_event(line: str) -> Event:
         }
         return undo_event
 
-    if kind == "suspend" or kind == "unsuspend":
+    if kind == "suspend" or kind == "unsuspend" or kind == "item_stamped":
         item = fields.get("item")
         if not isinstance(item, str) or item == "":
             raise EventDecodeError(f"{kind}.item must be a non-empty string")
+        if kind == "item_stamped":
+            item_stamped_event: ItemStampedEvent = {
+                "format_version": format_version,
+                "id": event_id,
+                "at": at,
+                "device": device,
+                "kind": "item_stamped",
+                "item": item,
+            }
+            return item_stamped_event
         if kind == "suspend":
             suspend_event: SuspendEvent = {
                 "format_version": format_version,
@@ -358,7 +381,14 @@ def fold_events(
     items: dict[str, ItemState] = {}
     for event in events_by_id.values():
         # Undo and amend were consumed above; undone events never touch state.
-        if event["id"] in undone_event_ids or event["kind"] == "undo" or event["kind"] == "amend":
+        # item_stamped measures capture and says nothing about memory, so it
+        # must not create a state either: an item never reviewed has none.
+        if (
+            event["id"] in undone_event_ids
+            or event["kind"] == "undo"
+            or event["kind"] == "amend"
+            or event["kind"] == "item_stamped"
+        ):
             continue
         item_state = items.get(event["item"])
         if item_state is None:

@@ -14,6 +14,7 @@ from rep.events import (
     AttemptEvent,
     Event,
     EventDecodeError,
+    ItemStampedEvent,
     SuspendEvent,
     UndoEvent,
     decode_event,
@@ -112,7 +113,11 @@ def test_every_kind_round_trips() -> None:
     }  # fmt: skip
     typed_attempt = make_attempt(event_id_for(4), START, "km-measure-7q2m", 3)
     typed_attempt["typed_answer"] = "half of Vmax\nwith a newline and a lambda: \u03bb"
-    for event in (amend, undo, suspend, typed_attempt):
+    item_stamped: ItemStampedEvent = {
+        "format_version": 1, "id": event_id_for(5), "at": format_canonical_time(START),
+        "device": DEVICE, "kind": "item_stamped", "item": "km-measure-7q2m",
+    }  # fmt: skip
+    for event in (amend, undo, suspend, typed_attempt, item_stamped):
         assert decode_event(encode_event(event)) == event
 
 
@@ -330,3 +335,13 @@ def test_bad_references_are_reported_as_problems_not_raised() -> None:
 def test_due_dates_are_deterministic_across_replays() -> None:
     events = build_history([(86400 * gap, "km-measure-7q2m", 3) for gap in (0, 3, 9, 27, 81)])
     assert fold_events(events) == fold_events(list(events))
+
+
+def test_item_stamped_changes_no_state_and_creates_no_item() -> None:
+    stamped: ItemStampedEvent = {
+        "format_version": 1, "id": event_id_for(90), "at": format_canonical_time(START),
+        "device": DEVICE, "kind": "item_stamped", "item": "km-measure-7q2m",
+    }  # fmt: skip
+    history = build_history([(60, "km-measure-7q2m", 3), (86400, "km-measure-7q2m", 1)])
+    assert fold_events([stamped]) == {"items": {}, "problems": []}
+    assert fold_events([stamped, *history]) == fold_events(history)

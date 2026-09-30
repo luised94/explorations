@@ -556,6 +556,12 @@ under 100 ms).
 --------------------------------------------------------------------------------
 
 - nvim key prefix for rep.lua (M3). `<Space>r` is taken.
+- Writer lock scope in a session (M3). M2 commands take the lock without
+  waiting and hold it only while they write (storage.py S5). If a session
+  held it from start to end, the `e` key would open nvim, the save would run
+  `rep stamp`, and stamp (which appends `item_stamped`) would be refused, so
+  a new item written during a session would get no id. M3 chooses: hold the
+  lock only around each append, or release it while nvim is open.
 - `rep due --brief` snapshot (M3): a small derived file in machine-local
   state, rebuilt from events when any events file is newer; never a source
   of truth.
