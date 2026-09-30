@@ -444,6 +444,25 @@ D20. Grading keys for `check: exact` and `check: numeric` (M2, from section 9).
   `attempt: recall` together with `exact` or `numeric` is an error, since
   both imply `typed`. The comparison itself is written with its first caller,
   the session (M3).
+  Status: approved by the person on 2026-09-30, provisionally. Critical.
+  Why critical: these keys are the only grades rep writes without the person
+  deciding, and grades are the history everything else is computed from
+  (FSRS state, due dates, E2, E4, E5). A wrong rule does not fail loudly; it
+  biases the schedule of every exact and numeric item.
+  What contains the damage: the log keeps the evidence, so a revised rule
+  can regrade past attempts with amend events instead of discarding them.
+  That holds only if two constraints bind M3, the writer of attempts:
+  (1) `typed_answer` stores the raw typed text, before any normalization,
+  so any later rule can be applied to it; (2) the item fingerprint covers at
+  least the question, `A:`, `criteria:` and `check:`, so a regrade can tell
+  whether the key changed since the attempt. A regrade is exact only where
+  the fingerprint still matches the current item; the other attempts are
+  reported, never regraded against a key they were not answered against.
+  Rule for revising D20: the revision comes with a regrade over the log, or
+  with a stated reason to leave past grades as they are. The regrade command
+  is built when a revision first needs it, not before.
+  Watch in the use week: amends on exact and numeric attempts, by cause
+  (case, punctuation, number format, recall).
 
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
@@ -602,3 +621,8 @@ fringe        (M5) concepts whose prerequisites are all known
             numeric tolerance syntax); the item leaves section 9; the float
             boundary failure is added to section 3. Awaiting the person's
             approval; the checks commit is the first code to depend on it.
+2026-09-30  D20 approved by the person, provisionally, and marked critical:
+            its grades are written without a person deciding. Added the two
+            constraints on M3 that keep it revisable (raw `typed_answer`; a
+            fingerprint covering the key) and the rule that a revision comes
+            with a regrade or a stated reason.
