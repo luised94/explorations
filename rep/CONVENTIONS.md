@@ -79,8 +79,26 @@ at the first line that is not block content.
 - `criteria:` is a checklist. In a session you answer `y` only if every
   element is present. When both `A:` and `criteria:` exist, `A:` is shown at
   reveal and `criteria:` is what you grade against.
-- `check: exact` and `check: numeric` imply `attempt: typed`. The exact
-  normalization rule and the numeric tolerance syntax are fixed in M2.
+- `check: exact` and `check: numeric` imply `attempt: typed`, and need a
+  one-line `A:` (a block answer cannot be typed on one line). Writing
+  `attempt: recall` with either is an error. Reasons: PLAN.md D20.
+- `check: exact` passes when your typed answer equals `A:` after trimming the
+  ends and turning each run of spaces into one space. Case, accents and
+  punctuation count: `Paris` is not `paris`.
+- `check: numeric`: `A:` is a number, optionally with `+-` and a tolerance,
+  absolute or in percent of the answer:
+
+  ```
+  A: 9.81
+  A: 9.81 +- 0.01
+  A: 6.022e23 +- 0.1%
+  ```
+
+  A number is an optional sign, digits with an optional decimal point, and
+  an optional exponent (`1.5e-3`). No thousands separators, decimal commas,
+  fractions or units: put the unit and the expected form in the question
+  ("in m/s^2, to two decimals"). Without a tolerance your answer must equal
+  `A:` as a number (`9.810` equals `9.81`); with one, the edge passes.
 - `attempt: recall` means: think of the answer, press a key to commit, then
   see it. `attempt: typed` means: type the answer, then see it. Both commit
   before reveal.
@@ -124,4 +142,5 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 
 ```
 2026-09-30  First version, locked with PLAN.md.
+2026-09-30  M2: exact-match rule and numeric answer syntax fixed (PLAN.md D20).
 ```

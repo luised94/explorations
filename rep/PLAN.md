@@ -122,6 +122,16 @@ Measured while building M0 and M1:
 - glibc strftime writes year 999 as "999"; canonical times are formatted with
   isoformat, which always pads the year to four digits.
 
+Measured while starting M2 (sandbox, CPython 3.12.13):
+- Binary floats misgrade a tolerance boundary: abs(0.4 - 0.1) is
+  0.30000000000000004, so 0.4 fails `0.1 +- 0.3`; with Decimal it is 0.3 and
+  passes. A 1% boundary on 6.022e23 fails with floats, passes with Decimal.
+- `Decimal("Infinity")` and `Decimal("NaN")` parse, so the number syntax must
+  be checked by pattern before Decimal sees it.
+- `str.splitlines` also splits on U+2028, U+0085 and form feed, which nvim
+  does not treat as line ends; line numbers for lint and the lines stamp
+  preserves must come from splitting on "\n" only.
+
 Sources read:
 - OpenRouter FAQ: free models allow 50 requests a day, 1,000 a day after
   buying at least $10 of credits. The person accepts that free providers may
@@ -372,6 +382,69 @@ D19. The concept layer waits for M5; atomic items start now.
   Untested: feeding synthetic Good reviews into FSRS for implicit credit has
   no failure path; FIRe also sends penalties upward. Spike before building.
 
+D20. Grading keys for `check: exact` and `check: numeric` (M2, from section 9).
+  Governing asymmetry: an automatic grade fails in two ways. A false Again is
+  visible at once (the session shows the typed answer beside the key) and is
+  fixed in `rep review` by an amend. A false Good is invisible and corrupts
+  the history, the reason D8 refuses model auto-grading. Every leniency turns
+  some false Agains into false Goods, and rep cannot know which difference an
+  item is testing. So the keys are strict wherever a difference can carry a
+  fact, and lenient only where it cannot.
+  Exact, choice: the typed answer and the `A:` text are compared after NFC,
+  removing leading and trailing whitespace, and replacing each run of inner
+  whitespace with one space. Case, accents and punctuation all count.
+  Reason: whitespace never carries a fact in a one-line answer; case does
+  (German nouns: "Haus"), accents do ("si" and "si-with-acute" differ in
+  meaning), letters do ("Strasse" and "Strasse-with-eszett").
+  Rejected: plus casefold (6: "paris" would pass, but so would "haus" and
+  "strasse", and casefold rules are not predictable to the person); plus
+  accent and punctuation stripping (3: erases the fact in language items);
+  per-item leniency such as `check: exact-nocase` (7: the right shape if the
+  need is real, but grammar before evidence); alternatives in one key,
+  `A: colour | color` (6: `|` is ordinary answer text, and alternatives blur
+  minimum information).
+  Trade-off: more false Agains on case slips ("paris" for "Paris"). Each
+  costs one relearning repeat in the session and one amend in review.
+  Revisit: if the use week shows more than about 1 in 10 exact attempts
+  amended from Again to Good for case or punctuation alone, add a per-item
+  leniency value to `check:`.
+  Numeric, choice: the `A:` of a numeric item is a number, optionally
+  followed by `+-` and a tolerance that is absolute or a percentage of the
+  key: `A: 9.81`, `A: 9.81 +- 0.01`, `A: 6.022e23 +- 0.1%`. A number is an
+  optional sign, digits with an optional decimal point (`.5` allowed), and an
+  optional exponent (`e` or `E`, optional sign, digits); a tolerance is the
+  same without a sign. Nothing else: no thousands separators, decimal commas,
+  fractions, units, `inf` or `nan`. Keys and typed answers are read with the
+  same syntax, as exact decimals (Python `Decimal`), never binary floats.
+  Without a tolerance the typed value must equal the key as a number
+  (`9.810` equals `9.81`, `1e3` equals `1000`). With one, it passes when
+  |typed - key| <= tolerance, or <= |key| * percentage / 100; the boundary
+  passes. A typed answer that is not a number in this syntax does not match.
+  Reason: `+-` is the ASCII spelling of the physicist's value-plus-uncertainty,
+  typeable on any keyboard, and it keeps the tolerance on the line it
+  qualifies, so the item stays one fact on one line. Decimal makes the
+  boundary exact: with floats, 0.4 against `0.1 +- 0.3` fails, because
+  0.4 - 0.1 is 0.30000000000000004 (measured, section 3). Equality rather
+  than implied precision because implied precision is invisible in the file
+  and ambiguous for trailing zeros ("1000": one significant figure or four).
+  Rejected: a separate `tolerance:` field (6: one fact split over two
+  fields); the character plus-minus (5: not typeable, and markers are ASCII);
+  implied precision from significant figures (5: invisible, ambiguous);
+  units in the key (4: needs a unit library; the question names the unit,
+  "in m/s^2"); floats (4: wrong at the boundary); expressions through sympy
+  (later, D13).
+  Trade-off: fractions, thousands separators and decimal commas are refused
+  in keys and in typed answers, so the question must state the form and the
+  unit; without a tolerance "9.8" fails against "9.81".
+  Revisit: math items that need expressions (sympy, D13), or use-week amends
+  caused by number format rather than by recall.
+  Checks that follow (M2, on load and before every write): `exact` and
+  `numeric` need an inline `A:`, since a block answer cannot be typed on one
+  line; `numeric` needs `A:` in the syntax above; an explicit
+  `attempt: recall` together with `exact` or `numeric` is an error, since
+  both imply `typed`. The comparison itself is written with its first caller,
+  the session (M3).
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
@@ -468,7 +541,6 @@ under 100 ms).
   state, rebuilt from events when any events file is newer; never a source
   of truth.
 - FIRe-style credit with penalties versus synthetic FSRS reviews (M5, D19).
-- Exact-match normalization and numeric tolerance syntax (M2).
 - Bib citekey cache keyed on file time, only if lint feels slow (M2).
 - OpenRouter $10 credit: the person's call; tutor sessions need it more than
   generation does.
@@ -525,3 +597,8 @@ fringe        (M5) concepts whose prerequisites are all known
             committed" (it said "reveal to commit", which is backwards: the
             answer is revealed after the commit); clipboard route settled;
             facts measured during M0 and M1 added to section 3.
+2026-09-30  M2 (thread 2), before any code depends on it: D20 records the
+            grading keys section 9 left open (exact-match normalization,
+            numeric tolerance syntax); the item leaves section 9; the float
+            boundary failure is added to section 3. Awaiting the person's
+            approval; the checks commit is the first code to depend on it.
