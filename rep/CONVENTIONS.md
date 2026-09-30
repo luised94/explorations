@@ -133,8 +133,11 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 - Form: up to three words from the question, lowercase ASCII with accents
   stripped and common words dropped, then a hyphen and four characters from
   the lowercase Crockford base32 alphabet (`0-9 a-z` without `i l o u`).
-  Example: `km-measure-7q2m`. A question with no ASCII letters gets `q-`
-  followed by six such characters.
+  Example: `km-measure-7q2m`. A question with no ASCII letters, or with only
+  common words ("What is it?"), gets `q-` followed by six such characters.
+  Letters that lose nothing but an accent keep their base letter; others
+  are dropped (`Strasse` written with the sharp s gives `strae`). An id must
+  be unique across the whole library, not only its file.
 - An ID never changes after the item's first review, even if you reword the
   question. The ID is an identity, not a title.
 - A change of meaning is a new item: delete the old block (its history is kept
@@ -159,4 +162,6 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 2026-09-30  M2: locations are not validated beyond having no spaces (kbd uses
             forms beyond its six specifiers); errors and warnings defined.
 2026-09-30  M2: what lint reports; `@llm:` sources accepted, not checked.
+2026-09-30  M2: `q-` ids also for questions of only common words; how
+            accented and other non-ASCII letters enter an id.
 ```

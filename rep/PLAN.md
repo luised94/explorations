@@ -142,6 +142,10 @@ Measured while starting M2 (sandbox, CPython 3.12.13):
   or "?" (dates pulled into BetterBibTeX keys, one lost accent). They are
   data errors, fixed in Zotero; the grammar does not accommodate them, and
   such keys are simply never matched.
+- On the person's machine (WSL2, 2026-09-30): `rep stamp` kept a CRLF line
+  ending on the inserted id line and wrote one `item_stamped` event; `rep
+  add` filed an item under its citekey with its event; the bib reader took
+  112 ms for 62,062 keys of the real 25.4 MB export.
 - Text-mode stdin on Linux does not translate "\r\n"; under the C locale
   it decodes with surrogateescape, so invalid UTF-8 would pass. Commands
   that must hand input back exactly read bytes. subprocess text mode does
@@ -509,7 +513,7 @@ I11 Every event line has format_version and a unique id.      check on write
 | 1 | docs | PLAN.md, STATUS.md, CONVENTIONS.md | applies cleanly |
 | 1 | M0 | uv project, pyright strict, pytest, data root and local.toml resolution, device_id, `rep where`, `rep --help` | smoke test through the installed `rep` entry point (done, aef91db) |
 | 1 | M1 | FSRS transplant, event record, fold | oracle property test, deterministic replay (done, b1aadfe) |
-| 2 | M2 | parser (line-classifying state machine), checks, `rep stamp`, `rep add`, `rep lint`, NFC, citekey check, single-writer lock, events file loader and appender, `item_stamped` event | round-trip and stamp properties; checks red on injected violations; lock refuses a second writer |
+| 2 | M2 | parser (line-classifying state machine), checks, `rep stamp`, `rep add`, `rep lint`, NFC, citekey check, single-writer lock, events file loader and appender, `item_stamped` event | round-trip and stamp properties; checks red on injected violations; lock refuses a second writer (done, a64d51f) |
 | 3 | M3 | planner, session loop, `session_start`/`session_end` events, `rep review`, `rep why`, `rep forecast`, `rep stats`, `rep due --brief` (from a derived snapshot), rep.lua | real session end to end; `rep due --brief` wall time |
 | - | use week | daily use on one real reading; then a session porting drill/ | instrumentation (section 8) |
 | 4 | M4 | LLM seam (manual, OpenRouter), inbox, `rep accept`, generation from source-notes | manual transport end to end |
@@ -660,3 +664,14 @@ fringe        (M5) concepts whose prerequisites are all known
 2026-09-30  M2: bib citekey cache decided against (section 9, measured in
             section 3); `@llm:` sources recorded as an open hole, exempt
             from the bib check, by the person's decision.
+2026-09-30  M2 landed (thread 2, 01ba3ea..a64d51f). Approved in the thread:
+            D20, provisionally and marked critical; `@llm:` as an open
+            hole; no bib cache. Made by the build and listed in STATUS.md
+            as pending the person's approval: exit code 1 in the command
+            contract; `rep add` files by citekey, `--to` and `--path`
+            options; rep never creates the data root; the writer lock
+            refuses rather than waits, and is held per command; how ids
+            are formed (`q-` for questions of only common words, non-ASCII
+            after NFKD dropped); errors versus warnings, and lint notes;
+            `item_stamped` holds only the item id; locations not validated;
+            `rep add` shows errors, not warnings.
