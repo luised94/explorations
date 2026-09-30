@@ -1,0 +1,28 @@
+run_at	materials	model_id	attempt	repair_strategy	bend_version	command	exit_code	error_id	error_site	figures	outcome	done_automatic	source
+2026-09-22T00:36	i00-original	claude-opus-5	a00	oneshot	bend 2.0.16	bend PROOF.bend + playground.bend	0			unmarked-1:32x64:5/0|unmarked-2:32x32:0/0	pass	n/a	results_round1.txt
+2026-09-22T00:36	i00-original	claude-sonnet-5	a00	oneshot	bend 2.0.16	bend PROOF.bend	1	E-UNDEFINED	Sierpinski.cell.from_shared_bits		fail	n/a	results_round1.txt
+2026-09-22T01:37	i00-original	claude-sonnet-5	a01	bare	bend 2.0.16	bend PROOF.bend	1	E-UNFILLED-LAW	Mandel.escape_count		fail	n/a	results_round2.txt
+2026-09-22T10:23	i00-original	claude-sonnet-5	a02	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	new_imaginary_part		fail	n/a	results_round3.txt
+2026-09-22	i00-original	claude-sonnet-5	a03	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	row_offset		fail	n/a	sonnet diagnosis (order from its list)
+2026-09-22	i00-original	claude-sonnet-5	a04	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	total_columns		fail	n/a	sonnet transcript
+2026-09-22	i00-original	claude-sonnet-5	a05	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	levels_left		fail	n/a	sonnet transcript
+2026-09-22T11:01	i00-original	claude-sonnet-5	a06	bare	bend 2.0.16	bend PROOF.bend + playground.bend	0			sierpinski(unmarked):32x32:0/0|mandelbrot(unmarked):32x78:0/0	pass	n/a	results.txt (final)
+2026-09-22T00:36	i00-original	gpt5.6-terra	a00	oneshot	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	smaller_remaining_fragment_subdivisions		fail	n/a	results_round1.txt
+2026-09-22	i00-original	gpt5.6-terra	a01	bare	bend 2.0.16	bend PROOF.bend	1	E-PARSE	case (lost indentation)		fail	n/a	compiler output pasted by owner
+2026-09-22T01:37	i00-original	gpt5.6-terra	a02	bare	bend 2.0.16	bend PROOF.bend + playground.bend	0			mandelbrot(unmarked):64x128:bounded-set|sierpinski(unmarked):64x128:1/0	pass	n/a	results_round2.txt
+2026-09-22T00:36	i00-original	open-source-large	a00	oneshot	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	col		fail	n/a	results_round1.txt
+2026-09-22T01:37	i00-original	open-source-large	a01	bare	bend 2.0.16	bend PROOF.bend	1	E-TERMINATION	sierpinski_render_row_go		fail	n/a	results_round2.txt
+2026-09-22T10:23	i00-original	open-source-large	a02	bare	bend 2.0.16	bend PROOF.bend	1	E-SCRUTINEE	mandelbrot_escape_go		fail	n/a	results_round3.txt
+2026-09-22T11:01	i00-original	open-source-large	a03	bare	bend 2.0.16	bend PROOF.bend + playground.bend	0			unmarked-1:32x60:0/0|unmarked-2:16x32:16/16	pass	n/a	results.txt (final)
+2026-09-22T00:36	i00-original	open-source-medium	a00	oneshot	bend 2.0.16	bend PROOF.bend	1	E-PARSE	'-' (unary minus)		fail	n/a	results_round1.txt
+2026-09-22T01:37	i00-original	open-source-medium	a01	bare	bend 2.0.16	bend PROOF.bend	1	E-SCRUTINEE	match remaining_iterations		fail	n/a	results_round2.txt
+2026-09-22T10:23	i00-original	open-source-medium	a02	bare	bend 2.0.16	bend PROOF.bend	1	E-TERMINATION	Mandelbrot.escape_iterations		fail	n/a	results_round3.txt
+2026-09-22	i00-original	open-source-medium	a03	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	max_iterations		fail	n/a	medium transcript
+2026-09-22	i00-original	open-source-medium	a04	bare	bend 2.0.16	bend PROOF.bend	1	E-TERMINATION	row_segment		fail	n/a	medium transcript
+2026-09-22	i00-original	open-source-medium	a05	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	height		fail	n/a	medium transcript
+2026-09-22	i00-original	open-source-medium	a06	bare	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	column_index		fail	n/a	medium transcript
+2026-09-22T11:01	i00-original	open-source-medium	a07	bare	bend 2.0.16	bend PROOF.bend	1	E-UNDEFINED	Sierpinski.row		fail	n/a	results.txt (11:01)
+2026-09-22	i00-original	open-source-medium	a08	sweep	bend 2.0.16	bend PROOF.bend + playground.bend	0			unmarked-1:23x64:2/2(approximate: blank rows split it)|unmarked-2:16x32:16/16	pass	n/a	final pack results.txt
+2026-09-2x	i01-medium-self-notes	open-source-medium	?	?	bend 2.0.16	bend PROOF.bend	?	E-UNDEFINED;E-AFFINE;E-OTHER;E-PARSE	mandelbrot_escape;column_u32;sierpinski_cell_is_star_one_one;do-block let		pass	n/a	medium's own notes (model-written, order and count unverified)
+2026-09-2x	i02-medium-self-notes-v2	open-source-medium	a00	oneshot	bend 2.0.16	bend PROOF.bend	1	E-AFFINE	c_imag		fail	n/a	medium last-session thread
+2026-09-2x	i02-medium-self-notes-v2	open-source-medium	a01	enumerate	bend 2.0.16	bend PROOF.bend + playground.bend	0			mandelbrot:24x80(from code)|sierpinski:24x80:56/56(from code)	pass	n/a	medium last-session thread

@@ -1,53 +1,80 @@
 import Base
-import ./playground.bend as P
+import ./playground.bend as Playground
 
-law palette_zero:
-  {P.palette(0n) == " " : String}
+# Why these six laws and not others.
+#
+# Every F32 operation in Base is a bare `law` with no def: a primitive with a
+# runtime implementation and no computational content the checker can reduce.
+# So no claim about a Mandelbrot value -- membership, escape count, which shade
+# a cell gets -- is provable here, by anyone, ever. Everything below is
+# therefore structural: it constrains the shape of the output and says nothing
+# about the numbers in it. That is not a weakness of the choice, it is the
+# boundary of what F32-as-a-law leaves provable.
+#
+# Also excluded: the Sierpinski bit identity ("column zero is all stars"). It
+# needs U32.and(row, 0) to reduce, which needs the literal 0 to unfold into a
+# 32-deep Word of False. Nothing in Base ever forces a U32 literal to unfold --
+# U32.add_comm inducts over Word variables, never literals -- so whether the
+# checker does it is unknown, and a deliverable is not the place to find out.
+#
+# What survives is worth having. The row laws say the frame is rectangular no
+# matter what the shading does, which is exactly the property that holds even
+# though the cell contents are opaque. The picture laws say the fork tree emits
+# precisely the rows it promises: each branch of every parallel call contributes
+# exactly half, with nothing dropped or duplicated by the split. That is the one
+# claim here that is actually about the parallelism.
 
-law palette_one:
-  {P.palette(1n) == "." : String}
+# Quantities: every index is `+` because the proofs read it once for the
+# induction hypothesis and again to write out the rewrite motive. The Nat being
+# inducted on stays affine -- it is only ever matched.
 
-law palette_nine:
-  {P.palette(9n) == "%" : String}
+law mandelbrot_row_length:
+  for columns_remaining: Nat
+  for +row_index: U32
+  for +column_index: U32
+  for +line_tail: String
+  {String.length(Playground.Mandelbrot.row(columns_remaining, row_index,
+    column_index, line_tail))
+    == Nat.add(columns_remaining, String.length(line_tail)) : Nat}
 
-law palette_default:
-  {P.palette(10n) == "@" : String}
+law sierpinski_row_length:
+  for columns_remaining: Nat
+  for +row_index: U32
+  for +column_index: U32
+  for +line_tail: String
+  {String.length(Playground.Sierpinski.row(columns_remaining, row_index,
+    column_index, line_tail))
+    == Nat.add(columns_remaining, String.length(line_tail)) : Nat}
 
-law sierpinski_origin_is_filled:
-  {P.sierpinski_cell(0, 0) == "*" : String}
+# Nat.add(width, 1n) rather than 1n+width: Nat.add reduces on its first
+# argument, so with a variable width the sum is stuck, and 1n+width would be a
+# different (unprovable without a further lemma) claim.
+law mandelbrot_line_length:
+  for width: Nat
+  for +row_index: U32
+  {String.length(Playground.Mandelbrot.line(width, row_index))
+    == Nat.add(width, 1n) : Nat}
 
-law sierpinski_second_col_is_empty:
-  {P.sierpinski_cell(1, 0) == " " : String}
+law sierpinski_line_length:
+  for width: Nat
+  for +row_index: U32
+  {String.length(Playground.Sierpinski.line(width, row_index))
+    == Nat.add(width, 1n) : Nat}
 
-law sierpinski_off_axis_is_filled:
-  {P.sierpinski_cell(0, 1) == "*" : String}
+# depth is `+` because Picture.row_count itself takes a `+` argument, and the
+# proof inducts by calling itself twice on the predecessor, once per half.
+law mandelbrot_picture_row_count:
+  for +depth: Nat
+  for +first_row_index: U32
+  for +half_row_count: U32
+  {List.length(&2, String,
+    Playground.Mandelbrot.picture(depth, first_row_index, half_row_count))
+    == Playground.Picture.row_count(depth) : Nat}
 
-# The F32 operations are host primitives with no reduction rule in the
-# checker, so a law that pins the orbit to specific float coordinates cannot
-# be closed: the escape test stays a stuck term and the match on it never
-# picks a branch. The two laws below therefore quantify over the coordinates
-# rather than instantiating them. Nothing about the floats needs to compute;
-# what is being claimed is the control flow of the loop, which is where the
-# bugs would live anyway.
-
-law orbit_stops_once_escaped:
-  for fuel: Nat
-  for +count: Nat
-  for +orbit_real_part: F32
-  for +orbit_imaginary_part: F32
-  for +constant_real_part: F32
-  for +constant_imaginary_part: F32
-  {P.mandelbrot_orbit_step(fuel, True{}, count,
-                           orbit_real_part, orbit_imaginary_part,
-                           constant_real_part, constant_imaginary_part) == count : Nat}
-
-law orbit_returns_count_when_fuel_runs_out:
-  for has_escaped: Bool
-  for +count: Nat
-  for +orbit_real_part: F32
-  for +orbit_imaginary_part: F32
-  for +constant_real_part: F32
-  for +constant_imaginary_part: F32
-  {P.mandelbrot_orbit_step(0n, has_escaped, count,
-                           orbit_real_part, orbit_imaginary_part,
-                           constant_real_part, constant_imaginary_part) == count : Nat}
+law sierpinski_picture_row_count:
+  for +depth: Nat
+  for +first_row_index: U32
+  for +half_row_count: U32
+  {List.length(&2, String,
+    Playground.Sierpinski.picture(depth, first_row_index, half_row_count))
+    == Playground.Picture.row_count(depth) : Nat}
