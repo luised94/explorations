@@ -20,6 +20,8 @@ REPRESENTATION
                      real file's ids.
   LibraryFile        name (file name, relative to the library directory),
                      path, and text as decoded UTF-8.
+  bib file           kbd's BibTeX export, read only (PLAN.md D16), for its
+                     citekeys. Located by bib_path in local.toml.
 
 INVARIANTS
   S1  load_events never raises for file content: every line it cannot use
@@ -44,8 +46,9 @@ INVARIANTS
 import errno
 import fcntl
 import os
+import re
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from rep.events import Event, EventDecodeError, decode_event, encode_event
 from rep.machine import DEVICE_ID_PATTERN
@@ -58,11 +61,23 @@ SYNC_CONFLICT_MARKER = ".sync-conflict-"
 class FileProblem(TypedDict):
     path: str
     line: int
+    # error: content was skipped and is lost to rep until fixed; warning:
+    # nothing is lost (a line still being written, an event kept in the
+    # wrong file). Decided here, where the reason is known.
+    severity: Literal["error", "warning"]
     message: str
 
 
+class EventLocation(TypedDict):
+    path: str
+    line: int
+
+
+# event_locations[index] is where events[index] was read: a parallel list,
+# so the fold still takes plain events and lint can still point at a line.
 class EventLoadResult(TypedDict):
     events: list[Event]
+    event_locations: list[EventLocation]
     problems: list[FileProblem]
 
 
@@ -86,14 +101,16 @@ def load_events(events_directory: Path) -> EventLoadResult:
 
     PRE   events_directory is absolute; it may not exist yet.
     POST  events holds every line that decoded, file by file in name order
-          and line order within a file (the fold sorts them itself, E2);
+          and line order within a file (the fold sorts them itself, E2),
+          and event_locations where each was read;
           problems holds every line and file that was skipped. A missing
           directory gives no events and no problems: no device has written.
     """
     events: list[Event] = []
+    event_locations: list[EventLocation] = []
     problems: list[FileProblem] = []
     if not events_directory.is_dir():
-        return {"events": events, "problems": problems}
+        return {"events": events, "event_locations": event_locations, "problems": problems}
 
     for events_path in sorted(events_directory.iterdir()):
         device_from_name = events_path.name.removesuffix(EVENTS_FILE_SUFFIX)
@@ -109,6 +126,7 @@ def load_events(events_directory: Path) -> EventLoadResult:
                 {
                     "path": str(events_path),
                     "line": 0,
+                    "severity": "error",
                     "message": "not a <device id>.jsonl events file; ignored (a sync conflict copy?)",
                 }
             )
@@ -126,6 +144,7 @@ def load_events(events_directory: Path) -> EventLoadResult:
                 {
                     "path": str(events_path),
                     "line": len(byte_lines) + 1,
+                    "severity": "warning",
                     "message": "last line has no line ending (being written, or cut off by a crash); skipped",
                 }
             )
@@ -136,10 +155,14 @@ def load_events(events_directory: Path) -> EventLoadResult:
                 line_text = byte_line.decode("utf-8")
                 event = decode_event(line_text)
             except UnicodeDecodeError:
-                problems.append({"path": str(events_path), "line": line_number, "message": "not UTF-8; skipped"})
+                problems.append(
+                    {"path": str(events_path), "line": line_number, "severity": "error", "message": "not UTF-8; skipped"}
+                )
                 continue
             except EventDecodeError as decode_error:
-                problems.append({"path": str(events_path), "line": line_number, "message": f"{decode_error}; skipped"})
+                problems.append(
+                    {"path": str(events_path), "line": line_number, "severity": "error", "message": f"{decode_error}; skipped"}
+                )
                 continue
             if event["device"] != device_from_name:
                 # Kept: the event describes itself and is valid history; only
@@ -149,12 +172,14 @@ def load_events(events_directory: Path) -> EventLoadResult:
                     {
                         "path": str(events_path),
                         "line": line_number,
+                        "severity": "warning",
                         "message": f"event written by device {event['device']} is in this device's file; kept",
                     }
                 )
             events.append(event)
+            event_locations.append({"path": str(events_path), "line": line_number})
 
-    return {"events": events, "problems": problems}
+    return {"events": events, "event_locations": event_locations, "problems": problems}
 
 
 def append_events(events_directory: Path, device_id: str, new_events: list[Event]) -> None:
@@ -261,6 +286,7 @@ def read_library_files(library_directory: Path) -> LibraryReadResult:
                 {
                     "path": str(library_path),
                     "line": 0,
+                    "severity": "error",
                     "message": "sync conflict copy; not read (merge it into the real file by hand, then delete it)",
                 }
             )
@@ -272,6 +298,7 @@ def read_library_files(library_directory: Path) -> LibraryReadResult:
                 {
                     "path": str(library_path),
                     "line": 0,
+                    "severity": "error",
                     "message": f"not UTF-8 ({utf8_error.reason} at byte {utf8_error.start}); not read",
                 }
             )
@@ -312,3 +339,27 @@ def append_library_text(library_directory: Path, file_name: str, appended_text: 
             os.fsync(directory_descriptor)
         finally:
             os.close(directory_descriptor)
+
+
+# An entry starts a line with @type{key, (BetterBibTeX writes one per line).
+# The key is everything up to the comma, so malformed keys holding ":" or
+# "/" are read as they are and simply never match a citekey in the library.
+BIB_ENTRY_PATTERN = re.compile(rb"^@([A-Za-z]+)[ \t]*\{[ \t]*([^,\s{}]+)[ \t]*,", re.MULTILINE)
+BIB_NON_ENTRY_TYPES = frozenset({b"comment", b"string", b"preamble"})
+
+
+def read_bib_citekeys(bib_path: Path) -> set[str]:
+    """Every entry key in a BibTeX file.
+
+    PRE   bib_path names a readable file (the caller reports a missing one).
+    POST  the set of keys of @type{key, entries, excluding @comment, @string
+          and @preamble. Bytes are matched, not decoded text: one bad byte in
+          a 25 MB export must not hide every key; keys are decoded as UTF-8
+          with replacement.
+    """
+    bib_bytes = bib_path.read_bytes()
+    return {
+        entry_match.group(2).decode("utf-8", "replace")
+        for entry_match in BIB_ENTRY_PATTERN.finditer(bib_bytes)
+        if entry_match.group(1).lower() not in BIB_NON_ENTRY_TYPES
+    }

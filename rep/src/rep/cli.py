@@ -7,10 +7,11 @@ REPRESENTATION
   PLAN.md D13 for hiding it).
 
 EXIT CODES
-  0  success
+  0  success (for lint: no errors; warnings may have been printed)
   1  the input has problems the person must fix; nothing was written, and
      each problem is on stderr as path:line:col: severity: message (the
-     quickfix format, PLAN.md D12)
+     quickfix format, PLAN.md D12). For lint: at least one error, listed
+     on stdout in the same format.
   2  rep cannot run (bad setup, bad arguments, the writer lock is held);
      message on stderr, prefixed "rep: "
 
@@ -27,7 +28,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from rep.events import new_item_stamped_events
+from rep.events import fold_events, new_item_stamped_events
 from rep.library import (
     ITEM_ID_PATTERN,
     Item,
@@ -43,6 +44,8 @@ from rep.storage import (
     acquire_writer_lock,
     append_events,
     append_library_text,
+    load_events,
+    read_bib_citekeys,
     read_library_files,
 )
 
@@ -88,6 +91,10 @@ def main(argument_list: list[str] | None = None) -> int:
         "--to",
         metavar="NAME",
         help="library file to append to (default: <citekey>.md from the items' source)",
+    )
+    subcommand_parsers.add_parser(
+        "lint",
+        help="check the whole library and the events; print problems as path:line:col for quickfix",
     )
 
     parsed_arguments = argument_parser.parse_args(argument_list)
@@ -323,5 +330,132 @@ def main(argument_list: list[str] | None = None) -> int:
 
         print(f"added {len(added_items)} to library/{target_name}: {', '.join(item['id'] for item in added_items)}")
         return 0
+
+    if command == "lint":
+        # Read-only: no lock, so lint can run while a session writes. It may
+        # then see a last events line still being written, which the loader
+        # reports and skips (storage.py S2).
+        data_root = machine_context["data_root"]
+        if not machine_context["data_root_exists"]:
+            print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
+            return 2
+        # (path, line, column, severity, message); severity is error,
+        # warning, or note (an open question: listed, never a problem).
+        lint_lines: list[tuple[str, int, int, str, str]] = []
+
+        library_read = read_library_files(data_root / "library")
+        for file_problem in library_read["problems"]:
+            lint_lines.append((file_problem["path"], 1, 1, file_problem["severity"], file_problem["message"]))
+
+        # --- every item on its own (parser and checks) ---
+        # first location of each id, for I1; citekeys to check against the bib
+        id_first_locations: dict[str, tuple[str, int]] = {}
+        library_item_ids: set[str] = set()
+        cited_items: list[tuple[str, int, str, bool]] = []  # path, line, citekey, unverified
+        item_count = 0
+        for library_file in library_read["files"]:
+            for source_item in parse_library_text(library_file["text"]):
+                item_count += 1
+                checked_item, item_problems = check_source_item(source_item)
+                for problem in item_problems:
+                    lint_lines.append(
+                        (library_file["path"], problem["line"], problem["column"], problem["severity"], problem["message"])
+                    )
+                for open_question in source_item["open_questions"]:
+                    lint_lines.append((library_file["path"], open_question["line"], 1, "note", f"?: {open_question['value']}"))
+                # I1 counts every id that is written down, even on an item
+                # with other errors: the id is still claimed in the file.
+                id_field = source_item["fields"].get("id")
+                if id_field is not None:
+                    item_id = id_field["value"]
+                    library_item_ids.add(item_id)
+                    first_location = id_first_locations.get(item_id)
+                    if first_location is None:
+                        id_first_locations[item_id] = (library_file["path"], id_field["line"])
+                    else:
+                        lint_lines.append(
+                            (
+                                library_file["path"],
+                                id_field["line"],
+                                1,
+                                "error",
+                                f"id {item_id} is already used at {first_location[0]}:{first_location[1]}; "
+                                "a session cannot tell these items apart (delete this id line to get a new one)",
+                            )
+                        )
+                if checked_item is not None and checked_item["citekey"] is not None:
+                    cited_items.append(
+                        (library_file["path"], checked_item["line"], checked_item["citekey"], checked_item["citekey_is_unverified"])
+                    )
+
+        # --- citekeys against the bib (PLAN.md D16: kbd is read, never written) ---
+        bib_path = machine_context["bib_path"]
+        # "@llm:<id>" sources are an open hole (PLAN.md section 9): their
+        # meaning is undecided, so they are exempt rather than reported.
+        verifiable_cited_items = [cited_item for cited_item in cited_items if cited_item[2] != "llm"]
+        if verifiable_cited_items != []:
+            if bib_path is None:
+                print(
+                    "rep: warning: bib_path is not set in local.toml; citekeys were not checked",
+                    file=sys.stderr,
+                )
+            elif not bib_path.is_file():
+                print(f"rep: warning: bib {bib_path} not found; citekeys were not checked", file=sys.stderr)
+            else:
+                bib_citekeys = read_bib_citekeys(bib_path)
+                for cited_path, cited_line, citekey, citekey_is_unverified in verifiable_cited_items:
+                    if not citekey_is_unverified and citekey not in bib_citekeys:
+                        lint_lines.append(
+                            (
+                                cited_path,
+                                cited_line,
+                                1,
+                                "warning",
+                                f"citekey {citekey} is not in the bib; fix it, or mark it unverified as @{citekey}??",
+                            )
+                        )
+                    elif citekey_is_unverified and citekey in bib_citekeys:
+                        lint_lines.append(
+                            (cited_path, cited_line, 1, "warning", f"citekey {citekey} is in the bib now; drop the '??'")
+                        )
+
+        # --- events: unreadable lines, and history with no item (I2) ---
+        events_load = load_events(data_root / "events")
+        for file_problem in events_load["problems"]:
+            # Line 0 means the whole file; quickfix wants a real line.
+            lint_lines.append(
+                (file_problem["path"], max(file_problem["line"], 1), 1, file_problem["severity"], file_problem["message"])
+            )
+        fold_result = fold_events(events_load["events"])
+        for fold_problem in fold_result["problems"]:
+            print(f"rep: warning: events: {fold_problem}", file=sys.stderr)
+        last_location_by_item: dict[str, tuple[str, int]] = {}
+        for event, event_location in zip(events_load["events"], events_load["event_locations"], strict=True):
+            if event["kind"] != "undo" and event["kind"] != "amend":
+                last_location_by_item[event["item"]] = (event_location["path"], event_location["line"])
+        for orphan_item_id in sorted(set(fold_result["items"]) - library_item_ids):
+            orphan_path, orphan_line = last_location_by_item[orphan_item_id]
+            lint_lines.append(
+                (
+                    orphan_path,
+                    orphan_line,
+                    1,
+                    "warning",
+                    f"item {orphan_item_id} has review history but is in no library file "
+                    "(deleted on purpose, or its id line was changed; I2)",
+                )
+            )
+
+        for lint_path, lint_line, lint_column, severity, message in sorted(lint_lines):
+            print(f"{lint_path}:{lint_line}:{lint_column}: {severity}: {message}")
+        error_count = sum(1 for lint_line in lint_lines if lint_line[3] == "error")
+        warning_count = sum(1 for lint_line in lint_lines if lint_line[3] == "warning")
+        note_count = sum(1 for lint_line in lint_lines if lint_line[3] == "note")
+        print(
+            f"rep lint: {error_count} errors, {warning_count} warnings, {note_count} open questions; "
+            f"{item_count} items in {len(library_read['files'])} files, {len(events_load['events'])} events",
+            file=sys.stderr,
+        )
+        return 1 if error_count > 0 else 0
 
     raise AssertionError(f"command {command!r} is registered but not handled")

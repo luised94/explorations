@@ -106,15 +106,21 @@ at the first line that is not block content.
   `S2.1`, `fig3`, `t12m34s`, and the pinned-key forms such as `John.3.16`.
   rep checks only that a location has no spaces; it never reads its parts.
   A citekey not in the bib is written with the kbd `??` suffix, for example
-  `@Matsui1980??` or `@Matsui1980??:p12`.
+  `@Matsui1980??` or `@Matsui1980??:p12`. Lint warns when a citekey is not
+  in the bib, and when a `??` key has since reached it. `@llm:` sources (kbd's
+  model-thread citations) are accepted and not checked; what they mean is
+  still open (PLAN.md section 9).
 - Tags follow kbd: lowercase, underscore-separated, acronyms uppercase.
 - An unknown field is kept and reported by lint as a warning, so a future
   field needs no migration.
 
 Problems come in two kinds. An error leaves the item out of sessions until
 you fix it: no id, no answer, a `check:` or `attempt:` value rep does not
-know, a key that cannot be graded. A warning never leaves an item out: an
-unknown field, a malformed source or tag, an id not in the form rep writes.
+know, a key that cannot be graded, an id another item also uses. A warning
+never leaves an item out: an unknown field, a malformed source or tag, an id
+not in the form rep writes, a citekey not in the bib. `rep lint` prints both
+as `path:line:col: severity: message` for the nvim quickfix list, lists every
+`?:` open question as a `note`, and exits 1 when there is any error.
 
 Not in v1, on purpose: `requires:` (its meaning moves to the concept layer in
 M5), variant pools (arrive with generated problems), cloze deletions,
@@ -152,4 +158,5 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 2026-09-30  M2: exact-match rule and numeric answer syntax fixed (PLAN.md D20).
 2026-09-30  M2: locations are not validated beyond having no spaces (kbd uses
             forms beyond its six specifiers); errors and warnings defined.
+2026-09-30  M2: what lint reports; `@llm:` sources accepted, not checked.
 ```

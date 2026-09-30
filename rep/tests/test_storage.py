@@ -20,6 +20,7 @@ from rep.storage import (
     append_events,
     append_library_text,
     load_events,
+    read_bib_citekeys,
     read_library_files,
 )
 
@@ -54,7 +55,7 @@ def events_directory_in(tmp_path: Path) -> Path:
 
 
 def test_missing_directory_is_an_empty_history(tmp_path: Path) -> None:
-    assert load_events(tmp_path / "events") == {"events": [], "problems": []}
+    assert load_events(tmp_path / "events") == {"events": [], "event_locations": [], "problems": []}
 
 
 def test_append_then_load_returns_the_events(tmp_path: Path) -> None:
@@ -65,6 +66,12 @@ def test_append_then_load_returns_the_events(tmp_path: Path) -> None:
     loaded = load_events(events_directory)
     assert loaded["problems"] == []
     assert loaded["events"] == [stamped_event(0), stamped_event(1), stamped_event(2), stamped_event(3, OTHER_DEVICE)]
+    assert [(Path(location["path"]).name, location["line"]) for location in loaded["event_locations"]] == [
+        (f"{DEVICE}.jsonl", 1),
+        (f"{DEVICE}.jsonl", 2),
+        (f"{DEVICE}.jsonl", 3),
+        (f"{OTHER_DEVICE}.jsonl", 1),
+    ]
 
 
 def test_bad_lines_cost_only_themselves(tmp_path: Path) -> None:
@@ -233,3 +240,28 @@ def test_library_append_creates_then_only_appends(tmp_path: Path) -> None:
     assert second_bytes == b"### Q: one\n\n### Q: two\n"
     with pytest.raises(FileNotFoundError):
         append_library_text(tmp_path / "mistyped" / "library", "x.md", "### Q: x\n")
+
+
+# --- bib ---------------------------------------------------------------------
+
+
+def test_bib_keys_are_read_from_entries_only(tmp_path: Path) -> None:
+    bib_path = tmp_path / "library.bib"
+    bib_path.write_bytes(
+        b"@comment{jabref-meta: databaseType:bibtex;}\n"
+        # Shaped like an entry; only the type filter keeps "HandNote" out.
+        b"@comment{HandNote, checked against the paper}\n"
+        b"@String{jbc, x}\n"
+        b'@string{jbc = "Journal of Biological Chemistry"}\n'
+        b"@book{Lehninger2021,\n  title = {Principles},\n}\n"
+        b"@Article{ Matsui1980 ,\r\n  title = {x},\r\n}\r\n"
+        b"@online{Davies00:00:00+08:00mindful,\n}\n"
+        b"@book{P\xe9rez-Reverte2006club,\n}\n"
+        b"  @book{NotAtLineStart,\n}\n"
+    )
+    assert read_bib_citekeys(bib_path) == {
+        "Lehninger2021",
+        "Matsui1980",
+        "Davies00:00:00+08:00mindful",
+        "P\ufffdrez-Reverte2006club",
+    }

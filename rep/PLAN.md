@@ -131,6 +131,21 @@ Measured while starting M2 (sandbox, CPython 3.12.13):
 - `str.splitlines` also splits on U+2028, U+0085 and form feed, which nvim
   does not treat as line ends; line numbers for lint and the lines stamp
   preserves must come from splitting on "\n" only.
+- Lint's parts at a heavy year (sandbox): bib key extraction from a 27.7 MB
+  synthetic bib with 62,062 entries, 174 ms median of 5; parse and check of
+  2,000 items, 26 ms; load and fold of 36,500 events, 215 ms. `rep lint`
+  end to end on that data, through the installed command: 0.53 to 0.57 s
+  (3 runs), the rest being interpreter start and imports. Library parse
+  alone: 27 ms at 2,000 items, 130 ms at
+  10,000 (stamp and add read the whole library on every call).
+- The person's bib (2026-09-30, before a re-export): 13 entry keys held ":"
+  or "?" (dates pulled into BetterBibTeX keys, one lost accent). They are
+  data errors, fixed in Zotero; the grammar does not accommodate them, and
+  such keys are simply never matched.
+- Text-mode stdin on Linux does not translate "\r\n"; under the C locale
+  it decodes with surrogateescape, so invalid UTF-8 would pass. Commands
+  that must hand input back exactly read bytes. subprocess text mode does
+  translate "\r\n" when reading output.
 
 Sources read:
 - OpenRouter FAQ: free models allow 50 requests a day, 1,000 a day after
@@ -566,7 +581,17 @@ under 100 ms).
   state, rebuilt from events when any events file is newer; never a source
   of truth.
 - FIRe-style credit with penalties versus synthetic FSRS reviews (M5, D19).
-- Bib citekey cache keyed on file time, only if lint feels slow (M2).
+- Bib citekey cache: decided in M2, none. Lint reads the bib in 174 ms of
+  about 0.55 s (section 3); a cache would add a second copy of the keys that
+  can drift from the bib, to save that on a command run on demand. Revisit
+  if lint takes over 1 s on the person's machine, or if rep.lua runs lint on
+  every save.
+- `@llm:<id>` sources (kbd's LLM-thread citations): an open hole. Today
+  `@llm:867:p15` parses as citekey `llm`, location `867:p15`, and lint
+  exempts citekey `llm` from the bib check. Its meaning waits on how model
+  conversations are stored (files, or a local database from API use). No
+  migration is needed when it is decided: the text is the source of truth
+  and is re-parsed on every load.
 - OpenRouter $10 credit: the person's call; tutor sessions need it more than
   generation does.
 - Leech threshold and default preset numbers: set in M3, tuned by the use
@@ -632,3 +657,6 @@ fringe        (M5) concepts whose prerequisites are all known
             constraints on M3 that keep it revisable (raw `typed_answer`; a
             fingerprint covering the key) and the rule that a revision comes
             with a regrade or a stated reason.
+2026-09-30  M2: bib citekey cache decided against (section 9, measured in
+            section 3); `@llm:` sources recorded as an open hole, exempt
+            from the bib check, by the person's decision.

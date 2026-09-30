@@ -221,3 +221,95 @@ def test_add_is_refused_while_another_process_writes(tmp_path: Path) -> None:
         os.close(lock_descriptor)
     assert result.returncode == 2 and b"is writing rep data" in result.stderr
     assert library_snapshot(tmp_path) == {}
+
+
+# --- rep lint ------------------------------------------------------------------
+
+LINT_BIB = b"@book{Lehninger2021,\n}\n@article{Matsui1980,\n}\n"
+ATTEMPT_LINE = (
+    '{"at":"2026-09-01T10:00:00.000000Z","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+    '"id":"aaaaaaaaaaaa","item":"renamed-7q2m","kind":"attempt","latency_milliseconds":900,'
+    '"rating":3,"session":"s","typed_answer":null}\n'
+)
+
+
+def lint_home(tmp_path: Path, with_bib_path: bool) -> Path:
+    config_directory = tmp_path / ".config" / "rep"
+    config_directory.mkdir(parents=True)
+    (tmp_path / "zotero_library.bib").write_bytes(LINT_BIB)
+    bib_line = f'bib_path = "{tmp_path / "zotero_library.bib"}"\n' if with_bib_path else ""
+    (config_directory / "local.toml").write_text(f'device_id = "6a2ah35zhe"\n{bib_line}', encoding="utf-8")
+    (tmp_path / "learning" / "library").mkdir(parents=True)
+    return tmp_path / "learning"
+
+
+def test_lint_reports_every_kind_of_problem_in_quickfix_form(tmp_path: Path) -> None:
+    data_root = lint_home(tmp_path, with_bib_path=True)
+    library_directory = data_root / "library"
+    (library_directory / "a.md").write_text(
+        "## @Lehninger2021\n"  # 1
+        "\n"  # 2
+        "### Q: fine\n"  # 3
+        "id: fine-7q2m\n"  # 4
+        "A: x\n"  # 5
+        "?: worth its own item?\n"  # 6
+        "### Q: broken\n"  # 7
+        "id: broken-7q2m\n"  # 8
+        "A: x\n"  # 9
+        "check: fuzzy\n"  # 10
+        "### Q: missing citekey\n"  # 11
+        "id: missing-7q2m\n"  # 12
+        "A: x\n"  # 13
+        "source: @Missing2020:p3\n"  # 14
+        "### Q: verified now\n"  # 15
+        "id: verified-7q2m\n"  # 16
+        "A: x\n"  # 17
+        "source: @Matsui1980??\n"  # 18
+        "### Q: from a model thread\n"  # 19
+        "id: thread-7q2m\n"  # 20
+        "A: x\n"  # 21
+        "source: @llm:867:p15\n"  # 22
+        "tags: #Bad_Tag\n",  # 23
+        encoding="utf-8",
+    )
+    (library_directory / "b.md").write_text("### Q: twin\nid: fine-7q2m\nA: y\n", encoding="utf-8")
+    (library_directory / "a.sync-conflict-20260930-120000-ABCDEFG.md").write_text("### Q: x\n", encoding="utf-8")
+    events_directory = data_root / "events"
+    events_directory.mkdir()
+    (events_directory / "6a2ah35zhe.jsonl").write_text(ATTEMPT_LINE + "{not json}\n" + '{"cut', encoding="utf-8")
+
+    result = run_rep(["lint"], tmp_path)
+    assert result.returncode == 1, result.stderr
+    library_a = library_directory / "a.md"
+    library_b = library_directory / "b.md"
+    conflict = library_directory / "a.sync-conflict-20260930-120000-ABCDEFG.md"
+    events_file = events_directory / "6a2ah35zhe.jsonl"
+    # Lint orders by path, then by line as a number (6 before 10), the
+    # order a person reads a file in.
+    expected_lines = sorted(
+        [
+            (str(library_a), 6, "note: ?: worth its own item?"),
+            (str(library_a), 10, "error: check must be self, exact or numeric"),
+            (str(library_a), 11, "warning: citekey Missing2020 is not in the bib"),
+            (str(library_a), 15, "warning: citekey Matsui1980 is in the bib now"),
+            (str(library_a), 23, "warning: tag '#Bad_Tag' is not kbd form"),
+            (str(conflict), 1, "error: sync conflict copy"),
+            (str(library_b), 2, f"error: id fine-7q2m is already used at {library_a}:4"),
+            (str(events_file), 1, "warning: item renamed-7q2m has review history but is in no library file"),
+            (str(events_file), 2, "error: not JSON"),
+            (str(events_file), 3, "warning: last line has no line ending"),
+        ]
+    )
+    output_lines = result.stdout.decode().splitlines()
+    assert len(output_lines) == len(expected_lines), output_lines
+    for output_line, (expected_path, expected_line, expected_text) in zip(output_lines, expected_lines, strict=True):
+        assert output_line.startswith(f"{expected_path}:{expected_line}:1: {expected_text}"), output_line
+    assert b"rep lint: 4 errors, 5 warnings, 1 open questions; 6 items in 2 files, 1 events" in result.stderr
+
+
+def test_lint_of_a_clean_library_exits_0_and_says_when_citekeys_went_unchecked(tmp_path: Path) -> None:
+    data_root = lint_home(tmp_path, with_bib_path=False)
+    (data_root / "library" / "a.md").write_text("### Q: q\nid: q-7q2m3x\nA: x\nsource: @Anything\n", encoding="utf-8")
+    result = run_rep(["lint"], tmp_path)
+    assert (result.returncode, result.stdout) == (0, b"")
+    assert b"bib_path is not set in local.toml; citekeys were not checked" in result.stderr
