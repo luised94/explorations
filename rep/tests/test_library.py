@@ -16,6 +16,7 @@ from rep.library import (
     SourceItem,
     check_source_item,
     parse_library_text,
+    plan_library_append,
     render_library_items,
     stamp_library_text,
 )
@@ -564,3 +565,51 @@ def test_stamp_only_inserts_id_lines_and_is_idempotent(text: str, seed: int) -> 
     assert len(set(result["stamped_item_ids"])) == len(result["stamped_item_ids"])
     second_result = stamp_library_text(stamped_text, set(), random.Random(seed + 1).randbytes)
     assert second_result == {"text": stamped_text, "stamped_item_ids": [], "problems": []}
+
+
+# --- append planning ----------------------------------------------------------
+
+ADDED_ITEM = "### Q: What does Km measure?\nid: km-measure-7q2m\nsource: @Lehninger2021:p80\nA: half of Vmax\n"
+
+
+@pytest.mark.parametrize(
+    ("existing_text", "expected_separator"),
+    [
+        (None, ""),
+        ("", ""),
+        ("## @Lehninger2021\n\n### Q: a\nid: a-7q2m\nA: x", "\n\n"),
+        ("## @Lehninger2021\n\n### Q: a\nid: a-7q2m\nA: x\n", "\n"),
+        ("## @Lehninger2021\n\n### Q: a\nid: a-7q2m\nA: x\n\n", ""),
+    ],
+)
+def test_append_is_separated_by_one_blank_line(existing_text: str | None, expected_separator: str) -> None:
+    text_to_append, problems = plan_library_append(existing_text, ADDED_ITEM.rstrip("\n"), "lehninger.md")
+    assert problems == []
+    assert text_to_append == expected_separator + ADDED_ITEM
+
+
+def test_append_takes_the_line_endings_of_the_file() -> None:
+    existing_text = "### Q: a\r\nid: a-7q2m\r\nA: x\r\n"
+    text_to_append, problems = plan_library_append(existing_text, ADDED_ITEM, "lehninger.md")
+    assert problems == []
+    assert text_to_append == "\r\n" + ADDED_ITEM.replace("\n", "\r\n")
+    # A new file keeps the endings it was written with.
+    assert plan_library_append(None, ADDED_ITEM.replace("\n", "\r\n"), "new.md")[0] == ADDED_ITEM.replace("\n", "\r\n")
+
+
+def test_append_that_would_join_the_last_item_is_refused() -> None:
+    existing_text = "### Q: a\nid: a-7q2m\nA: x\n"
+    text_to_append, problems = plan_library_append(existing_text, "tags: #stray\n" + ADDED_ITEM, "lehninger.md")
+    assert text_to_append == ""
+    assert len(problems) == 1 and "would change the items already in lehninger.md" in problems[0]
+
+
+def test_append_that_would_change_a_source_is_refused() -> None:
+    existing_text = "## @OtherKey\n\n### Q: a\nid: a-7q2m\nA: x\n"
+    without_source = "### Q: Km?\nid: km-7q2m\nA: x\n"
+    text_to_append, problems = plan_library_append(existing_text, without_source, "other.md")
+    assert text_to_append == ""
+    assert len(problems) == 1 and "'## @OtherKey'" in problems[0]
+    # An explicit source, or a heading of its own, keeps the meaning.
+    assert plan_library_append(existing_text, ADDED_ITEM, "other.md")[1] == []
+    assert plan_library_append(existing_text, "## @Lehninger2021\n\n" + without_source, "other.md")[1] == []

@@ -1,4 +1,4 @@
-"""Events files and the writer lock at their contract (storage.py S1-S5)."""
+"""Events files, library files and the writer lock at their contract (storage.py S1-S5)."""
 
 import os
 import signal
@@ -14,7 +14,14 @@ from hypothesis import strategies as strategies
 
 from rep.events import EVENT_FORMAT_VERSION, EventDecodeError, ItemStampedEvent, format_canonical_time
 from rep.machine import DEVICE_ID_ALPHABET
-from rep.storage import WriterLockBusy, acquire_writer_lock, append_events, load_events
+from rep.storage import (
+    WriterLockBusy,
+    acquire_writer_lock,
+    append_events,
+    append_library_text,
+    load_events,
+    read_library_files,
+)
 
 DEVICE = "6a2ah35zhe"
 OTHER_DEVICE = "7b3bj46ajf"
@@ -194,3 +201,35 @@ def test_a_killed_holder_leaves_no_stale_lock(tmp_path: Path) -> None:
         if holder.poll() is None:
             holder.kill()
             holder.wait(timeout=10)
+
+
+# --- library files -----------------------------------------------------------
+
+
+def test_library_reader_skips_conflict_copies_and_non_utf8(tmp_path: Path) -> None:
+    library_directory = tmp_path / "library"
+    library_directory.mkdir()
+    (library_directory / "b.md").write_text("### Q: b\n", encoding="utf-8")
+    (library_directory / "a.md").write_text("### Q: a\n", encoding="utf-8")
+    (library_directory / "a.sync-conflict-20260930-120000-ABCDEFG.md").write_text("### Q: a\n", encoding="utf-8")
+    (library_directory / "latin.md").write_bytes("### Q: caf\u00e9\n".encode("latin-1"))
+    (library_directory / "notes.txt").write_text("not a library file\n", encoding="utf-8")
+    library_read = read_library_files(library_directory)
+    assert [library_file["name"] for library_file in library_read["files"]] == ["a.md", "b.md"]
+    assert sorted(Path(problem["path"]).name for problem in library_read["problems"]) == [
+        "a.sync-conflict-20260930-120000-ABCDEFG.md",
+        "latin.md",
+    ]
+    assert read_library_files(tmp_path / "missing") == {"files": [], "problems": []}
+
+
+def test_library_append_creates_then_only_appends(tmp_path: Path) -> None:
+    library_directory = tmp_path / "library"
+    append_library_text(library_directory, "lehninger.md", "### Q: one\n")
+    first_bytes = (library_directory / "lehninger.md").read_bytes()
+    append_library_text(library_directory, "lehninger.md", "\n### Q: two\n")
+    second_bytes = (library_directory / "lehninger.md").read_bytes()
+    assert second_bytes.startswith(first_bytes)  # I3: create or append, never rewrite
+    assert second_bytes == b"### Q: one\n\n### Q: two\n"
+    with pytest.raises(FileNotFoundError):
+        append_library_text(tmp_path / "mistyped" / "library", "x.md", "### Q: x\n")

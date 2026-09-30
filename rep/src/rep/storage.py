@@ -10,9 +10,16 @@ REPRESENTATION
                      (PLAN.md D2, I7). Held with flock by the one process
                      allowed to write; the file's content is the holder's
                      pid, for the refusal message only.
-  EventFileProblem   a line or file the loader had to skip: path, 1-based
+  FileProblem        a line or file a reader had to skip: path, 1-based
                      line (0 for a whole file), message. Lint prints it as
                      path:line:col.
+  library directory  <data root>/library/*.md, the person's files
+                     (CONVENTIONS.md). rep only reads them and appends to
+                     them (PLAN.md I3). A Syncthing "*.sync-conflict-*" copy
+                     is reported and not read: its items would duplicate the
+                     real file's ids.
+  LibraryFile        name (file name, relative to the library directory),
+                     path, and text as decoded UTF-8.
 
 INVARIANTS
   S1  load_events never raises for file content: every line it cannot use
@@ -44,9 +51,11 @@ from rep.events import Event, EventDecodeError, decode_event, encode_event
 from rep.machine import DEVICE_ID_PATTERN
 
 EVENTS_FILE_SUFFIX = ".jsonl"
+LIBRARY_FILE_SUFFIX = ".md"
+SYNC_CONFLICT_MARKER = ".sync-conflict-"
 
 
-class EventFileProblem(TypedDict):
+class FileProblem(TypedDict):
     path: str
     line: int
     message: str
@@ -54,7 +63,18 @@ class EventFileProblem(TypedDict):
 
 class EventLoadResult(TypedDict):
     events: list[Event]
-    problems: list[EventFileProblem]
+    problems: list[FileProblem]
+
+
+class LibraryFile(TypedDict):
+    name: str
+    path: str
+    text: str
+
+
+class LibraryReadResult(TypedDict):
+    files: list[LibraryFile]
+    problems: list[FileProblem]
 
 
 class WriterLockBusy(Exception):
@@ -71,7 +91,7 @@ def load_events(events_directory: Path) -> EventLoadResult:
           directory gives no events and no problems: no device has written.
     """
     events: list[Event] = []
-    problems: list[EventFileProblem] = []
+    problems: list[FileProblem] = []
     if not events_directory.is_dir():
         return {"events": events, "problems": problems}
 
@@ -222,3 +242,73 @@ def acquire_writer_lock(state_directory: Path) -> int:
     os.ftruncate(lock_descriptor, 0)
     os.pwrite(lock_descriptor, f"{os.getpid()}\n".encode("ascii"), 0)
     return lock_descriptor
+
+
+def read_library_files(library_directory: Path) -> LibraryReadResult:
+    """Read every library file, in name order.
+
+    PRE   library_directory is absolute; it may not exist yet.
+    POST  files holds each *.md file that decoded as UTF-8; problems holds
+          each that did not, and each sync conflict copy (line 0).
+    """
+    files: list[LibraryFile] = []
+    problems: list[FileProblem] = []
+    if not library_directory.is_dir():
+        return {"files": files, "problems": problems}
+    for library_path in sorted(library_directory.glob(f"*{LIBRARY_FILE_SUFFIX}")):
+        if SYNC_CONFLICT_MARKER in library_path.name:
+            problems.append(
+                {
+                    "path": str(library_path),
+                    "line": 0,
+                    "message": "sync conflict copy; not read (merge it into the real file by hand, then delete it)",
+                }
+            )
+            continue
+        try:
+            library_text = library_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as utf8_error:
+            problems.append(
+                {
+                    "path": str(library_path),
+                    "line": 0,
+                    "message": f"not UTF-8 ({utf8_error.reason} at byte {utf8_error.start}); not read",
+                }
+            )
+            continue
+        files.append({"name": library_path.name, "path": str(library_path), "text": library_text})
+    return {"files": files, "problems": problems}
+
+
+def append_library_text(library_directory: Path, file_name: str, appended_text: str) -> None:
+    """Append text to one library file, creating it if needed, and make it durable.
+
+    PRE   the caller holds the writer lock (I7). The data root exists (as for
+          append_events). file_name is a plain name ending in ".md", with no
+          "/" and not starting with ".". appended_text came from
+          plan_library_append, so appending it changes no existing item.
+    POST  the file's old bytes are unchanged and followed by appended_text
+          (I3: rep creates or appends, never rewrites).
+    """
+    assert file_name.endswith(LIBRARY_FILE_SUFFIX) and "/" not in file_name and not file_name.startswith(".")
+    directory_was_created = not library_directory.exists()
+    library_directory.mkdir(exist_ok=True)
+    library_path = library_directory / file_name
+    file_was_created = not library_path.exists()
+    file_descriptor = os.open(library_path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+    try:
+        payload = appended_text.encode("utf-8")
+        written_byte_count = 0
+        while written_byte_count < len(payload):
+            written_byte_count += os.write(file_descriptor, payload[written_byte_count:])
+        os.fsync(file_descriptor)
+    finally:
+        os.close(file_descriptor)
+    if file_was_created:
+        # As in append_events: a new name is durable only once its directory is.
+        directory_to_flush = library_directory.parent if directory_was_created else library_directory
+        directory_descriptor = os.open(directory_to_flush, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)

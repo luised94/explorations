@@ -12,6 +12,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from rep.storage import acquire_writer_lock
 
 
@@ -134,3 +136,88 @@ def test_stamp_refusals_return_the_input_unchanged(tmp_path: Path) -> None:
     assert (busy.returncode, busy.stdout) == (2, CAPTURED_ITEMS)
     assert b"is writing rep data" in busy.stderr
     assert not (tmp_path / "learning" / "events").exists()
+
+
+# --- rep add -------------------------------------------------------------------
+
+CAPTURED_ITEM = b"### Q: What does Km measure?\nsource: @Lehninger2021:p80\nA: half of Vmax\n"
+
+
+def library_snapshot(home_directory: Path) -> dict[str, bytes]:
+    data_root = home_directory / "learning"
+    return {
+        str(path.relative_to(data_root)): path.read_bytes()
+        for path in sorted(data_root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_add_files_by_citekey_stamps_records_and_only_appends(tmp_path: Path) -> None:
+    (tmp_path / "learning").mkdir()
+    first_result = run_rep(["add", "--stdin"], tmp_path, CAPTURED_ITEM)
+    assert first_result.returncode == 0, first_result.stderr
+    assert first_result.stdout.decode().startswith("added 1 to library/Lehninger2021.md: km-measure-")
+    library_path = tmp_path / "learning" / "library" / "Lehninger2021.md"
+    first_bytes = library_path.read_bytes()
+    assert first_bytes.startswith(b"### Q: What does Km measure?\nid: km-measure-")
+    second_result = run_rep(["add", "--stdin"], tmp_path, CAPTURED_ITEM.replace(b"Km", b"Vmax"))
+    assert second_result.returncode == 0, second_result.stderr
+    second_bytes = library_path.read_bytes()
+    assert second_bytes.startswith(first_bytes + b"\n### Q: What does Vmax measure?\nid: vmax-measure-")
+    assert [event["kind"] for event in events_in(tmp_path)] == ["item_stamped", "item_stamped"]
+
+
+def test_add_to_a_named_topic_file(tmp_path: Path) -> None:
+    (tmp_path / "learning").mkdir()
+    result = run_rep(["add", "--stdin", "--to", "enzymes"], tmp_path, b"### Q: What is an enzyme?\nA: a catalyst\n")
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "learning" / "library" / "enzymes.md").read_bytes().startswith(b"### Q: What is an enzyme?\nid: ")
+
+
+@pytest.mark.parametrize(
+    ("arguments", "input_bytes", "expected_code", "stderr_fragment"),
+    [
+        (["add", "--stdin"], b"### Q: no source\nA: x\n", 1, b"do not share one source citekey"),
+        (["add", "--stdin"], CAPTURED_ITEM + b"### Q: other\nsource: @Other2020\nA: y\n", 1, b"do not share one source"),
+        (["add", "--stdin"], b"### Q: q\nsource: @Rancourt02/22/2021\nA: x\n", 1, b"cannot be a library file name"),
+        (["add", "--stdin"], CAPTURED_ITEM + b"check: fuzzy\n", 1, b"check must be"),
+        (["add", "--stdin"], b"### Q: q\nsource: @Lehninger2021\n", 1, b"no answer"),
+        (["add", "--stdin"], b"### Q: q\nsource: @Lehninger2021\nA: x\nstray\n", 1, b"<stdin>:4:1: error:"),
+        (["add", "--stdin"], b"just notes, no item\n", 1, b"no '### Q:' item to add"),
+        (["add", "--stdin"], CAPTURED_ITEM.replace(b"source", b"id: km-measure-aaaa\nsource") * 2, 1, b"appears twice"),
+        (["add", "--stdin"], CAPTURED_ITEM.replace(b"source", b"id: my-own-id\nsource"), 1, b"not in the form rep writes"),
+        (["add"], CAPTURED_ITEM, 2, b"--stdin"),
+    ],
+)
+def test_add_refusals_write_nothing(
+    tmp_path: Path, arguments: list[str], input_bytes: bytes, expected_code: int, stderr_fragment: bytes
+) -> None:
+    (tmp_path / "learning").mkdir()
+    result = run_rep(arguments, tmp_path, input_bytes)
+    assert result.returncode == expected_code, result.stderr
+    assert stderr_fragment in result.stderr
+    assert result.stdout == b""
+    assert library_snapshot(tmp_path) == {}
+
+
+def test_add_refuses_an_id_already_in_the_library_and_a_source_the_file_would_change(tmp_path: Path) -> None:
+    library_directory = tmp_path / "learning" / "library"
+    library_directory.mkdir(parents=True)
+    (library_directory / "Lehninger2021.md").write_bytes(b"## @Other2020\n\n### Q: a\nid: km-measure-aaaa\nA: x\n")
+    before = library_snapshot(tmp_path)
+    duplicate = run_rep(["add", "--stdin"], tmp_path, CAPTURED_ITEM.replace(b"source", b"id: km-measure-aaaa\nsource"))
+    assert duplicate.returncode == 1 and b"already in the library" in duplicate.stderr
+    sourceless = run_rep(["add", "--stdin", "--to", "Lehninger2021"], tmp_path, b"### Q: q\nA: x\n")
+    assert sourceless.returncode == 1 and b"would take its source from the heading '## @Other2020'" in sourceless.stderr
+    assert library_snapshot(tmp_path) == before
+
+
+def test_add_is_refused_while_another_process_writes(tmp_path: Path) -> None:
+    (tmp_path / "learning").mkdir()
+    lock_descriptor = acquire_writer_lock(tmp_path / ".local" / "state" / "rep")
+    try:
+        result = run_rep(["add", "--stdin"], tmp_path, CAPTURED_ITEM)
+    finally:
+        os.close(lock_descriptor)
+    assert result.returncode == 2 and b"is writing rep data" in result.stderr
+    assert library_snapshot(tmp_path) == {}

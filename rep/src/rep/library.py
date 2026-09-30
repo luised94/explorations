@@ -805,3 +805,79 @@ def stamp_library_text(
         problem["severity"] == "error" for source_item in stamped_source_items for problem in source_item["problems"]
     ), "stamping introduced a parse error"
     return {"text": stamped_text, "stamped_item_ids": stamped_item_ids, "problems": []}
+
+
+def plan_library_append(existing_text: str | None, added_text: str, file_name: str) -> tuple[str, list[str]]:
+    """Decide the exact text to append to a library file, and refuse if appending would change meaning.
+
+    PRE   existing_text is the file's current text, or None if it does not
+          exist; added_text parses with no errors and every item in it
+          passes check_source_item on its own.
+    POST  returns (text_to_append, problems). With no problems, the file's
+          items after appending are its old items, unchanged, followed by
+          the items of added_text, each checking to the same Item it did on
+          its own (apart from line numbers). text_to_append is added_text
+          with the file's line endings, separated from the old text by one
+          blank line, and ending in a line ending.
+          With problems, text_to_append is "" and nothing may be written.
+    """
+    # A file keeps one line-ending convention: mixed endings show as ^M in
+    # nvim. Only the appended text is converted; the old text is never
+    # touched (I3). A new file keeps the endings it was written with.
+    file_line_ending = "\n"
+    if existing_text is not None and "\r\n" in existing_text:
+        file_line_ending = "\r\n"
+    elif existing_text is None and "\r\n" in added_text:
+        file_line_ending = "\r\n"
+    appended_body = added_text.replace("\r\n", "\n")
+    if not appended_body.endswith("\n"):
+        appended_body += "\n"
+    appended_body = appended_body.replace("\n", file_line_ending)
+
+    separator = ""
+    if existing_text is not None and existing_text != "":
+        if existing_text.endswith(file_line_ending * 2):
+            separator = ""
+        elif existing_text.endswith(file_line_ending):
+            separator = file_line_ending
+        else:
+            separator = file_line_ending * 2
+    text_to_append = separator + appended_body
+
+    # Verified, not predicted: context can change meaning in more ways than
+    # a list would cover (a leading field line joins the file's last item; a
+    # "## @Other" heading at the end becomes the new items' default source),
+    # so the combined file is parsed and compared with its two parts.
+    existing_source_items = [] if existing_text is None else parse_library_text(existing_text)
+    added_source_items = parse_library_text(appended_body)
+    combined_source_items = parse_library_text(("" if existing_text is None else existing_text) + text_to_append)
+    problems: list[str] = []
+    existing_item_count = len(existing_source_items)
+    if (
+        len(combined_source_items) != existing_item_count + len(added_source_items)
+        or combined_source_items[:existing_item_count] != existing_source_items
+    ):
+        problems.append(
+            f"the added text would change the items already in {file_name} (text before its first "
+            "'### Q:' would join the file's last item); start the added text with an item or a heading"
+        )
+        return "", problems
+    for added_source_item, combined_source_item in zip(
+        added_source_items, combined_source_items[existing_item_count:], strict=True
+    ):
+        added_item = check_source_item(added_source_item)[0]
+        combined_item = check_source_item(combined_source_item)[0]
+        assert added_item is not None, "PRE: every added item passes its checks on its own"
+        if combined_item is None:
+            problems.append(f"item '{added_source_item['question']}' would have errors in {file_name}")
+            continue
+        combined_item["line"] = added_item["line"]
+        if combined_item != added_item:
+            problems.append(
+                f"item '{added_source_item['question']}' would take its source from the heading "
+                f"'## {combined_source_item['section_heading']}' in {file_name}; "
+                "give it a 'source:' line, or add it to another file with --to"
+            )
+    if problems:
+        return "", problems
+    return text_to_append, problems

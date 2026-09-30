@@ -21,6 +21,7 @@ from rep.events import (
     encode_event,
     fold_events,
     format_canonical_time,
+    new_item_stamped_events,
     parse_canonical_time,
 )
 from rep.machine import DEVICE_ID_ALPHABET
@@ -345,3 +346,12 @@ def test_item_stamped_changes_no_state_and_creates_no_item() -> None:
     history = build_history([(60, "km-measure-7q2m", 3), (86400, "km-measure-7q2m", 1)])
     assert fold_events([stamped]) == {"items": {}, "problems": []}
     assert fold_events([stamped, *history]) == fold_events(history)
+
+
+def test_new_item_stamped_events_are_valid_and_distinct() -> None:
+    random_source = random.Random(7)
+    stamped_events = new_item_stamped_events(["a-7q2m", "b-7q2m"], DEVICE, START, random_source.randbytes)
+    assert [event["item"] for event in stamped_events if event["kind"] == "item_stamped"] == ["a-7q2m", "b-7q2m"]
+    assert len({event["id"] for event in stamped_events}) == 2
+    for event in stamped_events:
+        assert decode_event(encode_event(event)) == event

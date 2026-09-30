@@ -35,6 +35,7 @@ INVARIANTS
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal, TypedDict, cast
 
@@ -321,6 +322,40 @@ def decode_event(line: str) -> Event:
         return unsuspend_event
 
     raise EventDecodeError(f"unknown kind {kind!r}")
+
+
+def new_item_stamped_events(
+    item_ids: list[str],
+    device_id: str,
+    stamped_at: datetime,
+    random_bytes: Callable[[int], bytes],
+) -> list[Event]:
+    """One item_stamped event per new item id, ready to append.
+
+    PRE   stamped_at is timezone-aware; device_id is this device's id;
+          random_bytes(count) returns count random bytes.
+    POST  one event per id, in order, all at the same canonical time, with
+          distinct ids of EVENT_ID_LENGTH alphabet characters (E1).
+    """
+    canonical_stamped_at = format_canonical_time(stamped_at)
+    stamped_events: list[Event] = []
+    for item_id in item_ids:
+        # One random byte per character; 256 is a multiple of the 32-character
+        # alphabet, so every character is equally likely.
+        event_id = "".join(
+            DEVICE_ID_ALPHABET[random_byte % len(DEVICE_ID_ALPHABET)] for random_byte in random_bytes(EVENT_ID_LENGTH)
+        )
+        stamped_events.append(
+            {
+                "format_version": EVENT_FORMAT_VERSION,
+                "id": event_id,
+                "at": canonical_stamped_at,
+                "device": device_id,
+                "kind": "item_stamped",
+                "item": item_id,
+            }
+        )
+    return stamped_events
 
 
 def fold_events(
