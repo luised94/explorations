@@ -8,10 +8,14 @@ changes anything. Updated in the same commit as the change it describes.
 
 REPO        ~/personal_repos/explorations (local; the rep/ subtree)
 BRANCH      main
-DOCS_SHA    c7a57f3856c7c5772b5113b1c67a81dca6160b47
-M0_SHA      aef91db (full SHA to be recorded from `git rev-parse HEAD~1`
-            after this commit lands)
 SUBTREE     rep/
+COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
+            aef91db0f8812cd6553f0881ec2f3ea601b2b4e5  M0 skeleton
+            b1aadfe                                   M1 memory model and fold
+            (this commit)                             docs: fold M0/M1 revisions
+                                                      into PLAN.md
+BASE_SHA    for the next thread: this commit's full SHA, from
+            `git rev-parse HEAD` after it lands
 
 ## Build state
 
@@ -19,14 +23,14 @@ SUBTREE     rep/
 |---|---|
 | docs (PLAN, STATUS, CONVENTIONS) | landed, c7a57f3 |
 | M0 skeleton | landed, aef91db; verified on the person's machine |
-| M1 FSRS transplant, event record, fold | this commit |
-| M2 grammar, stamp, add, lint, writer lock | next |
+| M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
+| M2 grammar, stamp, add, lint, writer lock, events loader | next (thread 2) |
 | M3 sessions, review, views, rep.lua | pending |
 | use week | pending |
 | M4 language-model seam | pending |
 | M5, M6 | pending, ordered by the use week |
 
-## Baseline after this commit
+## Baseline (unchanged by this documentation-only commit)
 
 BASELINE_TOTAL      48 passed
 BASELINE_BREAKDOWN  tests/test_events.py        26
@@ -45,52 +49,27 @@ TOOL_VERSIONS       uv 0.11.1, uv_build >=0.11.1,<0.12.0, CPython 3.12,
 uv.lock is a generated file: it is delivered whole, never as a patch, and
 `uv lock --check` confirms it matches pyproject.toml.
 
-## Measured after the plan was locked (fold into PLAN.md section 3 at its next edit)
+## Deviations pending approval
 
-- Clipboard: UTF-8 converted to UTF-16LE with a byte-order mark, piped into
-  clip.exe, pastes correctly in a Windows browser (`cafe-with-acute lambda`
-  arrived intact). This settles the D11 clipboard route for M4.
-- The sandbox ran CPython 3.12.3; the person's machine runs uv-managed
-  3.12.12. M0 passed on both.
-- Transplant versus fsrs 6.3.2: exact floating-point equality of stability,
-  difficulty and interval at every step, on 20,000 random histories (gaps
-  mixing same-day, the one-day boundary and up to 400 days) and on 20,000
-  fuzz cases. The suite runs 100 of each; the 20,000 run was one-off.
-- Fold speed (sandbox): decoding and folding 36,500 attempt events over
-  2,000 items took 0.66 s (decode 0.25 s, fold 0.41 s). Inside D1's 1 s
-  revisit trigger, but `rep due --brief` (target under 100 ms, PLAN.md
-  section 8) cannot replay the full history: M3 needs a derived snapshot for
-  that command, rebuilt from events, never the source of truth.
-- The property test on canonical times found that glibc strftime writes year
-  999 as "999", breaking fixed width; the formatter now uses isoformat and
-  asserts its postcondition.
+None. The six from M0 and M1 were approved and are recorded in PLAN.md
+section 12.
 
-## Deviations from PLAN.md, surfaced for approval
+## Kickoff for thread 2 (M2)
 
-From M0 (no answer yet):
-- The single-writer lock moves from M0 to M2, the first commit with a writer.
-- `rep where` was added in M0 as its observable and smoke-test target.
-
-From M1:
-- The version field is `format_version`, not `v` as written in D10: the
-  naming rule forbids single-letter names, and the field is data a person
-  will read in the events file.
-- Every event carries an `id`. D10 did not list it, but amend and undo need
-  a target to point at, so D10 implied it.
-- Only the five kinds the fold reads exist so far (attempt, amend, undo,
-  suspend, unsuspend). session_start, session_end and item_stamped are
-  added with their writers (M2, M3), so their fields are designed against a
-  real caller.
-- The fold reports problems (dangling references, undo of an undo,
-  duplicate ids) as data and keeps going, instead of refusing the history.
-  An undo of an undo is refused: the session never needs redo, and allowing
-  it makes "is this event in effect" depend on a chain.
+Attach a pack of rep/ at BASE_SHA. First message:
+  "Read rep/PLAN.md, rep/CONVENTIONS.md and rep/STATUS.md. Run the
+   clone-and-verify baseline (48 passed, pyright 0 errors) before changing
+   anything. Then build M2 as PLAN.md section 7 lists it, one commit per
+   turn, in implement mode."
+Co-load set for M2: PLAN.md (D1-D5, D10, D14, I1-I3, I7, I9-I11),
+CONVENTIONS.md, src/rep/machine.py (paths, device id, alphabet),
+src/rep/events.py (record types, encode/decode), src/rep/cli.py.
+Open choices M2 must make and record: exact-match normalization and numeric
+tolerance syntax; whether to cache bib citekeys (only if lint is slow).
 
 ## Known blind spots
 
-- The sandbox runs Linux, not WSL2. M0 has since run on WSL2; M1 has not.
 - Nothing yet exercises concurrent first runs; the hard-link creation is
   correct by construction, not by test.
 - No events file is read or written yet: decode and encode are tested on
-  strings. The file loader (truncated last line, several device files) lands
-  with its first caller.
+  strings. The loader (truncated last line, several device files) is M2.

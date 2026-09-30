@@ -3,7 +3,7 @@
 date: 2026-09-30
 status: LOCKED. Design review fires only when work contradicts or exceeds this
 file. A change to a decision edits this file in its own commit, with the
-reason, before any code depends on it.
+reason, before any code depends on it. Revisions are listed in section 12.
 companions: CONVENTIONS.md (the library grammar), STATUS.md (where the build
 is, and how to verify it)
 
@@ -107,6 +107,21 @@ Libraries, measured in a sandbox:
 - Citekey extraction by regex from a synthetic 22 MB bib with 62,062 entries:
   191 ms (about 220 ms expected at 25 MB).
 
+Measured while building M0 and M1:
+- Clipboard: UTF-8 converted to UTF-16LE with a byte-order mark, piped into
+  clip.exe, pastes intact in a Windows browser (`cafe-with-acute lambda`).
+- M0 passed on the person's machine (WSL2, uv-managed CPython 3.12.12) and in
+  the sandbox (CPython 3.12.3). M1 passed on both.
+- The FSRS transplant equals fsrs 6.3.2 exactly (floating-point equality of
+  stability, difficulty and interval) at every step of 20,000 random
+  histories and 20,000 fuzz cases, in a one-off deep run; the suite runs 100
+  of each.
+- Decoding and folding 36,500 attempt events over 2,000 items (a heavy year):
+  0.66 s (decode 0.25 s, fold 0.41 s). A full replay cannot meet the 100 ms
+  target of `rep due --brief`.
+- glibc strftime writes year 999 as "999"; canonical times are formatted with
+  isoformat, which always pads the year to four digits.
+
 Sources read:
 - OpenRouter FAQ: free models allow 50 requests a day, 1,000 a day after
   buying at least $10 of credits. The person accepts that free providers may
@@ -168,8 +183,9 @@ D1. Text files are the source of truth.
   derived SQLite index rebuilt from the files, never written directly.
 
 D2. Events are append-only JSONL, one file per device.
-  Every line carries a format version `v`. Each event is one complete line,
-  written and flushed at once; a truncated last line is reported and skipped.
+  Every line carries `format_version` and a unique `id`. Each event is one
+  complete line, written and flushed at once; a truncated last line is
+  reported and skipped.
   One writer process per machine, enforced by the machine-local lock.
   Rejected: shared log (conflicts under folder sync); lock in the data root
   (it would sync and lock out the other device).
@@ -240,15 +256,25 @@ D9. Sessions.
   a configured local hour (default 4).
   Plain `rep` starts today's default session and shows its size first.
 
-D10. Event record.
-  Fields: `v`, `at` (UTC ISO 8601), `device`, `session`, `kind`, `item`, and
-  per kind: outcome, latency in milliseconds (reveal to commit), typed answer,
-  a fingerprint of the item text. Kinds in v1: `session_start`,
-  `session_end`, `attempt`, `amend`, `undo`, `suspend`, `unsuspend`,
-  `item_stamped` (written when rep assigns an ID; gives item creation time
-  and measures capture).
+D10. Event record (as built in M1, src/rep/events.py).
+  Common fields: `format_version` (1), `id` (12 characters of the device-id
+  alphabet; the handle amend and undo point at), `at` (canonical UTC,
+  `YYYY-MM-DDTHH:MM:SS.ffffffZ`, fixed width so string order is time order),
+  `device`, `kind`.
+  Kinds built: `attempt` (session, item, rating 1-4 or null for "?",
+  latency_milliseconds from prompt shown to answer committed, typed_answer,
+  fingerprint of the item text), `amend` (target attempt, rating), `undo`
+  (target), `suspend` and `unsuspend` (item).
+  Kinds added with their writers: `item_stamped` (M2: item creation time,
+  measures capture), `session_start` and `session_end` (M3).
+  Fold rules: sorted by (at, id), so input order and device files do not
+  matter; undo removes its target; an undo of an undo is refused; the latest
+  amend sets an attempt's rating at the attempt's own time; an ungraded
+  attempt changes no memory; bad references are returned as problems, never
+  raised.
   Rule: what an item is lives in the library; what happened lives in events.
   Events for items no longer in the library are skipped and reported.
+  Rejected: single-letter field `v` (naming rule).
 
 D11. Language models are a seam with two transports.
   One function, `complete(task, prompt_text) -> response_text`.
@@ -263,9 +289,8 @@ D11. Language models are a seam with two transports.
   and reports accepted and edited counts (the evaluation data). Generation
   input: your kbd source-notes `## @citekey` section plus the excerpt, so
   what matters is decided by you.
-  Clipboard: raw UTF-8 into clip.exe is broken (measured). Candidates, to
-  spike in M4: yank from nvim with your clipboard provider; UTF-16LE through
-  iconv into clip.exe; PowerShell Set-Clipboard.
+  Clipboard (measured): raw UTF-8 into clip.exe is garbled; UTF-16LE with a
+  byte-order mark through iconv into clip.exe works. That is the route.
   Rejected: Anthropic SDK (5, one provider); Simon Willison's llm (6, second
   abstraction); litellm or pydantic-ai (4); JSON-schema output (6, free
   models vary; needs conversion for triage).
@@ -366,7 +391,7 @@ I9  Stamp is idempotent and only inserts `id:` lines; on any
     parse problem it returns its input unchanged and exits
     non-zero.                                                 property test
 I10 A broken item excludes only itself from a session.        unit test
-I11 Every event line has a format version.                    check on write
+I11 Every event line has format_version and a unique id.      check on write
 
 --------------------------------------------------------------------------------
 ## 7. Milestones
@@ -375,12 +400,12 @@ I11 Every event line has a format version.                    check on write
 | Thread | Milestone | Delivers | Proves |
 |---|---|---|---|
 | 1 | docs | PLAN.md, STATUS.md, CONVENTIONS.md | applies cleanly |
-| 1 | M0 | uv project, pyright strict, pytest, hypothesis, data root and local.toml resolution, device_id, lock, `rep --help` | smoke test through the installed `rep` entry point |
-| 1 | M1 | FSRS transplant, event record, fold | oracle property test, deterministic replay |
-| 2 | M2 | parser (line-classifying state machine), checks, `rep stamp`, `rep add`, `rep lint`, NFC, citekey check | round-trip and stamp properties; checks red on injected violations |
-| 3 | M3 | planner, session loop, `rep review`, `rep why`, `rep forecast`, `rep stats`, `rep due --brief`, rep.lua | real session end to end; `rep due --brief` wall time |
+| 1 | M0 | uv project, pyright strict, pytest, data root and local.toml resolution, device_id, `rep where`, `rep --help` | smoke test through the installed `rep` entry point (done, aef91db) |
+| 1 | M1 | FSRS transplant, event record, fold | oracle property test, deterministic replay (done, b1aadfe) |
+| 2 | M2 | parser (line-classifying state machine), checks, `rep stamp`, `rep add`, `rep lint`, NFC, citekey check, single-writer lock, events file loader and appender, `item_stamped` event | round-trip and stamp properties; checks red on injected violations; lock refuses a second writer |
+| 3 | M3 | planner, session loop, `session_start`/`session_end` events, `rep review`, `rep why`, `rep forecast`, `rep stats`, `rep due --brief` (from a derived snapshot), rep.lua | real session end to end; `rep due --brief` wall time |
 | - | use week | daily use on one real reading; then a session porting drill/ | instrumentation (section 8) |
-| 4 | M4 | LLM seam (manual, OpenRouter), inbox, `rep accept`, generation from source-notes | manual transport end to end; clipboard spike |
+| 4 | M4 | LLM seam (manual, OpenRouter), inbox, `rep accept`, generation from source-notes | manual transport end to end |
 | 5, 6 | M5, M6 | M5 concept layer and diagnostics; M6 tutor (Socratic), leech doctor, graph builder | ordered by the use week: prerequisite pain first means M5, comprehension pain first means M6 |
 | later | - | generated items (drill/ port), optimizer, rich views, GUI renderer, cloze | - |
 
@@ -439,7 +464,9 @@ under 100 ms).
 --------------------------------------------------------------------------------
 
 - nvim key prefix for rep.lua (M3). `<Space>r` is taken.
-- Clipboard route for the manual transport (M4, D11).
+- `rep due --brief` snapshot (M3): a small derived file in machine-local
+  state, rebuilt from events when any events file is newer; never a source
+  of truth.
 - FIRe-style credit with penalties versus synthetic FSRS reviews (M5, D19).
 - Exact-match normalization and numeric tolerance syntax (M2).
 - Bib citekey cache keyed on file time, only if lint feels slow (M2).
@@ -484,3 +511,17 @@ device        one machine; owns exactly one events file
 review debt   future reviews created by past new items
 concept       (M5) a latent skill that items test
 fringe        (M5) concepts whose prerequisites are all known
+
+--------------------------------------------------------------------------------
+## 12. Revisions
+--------------------------------------------------------------------------------
+
+2026-09-30  Locked (commit c7a57f3).
+2026-09-30  After M0 and M1, approved by the person: the writer lock moves to
+            M2, its first caller; `rep where` added in M0; event field
+            `format_version` instead of `v`; every event has an `id`; event
+            kinds are added with their writers; an undo of an undo is
+            refused. Also: D10 latency corrected to "prompt shown to answer
+            committed" (it said "reveal to commit", which is backwards: the
+            answer is revealed after the commit); clipboard route settled;
+            facts measured during M0 and M1 added to section 3.
