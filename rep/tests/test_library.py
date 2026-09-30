@@ -1,6 +1,9 @@
-"""The library parser at its contract: line kinds, item boundaries, problems, round trip."""
+"""The library unit at its contract: parser, writer, checks and stamp."""
 
+import random
+import re
 import unicodedata
+from collections.abc import Callable
 
 from hypothesis import given, settings
 from hypothesis import strategies as strategies
@@ -8,12 +11,15 @@ from hypothesis import strategies as strategies
 import pytest
 
 from rep.library import (
+    ITEM_ID_PATTERN,
     Field,
     SourceItem,
     check_source_item,
     parse_library_text,
     render_library_items,
+    stamp_library_text,
 )
+from rep.machine import DEVICE_ID_ALPHABET
 
 CONVENTIONS_EXAMPLE = """\
 ## @Lehninger2021
@@ -44,6 +50,7 @@ def test_conventions_example_parses_to_the_records_it_describes() -> None:
         "section_heading": "@Lehninger2021",
         "question": "What does Km measure?",
         "question_is_block": False,
+        "question_end_line": 3,
         "fields": {
             "id": {"key": "id", "value": "km-measure-7q2m", "is_block": False, "line": 4},
             "A": {
@@ -78,6 +85,7 @@ def test_block_question_and_paragraph_break() -> None:
     items = parse_library_text("### Q:\n    > Prove that\n    >\n    >   x > 0\nA: done\n")
     assert items[0]["question"] == "Prove that\n\n  x > 0"
     assert items[0]["question_is_block"] is True
+    assert items[0]["question_end_line"] == 4
     assert items[0]["fields"]["A"]["value"] == "done"
     assert items[0]["problems"] == []
 
@@ -219,6 +227,7 @@ def source_items(draw: strategies.DrawFn) -> list[SourceItem]:
             "section_heading": section_heading,
             "question": question,
             "question_is_block": question_is_block,
+            "question_end_line": 0,
             "fields": fields,
             "open_questions": [
                 {"key": "?", "value": value, "is_block": False, "line": 0} for value in open_question_values
@@ -236,6 +245,7 @@ def test_parse_of_render_is_identity_apart_from_line_numbers(items: list[SourceI
     assert all(item["problems"] == [] for item in parsed_items), [item["problems"] for item in parsed_items]
     for parsed_item in parsed_items:
         parsed_item["line"] = 0
+        parsed_item["question_end_line"] = 0
         for field in parsed_item["fields"].values():
             field["line"] = 0
         for open_question in parsed_item["open_questions"]:
@@ -412,3 +422,145 @@ def test_q_form_and_one_word_ids_are_rep_form() -> None:
     for item_id in ("q-7q2m3x", "km-7q2m", "a-b-c-7q2m"):
         (source_item,) = parse_library_text(f"### Q: q\nid: {item_id}\nA: a\n")
         assert check_source_item(source_item)[1] == [], item_id
+
+
+# --- stamp ------------------------------------------------------------------
+
+
+def fixed_suffix_source(suffixes: list[str]) -> Callable[[int], bytes]:
+    # Returns bytes that DEVICE_ID_ALPHABET maps to each suffix in turn, so a
+    # test can name the exact ids it expects, including forced collisions.
+    remaining_suffixes = list(suffixes)
+
+    def next_bytes(count: int) -> bytes:
+        suffix = remaining_suffixes.pop(0)
+        assert len(suffix) == count
+        return bytes(DEVICE_ID_ALPHABET.index(character) for character in suffix)
+
+    return next_bytes
+
+
+def test_stamp_inserts_ids_after_each_question_and_nothing_else() -> None:
+    text = (
+        "## @Lehninger2021\n"
+        "\n"
+        "### Q: What does Km measure?\n"
+        "A: half of Vmax\n"
+        "\n"
+        "### Q:\n"
+        "    > How does the proton gradient\n"
+        "    > drive ATP synthesis?\n"
+        "criteria: rotor turns\n"
+        "### Q: already stamped\n"
+        "id: kept-as-written\n"
+        "A: x\n"
+    )
+    result = stamp_library_text(text, set(), fixed_suffix_source(["7q2m", "k3xa"]))
+    assert result["problems"] == []
+    assert result["stamped_item_ids"] == ["km-measure-7q2m", "proton-gradient-drive-k3xa"]
+    assert result["text"] == (
+        "## @Lehninger2021\n"
+        "\n"
+        "### Q: What does Km measure?\n"
+        "id: km-measure-7q2m\n"
+        "A: half of Vmax\n"
+        "\n"
+        "### Q:\n"
+        "    > How does the proton gradient\n"
+        "    > drive ATP synthesis?\n"
+        "id: proton-gradient-drive-k3xa\n"
+        "criteria: rotor turns\n"
+        "### Q: already stamped\n"
+        "id: kept-as-written\n"
+        "A: x\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_item_id"),
+    [
+        # Accents are stripped; letters NFKD cannot decompose (sharp s) drop.
+        ("\u00bfQu\u00e9 significa Stra\u00dfe?", "que-significa-strae-7q2m"),
+        # Full-width and ligature forms become ASCII under NFKD.
+        ("\uff21\uff34\uff30 \ufb01xation", "atp-fixation-7q2m"),
+        ("What is 2 + 2 in base 3?", "2-2-base-7q2m"),
+        ("2 + 2 = ?", "q-7q2m3x"),
+        ("What is it?", "q-7q2m3x"),
+        ("\u03bb\u03cc\u03b3\u03bf\u03c2", "q-7q2m3x"),
+    ],
+)
+def test_id_stems(question: str, expected_item_id: str) -> None:
+    suffix = "7q2m" if not expected_item_id.startswith("q-") else "7q2m3x"
+    result = stamp_library_text(f"### Q: {question}\nA: x\n", set(), fixed_suffix_source([suffix]))
+    assert result["stamped_item_ids"] == [expected_item_id]
+
+
+def test_stamp_redraws_a_suffix_taken_anywhere_in_the_library() -> None:
+    text = "### Q: Km?\nid: km-aaaa\nA: x\n### Q: Km?\nA: y\n### Q: Km?\nA: z\n"
+    result = stamp_library_text(
+        text, {"km-bbbb"}, fixed_suffix_source(["aaaa", "bbbb", "cccc", "cccc", "dddd"])
+    )
+    # aaaa is in this file, bbbb elsewhere in the library, cccc was just used.
+    assert result["stamped_item_ids"] == ["km-cccc", "km-dddd"]
+
+
+def test_stamp_keeps_crlf_bom_nfd_and_a_missing_final_newline() -> None:
+    decomposed_question = unicodedata.normalize("NFD", "caf\u00e9 cr\u00e8me")
+    text = f"\ufeff### Q: {decomposed_question}\r\nA: x\r\n### Q: last\r\nA: y\r\n### Q: final"
+    result = stamp_library_text(text, set(), fixed_suffix_source(["aaaa", "bbbb", "cccc"]))
+    assert result["text"] == (
+        f"\ufeff### Q: {decomposed_question}\r\nid: cafe-creme-aaaa\r\nA: x\r\n"
+        "### Q: last\r\nid: last-bbbb\r\nA: y\r\n"
+        "### Q: final\r\nid: final-cccc"
+    )
+
+
+def test_stamp_refuses_any_parse_error_and_returns_the_input() -> None:
+    text = "### Q: fine\nA: x\n### Q: broken\nA: y\nstray line\n"
+    result = stamp_library_text(text, set(), fixed_suffix_source([]))
+    assert result["text"] == text
+    assert result["stamped_item_ids"] == []
+    assert [problem["line"] for problem in result["problems"]] == [5]
+
+
+def test_stamp_ignores_warnings_and_check_errors() -> None:
+    # An empty ?: is a parse warning; a missing answer is a check error. The
+    # capture template stamps before the answer is written, so neither may
+    # block an id.
+    result = stamp_library_text("### Q: What is Km?\n?:\n", set(), fixed_suffix_source(["aaaa"]))
+    assert result["problems"] == []
+    assert result["stamped_item_ids"] == ["km-aaaa"]
+    assert result["text"] == "### Q: What is Km?\nid: km-aaaa\n?:\n"
+
+
+stampable_text = strategies.one_of(
+    source_items().map(render_library_items),
+    source_items().map(render_library_items).map(lambda text: text.replace("\n", "\r\n")),
+    source_items().map(render_library_items).map(lambda text: text.rstrip("\n")),
+)
+
+
+@settings(max_examples=300)
+@given(stampable_text, strategies.integers(min_value=0, max_value=2**32))
+def test_stamp_only_inserts_id_lines_and_is_idempotent(text: str, seed: int) -> None:
+    result = stamp_library_text(text, set(), random.Random(seed).randbytes)
+    assert result["problems"] == []
+    stamped_text = result["text"]
+    # L6: removing each inserted line, with the line ending inserted with it,
+    # gives back the input exactly.
+    unstamped_text = stamped_text
+    for new_item_id in result["stamped_item_ids"]:
+        assert ITEM_ID_PATTERN.match(new_item_id) is not None
+        inserted_line_match = re.search(rf"(?m)^id: {re.escape(new_item_id)}(\r?\n)?", unstamped_text)
+        assert inserted_line_match is not None
+        start, end = inserted_line_match.span()
+        if inserted_line_match.group(1) is None:
+            # Inserted after a final line that had no ending: the ending was
+            # inserted before the id line instead.
+            start -= 2 if unstamped_text[:start].endswith("\r\n") else 1
+        unstamped_text = unstamped_text[:start] + unstamped_text[end:]
+    assert unstamped_text == text
+    # L8: ids unique; L5: a second stamp inserts nothing.
+    assert len(set(result["stamped_item_ids"])) == len(result["stamped_item_ids"])
+    second_result = stamp_library_text(stamped_text, set(), random.Random(seed + 1).randbytes)
+    assert second_result == {"text": stamped_text, "stamped_item_ids": [], "problems": []}

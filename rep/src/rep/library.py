@@ -13,6 +13,8 @@ REPRESENTATION
     section_heading    text of the nearest `## ` heading above, or None
     question           inline text, or the block's lines joined with "\\n"
     question_is_block  whether the question was written as a block
+    question_end_line  last line of the question: `line` when inline, the
+                       last block line otherwise; stamp inserts `id:` after it
     fields             key -> Field, in file order; when a key repeats, the
                        first is kept and the repeat is a problem
     open_questions     the `?:` lines, as Fields with key "?", in file order
@@ -55,10 +57,25 @@ SEVERITY
 
 Meaning is checked on the source records by check_source_item; the parser
 only says what each line is.
+
+STAMP
+  stamp_library_text gives every item without an `id:` field an id, by
+  inserting one `id:` line after its question. It works on the text as
+  written, not on a re-rendered file: the person's layout, NFD text, CRLF
+  endings and byte-order mark survive (PLAN.md I3, I9).
+  L5  Idempotent: stamping stamped text changes nothing.
+  L6  The output is the input plus inserted `id:` lines (each with a line
+      ending, placed before the next line, or after a final line that had
+      none); no other character changes.
+  L7  If the parser reports any error, the input is returned unchanged with
+      those errors, and nothing is inserted.
+  L8  New ids match ITEM_ID_PATTERN and collide with no id in the text or in
+      existing_item_ids.
 """
 
 import re
 import unicodedata
+from collections.abc import Callable
 from typing import Literal, TypedDict
 
 from rep.machine import DEVICE_ID_ALPHABET
@@ -83,9 +100,16 @@ class SourceItem(TypedDict):
     section_heading: str | None
     question: str
     question_is_block: bool
+    question_end_line: int
     fields: dict[str, Field]
     open_questions: list[Field]
     problems: list[Problem]
+
+
+class StampResult(TypedDict):
+    text: str  # the input with `id:` lines inserted, or the input unchanged
+    stamped_item_ids: list[str]  # the ids inserted, in file order
+    problems: list[Problem]  # parser errors that stopped stamping; empty otherwise
 
 
 class NumericKey(TypedDict):
@@ -152,6 +176,21 @@ USABLE_ITEM_ID_PATTERN = re.compile(r"^[!-~]+$")
 # such as John.3.16), and nothing in rep reads a location's structure.
 SOURCE_PATTERN = re.compile(r"^@([^\s:?,{}%#~\\\"]+)(\?\?)?(?::(\S+))?$")
 SECTION_SOURCE_PATTERN = re.compile(r"^@([^\s:?,{}%#~\\\"]+)(\?\?)?$")
+# Dropped from id stems so the stem carries the words that name the item
+# ("What does Km measure?" -> km-measure). English only: questions in other
+# languages keep their function words, which costs readability, never
+# correctness, since the id is an identity and not a title.
+ID_STEM_STOPWORDS = frozenset(
+    "a an the and or but if so not no of to in on at for by with from into about as than then "
+    "is are was were be been being am do does did has have had can could would should will shall "
+    "may might must what which who whom whose when where why how that this these those there "
+    "it its i me my we our you your he she they them his her their".split()
+)
+ID_STEM_WORD_LIMIT = 3
+ID_SUFFIX_LENGTH = 4  # 20 bits per stem: a collision is rare, and retried
+ID_NO_WORDS_SUFFIX_LENGTH = 6  # "q-" ids share one stem, so they get 30 bits
+ID_DRAW_LIMIT = 1000
+
 # kbd README: lowercase and underscore-separated, acronyms uppercase; so each
 # underscore-separated part is all lowercase or all uppercase.
 TAG_PATTERN = re.compile(r"^#(?:[a-z0-9]+|[A-Z0-9]+)(?:_(?:[a-z0-9]+|[A-Z0-9]+))*$")
@@ -222,6 +261,8 @@ def parse_library_text(text: str) -> list[SourceItem]:
             elif pending_block_key == QUESTION_MARKER:
                 current_item["question"] = "\n".join(pending_block_lines)
                 current_item["question_is_block"] = True
+                # Block lines are contiguous from the line after the marker.
+                current_item["question_end_line"] = pending_block_line + len(pending_block_lines)
             elif pending_block_key in current_item["fields"]:
                 first_line = current_item["fields"][pending_block_key]["line"]
                 current_item["problems"].append(
@@ -262,6 +303,7 @@ def parse_library_text(text: str) -> list[SourceItem]:
                     "section_heading": section_heading,
                     "question": inline_question,
                     "question_is_block": False,
+                    "question_end_line": line_number,
                     "fields": {},
                     "open_questions": [],
                     "problems": [],
@@ -650,3 +692,116 @@ def check_source_item(source_item: SourceItem) -> tuple[Item | None, list[Proble
         "open_questions": [open_question["value"] for open_question in source_item["open_questions"]],
     }
     return item, problems
+
+
+def stamp_library_text(
+    text: str,
+    existing_item_ids: set[str],
+    random_bytes: Callable[[int], bytes],
+) -> StampResult:
+    """Insert an `id:` line for every item that has no `id:` field (L5-L8).
+
+    PRE   text is the decoded content of one library file. existing_item_ids
+          holds the ids of the rest of the library (I1 is library-wide).
+          random_bytes(count) returns count random bytes (the shell passes
+          secrets.token_bytes; tests pass a seeded source).
+    POST  L5-L8. stamped_item_ids lists the new ids in file order.
+    """
+    source_items = parse_library_text(text)
+    # L7 (PLAN.md I9): with a parse error the item boundaries themselves may
+    # be wrong, so an inserted line could land inside the wrong item.
+    blocking_problems = [
+        problem for source_item in source_items for problem in source_item["problems"] if problem["severity"] == "error"
+    ]
+    if blocking_problems:
+        return {"text": text, "stamped_item_ids": [], "problems": blocking_problems}
+
+    taken_item_ids = set(existing_item_ids)
+    for source_item in source_items:
+        if "id" in source_item["fields"]:
+            taken_item_ids.add(source_item["fields"]["id"]["value"])
+
+    # Offsets into the text as written. Parsing normalized to NFC and dropped
+    # a byte-order mark, but neither changes which "\n" ends which line, so
+    # the parser's line numbers index these lines exactly.
+    raw_lines = text.split("\n")
+    line_start_offsets: list[int] = []
+    running_offset = 0
+    for raw_line in raw_lines:
+        line_start_offsets.append(running_offset)
+        running_offset += len(raw_line) + 1
+    file_line_ending = "\r\n" if "\r\n" in text else "\n"
+
+    insertions: list[tuple[int, str]] = []
+    stamped_item_ids: list[str] = []
+    for source_item in source_items:
+        if "id" in source_item["fields"]:
+            continue
+
+        # --- stem: up to three content words, lowercase ASCII ---
+        # NFKD splits accents from letters (and full-width or ligature forms
+        # into ASCII), then everything still outside ASCII is dropped; so
+        # "Strasse" spelled with sharp s gives "strae". Accepted: the id is
+        # an identity, not a transliteration, and a table of special cases
+        # would cover some languages arbitrarily.
+        ascii_question = (
+            unicodedata.normalize("NFKD", source_item["question"]).encode("ascii", "ignore").decode("ascii").lower()
+        )
+        stem_words = [
+            word
+            for word in re.split(r"[^a-z0-9]+", ascii_question)
+            if word != "" and word not in ID_STEM_STOPWORDS
+        ][:ID_STEM_WORD_LIMIT]
+        # No ASCII letter at all (CONVENTIONS.md), or only function words:
+        # either way there is nothing readable to put in the stem.
+        if re.search(r"[a-z]", ascii_question) is None or stem_words == []:
+            id_stem = "q"
+            suffix_length = ID_NO_WORDS_SUFFIX_LENGTH
+        else:
+            id_stem = "-".join(stem_words)
+            suffix_length = ID_SUFFIX_LENGTH
+
+        # --- suffix: drawn until unused (L8) ---
+        new_item_id = ""
+        for _draw_number in range(ID_DRAW_LIMIT):
+            # Each byte picks one character; 256 is a multiple of 32, so
+            # every character is equally likely (as for device ids).
+            suffix = "".join(
+                DEVICE_ID_ALPHABET[random_byte % len(DEVICE_ID_ALPHABET)] for random_byte in random_bytes(suffix_length)
+            )
+            candidate_item_id = f"{id_stem}-{suffix}"
+            if candidate_item_id not in taken_item_ids:
+                new_item_id = candidate_item_id
+                break
+        assert new_item_id != "", f"no unused id after {ID_DRAW_LIMIT} draws: the random source is broken"
+        assert ITEM_ID_PATTERN.match(new_item_id) is not None, f"generated id is malformed: {new_item_id!r}"
+        taken_item_ids.add(new_item_id)
+        stamped_item_ids.append(new_item_id)
+
+        # --- where: the start of the line after the question ---
+        question_end_index = source_item["question_end_line"] - 1
+        if question_end_index == len(raw_lines) - 1:
+            # The question is the file's last line and has no line ending:
+            # the ending goes before the id, so the question's own characters
+            # are untouched (L6).
+            insertions.append((len(text), f"{file_line_ending}id: {new_item_id}"))
+        else:
+            # The inserted line ends the way its neighbor above does, so a
+            # CRLF file stays CRLF and nvim sees no mixed endings.
+            line_ending = "\r\n" if raw_lines[question_end_index].endswith("\r") else "\n"
+            insertions.append((line_start_offsets[question_end_index + 1], f"id: {new_item_id}{line_ending}"))
+
+    # Insert from the end so earlier offsets stay valid.
+    stamped_text = text
+    for insertion_offset, inserted_text in reversed(insertions):
+        stamped_text = stamped_text[:insertion_offset] + inserted_text + stamped_text[insertion_offset:]
+
+    # L5 and L7 by construction: reparsing finds the same items, all with an
+    # id, and no error, so a second stamp has nothing to do.
+    stamped_source_items = parse_library_text(stamped_text)
+    assert len(stamped_source_items) == len(source_items), "stamping changed the number of items"
+    assert all("id" in source_item["fields"] for source_item in stamped_source_items), "an item is still without an id"
+    assert not any(
+        problem["severity"] == "error" for source_item in stamped_source_items for problem in source_item["problems"]
+    ), "stamping introduced a parse error"
+    return {"text": stamped_text, "stamped_item_ids": stamped_item_ids, "problems": []}
