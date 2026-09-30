@@ -166,7 +166,7 @@ def main():
 
     parsed_arguments = argument_parser.parse_args()
     bend_path = require_bend(parsed_arguments.install_bend)
-    version_result = run_command([bend_path, "--version"], PROJECT_DIRECTORY, 30)
+    version_result = run_command([bend_path, "version"], PROJECT_DIRECTORY, 30)
     version_lines = (version_result["stdout"] + version_result["stderr"]).strip().splitlines()
     bend_version = version_lines[0].strip() if version_lines else "bend (unknown version)"
 
