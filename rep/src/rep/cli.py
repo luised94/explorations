@@ -6,7 +6,7 @@ REPRESENTATION
   bottom in one place (typer-style decorator dispatch was rejected in
   PLAN.md D13 for hiding it).
 
-EXIT CODES
+EXIT CODES (PLAN.md D30)
   0  success (for lint: no errors; warnings may have been printed)
   1  the input has problems the person must fix; nothing was written, and
      each problem is on stderr as path:line:col: severity: message (the
@@ -136,7 +136,7 @@ def main(argument_list: list[str] | None = None) -> int:
         return 0
 
     if command == "stamp":
-        # Bytes, not text: text-mode stdin decodes by the locale, and under
+        # PLAN.md D24. Bytes, not text: text-mode stdin decodes by the locale, and under
         # the C locale with surrogateescape (measured), so invalid UTF-8
         # would be stamped instead of refused; and a refusal must hand back
         # the exact bytes it was given (PLAN.md I9). On every refusal the
@@ -156,6 +156,7 @@ def main(argument_list: list[str] | None = None) -> int:
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
             sys.stdout.buffer.write(input_bytes)
+            # PLAN.md D28: rep never creates the data root.
             print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
             return 2
 
@@ -184,7 +185,7 @@ def main(argument_list: list[str] | None = None) -> int:
         # Only a stamp that adds ids writes history, so saving a file whose
         # items all have ids never touches the lock or the events file.
         if stamp_result["stamped_item_ids"] != []:
-            # Ids and their item_stamped events go out together or not at
+            # PLAN.md D24. Ids and their item_stamped events go out together or not at
             # all: ids without events would silently drop captures from E1.
             try:
                 lock_descriptor = acquire_writer_lock(machine_context["state_directory"])
@@ -212,11 +213,12 @@ def main(argument_list: list[str] | None = None) -> int:
             return 1
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
+            # PLAN.md D28: rep never creates the data root.
             print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
             return 2
         target_name_argument: str | None = parsed_arguments.to
 
-        # The lock is held from the library read to the last write: the ids
+        # PLAN.md D27, D29. The lock is held from the library read to the last write: the ids
         # drawn, the file appended to and the events recorded then all see
         # one state of the library, with no other writer between them.
         try:
@@ -272,7 +274,7 @@ def main(argument_list: list[str] | None = None) -> int:
                 if refusals == [] and added_items == []:
                     refusals.append("<stdin>: no '### Q:' item to add")
 
-            # --- which file: --to, else the one citekey all items share ---
+            # --- which file: --to, else the one citekey all items share (PLAN.md D29) ---
             target_name = ""
             if refusals == []:
                 if target_name_argument is not None:
@@ -332,11 +334,12 @@ def main(argument_list: list[str] | None = None) -> int:
         return 0
 
     if command == "lint":
-        # Read-only: no lock, so lint can run while a session writes. It may
+        # PLAN.md D30. Read-only: no lock, so lint can run while a session writes. It may
         # then see a last events line still being written, which the loader
         # reports and skips (storage.py S2).
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
+            # PLAN.md D28: rep never creates the data root.
             print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
             return 2
         # (path, line, column, severity, message); severity is error,
@@ -390,7 +393,7 @@ def main(argument_list: list[str] | None = None) -> int:
 
         # --- citekeys against the bib (PLAN.md D16: kbd is read, never written) ---
         bib_path = machine_context["bib_path"]
-        # "@llm:<id>" sources are an open hole (PLAN.md section 9): their
+        # PLAN.md D25. "@llm:<id>" sources are an open hole (section 9): their
         # meaning is undecided, so they are exempt rather than reported.
         verifiable_cited_items = [cited_item for cited_item in cited_items if cited_item[2] != "llm"]
         if verifiable_cited_items != []:

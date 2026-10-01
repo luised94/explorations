@@ -26,7 +26,7 @@ REPRESENTATION
 INVARIANTS
   S1  load_events never raises for file content: every line it cannot use
       becomes a problem, and every other line becomes an event.
-  S2  A last line without "\\n" is reported and skipped: it is either being
+  S2  (PLAN.md D26) A last line without "\\n" is reported and skipped: it is either being
       written now or was cut off by a crash, and in neither case is it known
       to be the whole event (D2).
   S3  append_events writes whole lines only, in one write per call, and
@@ -38,7 +38,7 @@ INVARIANTS
       across the whole log rests on 60 random bits per id (events.py) and
       is reported by the fold, not checked here: checking would mean
       reading the device's whole file on every append.
-  S5  At most one process per machine holds the writer lock (I7). It is
+  S5  (PLAN.md D27) At most one process per machine holds the writer lock (I7). It is
       released by closing its descriptor or by the process ending in any
       way, including a crash, so no stale lock can remain.
 """
@@ -61,7 +61,7 @@ SYNC_CONFLICT_MARKER = ".sync-conflict-"
 class FileProblem(TypedDict):
     path: str
     line: int
-    # error: content was skipped and is lost to rep until fixed; warning:
+    # PLAN.md D22. error: content was skipped and is lost to rep until fixed; warning:
     # nothing is lost (a line still being written, an event kept in the
     # wrong file). Decided here, where the reason is known.
     severity: Literal["error", "warning"]
@@ -203,7 +203,7 @@ def append_events(events_directory: Path, device_id: str, new_events: list[Event
     if encoded_lines == []:
         return
 
-    # mkdir without parents: FileNotFoundError when the data root is missing.
+    # PLAN.md D28. mkdir without parents: FileNotFoundError when the data root is missing.
     directory_was_created = not events_directory.exists()
     events_directory.mkdir(exist_ok=True)
     events_path = events_directory / f"{device_id}{EVENTS_FILE_SUFFIX}"
@@ -308,7 +308,7 @@ def read_library_files(library_directory: Path) -> LibraryReadResult:
 
 
 def append_library_text(library_directory: Path, file_name: str, appended_text: str) -> None:
-    """Append text to one library file, creating it if needed, and make it durable.
+    """Append text to one library file, creating it if needed, and make it durable (PLAN.md D28, D29).
 
     PRE   the caller holds the writer lock (I7). The data root exists (as for
           append_events). file_name is a plain name ending in ".md", with no
@@ -341,7 +341,7 @@ def append_library_text(library_directory: Path, file_name: str, appended_text: 
             os.close(directory_descriptor)
 
 
-# An entry starts a line with @type{key, (BetterBibTeX writes one per line).
+# PLAN.md D25. An entry starts a line with @type{key, (BetterBibTeX writes one per line).
 # The key is everything up to the comma, so malformed keys holding ":" or
 # "/" are read as they are and simply never match a citekey in the library.
 BIB_ENTRY_PATTERN = re.compile(rb"^@([A-Za-z]+)[ \t]*\{[ \t]*([^,\s{}]+)[ \t]*,", re.MULTILINE)

@@ -483,6 +483,169 @@ D20. Grading keys for `check: exact` and `check: numeric` (M2, from section 9).
   Watch in the use week: amends on exact and numeric attempts, by cause
   (case, punctuation, number format, recall).
 
+D21. Library parsing (M2).
+  Choice: lines split on "\n" only; each classified by its first
+  characters; a state machine with three states (outside an item, in an
+  item, collecting a ">" block). Inside an item, a line that is not a
+  field, block line, `?:` or blank is an error. A blank line ends a block.
+  One space after ">" is the separator; more is content. NFC once before
+  splitting; a leading byte-order mark is dropped.
+  Reason: an unclassified line inside an item is text that would silently
+  drop out of an answer; lint's line numbers must be nvim's.
+  Rejected: str.splitlines (3: also splits on U+2028, U+0085 and form feed,
+  moving every later line number); unknown lines in items as notes (4:
+  silent loss); a block continued across a blank line (5: guesses which
+  field the text belongs to).
+  Trade-off: stricter than markdown; a stray line makes its item an error
+  until fixed.
+  Revisit: use-week errors from habits the grammar should absorb.
+
+D22. Errors and warnings (M2).
+  Choice: an error excludes the item from sessions (I10) and is used only
+  for what breaks a session: a parse error, no id or an unusable one, no
+  answer, a check or attempt value rep cannot run, a key that cannot be
+  graded, an id another item uses. Everything else is a warning: unknown
+  fields, source, tags, citekeys, an id not in rep's form. Readers of files
+  set the severity of what they skip. Lint lists `?:` lines as notes and
+  exits 1 only on errors.
+  Reason: excluding an item over metadata costs practice and protects
+  nothing; severity is decided where the reason is known.
+  Rejected: all problems errors (5: a tag typo removes an item from
+  practice); all warnings (3: a session would run items it cannot grade);
+  lint inferring severity from message text (4: rewording a message would
+  change it).
+  Trade-off: metadata problems never force a fix; they show only in lint.
+  Revisit: warnings left unfixed for weeks in the use week.
+
+D23. Item ids (M2).
+  Choice: the stem is the first three words of the question that are not
+  common English words, after NFKD, keeping ASCII letters and digits; a
+  question with no ASCII letter or no remaining word gets `q-` and six
+  alphabet characters, others get four. Ids are unique across the whole
+  library (I1): a drawn suffix already used anywhere is drawn again. An id
+  not in rep's form is a warning; an id that cannot work (a block, a
+  space, non-ASCII) is an error.
+  Reason: readable handles with no dependency; I1 is library-wide; an id
+  written by hand may already carry history.
+  Rejected: a transliteration table (6: arbitrary coverage of languages);
+  unidecode (4: a runtime dependency, D13); the three longest words (5:
+  loses reading order); a non-rep id as an error (5: would exclude an item
+  that has history under it).
+  Trade-off: "Strasse" written with sharp s gives "strae"; questions in
+  other languages keep their function words.
+  Revisit: ids the person finds unreadable in `rep why` output (M3).
+
+D24. Stamping (M2).
+  Choice: stamp inserts `id:` lines at line offsets in the text as written
+  and never re-renders it; any parse error returns the input unchanged
+  (I9); warnings and check errors do not block. `rep stamp` reads and
+  writes bytes and, on every refusal, writes back the exact input. New ids
+  and their item_stamped events are written together or not at all; the
+  lock is taken only when there is something to stamp.
+  Reason: I3 and I9; E1 needs every capture; text-mode stdin under the C
+  locale accepts invalid UTF-8 (measured, section 3).
+  Rejected: re-rendering the file (3: loses layout, CRLF, NFD text, a
+  missing final newline); ids without events when the lock is held (5:
+  silent E1 loss); text-mode standard streams (4).
+  Trade-off: a file with one parse error gets no new ids until it is
+  fixed; every stamp reads the whole library (130 ms at 10,000 items).
+  Revisit: stamp latency noticeable on save in nvim.
+
+D25. Sources and the bib (M2).
+  Choice: a citekey is anything BibTeX allows in a key except ":", "?",
+  whitespace and BibTeX delimiters; a location is any text without spaces
+  and is never read; `??` marks a key not yet in the bib; `@llm:` sources
+  are exempt (section 9). Lint warns on a key missing from the bib and on
+  a `??` key that has reached it. Bib keys are read by a bytes pattern over
+  entry lines, excluding @comment, @string and @preamble; no cache.
+  Reason: kbd uses location forms beyond its six specifiers; BetterBibTeX
+  keys can hold punctuation; one bad byte must not hide the bib; the real
+  bib reads in 112 ms (section 3).
+  Rejected: an allow-list of citekey characters (5); validating the six
+  location forms (5: a warning on every verse reference); a cache keyed on
+  file time (5: a second copy of the keys that can drift, for 0.1 s).
+  Trade-off: a key holding ":" can never be cited as written; a typo in a
+  location is never caught.
+  Revisit: section 9 (lint over 1 s; `@llm:` decided).
+
+D26. Events files and item_stamped (M2).
+  Choice: the loader turns every unusable line into a problem with a
+  severity: a last line with no ending is skipped as a warning (it may be
+  being written); other bad lines are errors. Files not named
+  <device id>.jsonl, sync conflict copies among them, are reported and not
+  read. An event found in another device's file is kept and reported.
+  Appends write whole lines in one call, write "\n" first when the file
+  does not end in one, and fsync the file and, when it is new, its
+  directory. Event-id uniqueness is checked within a batch; across the log
+  it rests on 60 random bits and the fold reports duplicates. item_stamped
+  holds only the item id, and the fold skips it.
+  Reason: D2; a fragment cut by a crash must not swallow the next event; a
+  conflict copy would replay events already in the real file; D10's rule
+  that what an item is lives in the library.
+  Rejected: raising on a bad line (3); checking id uniqueness against the
+  whole file on every append (5: reads the file per append for a risk
+  below one in a million); item_stamped carrying the source (5: a copy of
+  the library that can disagree with it).
+  Trade-off: fsync costs milliseconds per append.
+  Revisit: session latency per action in M3.
+
+D27. Writer lock (M2).
+  Choice: flock, exclusive and non-blocking, on <state directory>/lock;
+  each command holds it only while it writes (`rep add` from its library
+  read to its last write); the holder's pid is in the file for the
+  refusal message only.
+  Reason: I7; the kernel releases flock when the process dies, crash
+  included (tested with SIGKILL).
+  Rejected: a create-exclusive pidfile (5: stale after a crash); POSIX
+  fcntl locks (6: released when any descriptor to the file is closed);
+  waiting for the lock (6: hides contention; M3 may add a bounded wait).
+  Trade-off: two commands at the same instant: one fails and is rerun.
+  flock is reliable only on a Linux filesystem, so the state directory
+  must stay off /mnt/c.
+  Revisit: the session's lock scope (section 9).
+
+D28. rep never creates the data root (M2).
+  Choice: writers create events/ and library/ without parents; commands
+  that need the data root check it and print `mkdir -p <data root>`.
+  Reason: a mistyped REP_DATA_ROOT would otherwise create a folder that
+  never syncs, and captures would vanish into it.
+  Rejected: creating it on first write (5).
+  Trade-off: one mkdir on first use.
+  Revisit: none expected.
+
+D29. Capture with `rep add` (M2).
+  Choice: items go to library/<citekey>.md from the one source they share,
+  or to `--to NAME`; a name holding "/" or starting with "." is refused.
+  plan_library_append decides the exact appended text: the file's line
+  endings, one blank line of separation, and a check by reparsing the
+  combined file that the old items are unchanged and each new item checks
+  to the same record it did alone. The lock is held from the library read
+  to the last write; the library is written before the events. Only errors
+  are printed.
+  Reason: CONVENTIONS.md's one-file-per-source rule, in one place for the
+  shell and rep.lua; context can change meaning in more ways than a list
+  of cases would cover; a stop between the two writes costs one E1 count,
+  never an event for an item that does not exist.
+  Rejected: `--to` always required (7: the file rule would live in Lua);
+  one capture file (4: breaks one file per source); predicting context
+  effects case by case (5).
+  Trade-off: warnings in captured items show only in lint.
+  Revisit: M4, where `rep accept` appends through the same planner.
+
+D30. Command contract (M2; what rep.lua binds to, D12).
+  Choice: exit 0 on success (lint: no errors), 1 when the input has
+  problems or lint found an error, 2 when rep cannot run. Problems are
+  `path:line:col: severity: message`, on stderr for stamp and add, on
+  stdout for lint, with absolute paths, ordered by path and line number.
+  `rep stamp --path` names the buffer; lint takes no lock and prints a
+  summary on stderr.
+  Reason: quickfix (D12); rep.lua must tell "fix the file" from "try
+  again".
+  Rejected: one non-zero code (5: a busy lock would look like a broken
+  file); relative paths (6: they depend on nvim's working directory).
+  Trade-off: long lines.
+  Revisit: M3, when rep.lua is written against it.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
@@ -675,3 +838,8 @@ fringe        (M5) concepts whose prerequisites are all known
             after NFKD dropped); errors versus warnings, and lint notes;
             `item_stamped` holds only the item id; locations not validated;
             `rep add` shows errors, not warnings.
+2026-09-30  The person approved the nine build decisions above; they are
+            numbered D21-D30 in section 5, with reasons and rejections, and
+            the code names them where it enforces them. A test fails if
+            code cites an undefined decision or an M2 decision has no
+            enforcement point.

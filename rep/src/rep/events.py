@@ -118,7 +118,7 @@ class UnsuspendEvent(TypedDict):
     item: str
 
 
-# Only the item id: what the item says lives in the library, and its source
+# PLAN.md D26. Only the item id: what the item says lives in the library, and its source
 # is looked up there when capture is measured (PLAN.md D10).
 class ItemStampedEvent(TypedDict):
     format_version: int

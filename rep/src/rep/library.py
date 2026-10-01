@@ -47,7 +47,7 @@ INVARIANTS
   Values stay JSON-native strings; a numeric key is kept as its validated
   text parts, which Decimal reads exactly and without failure.
 
-SEVERITY
+SEVERITY (PLAN.md D22)
   An error excludes the item from sessions (I10), so errors are only what
   stops a session from using the item correctly: no id, no answer, a check
   or attempt value it cannot run, a numeric key it cannot read, a grading
@@ -58,7 +58,7 @@ SEVERITY
 Meaning is checked on the source records by check_source_item; the parser
 only says what each line is.
 
-STAMP
+STAMP (PLAN.md D24; ids are formed as PLAN.md D23 says)
   stamp_library_text gives every item without an `id:` field an id, by
   inserting one `id:` line after its question. It works on the text as
   written, not on a re-rendered file: the person's layout, NFD text, CRLF
@@ -162,13 +162,13 @@ NUMERIC_KEY_PATTERN = re.compile(rf"^([+-]?{UNSIGNED_NUMBER})(?:[ \t]*\+-[ \t]*(
 ITEM_ID_PATTERN = re.compile(
     rf"^(?:[a-z0-9]+-){{1,3}}[{DEVICE_ID_ALPHABET}]{{4}}$|^q-[{DEVICE_ID_ALPHABET}]{{6}}$"
 )
-# What an id must be to work at all: one word of printable ASCII, since it is
+# PLAN.md D23. What an id must be to work at all: one word of printable ASCII, since it is
 # the key of an item's whole history in the events (CONVENTIONS.md: IDs are
 # ASCII). Failing ITEM_ID_PATTERN but passing this is only a warning, because
 # the item may already have history under that id.
 USABLE_ITEM_ID_PATTERN = re.compile(r"^[!-~]+$")
 
-# A citekey is anything BibTeX allows in a key except ":" (the location
+# PLAN.md D25. A citekey is anything BibTeX allows in a key except ":" (the location
 # separator) and "?" (the kbd unverified suffix). kbd's README notes that
 # BetterBibTeX auto-keys can hold dots and other punctuation, so the class
 # excludes rather than enumerates. The location is not checked beyond having
@@ -176,7 +176,7 @@ USABLE_ITEM_ID_PATTERN = re.compile(r"^[!-~]+$")
 # such as John.3.16), and nothing in rep reads a location's structure.
 SOURCE_PATTERN = re.compile(r"^@([^\s:?,{}%#~\\\"]+)(\?\?)?(?::(\S+))?$")
 SECTION_SOURCE_PATTERN = re.compile(r"^@([^\s:?,{}%#~\\\"]+)(\?\?)?$")
-# Dropped from id stems so the stem carries the words that name the item
+# PLAN.md D23. Dropped from id stems so the stem carries the words that name the item
 # ("What does Km measure?" -> km-measure). English only: questions in other
 # languages keep their function words, which costs readability, never
 # correctness, since the id is an identity and not a title.
@@ -202,7 +202,7 @@ BLOCK_INDENT = "    "
 
 
 def parse_library_text(text: str) -> list[SourceItem]:
-    """Classify every line and return the items, each with its own problems.
+    """Classify every line and return the items, each with its own problems (PLAN.md D21).
 
     PRE   text is the decoded content of one library file (any string).
     POST  L1, L2, L4. Text outside items (free notes, kbd excerpts, other
@@ -808,7 +808,7 @@ def stamp_library_text(
 
 
 def plan_library_append(existing_text: str | None, added_text: str, file_name: str) -> tuple[str, list[str]]:
-    """Decide the exact text to append to a library file, and refuse if appending would change meaning.
+    """Decide the exact text to append to a library file, and refuse if appending would change meaning (PLAN.md D29).
 
     PRE   existing_text is the file's current text, or None if it does not
           exist; added_text parses with no errors and every item in it

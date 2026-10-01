@@ -23,7 +23,9 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             678269a  cli: rep stamp
             41962f6  cli: rep add
             a64d51f  cli: rep lint, no bib cache
-            (this commit)                             docs: close M2
+            70e41b4  docs: close M2
+            (this commit)                             docs: number M2 decisions
+                                                      D21-D30, trace them in code
 BASE_SHA    for the next thread: this commit's full SHA, from
             `git rev-parse HEAD` after it lands
 
@@ -40,9 +42,9 @@ BASE_SHA    for the next thread: this commit's full SHA, from
 | M4 language-model seam | pending |
 | M5, M6 | pending, ordered by the use week |
 
-## Baseline (unchanged by this documentation-only commit)
+## Baseline
 
-BASELINE_TOTAL      156 passed
+BASELINE_TOTAL      157 passed
 BASELINE_BREAKDOWN  tests/test_cli.py            1
                     tests/test_events.py        28
                     tests/test_library.py       72
@@ -50,9 +52,10 @@ BASELINE_BREAKDOWN  tests/test_cli.py            1
                     tests/test_memory_model.py   3
                     tests/test_smoke.py         21
                     tests/test_storage.py       15
+                    tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "156 passed in ...")
+                    uv run pytest | tail -1      (prints "157 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -71,31 +74,17 @@ the next pack.
 
 ## Deviations pending approval
 
-Made while building M2, where PLAN.md and CONVENTIONS.md were silent or
-left the choice open. Each is recorded where it lives; approve or send back.
+None. The nine from M2 were approved by the person and are decisions
+D21-D30 in PLAN.md section 5, each with its reason, what was rejected and
+the trade-off.
 
-1. Exit code 1 joins the command contract: the input has problems (stamp,
-   add) or lint found an error. 2 stays "rep cannot run". (cli.py)
-2. `rep add` files items under `library/<citekey>.md` from their shared
-   source; `--to NAME` otherwise. `rep stamp --path` names the buffer in
-   messages. (cli.py)
-3. rep never creates the data root; stamp, add and lint ask for
-   `mkdir -p` instead, so a mistyped REP_DATA_ROOT cannot create a folder
-   that never syncs. (storage.py, cli.py)
-4. The writer lock refuses rather than waits, and each command holds it
-   only while it writes. `rep stamp` with the lock held stamps nothing,
-   since ids without their item_stamped events would drop E1 data; the
-   next save retries. (storage.py S5; the session question is in PLAN.md
-   section 9)
-5. Ids: `q-` form also for questions of only common words; non-ASCII
-   dropped after NFKD; English common-word list only. (CONVENTIONS.md IDs)
-6. Errors exclude an item from sessions and are limited to what breaks a
-   session; source, tags, unknown fields, citekeys and id form are
-   warnings. Lint lists `?:` lines as notes. (CONVENTIONS.md)
-7. `item_stamped` holds only the item id; its source is read from the
-   library when capture is measured. (events.py)
-8. Locations are not validated beyond having no spaces. (CONVENTIONS.md)
-9. `rep add` prints errors, not warnings; warnings appear in lint.
+## Tracing a decision to the code
+
+Code names the decision it enforces as "PLAN.md D<n>". To list every
+enforcement point with its current line:
+    grep -rn "PLAN.md D" rep/src
+tests/test_traceability.py fails if code cites a decision PLAN.md does not
+define, or if an M2 decision (D21-D30) has no enforcement point.
 
 ## Known blind spots
 
@@ -123,11 +112,12 @@ left the choice open. Each is recorded where it lives; approve or send back.
 
 Attach a pack of rep/ at BASE_SHA, including uv.lock. First message:
   "Read rep/PLAN.md, rep/CONVENTIONS.md and rep/STATUS.md. Run the
-   clone-and-verify baseline (156 passed, pyright 0 errors) before changing
+   clone-and-verify baseline (157 passed, pyright 0 errors) before changing
    anything. Then build M3 as PLAN.md section 7 lists it, one commit per
    turn, in implement mode."
 Co-load set for M3: PLAN.md (D8, D9, D10, D12, D20 with its two
-constraints on M3, I4, I6, I7, I10, section 8, section 9), CONVENTIONS.md,
+constraints on M3, D22, D24, D26, D27, D30, I4, I6, I7, I10, section 8,
+section 9), CONVENTIONS.md,
 src/rep/library.py (Item, check_source_item, NUMERIC_KEY_PATTERN),
 src/rep/events.py, src/rep/memory_model.py, src/rep/storage.py,
 src/rep/cli.py.
@@ -138,4 +128,5 @@ Open choices M3 must make and record: the nvim key prefix; the writer
 lock's scope during a session (section 9); the fingerprint's exact
 definition; the exact and numeric comparison (D20 fixes the rule);
 leech threshold and default preset numbers; the `rep due --brief`
-snapshot.
+snapshot. Number each as a decision in PLAN.md section 5 and tag the code
+that enforces it "PLAN.md D<n>" (see "Tracing a decision" above).
