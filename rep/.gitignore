@@ -2,3 +2,7 @@
 __pycache__/
 .pytest_cache/
 .hypothesis/
+# uv.lock is tracked on purpose: rep is an application, and its lock records
+# the toolchain the baseline was verified with. This re-includes it against
+# any ignore rule above this directory (parent .gitignore, global excludes).
+!uv.lock
