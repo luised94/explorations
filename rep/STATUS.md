@@ -28,7 +28,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             cf5e5f2  docs: BUILDING.md, terms, milestone-marked tracing
                      (thread 3 started here)
             57559e3  build: track uv.lock
-            (this commit)  docs: lock M3, decisions D31-D43 pending
+            5fad124  docs: lock M3, decisions D31-D43 pending
+            (this commit)  docs: FINDINGS.md, neighbouring code
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -129,9 +130,9 @@ Each code commit changes the markers of the decisions it enforces from
 | Commit | Concern | Decisions |
 |---|---|---|
 | 57559e3 | build: track uv.lock | - |
-| this commit | docs: lock M3 | D31-D43 recorded, pending |
-| next | docs: FINDINGS.md (neighbouring code) | - |
-| then | library: fingerprint, typed-answer grading, library-wide load and checks | D33, D34 (grading) |
+| 5fad124 | docs: lock M3 | D31-D43 recorded, pending |
+| this commit | docs: FINDINGS.md (neighbouring code) | - |
+| next | library: fingerprint, typed-answer grading, library-wide load and checks | D33, D34 (grading) |
 | then | events: lapse rule, first attempt time, session events, shared effective-event code | D38, D40 |
 | then | session: plan and queue fold, both pure | D31, D36, D37, D39 |
 | then | cli: plain `rep` runs a session (after the terminal spike) | D32, D34 (reading), D35 |

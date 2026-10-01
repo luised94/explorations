@@ -6,7 +6,8 @@ file. A change to a decision edits this file in its own commit, with the
 reason, before any code depends on it. Revisions are listed in section 12.
 companions: CONVENTIONS.md (the library grammar), STATUS.md (where the build
 is, and how to verify it), BUILDING.md (how a build thread works: delivery,
-verification tactics, known hazards, code habits)
+verification tactics, known hazards, code habits), FINDINGS.md (what was
+found wrong in neighbouring code rep does not own)
 
 Read this file first in every build thread. It is the handoff: the design
 conversation that produced it is not available to later threads, so anything
@@ -402,6 +403,8 @@ D16. kbd is read, never written.
   kbd.lua findings (duplicate sections past line 500, unquoted bib path,
   telescope guard disabling unrelated keys, isolate buffer that discards
   edits, deprecated nvim_buf_get_option) belong to kbd_code, not this repo.
+  They are listed with fixes in FINDINGS.md (F15), with what thread 3
+  found in the nvim config.
 
 D17. How the build runs.
   Sequential threads in a sandbox that can execute code. Each thread takes
@@ -1029,6 +1032,9 @@ under 100 ms).
   when any events file is newer; never a source of truth.
 - Slip and misconception labels, and flagging items in `rep review`:
   deferred until M5 or M6 asks for them (D41).
+- Findings about neighbouring code (the person's nvim config, kbd.lua, the
+  explorations .gitignore) are kept in FINDINGS.md, outside this plan, for
+  the person's nvim config rework.
 - FIRe-style credit with penalties versus synthetic FSRS reviews (M5, D19).
 - Bib citekey cache: decided in M2, none. Lint reads the bib in 174 ms of
   about 0.55 s (section 3); a cache would add a second copy of the keys that
