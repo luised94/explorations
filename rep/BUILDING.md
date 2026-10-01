@@ -1,7 +1,7 @@
 # rep: how a build thread works
 
-date: 2026-09-30
-status: practice, written down after thread 2 (M2). Read with PLAN.md,
+date: 2026-10-01
+status: practice, written down after thread 2 (M2), extended in thread 3. Read with PLAN.md,
 CONVENTIONS.md and STATUS.md at the start of every build thread.
 precedence: the person's working defaults (preferences) come first, then
 PLAN.md, then this file. Where this file seems to contradict either, they
@@ -25,6 +25,10 @@ has settled on, so a new thread does not rediscover them.
   with STATUS.md's breakdown, not only the total.
 - The shell's working directory can reset between calls: use absolute
   paths in every command.
+- nvim for the plugin's tests (PLAN.md D43): the release tarball from
+  GitHub (nvim-linux-x86_64.tar.gz) runs headless in the sandbox. Match
+  the person's version (0.11.6 on 2026-10-01) and run tests with
+  `nvim --headless -u NONE`, so the person's config never enters them.
 
 --------------------------------------------------------------------------------
 ## 2. One commit per turn
@@ -89,6 +93,13 @@ real caller arrives, in that caller's commit, and the message says so.
   the series bisects.
 - A change that should touch comments only is proved so: parse every
   module before and after, remove docstrings, compare `ast.dump`.
+- Startup cost: `python -X importtime -c "import rep.cli"` names what each
+  import costs. A command with a time target is measured this way before
+  anything is cached.
+- Terminal behavior (single keys, line input) is tested under a
+  pseudo-terminal (the `pty` module), never by assuming the person's
+  terminal; the person then confirms with a real session on a throwaway
+  root.
 
 --------------------------------------------------------------------------------
 ## 4. Known hazards
@@ -115,6 +126,14 @@ real caller arrives, in that caller's commit, and the message says so.
   `grep '^device_id'`.
 - flock is reliable only on a Linux filesystem. The state directory must
   stay off /mnt/c.
+- The explorations root .gitignore ignores uv.lock (line 20); rep/.gitignore
+  re-includes it with `!uv.lock`. A sandbox repository has no such root
+  rule, so add `uv.lock` to its .git/info/exclude to reproduce the
+  person's ignore state before testing anything about tracked files.
+- An `# expect:` line that does not match is a stop, not a detail: chain
+  dependent commands with `&&` so a wrong assumption halts before a
+  commit. (Thread 3: `git status` showed nothing where `?? rep/uv.lock`
+  was expected; the chain stopped `git add` and nothing was committed.)
 
 --------------------------------------------------------------------------------
 ## 5. Code habits established in M2
@@ -132,6 +151,10 @@ These add to the person's code style and to PLAN.md D14.
   requires every decision marked (M2) or later to have one such reference,
   and every reference to name a defined decision. Line numbers are never
   stored: `grep -rn "PLAN.md D" rep/src`.
+- A decision approved before its code is written is marked
+  `(M<k>, pending)`. It must have no enforcement point; the commit that
+  adds one changes the marker to `(M<k>)` in the same commit. The test
+  enforces both directions (thread 3, from D31).
 - Problems are data, never exceptions: a record with line, column,
   severity and message. The reader that skips something decides its
   severity (PLAN.md D22); consumers never infer it from message text.
@@ -174,6 +197,11 @@ These add to the person's code style and to PLAN.md D14.
   reply that finds them: what, where, the fix.
 - Other threads may work on kbd or Zotero at the same time. Data read from
   kbd (the bib) can be stale; ask before concluding.
+- The person's nvim config (init.lua, plugins.lua, the extensions) is due
+  for a rework toward lazy.nvim and changes independently. Do not build on
+  its details; what is found wrong in it is written down for the rework,
+  not fixed from here.
+- The person's machine (2026-10-01): nvim 0.11.6, locale C.UTF-8.
 
 --------------------------------------------------------------------------------
 ## 7. Working vocabulary

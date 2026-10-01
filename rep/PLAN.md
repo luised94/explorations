@@ -1,6 +1,6 @@
 # rep: plan of record
 
-date: 2026-09-30
+date: 2026-10-01
 status: LOCKED. Design review fires only when work contradicts or exceeds this
 file. A change to a decision edits this file in its own commit, with the
 reason, before any code depends on it. Revisions are listed in section 12.
@@ -152,6 +152,23 @@ Measured while starting M2 (sandbox, CPython 3.12.13):
   that must hand input back exactly read bytes. subprocess text mode does
   translate "\r\n" when reading output.
 
+Measured while starting M3 (thread 3, 2026-10-01):
+- Startup: `rep --version` through the entry point takes 70 ms; a bare
+  interpreter takes 11 ms (sandbox, 3 runs each). `python -X importtime`:
+  importing rep.cli costs 57 ms, of which importlib.metadata (imported
+  only for `--version`) is 39 ms. That is most of the 100 ms target of
+  `rep due --brief` before any event is read.
+- The fold counted a lapse for a new item graded Again, Again, Good in its
+  first session (lapse_count 1), so same-session relearning was counted as
+  forgetting (D38).
+- uv's CPython 3.12.13 builds readline on libedit ("EditLine wrapper").
+- nvim 0.11.4 runs headless in the build sandbox (release tarball from
+  GitHub); the person runs nvim 0.11.6. The person's locale is C.UTF-8.
+- The explorations root .gitignore ignored uv.lock (line 20, `uv.lock`). A
+  `!uv.lock` in rep/.gitignore re-includes it: a nested .gitignore outranks
+  root rules (`uv.lock`, `*.lock`, `**/uv.lock`, `rep/uv.lock` were tried)
+  and a global excludes file. Tracked since 57559e3.
+
 Sources read:
 - OpenRouter FAQ: free models allow 50 requests a day, 1,000 a day after
   buying at least $10 of credits. The person accepts that free providers may
@@ -272,6 +289,10 @@ D8. Grading.
   Rejected: model grades automatically (4, silently corrupts the history);
   self-rating with no commit (lenient; "I knew that").
   Trade-off: slower sessions, especially typed ones.
+  Revised in M3 (thread 3): `u` corrects the last grade with an amend
+  instead of undoing the attempt (D35); `e` and `?` drop the item from the
+  rest of the session (D35); `rep review` changes grades only, and marking
+  slips, misconceptions and bad items is deferred (D41).
 
 D9. Sessions.
   A session is a preset (data in config.toml), a plan and an event trace.
@@ -285,6 +306,10 @@ D9. Sessions.
   backlog is capped and served lowest-retrievability first; the day starts at
   a configured local hour (default 4).
   Plain `rep` starts today's default session and shows its size first.
+  Revised in M3 (thread 3): the preset is a constant in code, not data in
+  config.toml (D39); the two caps are one budget (D36); new items across
+  files are ordered by capture time (D37); the queue during a session is a
+  fold over the session's events (D31). The `probe` reason waits for M5.
 
 D10. Event record (as built in M1, src/rep/events.py).
   Common fields: `format_version` (1), `id` (12 characters of the device-id
@@ -305,6 +330,8 @@ D10. Event record (as built in M1, src/rep/events.py).
   Rule: what an item is lives in the library; what happened lives in events.
   Events for items no longer in the library are skipped and reported.
   Rejected: single-letter field `v` (naming rule).
+  Extended in M3 (thread 3): session_start and session_end (D40); what
+  counts as a lapse (D38).
 
 D11. Language models are a seam with two transports.
   One function, `complete(task, prompt_text) -> response_text`.
@@ -335,6 +362,10 @@ D12. nvim integration is one Lua file in this repo.
   Key prefix: a single constant, to be chosen in M3; `<Space>r` is taken.
   Reason for this repo: the Lua changes whenever the CLI contract changes, so
   by the boundary test they are one unit.
+  Revised in M3 (thread 3), by D43: the same boundary test puts the key
+  bindings on the other side. rep ships a plugin directory for lazy.nvim;
+  the person's lazy spec binds the keys, so rep chooses no key prefix. The
+  extension-loader shape above is superseded.
 
 D13. Dependencies.
   Runtime at M0: none. `rich` is added at its first real consumer (tables,
@@ -647,6 +678,251 @@ D30. Command contract (M2; what rep.lua binds to, D12).
   Trade-off: long lines.
   Revisit: M3, when rep.lua is written against it.
 
+Decisions D31-D43 were approved by the person in thread 3, before any M3
+code, with the amendments of the plan-lock pass (section 12). A heading
+marked "(M3, pending)" has no enforcement point yet; the commit that adds
+its code changes the marker to "(M3)", and tests/test_traceability.py
+checks both states (BUILDING.md section 5).
+
+D31. Session state is a fold over the session's events (M3, pending).
+  Choice: the plan is computed once, at session start, as a pure function
+  of the library, the history, the preset and the time (D9). The queue at
+  any moment is a pure function of the plan and this session's events,
+  with undo and amend applied exactly as the fold applies them (events.py
+  E3, E4); the code that decides which events are in effect is shared with
+  fold_events. Every key writes its event first; the queue is then
+  recomputed.
+  Reason: D9 already says state is a left fold; a correction is an event,
+  so there is no rollback code; replaying a session's events reproduces
+  its queue, which a property test checks.
+  Rejected: a mutable queue with an undo stack beside it (6: a second copy
+  of the state that can disagree with the log).
+  Trade-off: the queue is recomputed on every key, over fewer than about
+  200 events.
+  Revisit: none expected.
+
+D32. Writer lock during a session (M3, pending).
+  Choice: the session takes the lock around each append only. When it is
+  busy, the session retries for 2 seconds, then names the holder and keeps
+  waiting; Ctrl-C ends the session and loses only the pending action.
+  `rep stamp` and `rep add` still refuse at once (D27).
+  Reason: section 9's choice. `e` opens nvim, whose save runs `rep stamp`;
+  capture from another terminal must keep working during a session; an
+  attempt must never be dropped because `rep add` held the lock for 50 ms.
+  Rejected: hold the lock for the session and release it while nvim is
+  open (5: two lock states, and capture elsewhere is refused for the whole
+  session); hold it for the whole session (2: stamp is refused, so items
+  written through `e` get no id).
+  Trade-off: two sessions at once on one machine are not prevented; each
+  append is safe, but an item can be served twice in a day.
+  Revisit: an item seen served twice on one machine.
+
+D33. Item fingerprint (M3, pending). Critical (D20 constraint 2).
+  Choice: "f1:" followed by the first 16 hexadecimal digits of the sha256
+  of the UTF-8 encoding of the JSON array [question, answer, criteria,
+  check, attempt], taken from the checked Item (NFC values; the effective
+  attempt, so an exact item reads "typed"). Not included: id, source,
+  tags, by, open questions, line.
+  Reason: D20 needs to know whether the key changed since an attempt. A
+  hash of what is asked, rather than of the text as written, does not
+  change when stamp inserts an id, fields are reordered or metadata is
+  edited. The "f1:" tag keeps a future definition distinguishable from
+  this one instead of making every item look edited.
+  Rejected: a hash of the item's text as written (3: every stamp and tag
+  edit would mark items edited); including the source (6: fixing a typo in
+  a location would mark the item edited); an untagged hash (5).
+  Trade-off: an edit outside the five fields is invisible to "edited since
+  review", by design. 64 bits: an accidental collision is not a concern.
+  Revisit: a new item field that changes what is asked.
+  What contains the damage: the fingerprint is stored on every attempt and
+  never recomputed, so a wrong definition can be replaced by "f2:" and
+  past attempts compared under the old one.
+
+D34. Typed answers: reading and grading (M3, pending). Critical (D20).
+  Choice: a typed answer is read with input() and readline (libedit in
+  uv's CPython, section 3), so arrow keys edit the line. A session refuses
+  to start unless standard input decodes as UTF-8, and asks again when an
+  answer holds a lone surrogate. typed_answer stores the string input()
+  returned, before NFC or trimming (D20 constraint 1). The D20 comparison
+  is one pure function in library.py beside NUMERIC_KEY_PATTERN: a change
+  to the key syntax changes both, so they are one unit.
+  Reason: in the terminal's line mode an arrow key enters escape bytes
+  into the answer, a false Again on every exact item it touches; under a
+  non-UTF-8 locale stdin decodes with surrogateescape (section 3) and the
+  append would fail after the person had typed.
+  Rejected: bytes from the terminal in line mode (5: no arrow keys, and
+  the escapes reach the answer); prompt_toolkit (D13).
+  Trade-off: the up arrow recalls earlier answers of the session; the
+  locale must be UTF-8 (C.UTF-8 on the person's machine, section 3).
+  Revisit: libedit behaving differently in the person's terminal.
+
+D35. Session keys (M3, pending). Revises D8.
+  Choice: commit with any key (recall) or Enter (typed). After the reveal:
+  `y` Good, `n` Again, `?` no grade, `s` suspend, `e` edit, `q` quit, `u`
+  correct. `u` after a grade reopens it, and the new grade is written as
+  an amend of that attempt; this includes an automatic exact or numeric
+  grade. `u` after `s` writes an undo of the suspend. `e` records the
+  attempt as `?` if it has no grade, opens $EDITOR at the item's line, and
+  drops the item from the rest of the session; it returns next session
+  under its new fingerprint. `?` also drops the item: it cannot be graded
+  before `rep review`.
+  Reason: D8's undo removed the attempt and showed the item again after
+  its answer had been seen, so a failure could be erased and replaced by a
+  success. An amend keeps the attempt and records the correction, which E2
+  counts.
+  Rejected: undo and show again (3: retry until correct); no `u` (5: a
+  mistyped key costs a trip to `rep review`).
+  Trade-off: every correction is visible in the history as an amend.
+  Revisit: none expected.
+
+D36. The plan (M3, pending). Revises D9's two caps into one budget.
+  Choice: due items are error-free, unsuspended items with a memory state
+  whose due_at is before the end of today's local day (day start hour,
+  I6). Reviews are taken lowest retrievability first (ties: due_at, then
+  id), at most `session_budget`. New items are error-free, unsuspended
+  items with no graded review. New today = min(new_per_day minus items
+  introduced today, (session_budget minus reviews) // new_item_cost),
+  where introduced today means a first attempt of any kind today. Order:
+  reviews, then new items (D37). In the session: an Again returns after
+  `relearn_gap` other items (at the end when fewer remain); a new item's
+  first showing always returns after the gap; an item leaves the session
+  on a Good that is not a new item's first showing. Default preset (D39):
+  session_budget 60, new_per_day 10, new_item_cost 3, relearn_gap 3,
+  day_start_hour 4, desired retention 0.9. Approved by the person.
+  Reason: one budget gives both of D9's rules, the backlog cap and new
+  intake shrinking as review load grows; 60 attempts is about 12 minutes,
+  inside E2's prediction; reviews first, so a session cut short costs new
+  material rather than review debt (Skycak); D9's blocking rule.
+  Rejected: separate review and new caps (6: two numbers that interact);
+  new items mixed among reviews (6: Anki's default; a short session then
+  leaves debt).
+  Trade-off: relearning attempts are not counted in the budget, so a bad
+  day runs past 60; with one item left, the gap cannot be kept.
+  Revisit: E2 session length and E3 in the use week.
+
+D37. Order of new items (M3, pending).
+  Choice: within a file, by line; between files, by the earliest
+  item_stamped time among each file's new items; items without an
+  item_stamped event come last, by path and line.
+  Reason: D9's "file order" is undefined across files. Inside a file the
+  order is the reading order (CONVENTIONS.md); across files, the reading
+  begun first is finished first. Capture times are already recorded (E1).
+  Rejected: file-name order (5: alphabetical by citekey means nothing);
+  one global capture order (6: contradicts CONVENTIONS.md inside a file).
+  Trade-off: an item with a hand-written id has no capture time.
+  Revisit: the use week.
+
+D38. What counts as a lapse (M3, pending).
+  Choice: a lapse is an Again on an item's first graded attempt in a
+  session, when the item had a memory state before that session. Only
+  lapse_count changes; memory does not, so the oracle test is unaffected.
+  Reason: section 11 defines a lapse as a failed review of a learned item.
+  Successive relearning makes repeated Agains in one session normal; the
+  old rule counted them (measured, section 3).
+  Rejected: an Again at least one elapsed day after the last review (6:
+  FSRS floors elapsed time to whole 24-hour periods, so a one-day item
+  reviewed early the next morning could never lapse); every Again on an
+  item with a memory state (3, the M1 rule).
+  Trade-off: an item failed in two sessions on one day (two devices before
+  a sync) counts two lapses.
+  Revisit: the leech threshold (M3b).
+
+D39. The preset is a constant (M3, pending). Revises D9.
+  Choice: one default preset, a constant in the session code. Each
+  session_start event records a copy (D40).
+  Reason: config.toml would add a reader, validation and a file format for
+  numbers tuned a handful of times; the event keeps the history
+  self-describing either way.
+  Rejected: config.toml now (6).
+  Trade-off: tuning means editing a constant and committing; both devices
+  get it through git.
+  Revisit: a second preset, or two devices needing different values.
+
+D40. Session events (M3, pending). Extends D10.
+  Choice: session_start carries `preset`, an object of the D39 values; its
+  event id is the session id that attempts carry. session_end carries
+  `session` and `reason`: completed (the queue emptied), quit (`q`) or
+  interrupted (Ctrl-C, end of input). A session without a session_end was
+  abandoned (terminal closed, crash). At start, the session warns when the
+  clock is earlier than the newest event in the log; recorded times are
+  never corrected.
+  Reason: D9, E2, E3; no second id space. WSL2's clock can fall behind
+  after the host sleeps, and a time behind the log sorts new events before
+  old ones.
+  Rejected: a separate session id (5: a second id space); counts in
+  session_end (5: derived data that can disagree with the log).
+  Trade-off: an abandoned session has no end time; E2 measures it to its
+  last attempt.
+  Revisit: M3b stats.
+
+D41. `rep review` (M3, pending). Revises D8.
+  Choice: `rep review` writes a file in the state directory with one line
+  per attempt of this device's last session, plus every attempt still
+  without a grade: a grade word (again, hard, good, easy, ?), the attempt
+  event id, then text for reading only (item id, the question on one line,
+  the typed answer, the key). Only the first two words of a line are read,
+  as in `git rebase -i`. It opens $EDITOR. On exit 0 and a file that
+  parses, it writes one amend per changed grade, under the lock; a file
+  that does not parse is reported and reopened; a non-zero editor exit
+  writes nothing. Grades only: marking slips, misconceptions and bad items
+  is deferred (a bad item gets a `?:` line, which lint lists).
+  Reason: triage by editing a file, as D11 chose for the inbox, so there
+  is no second terminal interface and the whole session is in view. D20's
+  watch of amends by cause (case, punctuation, number format) needs no
+  recorded cause: the cause can be computed from the raw typed answer and
+  the key. Attempts ungraded in older sessions would otherwise never be
+  graded.
+  Rejected: an interactive key loop (6); `rep amend ATTEMPT GRADE` (4:
+  event ids must be looked up and typed).
+  Trade-off: no slip or misconception labels in the use-week data; a grade
+  cannot be amended back to `?` (an amend needs a grade).
+  Revisit: M5 or M6 asking for labels.
+
+D42. `rep why`, `rep due --brief`, `rep unsuspend` (M3, pending).
+  Choice: `rep why ID` prints where the item is (path:line), its state
+  (stability, difficulty, retrievability now, due, reviews, lapses,
+  suspended), its attempts with their grades and whether each attempt's
+  fingerprint matches the item now, and whether and why today's plan
+  includes it. `rep due --brief` computes the plan from a full replay and
+  prints `<due> due, <new> new`, or nothing when both are 0; there is no
+  snapshot. importlib.metadata is imported only for `--version`.
+  `rep unsuspend ID` writes one unsuspend event (D10 has the kind; nothing
+  wrote it).
+  Reason: the scheduler must be inspectable during the use week. The
+  snapshot is a cache whose need is measurable and not yet here, D25's
+  argument against the bib cache. `--version` costs 39 of 57 ms of import
+  on every command (section 3). Without unsuspend, a suspend is
+  permanent.
+  Rejected: the snapshot now (5); `rep stats` and `rep forecast` now (5:
+  views designed against synthetic histories; they move to M3b, built on
+  the use week's events).
+  Trade-off: `rep due --brief` grows with the history, about 18
+  microseconds per event (section 3), estimated to reach 100 ms near 4,000
+  events.
+  Revisit: `rep due --brief` over 100 ms through the installed command on
+  the person's machine: build the snapshot then.
+
+D43. nvim plugin (M3, pending). Revises D12.
+  Choice: rep/nvim/ is a plugin directory on the runtime path:
+  lua/rep/init.lua with setup(), the commands :RepCapture and :RepLint,
+  and stamp on save for <data root>/library/*.md. Key bindings live in the
+  person's lazy.nvim spec ({ dir = ".../rep/nvim", keys = ... }), so rep
+  chooses no key prefix. The data root comes from `rep where --data-root`,
+  asked once per nvim session. Stamp on save inserts only the lines stamp
+  added (from vim.diff indices) and never replaces the buffer. rep.lua is
+  tested headless with nvim in the build sandbox.
+  Reason: the boundary test: the Lua that runs rep changes with the
+  command contract, the keys do not. The person is moving to lazy.nvim
+  and archiving the extension loader. Stamp only inserts lines (library.py
+  L6), so applying the inserts is exact and keeps the cursor, marks and
+  folds. D3 has one implementation.
+  Rejected: D12's {keymaps, autocmds, commands} file (5: targets the
+  loader being archived); D3's rules copied into Lua (6: two copies that
+  can drift); replacing the whole buffer (4: loses cursor, marks, folds).
+  Trade-off: no keys until the person adds the lazy spec; the commands
+  work without it.
+  Revisit: the person's nvim config rework.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
@@ -678,8 +954,9 @@ I11 Every event line has format_version and a unique id.      check on write
 | 1 | M0 | uv project, pyright strict, pytest, data root and local.toml resolution, device_id, `rep where`, `rep --help` | smoke test through the installed `rep` entry point (done, aef91db) |
 | 1 | M1 | FSRS transplant, event record, fold | oracle property test, deterministic replay (done, b1aadfe) |
 | 2 | M2 | parser (line-classifying state machine), checks, `rep stamp`, `rep add`, `rep lint`, NFC, citekey check, single-writer lock, events file loader and appender, `item_stamped` event | round-trip and stamp properties; checks red on injected violations; lock refuses a second writer (done, a64d51f) |
-| 3 | M3 | planner, session loop, `session_start`/`session_end` events, `rep review`, `rep why`, `rep forecast`, `rep stats`, `rep due --brief` (from a derived snapshot), rep.lua | real session end to end; `rep due --brief` wall time |
+| 3 | M3 | planner, session loop, `session_start`/`session_end` events, `rep review`, `rep why`, `rep due --brief` (full replay), `rep unsuspend`, the nvim plugin (D31-D43) | real session end to end; `rep due --brief` wall time |
 | - | use week | daily use on one real reading; then a session porting drill/ | instrumentation (section 8) |
+| after the use week | M3b | `rep stats`, `rep forecast`, the leech threshold, built on the use week's events; the `rep due --brief` snapshot only if it measured over 100 ms | the E-cards of section 8 answered from real data |
 | 4 | M4 | LLM seam (manual, OpenRouter), inbox, `rep accept`, generation from source-notes | manual transport end to end |
 | 5, 6 | M5, M6 | M5 concept layer and diagnostics; M6 tutor (Socratic), leech doctor, graph builder | ordered by the use week: prerequisite pain first means M5, comprehension pain first means M6 |
 | later | - | generated items (drill/ port), optimizer, rich views, GUI renderer, cloze | - |
@@ -729,7 +1006,12 @@ E5 Automaticity
   Measure: latency on passing attempts, per item, over time.
   Decision: slow items become candidates for more practice, not just spacing.
 
-Always visible: leeches (lapse count over a threshold), items edited after
+The events record everything these cards need from M3 on; the views that
+read them (`rep stats`, `rep forecast`) are built in M3b, after the use
+week, against its data (section 7). Amends on exact and numeric attempts
+are classified by cause from the raw typed answer and the key (D41).
+
+Always visible (from M3b): leeches (lapse count over a threshold), items edited after
 their first review, suspended items, model-written versus self-written pass
 rates (`by:`), forecast versus actual load, `rep due --brief` time (target
 under 100 ms).
@@ -738,16 +1020,15 @@ under 100 ms).
 ## 9. Open items and pending spikes
 --------------------------------------------------------------------------------
 
-- nvim key prefix for rep.lua (M3). `<Space>r` is taken.
-- Writer lock scope in a session (M3). M2 commands take the lock without
-  waiting and hold it only while they write (storage.py S5). If a session
-  held it from start to end, the `e` key would open nvim, the save would run
-  `rep stamp`, and stamp (which appends `item_stamped`) would be refused, so
-  a new item written during a session would get no id. M3 chooses: hold the
-  lock only around each append, or release it while nvim is open.
-- `rep due --brief` snapshot (M3): a small derived file in machine-local
-  state, rebuilt from events when any events file is newer; never a source
-  of truth.
+- nvim key prefix: decided in M3, none in rep (D43). The person's lazy.nvim
+  spec binds the keys; `<leader>p` is free on the person's machine
+  (2026-10-01).
+- Writer lock scope in a session: decided in M3, around each append (D32).
+- `rep due --brief` snapshot: deferred with a measured trigger (D42). When
+  built: a small derived file in machine-local state, rebuilt from events
+  when any events file is newer; never a source of truth.
+- Slip and misconception labels, and flagging items in `rep review`:
+  deferred until M5 or M6 asks for them (D41).
 - FIRe-style credit with penalties versus synthetic FSRS reviews (M5, D19).
 - Bib citekey cache: decided in M2, none. Lint reads the bib in 174 ms of
   about 0.55 s (section 3); a cache would add a second copy of the keys that
@@ -762,8 +1043,8 @@ under 100 ms).
   and is re-parsed on every load.
 - OpenRouter $10 credit: the person's call; tutor sessions need it more than
   generation does.
-- Leech threshold and default preset numbers: set in M3, tuned by the use
-  week.
+- Default preset numbers: set in M3 (D36), tuned by the use week. Leech
+  threshold: M3b, with lapses counted as D38 says.
 - The drill/ repo: attach in the session after M3.
 
 --------------------------------------------------------------------------------
@@ -808,6 +1089,17 @@ checked item  an item a session may use: built only when no error remains
 problem       a finding about a file or item, as data: line, column,
               severity (error, warning; lint also lists notes) and message
 capture       creating an item; recorded as an item_stamped event (E1)
+budget        the most attempts a plan serves before relearning: reviews
+              first, then new items at new_item_cost each (D36)
+relearn gap   how many other items come between two showings of an item
+              in one session (D36)
+fingerprint   a hash of what an item asks, stored on each attempt, so a
+              later reader can tell whether the item changed since (D33)
+session       one run of plain `rep`: a session_start event, attempts that
+              carry its id, and a session_end unless it was abandoned (D40)
+abandoned     a session with no session_end (terminal closed, crash)
+pending       a decision approved before its code exists: "(M3, pending)"
+              in its heading until the commit that enforces it (section 5)
 history       the events about an item
 refusal       a command declines, returns its input and writes nothing
 
@@ -859,3 +1151,18 @@ refusal       a command declines, returns its input and writes nothing
             the person). Section 11 gains the terms M2 introduced. The
             traceability test now finds the decisions it must see enforced
             from their headings, "(M2)" or later, instead of a fixed list.
+2026-10-01  Thread 3 (M3), plan lock, before any M3 code. Approved by the
+            person: M3 scope cut to the session path, with `rep stats`,
+            `rep forecast`, the leech threshold and the due snapshot moved
+            to M3b after the use week (section 7); review by editing a
+            file, grades only; the preset as a constant; the eight open
+            choices as recommended; the preset numbers (D36). Amended by
+            the plan-lock pass and accepted: `u` amends instead of undoing
+            (D35); typed answers through readline with a UTF-8 check
+            (D34); review also lists older ungraded attempts (D41);
+            `rep unsuspend` added (D42); the nvim integration becomes a
+            lazy.nvim plugin directory with the keys in the person's
+            config (D43). Also: a lapse redefined (D38), with the
+            measurement that found the old rule wrong; the decisions are
+            numbered D31-D43 and marked pending until enforced. Facts
+            measured at the start of thread 3 added to section 3.

@@ -1,6 +1,6 @@
 # rep: status
 
-date: 2026-09-30
+date: 2026-10-01
 purpose: the numbers a build thread fills into clone-and-verify before it
 changes anything. Updated in the same commit as the change it describes.
 
@@ -24,11 +24,13 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             41962f6  cli: rep add
             a64d51f  cli: rep lint, no bib cache
             70e41b4  docs: close M2
-            (commit 11)  docs: number M2 decisions D21-D30, trace them in code
-            (this commit)                             docs: BUILDING.md, terms,
-                                                      milestone-marked tracing
-BASE_SHA    for the next thread: this commit's full SHA, from
-            `git rev-parse HEAD` after it lands
+            53755a2  docs: number M2 decisions D21-D30, trace them in code
+            cf5e5f2  docs: BUILDING.md, terms, milestone-marked tracing
+                     (thread 3 started here)
+            57559e3  build: track uv.lock
+            (this commit)  docs: lock M3, decisions D31-D43 pending
+BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
+            The base for thread 4 is set when M3 closes.
 
 ## Build state
 
@@ -38,8 +40,9 @@ BASE_SHA    for the next thread: this commit's full SHA, from
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, views, rep.lua | next (thread 3) |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): plan locked, D31-D43 pending |
 | use week | pending |
+| M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
 | M5, M6 | pending, ordered by the use week |
 
@@ -68,10 +71,11 @@ TOOL_VERSIONS       uv 0.11.1, uv_build >=0.11.1,<0.12.0, CPython 3.12
 BISECT              every commit 01ba3ea..a64d51f passes pytest and pyright
                     on its own (48, 58, 58, 100, 112, 125, 128, 153, 156)
 
-uv.lock is a generated file: it is delivered whole, never as a patch, and
-`uv lock --check` confirms it matches pyproject.toml. The thread-2 pack had
-no uv.lock; `uv lock --check` passed on the person's machine. Include it in
-the next pack.
+uv.lock is a generated file: it is never a patch. Regenerate it with
+`uv lock` in rep/ and confirm it with `uv lock --check`. It is tracked
+since 57559e3: the explorations root .gitignore ignores it (line 20,
+`uv.lock`), and `!uv.lock` in rep/.gitignore re-includes it (PLAN.md
+section 3).
 
 ## Deviations pending approval
 
@@ -85,8 +89,9 @@ Code names the decision it enforces as "PLAN.md D<n>". To list every
 enforcement point with its current line:
     grep -rn "PLAN.md D" rep/src
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
-define, or if a decision whose heading is marked (M2) or later has no
-enforcement point (today D20-D30).
+define, if a decision whose heading is marked (M2) or later has no
+enforcement point (today D20-D30), or if a decision marked
+"(M<n>, pending)" already has one (today D31-D43 are pending).
 
 ## Known blind spots
 
@@ -102,34 +107,39 @@ enforcement point (today D20-D30).
 - Problems the fold finds (duplicate event ids, bad undo or amend targets)
   are printed by lint without a location; locating them needs the fold to
   return structured problems, a change to M1 code.
-- rep.lua does not exist yet, so the stamp, add and lint contracts are
-  tested from Python and the shell, never from nvim.
+- The nvim plugin does not exist yet, so the stamp, add and lint contracts
+  are tested from Python and the shell, never from nvim. D43 closes this:
+  the plugin is tested headless in the sandbox.
+- The session's terminal handling (single keys in cbreak mode, typed
+  answers through libedit, D34) is unverified. A pseudo-terminal spike
+  comes before the session code; the person's terminal is checked by a
+  real session on a throwaway data root.
 - At the end of M2 the kbd bib on disk still had 13 malformed keys (a
   stale export); they are fixed in Zotero and wait for a re-export.
 - Hypothesis: `from_regex` and category-filtered character strategies are
   slow on a fresh checkout (1.75 s for the first); the library tests use
   sampled alphabets instead.
 
-## Kickoff for thread 3 (M3)
+## Thread 3 (M3) series
 
-Attach a pack of rep/ at BASE_SHA, including uv.lock. First message:
-  "Read rep/PLAN.md, rep/CONVENTIONS.md, rep/STATUS.md and rep/BUILDING.md.
-   Run the clone-and-verify baseline (157 passed, pyright 0 errors) before changing
-   anything. Then build M3 as PLAN.md section 7 lists it, one commit per
-   turn, in implement mode."
-Co-load set for M3: BUILDING.md (all of it), PLAN.md (D8, D9, D10, D12, D20 with its two
-constraints on M3, D22, D24, D26, D27, D30, I4, I6, I7, I10, section 8,
-section 9), CONVENTIONS.md,
-src/rep/library.py (Item, check_source_item, NUMERIC_KEY_PATTERN),
-src/rep/events.py, src/rep/memory_model.py, src/rep/storage.py,
-src/rep/cli.py.
+The plan is locked (PLAN.md section 12, 2026-10-01); implement mode.
+Each code commit changes the markers of the decisions it enforces from
+"(M3, pending)" to "(M3)".
+
+| Commit | Concern | Decisions |
+|---|---|---|
+| 57559e3 | build: track uv.lock | - |
+| this commit | docs: lock M3 | D31-D43 recorded, pending |
+| next | docs: FINDINGS.md (neighbouring code) | - |
+| then | library: fingerprint, typed-answer grading, library-wide load and checks | D33, D34 (grading) |
+| then | events: lapse rule, first attempt time, session events, shared effective-event code | D38, D40 |
+| then | session: plan and queue fold, both pure | D31, D36, D37, D39 |
+| then | cli: plain `rep` runs a session (after the terminal spike) | D32, D34 (reading), D35 |
+| then | cli: `rep review` | D41 |
+| then | cli: `rep why`, `rep due --brief`, `rep unsuspend`, `rep where --data-root` | D42 |
+| then | nvim plugin, tested headless | D43 |
+| last | docs: close M3, kickoff for thread 4 | - |
+
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text
-before any normalization; the item fingerprint covers at least the
-question, `A:`, `criteria:` and `check:`.
-Open choices M3 must make and record: the nvim key prefix; the writer
-lock's scope during a session (section 9); the fingerprint's exact
-definition; the exact and numeric comparison (D20 fixes the rule);
-leech threshold and default preset numbers; the `rep due --brief`
-snapshot. Number each as a decision `D<n>. <name> (M3).` in PLAN.md
-section 5 and tag the code that enforces it "PLAN.md D<n>"; the
-traceability test then requires the tag (BUILDING.md section 5).
+before any normalization (D34); the fingerprint covers the question,
+`A:`, `criteria:`, `check:` and the attempt kind (D33).

@@ -18,6 +18,11 @@ DECISION_REFERENCE_PATTERN = re.compile(r"PLAN\.md (D\d+(?:, D\d+)*)")
 # about scope and process and have no single enforcement point, so only the
 # references to them are checked.
 MILESTONE_MARKER_PATTERN = re.compile(r"\(M(\d+)[,;)]")
+# "(M3, pending)": approved before its code exists. It must have no
+# enforcement point yet, and the commit that adds one changes the marker
+# to "(M3)", so a decision is never enforced while marked pending, nor
+# marked done while unenforced (PLAN.md section 5, before D31).
+PENDING_MARKER_PATTERN = re.compile(r"\(M\d+, pending\)")
 FIRST_TRACED_MILESTONE = 2
 
 
@@ -25,10 +30,13 @@ def test_every_cited_decision_exists_and_every_milestone_decision_is_cited() -> 
     plan_text = (REPOSITORY_ROOT / "PLAN.md").read_text(encoding="utf-8")
     defined_numbers: set[int] = set()
     traced_numbers: set[int] = set()
+    pending_numbers: set[int] = set()
     for number_text, heading_text in DECISION_HEADING_PATTERN.findall(plan_text):
         defined_numbers.add(int(number_text))
         milestone_match = MILESTONE_MARKER_PATTERN.search(heading_text)
-        if milestone_match is not None and int(milestone_match.group(1)) >= FIRST_TRACED_MILESTONE:
+        if PENDING_MARKER_PATTERN.search(heading_text) is not None:
+            pending_numbers.add(int(number_text))
+        elif milestone_match is not None and int(milestone_match.group(1)) >= FIRST_TRACED_MILESTONE:
             traced_numbers.add(int(number_text))
     # Guards the pattern itself: if it stopped matching, the test would pass
     # while tracing nothing.
@@ -51,3 +59,8 @@ def test_every_cited_decision_exists_and_every_milestone_decision_is_cited() -> 
         all_cited_numbers |= cited_numbers
     uncited_decisions = sorted(traced_numbers - all_cited_numbers)
     assert uncited_decisions == [], f"milestone decisions with no enforcement point in src: {uncited_decisions}"
+    enforced_pending_decisions = sorted(pending_numbers & all_cited_numbers)
+    assert enforced_pending_decisions == [], (
+        f"decisions enforced in src but still marked pending; change '(M<n>, pending)' to '(M<n>)': "
+        f"{enforced_pending_decisions}"
+    )
