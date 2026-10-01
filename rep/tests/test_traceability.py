@@ -1,4 +1,4 @@
-"""Decisions in PLAN.md and the code that enforces them stay linked.
+"""Decisions in PLAN.md and the code that enforces them stay linked (BUILDING.md section 5).
 
 Code names a decision as "PLAN.md D<n>", or "PLAN.md D<n>, D<m>" for
 several. Line numbers are never stored anywhere: they are derived with
@@ -9,19 +9,30 @@ import re
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-DECISION_HEADING_PATTERN = re.compile(r"^D(\d+)\. ", re.MULTILINE)
+DECISION_HEADING_PATTERN = re.compile(r"^D(\d+)\. (.*)$", re.MULTILINE)
 DECISION_REFERENCE_PATTERN = re.compile(r"PLAN\.md (D\d+(?:, D\d+)*)")
-# The decisions M2 made: each must be enforced somewhere in the code. Older
-# decisions (D1-D20) are mostly about scope, process or later milestones and
-# have no single enforcement point, so only the references to them are
-# checked, not their presence.
-M2_DECISION_NUMBERS = range(21, 31)
+# A decision made by a build milestone carries it in its heading:
+# "D23. Item ids (M2)." or "(M2; ...)" or "(M2, ...)". The parenthesis is
+# required, so prose such as "waits for M5" does not count. Decisions from
+# M2 on must each be enforced somewhere in the code; the earlier ones are
+# about scope and process and have no single enforcement point, so only the
+# references to them are checked.
+MILESTONE_MARKER_PATTERN = re.compile(r"\(M(\d+)[,;)]")
+FIRST_TRACED_MILESTONE = 2
 
 
-def test_every_cited_decision_exists_and_every_m2_decision_is_cited() -> None:
+def test_every_cited_decision_exists_and_every_milestone_decision_is_cited() -> None:
     plan_text = (REPOSITORY_ROOT / "PLAN.md").read_text(encoding="utf-8")
-    defined_numbers = {int(number) for number in DECISION_HEADING_PATTERN.findall(plan_text)}
-    assert set(M2_DECISION_NUMBERS) <= defined_numbers, "an M2 decision is missing from PLAN.md section 5"
+    defined_numbers: set[int] = set()
+    traced_numbers: set[int] = set()
+    for number_text, heading_text in DECISION_HEADING_PATTERN.findall(plan_text):
+        defined_numbers.add(int(number_text))
+        milestone_match = MILESTONE_MARKER_PATTERN.search(heading_text)
+        if milestone_match is not None and int(milestone_match.group(1)) >= FIRST_TRACED_MILESTONE:
+            traced_numbers.add(int(number_text))
+    # Guards the pattern itself: if it stopped matching, the test would pass
+    # while tracing nothing.
+    assert set(range(20, 31)) <= traced_numbers, f"milestone markers not found: {sorted(traced_numbers)}"
 
     cited_numbers_by_file: dict[str, set[int]] = {}
     for source_path in sorted((REPOSITORY_ROOT / "src" / "rep").glob("*.py")):
@@ -38,5 +49,5 @@ def test_every_cited_decision_exists_and_every_m2_decision_is_cited() -> None:
     all_cited_numbers: set[int] = set()
     for cited_numbers in cited_numbers_by_file.values():
         all_cited_numbers |= cited_numbers
-    uncited_m2_decisions = sorted(set(M2_DECISION_NUMBERS) - all_cited_numbers)
-    assert uncited_m2_decisions == [], f"M2 decisions with no enforcement point in src: {uncited_m2_decisions}"
+    uncited_decisions = sorted(traced_numbers - all_cited_numbers)
+    assert uncited_decisions == [], f"milestone decisions with no enforcement point in src: {uncited_decisions}"

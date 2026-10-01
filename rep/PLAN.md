@@ -5,7 +5,8 @@ status: LOCKED. Design review fires only when work contradicts or exceeds this
 file. A change to a decision edits this file in its own commit, with the
 reason, before any code depends on it. Revisions are listed in section 12.
 companions: CONVENTIONS.md (the library grammar), STATUS.md (where the build
-is, and how to verify it)
+is, and how to verify it), BUILDING.md (how a build thread works: delivery,
+verification tactics, known hazards, code habits)
 
 Read this file first in every build thread. It is the handoff: the design
 conversation that produced it is not available to later threads, so anything
@@ -800,6 +801,15 @@ device        one machine; owns exactly one events file
 review debt   future reviews created by past new items
 concept       (M5) a latent skill that items test
 fringe        (M5) concepts whose prerequisites are all known
+source item   an item as written, from the parser, before its meaning is
+              checked (library.py SourceItem)
+checked item  an item a session may use: built only when no error remains
+              (library.py Item, PLAN.md D22)
+problem       a finding about a file or item, as data: line, column,
+              severity (error, warning; lint also lists notes) and message
+capture       creating an item; recorded as an item_stamped event (E1)
+history       the events about an item
+refusal       a command declines, returns its input and writes nothing
 
 --------------------------------------------------------------------------------
 ## 12. Revisions
@@ -843,3 +853,9 @@ fringe        (M5) concepts whose prerequisites are all known
             the code names them where it enforces them. A test fails if
             code cites an undefined decision or an M2 decision has no
             enforcement point.
+2026-09-30  End of thread 2: BUILDING.md added as a companion, holding the
+            practice the thread used but no file stated (delivery and
+            verification mechanics, tool hazards, code habits, working with
+            the person). Section 11 gains the terms M2 introduced. The
+            traceability test now finds the decisions it must see enforced
+            from their headings, "(M2)" or later, instead of a fixed list.

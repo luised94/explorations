@@ -24,8 +24,9 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             41962f6  cli: rep add
             a64d51f  cli: rep lint, no bib cache
             70e41b4  docs: close M2
-            (this commit)                             docs: number M2 decisions
-                                                      D21-D30, trace them in code
+            (commit 11)  docs: number M2 decisions D21-D30, trace them in code
+            (this commit)                             docs: BUILDING.md, terms,
+                                                      milestone-marked tracing
 BASE_SHA    for the next thread: this commit's full SHA, from
             `git rev-parse HEAD` after it lands
 
@@ -84,7 +85,8 @@ Code names the decision it enforces as "PLAN.md D<n>". To list every
 enforcement point with its current line:
     grep -rn "PLAN.md D" rep/src
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
-define, or if an M2 decision (D21-D30) has no enforcement point.
+define, or if a decision whose heading is marked (M2) or later has no
+enforcement point (today D20-D30).
 
 ## Known blind spots
 
@@ -111,11 +113,11 @@ define, or if an M2 decision (D21-D30) has no enforcement point.
 ## Kickoff for thread 3 (M3)
 
 Attach a pack of rep/ at BASE_SHA, including uv.lock. First message:
-  "Read rep/PLAN.md, rep/CONVENTIONS.md and rep/STATUS.md. Run the
-   clone-and-verify baseline (157 passed, pyright 0 errors) before changing
+  "Read rep/PLAN.md, rep/CONVENTIONS.md, rep/STATUS.md and rep/BUILDING.md.
+   Run the clone-and-verify baseline (157 passed, pyright 0 errors) before changing
    anything. Then build M3 as PLAN.md section 7 lists it, one commit per
    turn, in implement mode."
-Co-load set for M3: PLAN.md (D8, D9, D10, D12, D20 with its two
+Co-load set for M3: BUILDING.md (all of it), PLAN.md (D8, D9, D10, D12, D20 with its two
 constraints on M3, D22, D24, D26, D27, D30, I4, I6, I7, I10, section 8,
 section 9), CONVENTIONS.md,
 src/rep/library.py (Item, check_source_item, NUMERIC_KEY_PATTERN),
@@ -128,5 +130,6 @@ Open choices M3 must make and record: the nvim key prefix; the writer
 lock's scope during a session (section 9); the fingerprint's exact
 definition; the exact and numeric comparison (D20 fixes the rule);
 leech threshold and default preset numbers; the `rep due --brief`
-snapshot. Number each as a decision in PLAN.md section 5 and tag the code
-that enforces it "PLAN.md D<n>" (see "Tracing a decision" above).
+snapshot. Number each as a decision `D<n>. <name> (M3).` in PLAN.md
+section 5 and tag the code that enforces it "PLAN.md D<n>"; the
+traceability test then requires the tag (BUILDING.md section 5).
