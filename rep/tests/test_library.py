@@ -1,9 +1,12 @@
 """The library unit at its contract: parser, writer, checks and stamp."""
 
+import decimal
+import hashlib
 import random
 import re
 import unicodedata
 from collections.abc import Callable
+from decimal import Decimal
 
 from hypothesis import given, settings
 from hypothesis import strategies as strategies
@@ -13,8 +16,11 @@ import pytest
 from rep.library import (
     ITEM_ID_PATTERN,
     Field,
+    Item,
     SourceItem,
     check_source_item,
+    grade_typed_answer,
+    item_fingerprint,
     parse_library_text,
     plan_library_append,
     render_library_items,
@@ -613,3 +619,159 @@ def test_append_that_would_change_a_source_is_refused() -> None:
     # An explicit source, or a heading of its own, keeps the meaning.
     assert plan_library_append(existing_text, ADDED_ITEM, "other.md")[1] == []
     assert plan_library_append(existing_text, "## @Lehninger2021\n\n" + without_source, "other.md")[1] == []
+
+
+# --- fingerprint (PLAN.md D33, library.py L9) ---------------------------------
+
+
+def checked_item(item_text: str) -> Item:
+    """The one item in item_text, checked; the text must check with no error."""
+    (source_item,) = parse_library_text(item_text)
+    item, problems = check_source_item(source_item)
+    assert item is not None, f"test item does not check: {problems}"
+    return item
+
+
+FINGERPRINT_BASE_ITEM = "### Q: What does Km measure?\nid: km-measure-7q2m\nA: Half of Vmax.\n"
+
+
+def test_fingerprint_is_the_d33_definition_written_out() -> None:
+    # The JSON is spelled out by hand here, not produced by the code under
+    # test, so a change to the definition cannot pass by agreeing with itself.
+    hand_written_json = '["What does Km measure?","Half of Vmax.",null,"self","recall"]'
+    expected = "f1:" + hashlib.sha256(hand_written_json.encode("utf-8")).hexdigest()[:16]
+    assert item_fingerprint(checked_item(FINGERPRINT_BASE_ITEM)) == expected
+    # ensure_ascii=False: non-ASCII text is hashed as UTF-8, not as \u escapes.
+    accented_json = '["Caf\u00e9?","Half of Vmax.",null,"self","recall"]'
+    accented_item = checked_item(FINGERPRINT_BASE_ITEM.replace("What does Km measure?", "Caf\u00e9?"))
+    assert item_fingerprint(accented_item) == "f1:" + hashlib.sha256(accented_json.encode("utf-8")).hexdigest()[:16]
+
+
+@pytest.mark.parametrize(
+    "changed_item_text",
+    [
+        FINGERPRINT_BASE_ITEM.replace("What does Km measure?", "What does Km measure here?"),
+        FINGERPRINT_BASE_ITEM.replace("Half of Vmax.", "Half of Vmax"),
+        FINGERPRINT_BASE_ITEM + "criteria:\n    > half\n",
+        FINGERPRINT_BASE_ITEM + "check: exact\n",
+        FINGERPRINT_BASE_ITEM + "attempt: typed\n",
+    ],
+)
+def test_fingerprint_changes_with_each_field_that_says_what_is_asked(changed_item_text: str) -> None:
+    assert item_fingerprint(checked_item(changed_item_text)) != item_fingerprint(checked_item(FINGERPRINT_BASE_ITEM))
+
+
+@pytest.mark.parametrize(
+    "unchanged_item_text",
+    [
+        FINGERPRINT_BASE_ITEM.replace("km-measure-7q2m", "km-other-7q2m"),
+        "## @Lehninger2021\n\n" + FINGERPRINT_BASE_ITEM,
+        FINGERPRINT_BASE_ITEM + "source: @Lehninger2021:p712\ntags: #enzymes\nby: model:x llm/a.md\n?: worth splitting?\n",
+        "\n\n\n" + FINGERPRINT_BASE_ITEM,
+        "### Q:\n    > What does Km measure?\nid: km-measure-7q2m\nA:\n    > Half of Vmax.\n",
+    ],
+)
+def test_fingerprint_ignores_identity_place_and_metadata(unchanged_item_text: str) -> None:
+    assert item_fingerprint(checked_item(unchanged_item_text)) == item_fingerprint(checked_item(FINGERPRINT_BASE_ITEM))
+
+
+def test_fingerprint_uses_the_effective_attempt() -> None:
+    # check: exact implies typed (D20), so writing it out asks nothing new.
+    exact_item_text = FINGERPRINT_BASE_ITEM + "check: exact\n"
+    assert item_fingerprint(checked_item(exact_item_text)) == item_fingerprint(
+        checked_item(exact_item_text + "attempt: typed\n")
+    )
+
+
+# --- grading typed answers (PLAN.md D20, D34, library.py L10) -----------------
+
+
+@pytest.mark.parametrize(
+    ("key_text", "typed_answer", "expected_pass"),
+    [
+        ("Paris", "Paris", True),
+        ("Paris", "  Paris \t", True),
+        ("Saint Paul", "Saint \t  Paul", True),
+        ("Saint  Paul", "Saint Paul", True),
+        ("Paris", "paris", False),
+        ("Paris", "Paris.", False),
+        ("Haus", "haus", False),
+        ("s\u00ed", "si", False),
+        ("s\u00ed", "si\u0301", True),
+        ("Stra\u00dfe", "Strasse", False),
+        ("Paris", "", False),
+    ],
+)
+def test_exact_grading_follows_d20(key_text: str, typed_answer: str, expected_pass: bool) -> None:
+    item = checked_item(f"### Q: q\nid: km-7q2m\nA: {key_text}\ncheck: exact\n")
+    assert grade_typed_answer(item, typed_answer) is expected_pass
+
+
+@pytest.mark.parametrize(
+    ("key_text", "typed_answer", "expected_pass"),
+    [
+        ("9.81", "9.81", True),
+        ("9.81", "9.810", True),
+        ("9.81", " 9.81 ", True),
+        ("1000", "1e3", True),
+        ("1000", "1E+3", True),
+        ("0.5", ".5", True),
+        ("5", "+5", True),
+        ("9.81", "9.8", False),
+        ("1", "1.0000000000000000000000000000001", False),
+        ("0.1 +- 0.3", "0.4", True),
+        ("0.1 +- 0.3", "-0.2", True),
+        ("0.1 +- 0.3", "0.4000000000000000000000000000001", False),
+        ("6.022e23 +- 1%", "6.08222e23", True),
+        ("6.022e23 +- 1%", "6.0822200000001e23", False),
+        ("-50 +- 10%", "-45", True),
+        ("0 +- 1e30", "1000000000000000000000000000000.00001", False),
+        ("1e30000", "1e30000", True),
+        ("1 +- 1", "1e99999999", False),
+        ("9.81", "9,81", False),
+        ("1000", "1,000", False),
+        ("0.5", "1/2", False),
+        ("1", "Infinity", False),
+        ("1", "NaN", False),
+        ("1", "inf", False),
+        ("1000", "1_000", False),
+        ("3", "\u0663", False),
+        ("9.81", "9.81 m/s^2", False),
+        ("9.81", "", False),
+    ],
+)
+def test_numeric_grading_follows_d20_exactly(key_text: str, typed_answer: str, expected_pass: bool) -> None:
+    item = checked_item(f"### Q: q\nid: km-7q2m\nA: {key_text}\ncheck: numeric\n")
+    assert grade_typed_answer(item, typed_answer) is expected_pass
+
+
+@settings(max_examples=300)
+@given(
+    key_units=strategies.integers(min_value=-(10**40), max_value=10**40),
+    key_exponent=strategies.integers(min_value=-40, max_value=40),
+    tolerance_units=strategies.integers(min_value=0, max_value=10**40),
+    tolerance_exponent=strategies.integers(min_value=-40, max_value=40),
+    tolerance_is_percent=strategies.booleans(),
+)
+def test_numeric_tolerance_boundary_passes_and_one_unit_past_it_fails(
+    key_units: int, key_exponent: int, tolerance_units: int, tolerance_exponent: int, tolerance_is_percent: bool
+) -> None:
+    # D20: the boundary passes. Built from integers so the expected values
+    # are exact by construction, whatever the test's own arithmetic does.
+    key_value = Decimal(key_units).scaleb(key_exponent)
+    tolerance_value = Decimal(tolerance_units).scaleb(tolerance_exponent)
+    key_text = f"{key_value} +- {tolerance_value}{'%' if tolerance_is_percent else ''}"
+    item = checked_item(f"### Q: q\nid: km-7q2m\nA: {key_text}\ncheck: numeric\n")
+    with decimal.localcontext() as exact_context:
+        exact_context.prec = decimal.MAX_PREC
+        exact_context.traps[decimal.Inexact] = True
+        allowed_distance = abs(key_value) * tolerance_value / 100 if tolerance_is_percent else tolerance_value
+        upper_boundary_value = key_value + allowed_distance
+        lower_boundary_value = key_value - allowed_distance
+        one_unit_past = upper_boundary_value + Decimal(1).scaleb(min(key_exponent, tolerance_exponent) - 3)
+    # Every value above is computed inside the exact context: outside it,
+    # 1 - 1E+29 rounds to 28 digits (the first version of this test did
+    # that, and the property caught it).
+    assert grade_typed_answer(item, str(upper_boundary_value)) is True
+    assert grade_typed_answer(item, str(lower_boundary_value)) is True
+    assert grade_typed_answer(item, str(one_unit_past)) is False

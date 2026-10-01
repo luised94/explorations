@@ -71,11 +71,23 @@ STAMP (PLAN.md D24; ids are formed as PLAN.md D23 says)
       those errors, and nothing is inserted.
   L8  New ids match ITEM_ID_PATTERN and collide with no id in the text or in
       existing_item_ids.
+
+WHAT AN ITEM ASKS, AND GRADING IT (PLAN.md D33, D34)
+  L9  item_fingerprint depends on question, answer, criteria, check and the
+      effective attempt, and on nothing else: stamping an id, moving the
+      item, or editing its source, tags, by or `?:` lines leaves it equal.
+  L10 grade_typed_answer is exact: no binary floats, and no Decimal
+      rounding (an inexact step raises instead of grading). It never raises
+      for any typed text; text the rule cannot read does not match.
 """
 
+import decimal
+import hashlib
+import json
 import re
 import unicodedata
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Literal, TypedDict
 
 from rep.machine import DEVICE_ID_ALPHABET
@@ -199,6 +211,17 @@ TAG_PATTERN = re.compile(r"^#(?:[a-z0-9]+|[A-Z0-9]+)(?:_(?:[a-z0-9]+|[A-Z0-9]+))
 # with a field key, which FIELD_PATTERN limits to letters, digits and "_".
 QUESTION_MARKER = "### Q:"
 BLOCK_INDENT = "    "
+
+# PLAN.md D33. The scheme goes in front of every fingerprint, so a later
+# definition ("f2") is told apart from this one instead of making every past
+# attempt look as if its item had been edited.
+FINGERPRINT_SCHEME = "f1"
+FINGERPRINT_HEX_DIGITS = 16  # 64 bits: an accidental collision is not a concern
+# PLAN.md D34. Exact arithmetic costs time in proportion to how many decimal
+# places the operands span (1e99999999 against 1 took 92 ms, and the cost
+# has no bound). 1000 places is far beyond any quantity a question asks for;
+# an answer past it does not match, which shows as an Again and is amended.
+GRADING_DIGIT_SPAN_LIMIT = 1000
 
 
 def parse_library_text(text: str) -> list[SourceItem]:
@@ -692,6 +715,80 @@ def check_source_item(source_item: SourceItem) -> tuple[Item | None, list[Proble
         "open_questions": [open_question["value"] for open_question in source_item["open_questions"]],
     }
     return item, problems
+
+
+def item_fingerprint(item: Item) -> str:
+    """What the item asks, as a short tagged hash (PLAN.md D33; D20 constraint 2).
+
+    PRE   item came from check_source_item.
+    POST  FINGERPRINT_SCHEME, ":", then FINGERPRINT_HEX_DIGITS lowercase
+          hexadecimal digits of sha256 over the UTF-8 of the JSON array
+          [question, answer, criteria, check, attempt], written by
+          json.dumps with ensure_ascii=False and separators (",", ":") (L9).
+    """
+    # The effective attempt: an exact item reads "typed" whether or not the
+    # file says so, because that is what the person was asked to do.
+    asked = [item["question"], item["answer"], item["criteria"], item["check"], item["attempt"]]
+    canonical_text = json.dumps(asked, ensure_ascii=False, separators=(",", ":"))
+    digest = hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()
+    return f"{FINGERPRINT_SCHEME}:{digest[:FINGERPRINT_HEX_DIGITS]}"
+
+
+def grade_typed_answer(item: Item, typed_answer: str) -> bool:
+    """Whether a typed answer passes an exact or numeric key (PLAN.md D20, D34).
+
+    PRE   item came from check_source_item and item["check"] is "exact" or
+          "numeric", so it has a one-line answer and, for numeric, a
+          numeric_key. typed_answer is the text as typed, unnormalized.
+    POST  True exactly when D20's rule passes the answer (L10). Never raises
+          for any typed_answer.
+    """
+    assert item["check"] == "exact" or item["check"] == "numeric", "rep grades only exact and numeric items"
+    if item["check"] == "exact":
+        assert item["answer"] is not None, "check_source_item requires an answer for exact"
+        # D20: NFC, ends trimmed, every inner run of whitespace one space;
+        # case, accents and punctuation count. The key is NFC already (L2)
+        # but may hold a run of spaces, so it gets the same whitespace rule.
+        normalized_typed_answer = " ".join(unicodedata.normalize("NFC", typed_answer).split())
+        normalized_key = " ".join(item["answer"].split())
+        return normalized_typed_answer == normalized_key
+
+    numeric_key = item["numeric_key"]
+    assert numeric_key is not None, "check_source_item sets numeric_key for numeric"
+    typed_text = typed_answer.strip()
+    # The pattern is the gate, as for keys: Decimal alone would also accept
+    # "Infinity", "NaN", "1_000" and digits of other scripts.
+    if NUMBER_PATTERN.match(typed_text) is None:
+        return False
+    typed_value = Decimal(typed_text)
+    key_value = Decimal(numeric_key["value"])
+    if numeric_key["tolerance"] is None:
+        # Comparison is exact in every context: no arithmetic, no bound.
+        return typed_value == key_value
+    tolerance_value = Decimal(numeric_key["tolerance"])
+
+    # Largest and smallest decimal place any operand uses; their distance is
+    # how many digits exact arithmetic on them can need.
+    operands = (typed_value, key_value, tolerance_value)
+    largest_place = max(operand.adjusted() for operand in operands)
+    smallest_place = min(operand.adjusted() - len(operand.as_tuple().digits) + 1 for operand in operands)
+    if largest_place - smallest_place > GRADING_DIGIT_SPAN_LIMIT:
+        return False
+
+    with decimal.localcontext() as exact_context:
+        exact_context.prec = decimal.MAX_PREC
+        exact_context.Emax = decimal.MAX_EMAX
+        exact_context.Emin = decimal.MIN_EMIN
+        # The default context rounds to 28 digits, and rounding passed
+        # 1e30 + 0.00001 against "0 +- 1e30" (measured, PLAN.md section 3):
+        # a false Good nobody would see. Trapped, rounding is a loud bug.
+        exact_context.traps[decimal.Inexact] = True
+        distance = abs(typed_value - key_value)
+        if numeric_key["tolerance_is_percent"]:
+            # |typed - key| <= |key| * percent / 100, multiplied through by
+            # 100 so no division happens.
+            return distance * 100 <= abs(key_value) * tolerance_value
+        return distance <= tolerance_value
 
 
 def stamp_library_text(

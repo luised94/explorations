@@ -163,6 +163,11 @@ Measured while starting M3 (thread 3, 2026-10-01):
   first session (lapse_count 1), so same-session relearning was counted as
   forgetting (D38).
 - uv's CPython 3.12.13 builds readline on libedit ("EditLine wrapper").
+- Decimal's default context rounds arithmetic to 28 significant digits:
+  |1e30 + 0.00001 - 0| <= 1e30 is True under it (a false Good) and False
+  with unlimited precision. Exact arithmetic costs time with the decimal
+  places the operands span: 1e999999 against 1e-999999 took 1.7 ms,
+  1e99999999 against 1 took 92 ms (D34).
 - nvim 0.11.4 runs headless in the build sandbox (release tarball from
   GitHub); the person runs nvim 0.11.6. The person's locale is C.UTF-8.
 - The explorations root .gitignore ignored uv.lock (line 20, `uv.lock`). A
@@ -720,10 +725,11 @@ D32. Writer lock during a session (M3, pending).
   append is safe, but an item can be served twice in a day.
   Revisit: an item seen served twice on one machine.
 
-D33. Item fingerprint (M3, pending). Critical (D20 constraint 2).
+D33. Item fingerprint (M3). Critical (D20 constraint 2).
   Choice: "f1:" followed by the first 16 hexadecimal digits of the sha256
   of the UTF-8 encoding of the JSON array [question, answer, criteria,
-  check, attempt], taken from the checked Item (NFC values; the effective
+  check, attempt], as json.dumps writes it with ensure_ascii=False and
+  separators (",", ":"), taken from the checked Item (NFC values; the effective
   attempt, so an exact item reads "typed"). Not included: id, source,
   tags, by, open questions, line.
   Reason: D20 needs to know whether the key changed since an attempt. A
@@ -741,22 +747,30 @@ D33. Item fingerprint (M3, pending). Critical (D20 constraint 2).
   never recomputed, so a wrong definition can be replaced by "f2:" and
   past attempts compared under the old one.
 
-D34. Typed answers: reading and grading (M3, pending). Critical (D20).
+D34. Typed answers: reading and grading (M3). Critical (D20).
   Choice: a typed answer is read with input() and readline (libedit in
   uv's CPython, section 3), so arrow keys edit the line. A session refuses
   to start unless standard input decodes as UTF-8, and asks again when an
   answer holds a lone surrogate. typed_answer stores the string input()
   returned, before NFC or trimming (D20 constraint 1). The D20 comparison
   is one pure function in library.py beside NUMERIC_KEY_PATTERN: a change
-  to the key syntax changes both, so they are one unit.
+  to the key syntax changes both, so they are one unit. Its arithmetic
+  runs in a Decimal context with unlimited precision and the Inexact
+  signal trapped, so no step rounds; before any arithmetic, an answer
+  whose operands span more than 1000 decimal places does not match.
   Reason: in the terminal's line mode an arrow key enters escape bytes
   into the answer, a false Again on every exact item it touches; under a
   non-UTF-8 locale stdin decodes with surrogateescape (section 3) and the
   append would fail after the person had typed.
   Rejected: bytes from the terminal in line mode (5: no arrow keys, and
-  the escapes reach the answer); prompt_toolkit (D13).
+  the escapes reach the answer); prompt_toolkit (D13). For the arithmetic:
+  Decimal's default context (2: rounds to 28 digits, a measured false
+  Good, section 3); fractions.Fraction (6: exact too, but departs from
+  D20's Decimal and has the same unbounded cost).
   Trade-off: the up arrow recalls earlier answers of the session; the
-  locale must be UTF-8 (C.UTF-8 on the person's machine, section 3).
+  locale must be UTF-8 (C.UTF-8 on the person's machine, section 3); an
+  answer spanning more than 1000 decimal places against its key (such as
+  1e99999999 for 1 +- 1) is an Again, amended in review if it was right.
   Revisit: libedit behaving differently in the person's terminal.
 
 D35. Session keys (M3, pending). Revises D8.

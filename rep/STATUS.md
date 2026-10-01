@@ -29,7 +29,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
                      (thread 3 started here)
             57559e3  build: track uv.lock
             5fad124  docs: lock M3, decisions D31-D43 pending
-            (this commit)  docs: FINDINGS.md, neighbouring code
+            f3d3681  docs: FINDINGS.md, neighbouring code
+            (this commit)  library: fingerprint and typed-answer grading
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -49,10 +50,10 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      157 passed
+BASELINE_TOTAL      209 passed
 BASELINE_BREAKDOWN  tests/test_cli.py            1
                     tests/test_events.py        28
-                    tests/test_library.py       72
+                    tests/test_library.py      124
                     tests/test_machine.py       16
                     tests/test_memory_model.py   3
                     tests/test_smoke.py         21
@@ -60,7 +61,7 @@ BASELINE_BREAKDOWN  tests/test_cli.py            1
                     tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "157 passed in ...")
+                    uv run pytest | tail -1      (prints "209 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -131,11 +132,11 @@ Each code commit changes the markers of the decisions it enforces from
 |---|---|---|
 | 57559e3 | build: track uv.lock | - |
 | 5fad124 | docs: lock M3 | D31-D43 recorded, pending |
-| this commit | docs: FINDINGS.md (neighbouring code) | - |
-| next | library: fingerprint, typed-answer grading, library-wide load and checks | D33, D34 (grading) |
-| then | events: lapse rule, first attempt time, session events, shared effective-event code | D38, D40 |
+| f3d3681 | docs: FINDINGS.md (neighbouring code) | - |
+| this commit | library: fingerprint, typed-answer grading | D33, D34 (grading) |
+| next | events: lapse rule, first attempt time, session events, shared effective-event code | D38, D40 |
 | then | session: plan and queue fold, both pure | D31, D36, D37, D39 |
-| then | cli: plain `rep` runs a session (after the terminal spike) | D32, D34 (reading), D35 |
+| then | cli: plain `rep` runs a session (after the terminal spike); the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35 |
 | then | cli: `rep review` | D41 |
 | then | cli: `rep why`, `rep due --brief`, `rep unsuspend`, `rep where --data-root` | D42 |
 | then | nvim plugin, tested headless | D43 |
