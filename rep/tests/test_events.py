@@ -2,6 +2,7 @@
 
 import json
 import random
+import time
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -10,19 +11,24 @@ from hypothesis import strategies as strategy
 
 from rep.events import (
     EVENT_FORMAT_VERSION,
+    EVENT_ID_PATTERN,
     AmendEvent,
     AttemptEvent,
     Event,
     EventDecodeError,
     ItemStampedEvent,
+    SessionEndEvent,
+    SessionStartEvent,
     SuspendEvent,
     UndoEvent,
     decode_event,
     encode_event,
     fold_events,
     format_canonical_time,
+    new_event_id,
     new_item_stamped_events,
     parse_canonical_time,
+    scheduling_day,
 )
 from rep.machine import DEVICE_ID_ALPHABET
 from rep.memory_model import (
@@ -452,3 +458,94 @@ def test_new_item_stamped_events_are_valid_and_distinct() -> None:
     assert len({event["id"] for event in stamped_events}) == 2
     for event in stamped_events:
         assert decode_event(encode_event(event)) == event
+
+
+# ------------------------------------------------- session events (PLAN.md D40)
+
+
+def session_start_event(position: int) -> SessionStartEvent:
+    return {
+        "format_version": 1, "id": event_id_for(position), "at": format_canonical_time(START),
+        "device": DEVICE, "kind": "session_start",
+        "preset": {"session_budget": 60, "desired_retention": 0.9},
+    }  # fmt: skip
+
+
+def test_session_events_round_trip_and_change_no_state() -> None:
+    session_start = session_start_event(80)
+    session_end: SessionEndEvent = {
+        "format_version": 1, "id": event_id_for(81), "at": format_canonical_time(START + timedelta(minutes=9)),
+        "device": DEVICE, "kind": "session_end", "session": session_start["id"], "reason": "completed",
+    }  # fmt: skip
+    for event in (session_start, session_end):
+        assert decode_event(encode_event(event)) == event
+    history = build_history([(60, "km-measure-7q2m", 3), (86400, "km-measure-7q2m", 1)])
+    assert fold_events([session_start, *history, session_end]) == fold_events(history)
+
+
+@pytest.mark.parametrize(
+    ("changes", "message_fragment"),
+    [
+        ({"preset": {}}, "preset must be a non-empty object"),
+        ({"preset": [60]}, "preset must be a non-empty object"),
+        ({"preset": {"session_budget": True}}, "session_budget must be a number"),
+        ({"preset": {"session_budget": "60"}}, "session_budget must be a number"),
+    ],
+)
+def test_invalid_session_start_is_rejected(changes: dict[str, object], message_fragment: str) -> None:
+    fields = json.loads(encode_event(session_start_event(80)))
+    fields.update(changes)
+    with pytest.raises(EventDecodeError, match=message_fragment):
+        decode_event(json.dumps(fields))
+
+
+@pytest.mark.parametrize(
+    ("changes", "message_fragment"),
+    [
+        ({"reason": "crashed"}, "reason must be completed, quit or interrupted"),
+        ({"reason": None}, "reason must be"),
+        ({"session": "not-an-id"}, "session must be an event id"),
+    ],
+)
+def test_invalid_session_end_is_rejected(changes: dict[str, object], message_fragment: str) -> None:
+    session_end: SessionEndEvent = {
+        "format_version": 1, "id": event_id_for(81), "at": format_canonical_time(START),
+        "device": DEVICE, "kind": "session_end", "session": event_id_for(80), "reason": "quit",
+    }  # fmt: skip
+    fields = json.loads(encode_event(session_end))
+    fields.update(changes)
+    with pytest.raises(EventDecodeError, match=message_fragment):
+        decode_event(json.dumps(fields))
+
+
+def test_new_event_ids_are_valid() -> None:
+    random_source = random.Random(11)
+    event_ids = {new_event_id(random_source.randbytes) for _ in range(200)}
+    assert len(event_ids) == 200
+    assert all(EVENT_ID_PATTERN.match(event_id) for event_id in event_ids)
+
+
+@pytest.mark.parametrize(
+    ("utc_moment", "expected_day"),
+    [
+        # New York, UTC-4 in October: 07:59 UTC is 03:59 local, before the
+        # 04:00 rollover, so it belongs to the day before (D44).
+        (datetime(2026, 10, 2, 7, 59, tzinfo=UTC), "2026-10-01"),
+        (datetime(2026, 10, 2, 8, 0, tzinfo=UTC), "2026-10-02"),
+        (datetime(2026, 10, 3, 3, 30, tzinfo=UTC), "2026-10-02"),  # 23:30 local
+        # 2026-11-01: clocks go back at 02:00 (UTC-5 after). 08:30 UTC is
+        # 03:30 EST, before the rollover; 09:00 UTC is 04:00 EST.
+        (datetime(2026, 11, 1, 8, 30, tzinfo=UTC), "2026-10-31"),
+        (datetime(2026, 11, 1, 9, 0, tzinfo=UTC), "2026-11-01"),
+    ],
+)
+def test_scheduling_day_uses_local_time_and_the_rollover_hour(
+    monkeypatch: pytest.MonkeyPatch, utc_moment: datetime, expected_day: str
+) -> None:
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        assert scheduling_day(utc_moment, 4) == expected_day
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()

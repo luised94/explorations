@@ -18,6 +18,7 @@ from rep.library import (
     Field,
     Item,
     SourceItem,
+    check_library_files,
     check_source_item,
     grade_typed_answer,
     item_fingerprint,
@@ -775,3 +776,21 @@ def test_numeric_tolerance_boundary_passes_and_one_unit_past_it_fails(
     assert grade_typed_answer(item, str(upper_boundary_value)) is True
     assert grade_typed_answer(item, str(lower_boundary_value)) is True
     assert grade_typed_answer(item, str(one_unit_past)) is False
+
+
+# --- the whole library (PLAN.md D22, library.py L11) ---------------------------
+
+
+def test_library_check_leaves_out_errors_and_later_copies_of_an_id() -> None:
+    first_file = "### Q: one\nid: one-7q2m\nA: x\n\n### Q: broken\nid: broken-7q2m\ncheck: maybe\nA: x\n?: split this?\n"
+    second_file = "### Q: one again\nid: one-7q2m\nA: y\n\n### Q: two\nid: two-7q2m\nA: z\n"
+    library_check = check_library_files([("a.md", first_file), ("b.md", second_file)])
+    assert [(located["path"], located["item"]["id"]) for located in library_check["located_items"]] == [
+        ("a.md", "one-7q2m"),
+        ("b.md", "two-7q2m"),
+    ]
+    assert library_check["item_count"] == 4
+    assert library_check["written_item_ids"] == {"one-7q2m", "broken-7q2m", "two-7q2m"}
+    found = [(problem["path"], problem["line"], problem["severity"]) for problem in library_check["problems"]]
+    assert found == [("a.md", 7, "error"), ("a.md", 9, "note"), ("b.md", 2, "error")]
+    assert "already used at a.md:2" in library_check["problems"][2]["message"]

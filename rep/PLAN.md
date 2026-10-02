@@ -168,6 +168,15 @@ Measured while starting M3 (thread 3, 2026-10-01):
   with unlimited precision. Exact arithmetic costs time with the decimal
   places the operands span: 1e999999 against 1e-999999 took 1.7 ms,
   1e99999999 against 1 took 92 ms (D34).
+- Terminal spike (sandbox, a pseudo-terminal, keys sent with human-like
+  pauses): one key read in cbreak mode without Enter; a line read by
+  input() with libedit, where "abc", left arrow, "X", Enter gave "abXc";
+  UTF-8 kept in a line; no bytes left over between modes; Ctrl-D at a line
+  gave EOFError; Ctrl-C in cbreak gave KeyboardInterrupt with the terminal
+  restored. A key sent in the same write as the Enter before it was lost:
+  not libedit, but tty.setcbreak's default TCSAFLUSH, which discards
+  pending input; with TCSANOW it was kept. The session flushes on purpose
+  instead, before each prompt (D35).
 - The fold counted elapsed time in whole 24-hour periods while the plan
   serves by local day. Six daily Goods on one item, through the M1 fold:
   with each session 30 minutes earlier than the day before (23.5 hours
@@ -719,7 +728,7 @@ D31. Session state is a fold over the session's events (M3).
   200 events.
   Revisit: none expected.
 
-D32. Writer lock during a session (M3, pending).
+D32. Writer lock during a session (M3).
   Choice: the session takes the lock around each append only. When it is
   busy, the session retries for 2 seconds, then names the holder and keeps
   waiting; Ctrl-C ends the session and loses only the pending action.
@@ -777,8 +786,10 @@ D34. Typed answers: reading and grading (M3). Critical (D20).
   Decimal's default context (2: rounds to 28 digits, a measured false
   Good, section 3); fractions.Fraction (6: exact too, but departs from
   D20's Decimal and has the same unbounded cost).
-  Trade-off: the up arrow recalls earlier answers of the session; the
-  locale must be UTF-8 (C.UTF-8 on the person's machine, section 3); an
+  readline's automatic history is off, so the up arrow cannot bring back
+  an earlier answer (this removes the trade-off first accepted here).
+  Trade-off: the locale must be UTF-8 (C.UTF-8 on the person's machine,
+  section 3); an
   answer spanning more than 1000 decimal places against its key (such as
   1e99999999 for 1 +- 1) is an Again, amended in review if it was right.
   Revisit: libedit behaving differently in the person's terminal.
@@ -799,7 +810,22 @@ D35. Session keys (M3). Revises D8.
   counts.
   Rejected: undo and show again (3: retry until correct); no `u` (5: a
   mistyped key costs a trip to `rep review`).
-  Trade-off: every correction is visible in the history as an amend.
+  Built (thread 3, from the terminal spike and its tests): every prompt
+  first discards keys pressed before it was shown, then shows itself; a
+  key counts only once what it answers is on screen, so a grade cannot
+  precede the answer and a latency cannot be near zero. The flush comes
+  before the prompt, not after: after it, a key pressed in the instant
+  between seeing the prompt and the flush was lost (found by the smoke
+  test). `u` works at every key prompt and once more when the session
+  completes. `s` writes a suspend and no attempt. `e` records `?` even for
+  an automatic grade: pressing `e` says the item is wrong, so a grade
+  against its key is suspect, and the typed answer is kept for review.
+  Rejected: keeping keys typed ahead (4: a grade given before the answer
+  is on screen is an impression, D8, and a typed-ahead commit records a
+  latency near zero, corrupting E5).
+  Trade-off: every correction is visible in the history as an amend; a
+  key pressed while a prompt is being drawn, within milliseconds, is
+  dropped and must be pressed again.
   Revisit: none expected.
 
 D36. The plan (M3). Revises D9's two caps into one budget.
@@ -872,7 +898,7 @@ D39. The preset is a constant (M3). Revises D9.
   get it through git.
   Revisit: a second preset, or two devices needing different values.
 
-D40. Session events (M3, pending). Extends D10.
+D40. Session events (M3). Extends D10.
   Choice: session_start carries `preset`, an object of the D39 values; its
   event id is the session id that attempts carry. session_end carries
   `session` and `reason`: completed (the queue emptied), quit (`q`) or
@@ -1301,3 +1327,9 @@ refusal       a command declines, returns its input and writes nothing
             joined by `at`, never copied into the events). At the person's
             request, so the ideas wait for data instead of shaping the
             scheduler now.
+2026-10-02  Thread 3, session loop: after a pseudo-terminal spike showed the
+            standard library suffices (no terminal-interface dependency),
+            D35 gains how keys are read (flush, then prompt) and what `e`
+            records, and D34 turns readline's history off; both are
+            refinements inside the approved decisions, listed here for the
+            person's review.

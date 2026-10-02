@@ -119,6 +119,19 @@ real caller arrives, in that caller's commit, and the message says so.
   and measure the composition of decisions with the real code. Thread 3
   found D44 this way: two sound decisions (py-fsrs's 24-hour floor, the
   plan's due-by-day rule) that stalled intervals together.
+- Terminal tests (tests/test_smoke.py): the installed `rep` on a
+  pseudo-terminal, scripted as (text to wait for, keys to send). Send keys
+  only after their own prompt has appeared, never on earlier text: the
+  session discards keys typed before a prompt (PLAN.md D35), and a script
+  that types early fails at random (thread 3: 1 run in 3). Repeat new
+  terminal tests 20 times before trusting them.
+- A planted bug must change behavior: check that the mutated line is
+  really different code. Thread 3 met two that were not (a dict literal
+  whose duplicated keys were overridden; a module still imported under
+  another name), which would have "passed" or "failed" for nothing.
+- Planted bugs in the installed command: put a shim named `rep` first on
+  PATH, `#!<venv python>` then `import sys; sys.path.insert(0,
+  "<copy>/src"); from rep.cli import main; sys.exit(main())`.
 - Terminal behavior (single keys, line input) is tested under a
   pseudo-terminal (the `pty` module), never by assuming the person's
   terminal; the person then confirms with a real session on a throwaway
@@ -156,6 +169,9 @@ real caller arrives, in that caller's commit, and the message says so.
 - Python's Decimal rounds arithmetic to 28 significant digits in its
   default context; exact comparison needs a local context with unlimited
   precision and Inexact trapped (library.py grade_typed_answer).
+- tty.setcbreak and tty.setraw default to TCSAFLUSH, which discards input
+  already typed. rep passes TCSANOW and flushes on purpose, before each
+  prompt.
 - An `# expect:` line that does not match is a stop, not a detail: chain
   dependent commands with `&&` so a wrong assumption halts before a
   commit. (Thread 3: `git status` showed nothing where `?? rep/uv.lock`

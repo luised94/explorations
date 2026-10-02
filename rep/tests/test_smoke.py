@@ -8,8 +8,11 @@ subprocess with its own HOME, so it cannot touch the real machine setup.
 
 import json
 import os
+import pty
+import select
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -313,3 +316,172 @@ def test_lint_of_a_clean_library_exits_0_and_says_when_citekeys_went_unchecked(t
     result = run_rep(["lint"], tmp_path)
     assert (result.returncode, result.stdout) == (0, b"")
     assert b"bib_path is not set in local.toml; citekeys were not checked" in result.stderr
+
+
+# --- plain `rep`: a session under a real terminal (PLAN.md D9, D34, D35) ------
+
+SESSION_LIBRARY = (
+    "### Q: Capital of France?\n"
+    "id: capital-france-7q2m\n"
+    "A: Paris\n"
+    "check: exact\n"
+    "\n"
+    "### Q: What does Km measure?\n"
+    "id: km-measure-7q2m\n"
+    "A: half of Vmax\n"
+)
+
+
+def session_home(tmp_path: Path, library_text: str) -> Path:
+    config_directory = tmp_path / ".config" / "rep"
+    config_directory.mkdir(parents=True)
+    (config_directory / "local.toml").write_text('device_id = "6a2ah35zhe"\n', encoding="utf-8")
+    (tmp_path / "learning" / "library").mkdir(parents=True)
+    (tmp_path / "learning" / "library" / "a.md").write_text(library_text, encoding="utf-8")
+    return tmp_path / "learning"
+
+
+def run_rep_on_a_terminal(home_directory: Path, script: list[tuple[str, bytes]]) -> tuple[int, str]:
+    """Run plain `rep` on a pseudo-terminal. For each (text, keys): wait until
+    text appears in the output, then type keys (none for a step that only
+    waits). Waiting for text, not for a time, keeps the test independent of
+    machine speed. Keys go only after their own prompt: the session discards
+    keys typed before its prompt (PLAN.md D35), so a script that types on
+    seeing earlier text loses keys at random, as a person would."""
+    rep_executable = shutil.which("rep")
+    assert rep_executable is not None, "rep is not on PATH; run the tests with `uv run pytest`"
+    environment = dict(os.environ)
+    environment["HOME"] = str(home_directory)
+    environment["LANG"] = environment["LC_ALL"] = "C.UTF-8"
+    for variable in ("REP_DATA_ROOT", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "EDITOR"):
+        environment.pop(variable, None)
+    controller_descriptor, terminal_descriptor = pty.openpty()
+    process = subprocess.Popen(
+        [rep_executable], env=environment, stdin=terminal_descriptor, stdout=terminal_descriptor,
+        stderr=terminal_descriptor, close_fds=True,
+    )  # fmt: skip
+    os.close(terminal_descriptor)
+    output = b""
+    try:
+        for expected_text, keys in script:
+            deadline = time.monotonic() + 15
+            while expected_text.encode() not in output:
+                assert time.monotonic() < deadline, f"never saw {expected_text!r}; output so far:\n{output.decode(errors='replace')}"
+                if select.select([controller_descriptor], [], [], 0.1)[0]:
+                    output += os.read(controller_descriptor, 4096)
+            # Only what follows a match is searched next, so one prompt
+            # shown twice is waited for twice.
+            output = output[output.index(expected_text.encode()) + len(expected_text.encode()):]
+            os.write(controller_descriptor, keys)
+        exit_code = process.wait(timeout=15)
+        while select.select([controller_descriptor], [], [], 0.1)[0]:
+            try:
+                output += os.read(controller_descriptor, 4096)
+            except OSError:
+                break
+    finally:
+        process.kill()
+        os.close(controller_descriptor)
+    return exit_code, output.decode(errors="replace")
+
+
+def read_session_events(data_root: Path) -> list[dict[str, object]]:
+    events_text = (data_root / "events" / "6a2ah35zhe.jsonl").read_text(encoding="utf-8")
+    return [json.loads(line) for line in events_text.splitlines()]
+
+
+def test_a_session_end_to_end_on_a_terminal(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY)
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path,
+        [
+            ("0 due, 2 new. Any key starts", b" "),
+            # Typed and graded by rep. "Pars", left arrow, "i": line editing
+            # must give "Paris", not escape bytes in the answer (D34).
+            ("Capital of France?", b""),
+            ("> ", b"Pars\x1b[Di\r"),
+            ("matches", b""),
+            ("any key next", b" "),
+            ("What does Km measure?", b""),
+            ("any key reveals", b" "),
+            ("y good", b"y"),
+            # A new item's first showing always returns (D36); this time a
+            # case slip, which exact grading counts as a miss (D20).
+            ("Capital of France?", b""),
+            ("> ", b"paris\r"),
+            ("does not match", b""),
+            ("any key next", b" "),
+            ("What does Km measure?", b""),
+            ("any key reveals", b" "),
+            ("y good", b"y"),
+            ("Capital of France?", b""),
+            ("> ", b"Paris\r"),
+            ("matches", b""),
+            ("any key next", b" "),
+            ("Session complete", b" "),
+        ],
+    )
+    assert exit_code == 0, output
+    assert "5 attempts; session completed." in output
+    session_events = read_session_events(data_root)
+    assert [event["kind"] for event in session_events] == ["session_start", *["attempt"] * 5, "session_end"]
+    session_start, *attempts, session_end = session_events
+    assert session_start["preset"] == {
+        "session_budget": 60, "new_per_day": 10, "new_item_cost": 3, "relearn_gap": 3,
+        "day_start_hour": 4, "desired_retention": 0.9,
+    }  # fmt: skip
+    assert [(attempt["item"], attempt["rating"], attempt["typed_answer"]) for attempt in attempts] == [
+        ("capital-france-7q2m", 3, "Paris"),
+        ("km-measure-7q2m", 3, None),
+        ("capital-france-7q2m", 1, "paris"),
+        ("km-measure-7q2m", 3, None),
+        ("capital-france-7q2m", 3, "Paris"),
+    ]
+    assert all(attempt["session"] == session_start["id"] for attempt in attempts)
+    assert len({attempt["day"] for attempt in attempts}) == 1
+    assert all(str(attempt["fingerprint"]).startswith("f1:") for attempt in attempts)
+    assert (session_end["session"], session_end["reason"]) == (session_start["id"], "completed")
+
+
+def test_quitting_a_session_writes_its_end_and_no_attempt(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, "### Q: What does Km measure?\nid: km-measure-7q2m\nA: half of Vmax\n")
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path, [("0 due, 1 new. Any key starts", b" "), ("any key reveals", b"q")]
+    )
+    assert exit_code == 0 and "0 attempts; session quit." in output
+    assert [(event["kind"], event.get("reason")) for event in read_session_events(data_root)] == [
+        ("session_start", None),
+        ("session_end", "quit"),
+    ]
+
+
+def test_u_corrects_the_last_grade_with_an_amend(tmp_path: Path) -> None:
+    data_root = session_home(
+        tmp_path, SESSION_LIBRARY.replace("A: Paris\ncheck: exact\n", "A: Paris\n")
+    )
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path,
+        [
+            ("Any key starts", b" "),
+            ("Capital of France?", b""),
+            ("any key reveals", b" "),
+            ("y good", b"n"),  # a slip: meant Good
+            ("What does Km measure?", b""),
+            ("any key reveals", b"u"),
+            ("y good  n again  any other key keeps it", b"y"),
+            ("Now Good.", b""),
+            ("any key reveals", b"q"),
+        ],
+    )
+    assert exit_code == 0, output
+    session_events = read_session_events(data_root)
+    attempt = session_events[1]
+    amend = session_events[2]
+    assert (attempt["kind"], attempt["rating"]) == ("attempt", 1)
+    assert (amend["kind"], amend["target"], amend["rating"]) == ("amend", attempt["id"], 3)
+
+
+def test_a_session_needs_a_terminal(tmp_path: Path) -> None:
+    session_home(tmp_path, SESSION_LIBRARY)
+    result = run_rep([], tmp_path)
+    assert result.returncode == 2 and b"a session needs a terminal" in result.stderr

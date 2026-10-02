@@ -3,8 +3,9 @@
 REPRESENTATION
   Preset         the session settings (D39), one constant for now; each
                  session_start event records a copy (D40).
-  LocatedItem    a checked library Item with the path of its file. The
-                 caller excludes items with errors and duplicate ids (D22).
+  LocatedItem    a checked library Item with the path of its file
+                 (library.py), from check_library_files: no item with an
+                 error, no id twice (D22, library.py L11).
   PlanSlot       one item id and why it is in the queue: "due", "new", or
                  "relearn" for a showing added during the session.
   Plan           the ordered slots a session starts with: reviews, then new
@@ -41,7 +42,7 @@ from datetime import date
 from typing import Literal, TypedDict
 
 from rep.events import Event, ItemState, effective_events
-from rep.library import Item
+from rep.library import LocatedItem
 from rep.memory_model import AGAIN, DEFAULT_PARAMETERS, retrievability
 
 
@@ -64,11 +65,6 @@ DEFAULT_PRESET: Preset = {
     "day_start_hour": 4,
     "desired_retention": 0.9,
 }
-
-
-class LocatedItem(TypedDict):
-    path: str
-    item: Item
 
 
 class PlanSlot(TypedDict):

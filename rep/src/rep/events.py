@@ -12,8 +12,9 @@ REPRESENTATION
     kind             which record this is
   Kinds in M1 are the ones the fold reads. item_stamped (M2) records when an
   item was created, for capture measurement (PLAN.md E1); the fold skips it.
-  session_start and session_end (PLAN.md D10) are added with their writer
-  in M3.
+  session_start and session_end (M3, PLAN.md D40) bracket a session: the
+  start's id is the session id its attempts carry, and it records the
+  preset used; the end records why the session ended. The fold skips both.
 
   Every attempt carries `day` (PLAN.md D44): its scheduling day, the local
   date it was committed in, moved back by the day start hour, written as
@@ -144,7 +145,35 @@ class ItemStampedEvent(TypedDict):
     item: str
 
 
-Event = AttemptEvent | AmendEvent | UndoEvent | SuspendEvent | UnsuspendEvent | ItemStampedEvent
+class SessionStartEvent(TypedDict):
+    format_version: int
+    id: str  # the session id that the session's attempts carry
+    at: str
+    device: str
+    kind: Literal["session_start"]
+    preset: dict[str, int | float]  # the values used (PLAN.md D39, D40)
+
+
+class SessionEndEvent(TypedDict):
+    format_version: int
+    id: str
+    at: str
+    device: str
+    kind: Literal["session_end"]
+    session: str  # id of the session_start
+    reason: Literal["completed", "quit", "interrupted"]
+
+
+Event = (
+    AttemptEvent
+    | AmendEvent
+    | UndoEvent
+    | SuspendEvent
+    | UnsuspendEvent
+    | ItemStampedEvent
+    | SessionStartEvent
+    | SessionEndEvent
+)
 
 
 class ItemState(TypedDict):
@@ -355,7 +384,71 @@ def decode_event(line: str) -> Event:
         }
         return unsuspend_event
 
+    if kind == "session_start":
+        preset = fields.get("preset")
+        if not isinstance(preset, dict) or preset == {}:
+            raise EventDecodeError("session_start.preset must be a non-empty object")
+        preset_values: dict[str, int | float] = {}
+        for preset_key, preset_value in cast(dict[str, object], preset).items():
+            # type(...) in, not isinstance: a bool is an int to isinstance.
+            if type(preset_value) not in (int, float):
+                raise EventDecodeError(f"session_start.preset.{preset_key} must be a number, found {preset_value!r}")
+            preset_values[preset_key] = cast(int | float, preset_value)
+        session_start_event: SessionStartEvent = {
+            "format_version": format_version,
+            "id": event_id,
+            "at": at,
+            "device": device,
+            "kind": "session_start",
+            "preset": preset_values,
+        }
+        return session_start_event
+
+    if kind == "session_end":
+        session = fields.get("session")
+        reason = fields.get("reason")
+        if not isinstance(session, str) or EVENT_ID_PATTERN.match(session) is None:
+            raise EventDecodeError(f"session_end.session must be an event id, found {session!r}")
+        if not isinstance(reason, str) or reason not in ("completed", "quit", "interrupted"):
+            raise EventDecodeError(f"session_end.reason must be completed, quit or interrupted, found {reason!r}")
+        session_end_event: SessionEndEvent = {
+            "format_version": format_version,
+            "id": event_id,
+            "at": at,
+            "device": device,
+            "kind": "session_end",
+            "session": session,
+            "reason": reason,
+        }
+        return session_end_event
+
     raise EventDecodeError(f"unknown kind {kind!r}")
+
+
+def new_event_id(random_bytes: Callable[[int], bytes]) -> str:
+    """A fresh event id (E1).
+
+    PRE   random_bytes(count) returns count random bytes.
+    POST  EVENT_ID_LENGTH characters of DEVICE_ID_ALPHABET.
+    """
+    # One random byte per character; 256 is a multiple of the 32-character
+    # alphabet, so every character is equally likely.
+    return "".join(DEVICE_ID_ALPHABET[random_byte % len(DEVICE_ID_ALPHABET)] for random_byte in random_bytes(EVENT_ID_LENGTH))
+
+
+def scheduling_day(moment: datetime, day_start_hour: int) -> str:
+    """The scheduling day a moment belongs to, as this machine sees it (PLAN.md D44).
+
+    PRE   moment is timezone-aware; 0 <= day_start_hour < 24.
+    POST  YYYY-MM-DD: the local date of moment moved back by day_start_hour,
+          so the hours after midnight and before the start hour belong to
+          the day before. Written on each attempt; the fold never calls this.
+    """
+    assert moment.tzinfo is not None, "naive datetime has no defined local day"
+    assert 0 <= day_start_hour < 24, "day start hour out of range"
+    # astimezone() with no zone converts to the machine's zone at that
+    # moment, daylight saving included.
+    return (moment.astimezone() - timedelta(hours=day_start_hour)).date().isoformat()
 
 
 def new_item_stamped_events(
@@ -374,15 +467,10 @@ def new_item_stamped_events(
     canonical_stamped_at = format_canonical_time(stamped_at)
     stamped_events: list[Event] = []
     for item_id in item_ids:
-        # One random byte per character; 256 is a multiple of the 32-character
-        # alphabet, so every character is equally likely.
-        event_id = "".join(
-            DEVICE_ID_ALPHABET[random_byte % len(DEVICE_ID_ALPHABET)] for random_byte in random_bytes(EVENT_ID_LENGTH)
-        )
         stamped_events.append(
             {
                 "format_version": EVENT_FORMAT_VERSION,
-                "id": event_id,
+                "id": new_event_id(random_bytes),
                 "at": canonical_stamped_at,
                 "device": device_id,
                 "kind": "item_stamped",
@@ -478,6 +566,8 @@ def fold_events(
             or event["kind"] == "undo"
             or event["kind"] == "amend"
             or event["kind"] == "item_stamped"
+            or event["kind"] == "session_start"
+            or event["kind"] == "session_end"
         ):
             continue
         item_state = items.get(event["item"])

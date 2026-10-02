@@ -79,6 +79,14 @@ WHAT AN ITEM ASKS, AND GRADING IT (PLAN.md D33, D34)
   L10 grade_typed_answer is exact: no binary floats, and no Decimal
       rounding (an inexact step raises instead of grading). It never raises
       for any typed text; text the rule cannot read does not match.
+
+THE WHOLE LIBRARY (PLAN.md D22, I1, I10)
+  LocatedItem: a checked Item with the path of its file. LocatedProblem: a
+  Problem with its path; lint also lists `?:` lines as notes.
+  L11 check_library_files returns as located items exactly the items with
+      no error whose id no earlier item in the library uses; every
+      problem, a later copy of an id included, is in its problems. A
+      session and lint therefore leave out the same items.
 """
 
 import decimal
@@ -130,6 +138,14 @@ class NumericKey(TypedDict):
     tolerance_is_percent: bool
 
 
+class LocatedProblem(TypedDict):
+    path: str
+    line: int
+    column: int
+    severity: Literal["error", "warning", "note"]  # note: a `?:` line, listed by lint
+    message: str
+
+
 class Item(TypedDict):
     id: str
     line: int
@@ -145,6 +161,18 @@ class Item(TypedDict):
     tags: list[str]
     by: str | None
     open_questions: list[str]
+
+
+class LocatedItem(TypedDict):
+    path: str
+    item: Item
+
+
+class LibraryCheck(TypedDict):
+    located_items: list[LocatedItem]  # L11: what a session may serve
+    problems: list[LocatedProblem]
+    written_item_ids: set[str]  # every id written down, on any item (I2: orphans)
+    item_count: int
 
 
 # Checked in this order; the first match decides. Every pattern is anchored
@@ -789,6 +817,69 @@ def grade_typed_answer(item: Item, typed_answer: str) -> bool:
             # 100 so no division happens.
             return distance * 100 <= abs(key_value) * tolerance_value
         return distance <= tolerance_value
+
+
+def check_library_files(files: list[tuple[str, str]]) -> LibraryCheck:
+    """Parse and check every library file together (PLAN.md D22; L11).
+
+    PRE   files holds (path, text) pairs, in the order ids are claimed (the
+          storage reader gives name order).
+    POST  L11. Problems hold each item's own problems, a note per `?:`
+          line, and an error on every later copy of an id (I1).
+    """
+    located_items: list[LocatedItem] = []
+    problems: list[LocatedProblem] = []
+    written_item_ids: set[str] = set()
+    # first location of each id, for I1
+    id_first_locations: dict[str, tuple[str, int]] = {}
+    item_count = 0
+    for path, text in files:
+        for source_item in parse_library_text(text):
+            item_count += 1
+            checked_item, item_problems = check_source_item(source_item)
+            for problem in item_problems:
+                problems.append(
+                    {"path": path, "line": problem["line"], "column": problem["column"],
+                     "severity": problem["severity"], "message": problem["message"]}
+                )  # fmt: skip
+            for open_question in source_item["open_questions"]:
+                problems.append(
+                    {"path": path, "line": open_question["line"], "column": 1,
+                     "severity": "note", "message": f"?: {open_question['value']}"}
+                )  # fmt: skip
+            # I1 counts every id that is written down, even on an item with
+            # other errors: the id is still claimed in the file.
+            id_is_a_later_copy = False
+            id_field = source_item["fields"].get("id")
+            if id_field is not None:
+                item_id = id_field["value"]
+                written_item_ids.add(item_id)
+                first_location = id_first_locations.get(item_id)
+                if first_location is None:
+                    id_first_locations[item_id] = (path, id_field["line"])
+                else:
+                    id_is_a_later_copy = True
+                    problems.append(
+                        {
+                            "path": path,
+                            "line": id_field["line"],
+                            "column": 1,
+                            "severity": "error",
+                            "message": (
+                                f"id {item_id} is already used at {first_location[0]}:{first_location[1]}; "
+                                "a session cannot tell these items apart (delete this id line to get a new one)"
+                            ),
+                        }
+                    )
+            # D22: an error excludes the item, and only the item (I10).
+            if checked_item is not None and not id_is_a_later_copy:
+                located_items.append({"path": path, "item": checked_item})
+    return {
+        "located_items": located_items,
+        "problems": problems,
+        "written_item_ids": written_item_ids,
+        "item_count": item_count,
+    }
 
 
 def stamp_library_text(

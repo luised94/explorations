@@ -17,9 +17,9 @@ from rep.events import (
     fold_events,
     format_canonical_time,
 )
-from rep.library import check_source_item, parse_library_text
+from rep.library import LocatedItem, check_source_item, parse_library_text
 from rep.machine import DEVICE_ID_ALPHABET
-from rep.session import DEFAULT_PRESET, LocatedItem, PlanSlot, plan_session, session_queue
+from rep.session import DEFAULT_PRESET, PlanSlot, plan_session, session_queue
 
 DEVICE = "6a2ah35zhe"
 START = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
