@@ -196,6 +196,8 @@ F18 bug  terminal_output.py, _layout_max_width (default 80)
   format_card() were 80 columns wide; after set_layout(), 60.
   Fix: clamp in _get_max_width (min of the setting and the terminal width
   minus 4), so the default is safe without a call. rep calls set_layout.
+  Fixed (thread 3, pyutils commit): the same clamp applies to the default;
+  unchanged when set_layout() was called or there is no terminal.
 
 F19 inconsistency  terminal_output.py, STDERR_IS_TERMINAL
   What: computed once at import and not refreshed by set_color(None),
@@ -204,6 +206,8 @@ F19 inconsistency  terminal_output.py, STDERR_IS_TERMINAL
   gets escape codes in a non-terminal stream.
   Fix: let clear_screen() call sys.stderr.isatty() when it runs, or have
   set_color(None) refresh it.
+  Fixed (thread 3, pyutils commit): set_color(None) refreshes it; the
+  attribute stays, so tests that set it keep working.
 
 F20 suggestion  terminal_output.py under pyright strict
   What: strict mode reports errors that trace to one line,
@@ -213,6 +217,11 @@ F20 suggestion  terminal_output.py under pyright strict
   its own files and the functions it calls return annotated types, so rep
   is unaffected.
   Fix: `re.Pattern[str]`; rename the mutable setting (verbosity_level).
+  Partly fixed (thread 3, pyutils commit): `re.Pattern[str]` and an
+  annotated list in wrap_text take strict errors from 13 to 3. Left by
+  choice: VERBOSITY and STDERR_IS_TERMINAL are module settings with
+  constant-style names that other code may read (renaming them is the
+  person's call), and sys._getframe serves the trace level.
 
 --------------------------------------------------------------------------------
 ## Suggestions for the rework: data flow, boundaries, interfaces

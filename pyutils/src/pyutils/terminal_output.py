@@ -88,8 +88,15 @@ def set_color(enabled: bool | None = None) -> None:
     """Enable or disable ANSI styling for all formatters and messages.
 
     enabled=True/False forces the state; enabled=None re-runs detection
-    (NO_COLOR, stdout+stderr tty check). Call once at startup, or from
-    tests to make output deterministic."""
+    (NO_COLOR, stdout+stderr tty check) and refreshes STDERR_IS_TERMINAL,
+    which clear_screen() reads. Call once at startup, or from tests to make
+    output deterministic."""
+    global STDERR_IS_TERMINAL
+    if enabled is None:
+        # Detected at import before; a caller that redirected stderr after
+        # import (tests, an embedding program) kept the stale answer, and
+        # clear_screen() wrote escape codes into a non-terminal stream.
+        STDERR_IS_TERMINAL = sys.stderr.isatty()
     state = _detect_color_default() if enabled is None else enabled
     for name, code in _ANSI_CODES.items():
         globals()[name] = code if state else ""
@@ -102,6 +109,9 @@ set_color(None)
 # ============================================================================
 _layout_max_width: int = 80
 _layout_align: str = "left"
+# False until set_layout() is called; until then the default width is
+# clamped to the terminal on use (see _get_max_width).
+_layout_was_set: bool = False
 
 
 def set_layout(max_width: int = 80, align: str = "left") -> None:
@@ -122,16 +132,29 @@ def set_layout(max_width: int = 80, align: str = "left") -> None:
         align: Alignment for all output: "left", "center", or "right"
                (default: "left").
     """
-    global _layout_max_width, _layout_align
+    global _layout_max_width, _layout_align, _layout_was_set
+    _layout_max_width = _clamp_to_terminal(max_width)
+    _layout_align = align
+    _layout_was_set = True
+
+
+def _clamp_to_terminal(max_width: int) -> int:
+    """max_width, kept 4 columns inside a wider terminal, or the terminal's
+    width when the terminal is narrower. One rule for an explicit width and
+    for the default."""
     terminal_width: int = get_terminal_width()
     if terminal_width > max_width:
-        _layout_max_width = min(max_width, terminal_width - 4)
-    else:
-        _layout_max_width = terminal_width
-    _layout_align = align
+        return min(max_width, terminal_width - 4)
+    return terminal_width
 
 
 def _get_max_width() -> int:
+    # Without set_layout() the default of 80 used to apply as is, so on a
+    # terminal narrower than 80 every separator and card wrapped into broken
+    # borders. The same clamp now applies to the default. With the fallback
+    # width of 80 (no terminal) the result is unchanged.
+    if not _layout_was_set:
+        return _clamp_to_terminal(_layout_max_width)
     return _layout_max_width
 
 
@@ -164,7 +187,7 @@ def set_verbosity(level: int) -> None:
 # Section 3: Primitive Layer
 # ============================================================================
 _cached_terminal_width: int | None = None
-_ANSI_PATTERN: re.Pattern = re.compile(r"\033\[[0-9;]*m")
+_ANSI_PATTERN: re.Pattern[str] = re.compile(r"\033\[[0-9;]*m")
 
 
 def get_terminal_width() -> int:
@@ -700,7 +723,7 @@ def wrap_text(text: str, indent: int = 0, width: int | None = None) -> str:
     if effective_width <= 0:
         effective_width = 1
     paragraphs = text.split("\n")
-    wrapped_paragraphs = []
+    wrapped_paragraphs: list[str] = []
     for paragraph in paragraphs:
         if paragraph.strip() == "":
             wrapped_paragraphs.append("")

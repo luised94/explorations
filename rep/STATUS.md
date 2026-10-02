@@ -36,7 +36,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             40932b8  events: scheduling days, lapse rule
             2c82e2b  session: plan and queue, pure
             e43bf50  cli: plain `rep` runs a session (first loop)
-            (this commit)  docs: D45 rounds, D46 display
+            6e7e5ab  docs: D45 rounds, D46 display
+            (this commit)  pyutils: terminal_output fixes F18-F20
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -152,7 +153,8 @@ Each code commit changes the markers of the decisions it enforces from
 | 40932b8 | events: `day` on attempts, elapsed and due by day, lapse rule | D44, D38 |
 | 2c82e2b | session: plan and queue fold, both pure; first-attempt day and the shared effective-event code, at their consumers (BUILDING.md section 2) | D31, D35 (queue rule), D36, D37, D39 |
 | e43bf50 | cli: plain `rep` runs a session (after the terminal spike), with session_start and session_end, added with their writer as D10 requires; the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35, D40 |
-| this commit | docs: D45 (rounds, grading sheet), D46 (pyutils display), use-week decks, R1 log; FINDINGS F18-F20 | D45, D46 recorded, pending |
+| 6e7e5ab | docs: D45 (rounds, grading sheet), D46 (pyutils display), use-week decks, R1 log; FINDINGS F18-F20 | D45, D46 recorded, pending |
+| this commit | pyutils: terminal_output fixes for F18-F20, before rep draws through it (outside rep/; its own tests) | - |
 | next | session: rounds fold and the grading sheet (render and parse), pure | D45 (fold, sheet) |
 | then | cli: the session in rounds, `rep review` on the same sheet, pyutils display | D45, D46, D41 |
 | then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
