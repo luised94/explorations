@@ -1,6 +1,6 @@
 # rep: status
 
-date: 2026-10-01
+date: 2026-10-02
 purpose: the numbers a build thread fills into clone-and-verify before it
 changes anything. Updated in the same commit as the change it describes.
 
@@ -39,7 +39,10 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             6e7e5ab  docs: D45 rounds, D46 display
             759c981  pyutils: terminal_output fixes F18-F20
             bd5f203  session: rounds and the grading sheet, pure
-            (this commit)  cli: the session in rounds, `rep review`
+            f0c1b06  cli: the session in rounds, `rep review`
+                     (thread 3 continued in a new chat here,
+                     BUILDING.md section 6)
+            (this commit)  docs: thread handoff, decisions after f0c1b06
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -51,7 +54,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built; D42 and D43 pending |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 and D43 pending |
 | use week | pending |
 | M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
@@ -125,9 +128,11 @@ enforcement point (today D20-D30), or if a decision marked
   are tested from Python and the shell, never from nvim. D43 closes this:
   the plugin is tested headless in the sandbox.
 - The session in rounds is tested under a pseudo-terminal in the sandbox
-  (tests/test_smoke.py, with a scripted editor), not yet in the person's
-  terminal (Windows Terminal on WSL2) with nvim as the editor; a real
-  session on a throwaway data root checks it.
+  (tests/test_smoke.py, with a scripted editor), and ran once in the
+  person's terminal (Windows Terminal on WSL2, nvim 0.11.6, a throwaway
+  data root, 2026-10-02): two rounds, two sheets, `rep review`. Not yet
+  met there: a sheet with problems, an editor exiting non-zero, Ctrl-D
+  in the middle of a round.
 - The flush before each answer line (D35, kept by D45) is
   timing-dependent: no deterministic test catches a regression; the order
   is fixed in the code and explained there.
@@ -164,7 +169,9 @@ Each code commit changes the markers of the decisions it enforces from
 | 6e7e5ab | docs: D45 (rounds, grading sheet), D46 (pyutils display), use-week decks, R1 log; FINDINGS F18-F20 | D45, D46 recorded, pending |
 | 759c981 | pyutils: terminal_output fixes for F18-F20, before rep draws through it (outside rep/; its own tests) | - |
 | bd5f203 | session: rounds fold and the grading sheet (render and read), pure; the queue stays until the loop moves over | D45, D41 (sheet) |
-| this commit | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
+| f0c1b06 | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
+| this commit | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
+| then | cli: cards after round 1 say "retest" | D45 |
 | then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
 | then | nvim plugin, tested headless | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |

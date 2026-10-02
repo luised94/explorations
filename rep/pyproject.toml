@@ -4,7 +4,8 @@ version = "0.0.0"
 description = "Personal retrieval practice: readings to items, FSRS scheduling, sessions as data."
 requires-python = ">=3.12"
 # PLAN.md D13: no third-party runtime dependency. pyutils is the person's
-# own package (PLAN.md D46), imported only by the session and review.
+# own package (PLAN.md D46), imported only by the session (`rep review`
+# prints one plain line and does not load it).
 dependencies = ["pyutils"]
 
 [project.scripts]

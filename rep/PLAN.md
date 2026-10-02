@@ -194,6 +194,23 @@ Measured while starting M3 (thread 3, 2026-10-01):
   src/pyutils/__init__.py (without, it is a namespace package). With no
   py.typed, pyright strict reports a missing stub at the import and still
   infers and checks every call from the source (D46).
+
+Measured after the session in rounds landed (thread 3, f0c1b06, 2026-10-02):
+- The session in the person's terminal (Windows Terminal on WSL2, nvim
+  0.11.6, a throwaway data root): two new items over two rounds, nvim
+  opening the sheet after each round, then `rep review`; the review sheet
+  showed the four grades as entered, and saving it unchanged wrote nothing.
+- A new item's round-1 grade sets most of its first interval; its round-2
+  grade, the same day, only adjusts it. Two attempts on one scheduling day
+  through the fold (default parameters, retention 0.9), as (round 1, round
+  2): stability in days, and due day from 2026-10-02:
+    (Good, Good)   2.31  10-04      (Good, Easy)   3.95  10-08
+    (Easy, Good)   8.30  10-12      (Hard, Good)   1.34  10-03
+    (Easy, Easy)  13.05  10-17      (Again, Good)  0.25  10-03
+  FSRS's first rating picks the initial stability, and a same-day review
+  multiplies it by a factor; Anki's first rating weighs the same way. Kept
+  as computed (the person, 2026-10-02); R4 (section 9) checks it against
+  observed recall.
 - nvim 0.11.4 runs headless in the build sandbox (release tarball from
   GitHub); the person runs nvim 0.11.6. The person's locale is C.UTF-8.
 - The explorations root .gitignore ignored uv.lock (line 20, `uv.lock`). A
@@ -1105,7 +1122,8 @@ after the first real session.
   relearn_gap is retired from the preset.
   Event model: unchanged. Self-graded attempts are written with rating
   null and graded by amends (E4). An item's k-th attempt in the session belongs to round k,
-  so replay reproduces the rounds (D31) with no new event kind.
+  so replay reproduces the rounds (D31) with no new event kind (for a
+  finished session, with the cutoff under "Replay" below).
   Rejected: per-item reveal and grading on a clearer screen (7: immediate
   feedback, but two input modes and a grading menu to build); the M3 loop
   as first built (5, the person's verdict); a full-screen terminal
@@ -1131,6 +1149,21 @@ after the first real session.
   session goes on as the automatic grades decide. Each card shows its
   place in the round, why the item is there (new, due, again) and, for an
   exact or numeric item, its check, since that answer is compared as typed.
+  Replay (approved by the person on 2026-10-02, after f0c1b06): a finished
+  session's rounds are rebuilt from its events counting only the amends
+  written before its session_end. A later `rep review` grade on an answer
+  left `?` would otherwise send that item into a round it never had: in
+  the session it left after that round (R3). Any reader of past sessions
+  (M3b's stats, the research questions in section 9) applies the cutoff.
+  An abandoned session has no session_end, so its cutoff is unknown: such
+  a reader reports those sessions apart instead of guessing.
+  Rejected, for the bound and for this rule: a round_graded event written
+  at each saved sheet (6: everything needed to rebuild a session would
+  then be in the log, the event-sourcing rule; not decisive, since nothing
+  rebuilds a session part-way, there being no resume). Trade-off: the rule
+  lives in readers, not in the events. Revisit: resuming a session, which
+  makes round_graded necessary. (Thread 3 reported this rejection as
+  recorded with f0c1b06; it was not, and is recorded here.)
 
 D46. The session's display uses pyutils.terminal_output (M3).
 Revises D13.
@@ -1319,6 +1352,15 @@ shell cue exists (target under 100 ms, D42).
      the session, change recall on that day (performance) as opposed to
      retention later (learning; Soderstrom and Bjork)? This bears on when
      sessions should run rather than on the model. Needs: the R1 data.
+  R4 First-showing grades. A new item's round-1 grade sets most of its
+     first interval (section 3: Easy then Good gives 10 days, Good then
+     Good 2). At an item's first scheduled review, is recall near the
+     target retention (0.9) for each first grade, or are Easy first
+     showings trusted too far? Needs: nothing new; group first reviews by
+     the item's first grade and compare predicted with observed recall
+     (the protocol's RMSE(bins), per group). Once there is enough history
+     the optimizer refits the initial stabilities (D7); until then the
+     grades keep the weight FSRS gives them (the person, 2026-10-02).
 - Slip and misconception labels, and flagging items in `rep review`:
   deferred until M5 or M6 asks for them (D41).
 - Findings about neighbouring code (the person's nvim config, kbd.lua, the
@@ -1360,13 +1402,18 @@ many moving parts too early).
 
 item          one question with its answer or criteria; the unit scheduled
 attempt       one try at an item in a session, committed before reveal
-grade         Again, Hard, Good or Easy; in session only Good or Again
+grade         Again, Hard, Good or Easy: automatic Good or Again for an
+              exact or numeric item, any of the four on the grading sheet
+              (D45)
 stability     FSRS: days until recall probability falls to 90%
 difficulty    FSRS: how hard the item is to raise in stability (1 to 10)
 retrievability FSRS: current probability of recall
 lapse         a failed review of an item that had been learned
 leech         an item that keeps lapsing; a sign of a bad item or a gap
 fold          computing state by applying events in order
+replay        running the fold over the whole history again, as rep does
+              on every start, to rebuild every item's state; nothing is
+              shown to the person again (I4)
 preset        the session settings, one constant (D39)
 plan          the ordered queue a session will serve, each slot with a reason
 stamp         assigning IDs to items that lack one
@@ -1508,3 +1555,15 @@ refusal       a command declines, returns its input and writes nothing
             for the lock (D41 Built); session_queue and relearn_gap are
             removed. Terms: round and grading sheet added; preset and
             budget brought up to date.
+2026-10-02  Thread 3 continued in a new chat at f0c1b06: the first had grown
+            too long to work in. BUILDING.md section 6 now says when to
+            start a new chat and how to hand over. Approved by the person
+            after reviewing f0c1b06 and its first real session: a new
+            item's first-showing grade keeps the weight FSRS gives it
+            (section 3, measured; R4 tests it once there is history); cards
+            after round 1 are labelled "retest" instead of "again", which
+            read as the grade Again (D45; the code follows in the next
+            commit); a finished session's rounds are replayed counting only
+            the amends before its session_end (D45 Replay, with the
+            round_graded rejection that f0c1b06 had not recorded). Terms:
+            replay added, grade brought up to date.

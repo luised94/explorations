@@ -1,6 +1,6 @@
 # rep: findings about neighbouring code
 
-date: 2026-10-01
+date: 2026-10-02
 scope: code rep depends on or sits beside but does not own: the person's
 nvim config (my_config/nvim: init.lua, lua/plugins.lua), the nvim
 extensions (kbd.lua), and the explorations repository. rep never fixes
@@ -264,6 +264,9 @@ F23 suggestion  pyutils, build output in src/
   already ignores it is not known here: `git check-ignore -v
   pyutils/src/pyutils.egg-info` answers it.
   Fix: if not ignored, `*.egg-info/` in pyutils/.gitignore.
+  Closed (2026-10-02, nothing to change): already ignored. On the
+  person's machine `git check-ignore -v pyutils/src/pyutils.egg-info`
+  printed `pyutils/.gitignore:3:*.egg-info/`.
 
 --------------------------------------------------------------------------------
 ## Suggestions for the rework: data flow, boundaries, interfaces

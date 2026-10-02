@@ -1,6 +1,6 @@
 # rep: how a build thread works
 
-date: 2026-10-01
+date: 2026-10-02
 status: practice, written down after thread 2 (M2), extended in thread 3. Read with PLAN.md,
 CONVENTIONS.md and STATUS.md at the start of every build thread.
 precedence: the person's working defaults (preferences) come first, then
@@ -13,10 +13,15 @@ has settled on, so a new thread does not rediscover them.
 ## 1. Setting up the sandbox (clone-and-verify)
 --------------------------------------------------------------------------------
 
-- The pack is a tar of rep/ at BASE_SHA. It may arrive without .git. Make
-  a local git repository whose first commit is exactly the pack (nothing
-  added), so every patch can be built by diffing two real commits. Keep
-  uv.lock out of that commit if the pack lacked it.
+- The packs are tars of rep/ and of pyutils/ (rep's install needs the
+  sibling, PLAN.md D46) at the commit the thread starts from; section 6
+  has how they are made. They arrive without .git. Make a local git
+  repository whose first commit is exactly the packs (nothing added),
+  so every patch can be built by diffing two real commits, with paths
+  rep/... and pyutils/... as in the person's repository. Keep uv.lock
+  out of that commit if the pack lacked it. `git get-tar-commit-id` on
+  each pack prints the commit it was made from: it must be the HEAD
+  the person reported.
 - A sandbox SHA exists only in the sandbox. Never cite one to the person;
   cite the person's SHAs, which they paste back after each commit.
 - Match the recorded toolchain before running anything:
@@ -264,6 +269,26 @@ These add to the person's code style and to PLAN.md D14.
   its details; what is found wrong in it is written down for the rework,
   not fixed from here.
 - The person's machine (2026-10-01): nvim 0.11.6, locale C.UTF-8.
+- Threads are bounded by length, not by milestone. Thread 3 grew too
+  long to work in halfway through M3, after thirteen commits (seven of
+  them code) and the documents read at its start. Start a new chat at
+  a commit boundary after about six commits, or sooner when the person
+  finds the chat long; tune the number from experience. The handoff:
+  1. Once the last commit is verified and committed, the person packs
+     both directories at HEAD, each under its own name (one name for
+     both makes the second archive overwrite the first):
+       H=$(git rev-parse --short HEAD)
+       git archive --format=tar.gz -o "$D/pack-$H-rep.tar.gz" HEAD rep/
+       git archive --format=tar.gz -o "$D/pack-$H-pyutils.tar.gz" HEAD pyutils/
+  2. The new chat gets both packs, the old chat's last response and
+     the output of its commands, and says which mode it opens in:
+     "implement mode" to continue an agreed series; without it,
+     design mode applies (the person's working defaults).
+  3. The new thread runs section 1 (clone-and-verify): the tar commit
+     ids, then the tests file by file against STATUS.md's breakdown.
+     Its first commit records in STATUS.md where the new chat began.
+  What the old chat knew and the files do not say is lost, so it goes
+  into these files before the handoff, as at any thread's end.
 
 --------------------------------------------------------------------------------
 ## 7. Working vocabulary
