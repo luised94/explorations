@@ -451,7 +451,9 @@ def main(argument_list: list[str] | None = None) -> int:
                 located_item = located_items_by_id[item_id]
                 item = located_item["item"]
                 round_position = len(round_state["round_attempt_ids"]) + 1
-                card_label = reason_by_item_id[item_id] if round_number == 1 else "again"
+                # Not "again": that is a grade word, and an item graded Easy
+                # that returns (a new item always does, D36) read as a miss.
+                card_label = reason_by_item_id[item_id] if round_number == 1 else "retest"
                 if item["check"] != "self":
                     card_label += f", {item['check']}"  # the answer is compared as typed (D20)
                 terminal_output.emit(

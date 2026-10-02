@@ -42,7 +42,9 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             f0c1b06  cli: the session in rounds, `rep review`
                      (thread 3 continued in a new chat here,
                      BUILDING.md section 6)
-            (this commit)  docs: thread handoff, decisions after f0c1b06
+            0026     docs: thread handoff, decisions after f0c1b06
+                     (SHA filled in once reported)
+            (this commit)  cli: cards after round 1 say "retest"
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -170,8 +172,8 @@ Each code commit changes the markers of the decisions it enforces from
 | 759c981 | pyutils: terminal_output fixes for F18-F20, before rep draws through it (outside rep/; its own tests) | - |
 | bd5f203 | session: rounds fold and the grading sheet (render and read), pure; the queue stays until the loop moves over | D45, D41 (sheet) |
 | f0c1b06 | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
-| this commit | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
-| then | cli: cards after round 1 say "retest" | D45 |
+| 0026 | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
+| this commit | cli: cards after round 1 say "retest" | D45 |
 | then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
 | then | nvim plugin, tested headless | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |

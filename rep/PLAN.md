@@ -1147,8 +1147,11 @@ after the first real session.
   each problem as a comment right above its line; the person's edits stay.
   An editor that exits non-zero or cannot be run applies nothing, and the
   session goes on as the automatic grades decide. Each card shows its
-  place in the round, why the item is there (new, due, again) and, for an
+  place in the round, why the item is there (new, due, retest) and, for an
   exact or numeric item, its check, since that answer is compared as typed.
+  Cards after round 1 say "retest", not "again" as first built: in the
+  person's first session in rounds, "again" read as the grade Again on
+  an item just graded Easy (approved 2026-10-02).
   Replay (approved by the person on 2026-10-02, after f0c1b06): a finished
   session's rounds are rebuilt from its events counting only the amends
   written before its session_end. A later `rep review` grade on an answer
@@ -1440,6 +1443,9 @@ round         one showing of each of its items; round 1 is the plan, each
 grading sheet the text file a round's or review's answers are graded in,
               in $EDITOR: one read line per answer (D41, D45)
 relearn gap   retired by D45: the rest of a round is the gap (D36)
+retest        an item's showing in a round after the first, and its
+              card's label: it returns by D36's criterion, which a new
+              item meets on its first showing whatever its grade (D45)
 fingerprint   a hash of what an item asks, stored on each attempt, so a
               later reader can tell whether the item changed since (D33)
 session       one run of plain `rep`: a session_start event, attempts that

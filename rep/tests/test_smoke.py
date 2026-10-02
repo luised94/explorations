@@ -476,7 +476,7 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
     assert "5 answers; 0 wait for `rep review`." in output
     # A 76-column card centered on 100 columns: 12 spaces before each border.
     assert "\n" + " " * 12 + "+" + "-" * 74 + "+" in output.replace("\r\n", "\n")
-    assert "1 of 2" in output and "new, exact" in output and "again, exact" in output
+    assert "1 of 2" in output and "new, exact" in output and "retest, exact" in output
     # Nothing is revealed before the sheet (D45).
     assert "half of Vmax" not in output.replace("half of Vmax\r", "")
     session_events = read_session_events(data_root)
