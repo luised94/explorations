@@ -227,7 +227,7 @@ def test_add_is_refused_while_another_process_writes(tmp_path: Path) -> None:
 
 LINT_BIB = b"@book{Lehninger2021,\n}\n@article{Matsui1980,\n}\n"
 ATTEMPT_LINE = (
-    '{"at":"2026-09-01T10:00:00.000000Z","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+    '{"at":"2026-09-01T10:00:00.000000Z","day":"2026-09-01","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
     '"id":"aaaaaaaaaaaa","item":"renamed-7q2m","kind":"attempt","latency_milliseconds":900,'
     '"rating":3,"session":"s","typed_answer":null}\n'
 )

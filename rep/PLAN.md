@@ -840,7 +840,7 @@ D37. Order of new items (M3, pending).
   Trade-off: an item with a hand-written id has no capture time.
   Revisit: the use week.
 
-D38. What counts as a lapse (M3, pending).
+D38. What counts as a lapse (M3).
   Choice: a lapse is an Again on an item with a memory state, at least one
   scheduling day (D44) after its previous graded review: exactly where
   memory_model.py applies its post-lapse stability formula instead of the
@@ -962,7 +962,7 @@ D43. nvim plugin (M3, pending). Revises D12.
   work without it.
   Revisit: the person's nvim config rework.
 
-D44. Elapsed time is counted in scheduling days (M3, pending). Revises
+D44. Elapsed time is counted in scheduling days (M3). Revises
 D7's elapsed days and D36's due rule; approved by the person on 2026-10-01
 after the plan lock, before any code depends on it.
   Choice: every attempt event carries `day`, the scheduling day the

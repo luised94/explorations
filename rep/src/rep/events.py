@@ -15,6 +15,11 @@ REPRESENTATION
   session_start and session_end (PLAN.md D10) are added with their writer
   in M3.
 
+  Every attempt carries `day` (PLAN.md D44): its scheduling day, the local
+  date it was committed in, moved back by the day start hour, written as
+  YYYY-MM-DD by the writer and never recomputed. Elapsed time between
+  reviews is counted in these days, not in 24-hour periods.
+
   ItemState: what the fold knows about one item. FoldResult: every item's
   state plus problems found, as data.
 
@@ -30,13 +35,19 @@ INVARIANTS
   E5  An attempt whose effective rating is None (ungraded) changes no memory.
   E6  Due dates are deterministic: fuzz comes from a hash of the item id and
       its graded review index, never from a random number generator.
+  E7  (PLAN.md D44) Elapsed days between two graded reviews are the
+      difference of their recorded days. A difference below zero (two
+      machines in different time zones) is reported and counted as 0.
+  E8  (PLAN.md D38) A lapse is an Again on an item with a memory state at
+      least one elapsed day after its previous graded review: where
+      memory_model.next_review takes its lapse branch.
 """
 
 import hashlib
 import json
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal, TypedDict, cast
 
 from rep.machine import DEVICE_ID_ALPHABET, DEVICE_ID_PATTERN
@@ -59,6 +70,9 @@ EVENT_FORMAT_VERSION = 1
 EVENT_ID_LENGTH = 12
 EVENT_ID_PATTERN = re.compile(r"^[" + DEVICE_ID_ALPHABET + r"]{12}$")
 CANONICAL_TIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+# PLAN.md D44. ASCII digits only: date.fromisoformat alone would also take
+# other forms ("20261001", week dates) that two writers could disagree on.
+SCHEDULING_DAY_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
 class EventDecodeError(Exception):
@@ -77,6 +91,7 @@ class AttemptEvent(TypedDict):
     latency_milliseconds: int  # prompt shown to answer committed
     typed_answer: str | None  # None unless the item asks for a typed attempt
     fingerprint: str  # hash of the item text, to detect edits since review
+    day: str  # scheduling day, YYYY-MM-DD (PLAN.md D44)
 
 
 class AmendEvent(TypedDict):
@@ -135,11 +150,11 @@ Event = AttemptEvent | AmendEvent | UndoEvent | SuspendEvent | UnsuspendEvent | 
 class ItemState(TypedDict):
     item: str
     memory: MemoryState | None  # None until the first graded review
-    last_review_at: str | None  # canonical UTC time of the last graded review
+    last_review_day: str | None  # scheduling day of the last graded review
     scheduled_interval_days: int | None  # before fuzz
-    due_at: str | None  # canonical UTC time; last review plus fuzzed interval
+    due_day: str | None  # scheduling day; last review's day plus fuzzed interval
     graded_review_count: int
-    lapse_count: int  # Again on an item that already had a memory state
+    lapse_count: int  # E8
     suspended: bool
 
 
@@ -224,6 +239,7 @@ def decode_event(line: str) -> Event:
         latency_milliseconds = fields.get("latency_milliseconds")
         typed_answer = fields.get("typed_answer")
         fingerprint = fields.get("fingerprint")
+        day = fields.get("day")
         if not isinstance(session, str) or session == "":
             raise EventDecodeError("attempt.session must be a non-empty string")
         # The item id format belongs to the library grammar (M2); here only
@@ -240,6 +256,12 @@ def decode_event(line: str) -> Event:
             raise EventDecodeError("attempt.typed_answer must be a string or null")
         if not isinstance(fingerprint, str) or fingerprint == "":
             raise EventDecodeError("attempt.fingerprint must be a non-empty string")
+        if not isinstance(day, str) or SCHEDULING_DAY_PATTERN.match(day) is None:
+            raise EventDecodeError(f"attempt.day must be a scheduling day YYYY-MM-DD, found {day!r}")
+        try:
+            date.fromisoformat(day)
+        except ValueError as day_error:
+            raise EventDecodeError(f"attempt.day is not a real date: {day!r}") from day_error
         attempt_event: AttemptEvent = {
             "format_version": format_version,
             "id": event_id,
@@ -252,6 +274,7 @@ def decode_event(line: str) -> Event:
             "latency_milliseconds": latency_milliseconds,
             "typed_answer": typed_answer,
             "fingerprint": fingerprint,
+            "day": day,
         }
         return attempt_event
 
@@ -430,9 +453,9 @@ def fold_events(
             new_item_state: ItemState = {
                 "item": event["item"],
                 "memory": None,
-                "last_review_at": None,
+                "last_review_day": None,
                 "scheduled_interval_days": None,
-                "due_at": None,
+                "due_day": None,
                 "graded_review_count": 0,
                 "lapse_count": 0,
                 "suspended": False,
@@ -447,17 +470,29 @@ def fold_events(
         if effective_rating is None:
             continue  # E5
 
-        reviewed_at = parse_canonical_time(event["at"])
+        review_day = date.fromisoformat(event["day"])
         previous_memory = item_state["memory"]
-        previous_review_at = item_state["last_review_at"]
-        if previous_memory is None or previous_review_at is None:
+        previous_review_day = item_state["last_review_day"]
+        if previous_memory is None or previous_review_day is None:
             new_memory = first_review(effective_rating, parameters)
         else:
-            # timedelta.days floors, exactly as py-fsrs measures elapsed days;
-            # the sort guarantees the difference is not negative.
-            elapsed_whole_days = (reviewed_at - parse_canonical_time(previous_review_at)).days
+            # E7: days, not 24-hour periods. py-fsrs floors 24-hour periods,
+            # which folded a review served today, but under 24 hours after the
+            # last one, as a same-day review (measured, PLAN.md section 3).
+            elapsed_whole_days = (review_day - date.fromisoformat(previous_review_day)).days
+            if elapsed_whole_days < 0:
+                # Sorted by time, yet an earlier day: the two reviews were
+                # written under different time zones or day start hours.
+                problems.append(
+                    f"event {event['id']}: day {event['day']} is before the previous review's day "
+                    f"{previous_review_day} (time zones differ?); counted as the same day"
+                )
+                elapsed_whole_days = 0
             new_memory = next_review(previous_memory, effective_rating, elapsed_whole_days, parameters)
-            if effective_rating == AGAIN:
+            # PLAN.md D38, E8: the lapse is counted exactly where next_review
+            # applies its post-lapse formula; an Again later the same day is
+            # relearning.
+            if effective_rating == AGAIN and elapsed_whole_days >= 1:
                 item_state["lapse_count"] += 1
 
         interval_days = next_interval_days(
@@ -472,9 +507,9 @@ def fold_events(
         due_days = fuzzed_interval_days(interval_days, fuzz_fraction, maximum_interval_days)
 
         item_state["memory"] = new_memory
-        item_state["last_review_at"] = event["at"]
+        item_state["last_review_day"] = event["day"]
         item_state["scheduled_interval_days"] = interval_days
-        item_state["due_at"] = format_canonical_time(reviewed_at + timedelta(days=due_days))
+        item_state["due_day"] = (review_day + timedelta(days=due_days)).isoformat()
         item_state["graded_review_count"] += 1
 
     return {"items": items, "problems": problems}

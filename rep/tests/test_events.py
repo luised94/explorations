@@ -2,7 +2,7 @@
 
 import json
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from hypothesis import given
@@ -39,6 +39,12 @@ DEVICE = "6a2ah35zhe"
 START = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
 
 
+def scheduling_day_for(moment: datetime) -> str:
+    # The tests' own writer rule (PLAN.md D44): UTC as the local zone, a
+    # 04:00 rollover. The fold never derives a day; it reads this one.
+    return (moment - timedelta(hours=4)).date().isoformat()
+
+
 def make_attempt(
     event_id: str, moment: datetime, item: str, rating: int | None
 ) -> AttemptEvent:
@@ -54,6 +60,7 @@ def make_attempt(
         "latency_milliseconds": 4200,
         "typed_answer": None,
         "fingerprint": "fingerprint-one",
+        "day": scheduling_day_for(moment),
     }
 
 
@@ -144,6 +151,10 @@ def test_unknown_fields_are_dropped_not_rejected() -> None:
         ("latency_milliseconds", -1, "latency"),
         ("fingerprint", "", "fingerprint"),
         ("session", "", "session"),
+        ("day", "2026-02-30", "not a real date"),
+        ("day", "20260101", "scheduling day"),
+        ("day", "2026-W01-1", "scheduling day"),
+        ("day", None, "scheduling day"),
     ],
 )
 def test_invalid_field_is_rejected_with_its_name(
@@ -179,37 +190,37 @@ def test_fold_equals_stepping_the_model_by_hand(steps: list[tuple[int, str, int 
     result = fold_events(events)
     assert result["problems"] == []
     expected_memory: dict[str, MemoryState] = {}
-    expected_last_review: dict[str, datetime] = {}
+    expected_last_review_day: dict[str, date] = {}
     for event in events:
         assert event["kind"] == "attempt"
         rating = event["rating"]
         if rating is None:
             continue
-        moment = parse_canonical_time(event["at"])
+        review_day = date.fromisoformat(event["day"])
         previous = expected_memory.get(event["item"])
         if previous is None:
             expected_memory[event["item"]] = first_review(rating, DEFAULT_PARAMETERS)
         else:
-            elapsed_whole_days = (moment - expected_last_review[event["item"]]).days
+            elapsed_whole_days = (review_day - expected_last_review_day[event["item"]]).days
             expected_memory[event["item"]] = next_review(
                 previous, rating, elapsed_whole_days, DEFAULT_PARAMETERS
             )
-        expected_last_review[event["item"]] = moment
+        expected_last_review_day[event["item"]] = review_day
     for item, item_state in result["items"].items():
         assert item_state["memory"] == expected_memory.get(item)
         memory = item_state["memory"]
         if memory is None:
-            assert item_state["due_at"] is None
+            assert item_state["due_day"] is None
             continue
         interval = next_interval_days(
             memory["stability"], DEFAULT_DESIRED_RETENTION, DEFAULT_MAXIMUM_INTERVAL_DAYS,
             DEFAULT_PARAMETERS,
         )  # fmt: skip
         assert item_state["scheduled_interval_days"] == interval
-        due_at = item_state["due_at"]
-        last_review_at = item_state["last_review_at"]
-        assert due_at is not None and last_review_at is not None
-        due_days = (parse_canonical_time(due_at) - parse_canonical_time(last_review_at)).days
+        due_day = item_state["due_day"]
+        last_review_day = item_state["last_review_day"]
+        assert due_day is not None and last_review_day is not None
+        due_days = (date.fromisoformat(due_day) - date.fromisoformat(last_review_day)).days
         # Loose sanity window only; exact fuzz is pinned against py-fsrs in
         # test_memory_model. The window half-width grows to about
         # 2 + 5% of the interval, and rounding can land one day past it.
@@ -292,6 +303,73 @@ def test_lapses_count_only_again_after_a_first_review() -> None:
     item_state = fold_events(events)["items"]["km-measure-7q2m"]
     assert item_state["lapse_count"] == 1
     assert item_state["graded_review_count"] == 3
+
+
+def test_relearning_in_one_day_is_not_a_lapse() -> None:
+    # PLAN.md D38, E8. The M1 fold counted 1 lapse for a new item graded
+    # Again, Again, Good in its first session (measured, PLAN.md section 3).
+    first_session: list[Event] = [
+        make_attempt(event_id_for(0), START, "km-measure-7q2m", 1),
+        make_attempt(event_id_for(1), START + timedelta(minutes=5), "km-measure-7q2m", 1),
+        make_attempt(event_id_for(2), START + timedelta(minutes=10), "km-measure-7q2m", 3),
+    ]
+    assert fold_events(first_session)["items"]["km-measure-7q2m"]["lapse_count"] == 0
+    # Forgotten three days later, then relearned in the same session: one lapse.
+    later_session: list[Event] = [
+        make_attempt(event_id_for(3), START + timedelta(days=3), "km-measure-7q2m", 1),
+        make_attempt(event_id_for(4), START + timedelta(days=3, minutes=5), "km-measure-7q2m", 1),
+        make_attempt(event_id_for(5), START + timedelta(days=3, minutes=10), "km-measure-7q2m", 3),
+    ]
+    assert fold_events([*first_session, *later_session])["items"]["km-measure-7q2m"]["lapse_count"] == 1
+
+
+def test_time_of_day_of_a_session_does_not_change_memory() -> None:
+    # PLAN.md D44, E7. Six daily Goods with each session 30 minutes earlier
+    # than the day before, and with each 30 minutes later: one review per
+    # scheduling day either way, so the memory must be the same. Under the
+    # M1 fold the earlier sessions ended at 2.31 days of stability and the
+    # later ones at 24.76 (measured, PLAN.md section 3).
+    def daily_goods(step: timedelta) -> list[Event]:
+        first_moment = datetime(2026, 1, 1, 20, 0, tzinfo=UTC)
+        return [
+            make_attempt(event_id_for(position), first_moment + step * position, "km-measure-7q2m", 3)
+            for position in range(6)
+        ]
+
+    earlier_each_day = fold_events(daily_goods(timedelta(hours=23, minutes=30)))
+    later_each_day = fold_events(daily_goods(timedelta(hours=24, minutes=30)))
+    assert earlier_each_day["items"]["km-measure-7q2m"]["memory"] == later_each_day["items"]["km-measure-7q2m"]["memory"]
+    stability = later_each_day["items"]["km-measure-7q2m"]["memory"]
+    assert stability is not None and stability["stability"] > 10
+
+
+def test_fuzz_spreads_items_reviewed_alike_over_several_due_days() -> None:
+    # What fuzz is for (E6): items reviewed on the same days with the same
+    # grades must not all come due on one day. Twenty items, Good on day 0
+    # and Good on day 3, reach an interval where fuzz applies (3 days or
+    # more); without fuzz all twenty share one due day. The hash is fixed,
+    # so the spread is the same on every run.
+    events: list[Event] = []
+    for item_position in range(20):
+        item_id = f"item{item_position}-7q2m"
+        events.append(make_attempt(event_id_for(2 * item_position), START, item_id, 3))
+        events.append(make_attempt(event_id_for(2 * item_position + 1), START + timedelta(days=3), item_id, 3))
+    item_states = fold_events(events)["items"].values()
+    intervals = {item_state["scheduled_interval_days"] for item_state in item_states}
+    assert len(intervals) == 1 and min(interval for interval in intervals if interval is not None) >= 3
+    assert len({item_state["due_day"] for item_state in item_states}) > 1
+
+
+def test_a_day_before_the_previous_review_is_reported_and_counted_as_the_same_day() -> None:
+    # Two machines in different time zones can write a later time with an
+    # earlier day. The fold must neither raise nor go negative (E7).
+    first = make_attempt(event_id_for(0), START, "km-measure-7q2m", 3)
+    second = make_attempt(event_id_for(1), START + timedelta(hours=2), "km-measure-7q2m", 3)
+    second["day"] = (date.fromisoformat(first["day"]) - timedelta(days=1)).isoformat()
+    same_day_second = make_attempt(event_id_for(1), START + timedelta(hours=2), "km-measure-7q2m", 3)
+    result = fold_events([first, second])
+    assert len(result["problems"]) == 1 and "is before the previous review's day" in result["problems"][0]
+    assert result["items"]["km-measure-7q2m"]["memory"] == fold_events([first, same_day_second])["items"]["km-measure-7q2m"]["memory"]
 
 
 def test_suspend_and_unsuspend_latest_wins_and_undo_applies() -> None:
