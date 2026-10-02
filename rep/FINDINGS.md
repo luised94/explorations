@@ -223,6 +223,48 @@ F20 suggestion  terminal_output.py under pyright strict
   constant-style names that other code may read (renaming them is the
   person's call), and sys._getframe serves the trace level.
 
+F21 bug  terminal_output.py, get_terminal_width
+  What: a terminal that reports 0 columns is taken at its word, so the
+  layout width becomes 0 and cards break into one character per line.
+  os.get_terminal_size() does not raise there, so the 80-column fallback
+  never runs. A new pseudo-terminal reports 0 until its size is set:
+  `script`, some container and CI terminals, test harnesses.
+  Evidence (thread 3, sandbox, a fresh pseudo-terminal, NO_COLOR):
+  os.get_terminal_size() gave columns=0, lines=0; after set_layout(76,
+  "center"), format_card("1 of 2", "new", "Capital of France?") gave
+  "++", "||", "| 1 of 2 |", then "| C |", "| a |" ... one line per
+  letter. shutil.get_terminal_size() on the same terminal gave 80x24.
+  Fix: use shutil.get_terminal_size((80, 24)).columns, which falls back
+  when the size is 0 and also honors $COLUMNS. rep's tests set a size
+  instead (PLAN.md D46); a person's terminal always has one, so rep is
+  unaffected in use.
+  Also: the width is cached at the first call, so a terminal resized
+  during a session keeps the old layout until the program restarts; fine
+  for rep, worth a sentence in the module's docstring.
+
+F22 suggestion  pyutils packaging, no py.typed
+  What: pyutils carries type annotations but no py.typed marker (PEP 561),
+  so a strict type checker in a consumer reports a missing stub at the
+  import. rep silences that one rule on its import line (PLAN.md D46);
+  calls are still checked against the annotations.
+  Fix: an empty src/pyutils/py.typed, and
+  [tool.setuptools.package-data] pyutils = ["py.typed"] in pyproject.toml
+  so a non-editable install carries it. Then rep's ignore comment can go.
+  Evidence: in the sandbox, an empty src/pyutils/py.typed took the error
+  from 1 to 0 for `from pyutils import terminal_output` under strict mode,
+  with the editable install and no __init__.py.
+
+F23 suggestion  pyutils, build output in src/
+  What: installing pyutils editable (rep's `uv sync` and `uv tool install
+  --editable` do, PLAN.md D46) has setuptools write
+  src/pyutils.egg-info/ beside the package. Unless something ignores it,
+  `git status` lists it as untracked.
+  Evidence: in the sandbox, `uv sync` in rep/ created
+  pyutils/src/pyutils.egg-info/. Whether the explorations root .gitignore
+  already ignores it is not known here: `git check-ignore -v
+  pyutils/src/pyutils.egg-info` answers it.
+  Fix: if not ignored, `*.egg-info/` in pyutils/.gitignore.
+
 --------------------------------------------------------------------------------
 ## Suggestions for the rework: data flow, boundaries, interfaces
 --------------------------------------------------------------------------------

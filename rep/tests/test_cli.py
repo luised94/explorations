@@ -6,6 +6,8 @@ drawn is made here through main() with the draws chosen by the test.
 """
 
 import io
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,3 +53,22 @@ def test_stamp_redraws_an_id_used_in_another_library_file(tmp_path: Path, monkey
     assert exit_code == 0
     assert standard_output.getvalue() == b"### Q: Km?\nid: km-bbbb\nA: y\n"
     assert suffix_draws == []
+
+
+def test_the_commands_nvim_runs_never_load_the_display_package(tmp_path: Path) -> None:
+    # PLAN.md D46: pyutils is imported by the session and review only, so a
+    # fault in it cannot break stamp on save or lint through :make. A fresh
+    # interpreter, so no other test's imports count.
+    (tmp_path / "learning").mkdir()
+    script = (
+        "import io, sys\n"
+        "from rep.cli import main\n"
+        "sys.stdin = io.TextIOWrapper(io.BytesIO(b'### Q: q\\nA: x\\n'))\n"
+        "exit_codes = [main(['stamp']), main(['lint'])]\n"
+        "print(exit_codes, 'pyutils' in sys.modules, file=sys.stderr)\n"
+    )
+    environment = {**os.environ, "HOME": str(tmp_path)}
+    for variable in ("REP_DATA_ROOT", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+        environment.pop(variable, None)
+    result = subprocess.run([sys.executable, "-c", script], env=environment, capture_output=True, check=False)
+    assert result.stderr.decode().splitlines()[-1] == "[0, 0] False", result.stderr

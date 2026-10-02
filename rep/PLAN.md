@@ -184,6 +184,16 @@ Measured while starting M3 (thread 3, 2026-10-01):
   each 30 minutes later (24.5 hours apart), 24.76 days and 25. Every
   review under 24 hours after the last was folded as a same-day review
   (D44).
+- A new pseudo-terminal reports 0 columns and 0 rows until TIOCSWINSZ
+  sets a size; pyutils then lays content out to width 0 (FINDINGS.md F21).
+  A real terminal always reports its size. Nor is a new pseudo-terminal
+  the controlling terminal of a process started on it, so Ctrl-C typed
+  into it delivers no SIGINT; the terminal tests make it the controlling
+  terminal (a new session, then TIOCSCTTY), as a person's terminal is.
+- pyutils imports from its editable install with or without
+  src/pyutils/__init__.py (without, it is a namespace package). With no
+  py.typed, pyright strict reports a missing stub at the import and still
+  infers and checks every call from the source (D46).
 - nvim 0.11.4 runs headless in the build sandbox (release tarball from
   GitHub); the person runs nvim 0.11.6. The person's locale is C.UTF-8.
 - The explorations root .gitignore ignored uv.lock (line 20, `uv.lock`). A
@@ -952,6 +962,14 @@ D41. `rep review` (M3). Revises D8.
   review` opens it for attempts still ungraded. Lines carry the item's
   path:line, so `gF` opens the item; the grade words are again, hard,
   good, easy, ? and suspend.
+  Built (thread 3): the ungraded attempts listed are those of every device
+  and session (session.py V1). An attempt whose item is in no library file,
+  or has an error, is left off: with no key there is nothing to grade
+  against, and lint lists both. An entry whose item changed since the
+  answer (its fingerprint differs, D33) carries a note that the key shown
+  is today's. `rep review` waits for the writer lock as a session does
+  (D32) instead of refusing as stamp and add do (D27): a refusal would
+  discard grades the person had just written.
 
 D42. `rep why`, `rep unsuspend`, startup cost (M3, pending).
   Choice: `rep why ID` prints where the item is (path:line), its state
@@ -1100,8 +1118,21 @@ after the first real session.
   shows it right after its feedback.
   Revisit: E2 sessions over 15 minutes; grading sheets the person finds
   slow.
+  Built (thread 3, with the session loop): the rounds fold looks at most
+  one round past the last graded one (session.py R5). The events cannot
+  say when a sheet was saved (saved unchanged, it writes nothing), so the
+  loop counts graded rounds; without the bound, a round's ungraded answers
+  decided the next round and self-graded items left before their sheet
+  (found by the terminal test, not by the pure tests, whose helper graded
+  every answer as it was given). The sheet is a file in the state
+  directory, removed once read. A sheet with problems is reopened with
+  each problem as a comment right above its line; the person's edits stay.
+  An editor that exits non-zero or cannot be run applies nothing, and the
+  session goes on as the automatic grades decide. Each card shows its
+  place in the round, why the item is there (new, due, again) and, for an
+  exact or numeric item, its check, since that answer is compared as typed.
 
-D46. The session's display uses pyutils.terminal_output (M3, pending).
+D46. The session's display uses pyutils.terminal_output (M3).
 Revises D13.
   Choice: the session and `rep review` draw through the person's pyutils
   package (explorations/pyutils, module terminal_output): a card per
@@ -1120,9 +1151,19 @@ Revises D13.
   Trade-off: rep's runtime now needs the sibling pyutils directory (both
   machines clone explorations); uv.lock changes; pyutils keeps module
   state (layout, color), which the session sets once.
-  Verify before use (in the code commit): pyutils/pyproject.toml (name,
-  Python version, build backend), and that `uv tool install --editable`
-  resolves the path source.
+  Verified (thread 3, in the code commit): pyutils/pyproject.toml names
+  pyutils, requires Python 3.10 or later and builds with setuptools from
+  src/; `uv sync` and `uv tool install --editable` both resolve the path
+  source, and uv.lock records it as editable ../pyutils (section 3).
+  Built: only the session draws through pyutils; `rep review` prints one
+  plain summary line, so it does not import it (narrower than the choice,
+  nothing to draw). Prompts that input() writes, and plain lines, start at
+  the column emit() gives a card, found with pyutils' own align_text. A
+  test runs stamp and lint in a fresh interpreter and checks pyutils was
+  never imported. pyutils has no py.typed, so the import silences
+  pyright's missing-stub rule there; the calls are still type-checked
+  (FINDINGS.md F22). The terminal tests set NO_COLOR and a 100-column size
+  (F21).
   Revisit: pyutils leaving explorations, or a second consumer needing a
   different look.
 
@@ -1326,7 +1367,7 @@ retrievability FSRS: current probability of recall
 lapse         a failed review of an item that had been learned
 leech         an item that keeps lapsing; a sign of a bad item or a gap
 fold          computing state by applying events in order
-preset        named session settings in config.toml
+preset        the session settings, one constant (D39)
 plan          the ordered queue a session will serve, each slot with a reason
 stamp         assigning IDs to items that lack one
 inbox         proposals from a model, waiting for your triage
@@ -1343,12 +1384,15 @@ checked item  an item a session may use: built only when no error remains
 problem       a finding about a file or item, as data: line, column,
               severity (error, warning; lint also lists notes) and message
 capture       creating an item; recorded as an item_stamped event (E1)
-budget        the most attempts a plan serves before relearning: reviews
-              first, then new items at new_item_cost each (D36)
+budget        the most attempts a plan serves before the retry rounds:
+              reviews first, then new items at new_item_cost each (D36)
 scheduling day the local date an attempt belongs to, rolling over at
               day_start_hour; recorded on each attempt (D44)
-relearn gap   how many other items come between two showings of an item
-              in one session (D36)
+round         one showing of each of its items; round 1 is the plan, each
+              later round the items the last one's grades send back (D45)
+grading sheet the text file a round's or review's answers are graded in,
+              in $EDITOR: one read line per answer (D41, D45)
+relearn gap   retired by D45: the rest of a round is the gap (D36)
 fingerprint   a hash of what an item asks, stored on each attempt, so a
               later reader can tell whether the item changed since (D33)
 session       one run of plain `rep`: a session_start event, attempts that
@@ -1456,3 +1500,11 @@ refusal       a command declines, returns its input and writes nothing
             a recorded correction), and E2 counts corrections as amends of
             attempts that already had a grade. Both keep the measures D20
             and E2 depend on; listed here for the person's review.
+2026-10-02  Thread 3, the session in rounds (the CLI commit): D46 verified
+            and enforced. Found while building and listed for the person's
+            review: the rounds fold takes the last graded round plus one,
+            since nothing in the events marks a saved sheet (D45 Built);
+            sheet problems are shown above their lines; `rep review` waits
+            for the lock (D41 Built); session_queue and relearn_gap are
+            removed. Terms: round and grading sheet added; preset and
+            budget brought up to date.

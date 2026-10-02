@@ -129,13 +129,27 @@ real caller arrives, in that caller's commit, and the message says so.
   really different code. Thread 3 met two that were not (a dict literal
   whose duplicated keys were overridden; a module still imported under
   another name), which would have "passed" or "failed" for nothing.
-- Planted bugs in the installed command: put a shim named `rep` first on
-  PATH, `#!<venv python>` then `import sys; sys.path.insert(0,
-  "<copy>/src"); from rep.cli import main; sys.exit(main())`.
-- Terminal behavior (single keys, line input) is tested under a
-  pseudo-terminal (the `pty` module), never by assuming the person's
-  terminal; the person then confirms with a real session on a throwaway
-  root.
+  (The PATH shim for planted bugs in the installed command is in the
+  first entry of this section.)
+- Terminal behavior (line input, Ctrl-D, Ctrl-C, the editor) is tested
+  under a pseudo-terminal (the `pty` module), never by assuming the
+  person's terminal; the person then confirms with a real session on a
+  throwaway root. Make the pseudo-terminal look like a real one, or the
+  test measures the harness: set its size (TIOCSWINSZ; a new one reports
+  0 columns and pyutils lays out to 0, FINDINGS.md F21), make it the
+  controlling terminal (start_new_session=True and TIOCSCTTY in
+  preexec_fn; otherwise Ctrl-C delivers nothing), and set NO_COLOR so the
+  output is plain text to search.
+- Flows through $EDITOR are tested with a scripted editor: EDITOR names
+  `<python> editor.py passes.json`; each call is one pass that logs the
+  file as it found it, edits it as the pass says and exits with the pass's
+  code. The log shows what the person would have seen on each opening
+  (tests/test_smoke.py, scripted_editor).
+- A pure test's helper must follow the protocol's timing, not a
+  convenient one. The rounds helper wrote every grade with its answer, so
+  the pure tests never met a round answered and not yet graded; the
+  terminal test did, and self-graded items left before their sheet
+  (session.py R5, found in thread 3 before delivery).
 
 --------------------------------------------------------------------------------
 ## 4. Known hazards
@@ -170,8 +184,11 @@ real caller arrives, in that caller's commit, and the message says so.
   default context; exact comparison needs a local context with unlimited
   precision and Inexact trapped (library.py grade_typed_answer).
 - tty.setcbreak and tty.setraw default to TCSAFLUSH, which discards input
-  already typed. rep passes TCSANOW and flushes on purpose, before each
-  prompt.
+  already typed. rep no longer reads single keys (PLAN.md D45); code that
+  does must pass TCSANOW and flush on purpose, before each prompt, as rep
+  still does before each answer line.
+- pyutils has no py.typed: pyright strict reports a missing stub at its
+  import. rep's one import line silences that rule (FINDINGS.md F22).
 - An `# expect:` line that does not match is a stop, not a detail: chain
   dependent commands with `&&` so a wrong assumption halts before a
   commit. (Thread 3: `git status` showed nothing where `?? rep/uv.lock`

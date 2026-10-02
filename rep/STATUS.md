@@ -38,7 +38,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             e43bf50  cli: plain `rep` runs a session (first loop)
             6e7e5ab  docs: D45 rounds, D46 display
             759c981  pyutils: terminal_output fixes F18-F20
-            (this commit)  session: rounds and the grading sheet, pure
+            bd5f203  session: rounds and the grading sheet, pure
+            (this commit)  cli: the session in rounds, `rep review`
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -50,7 +51,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): plan locked, D31-D43 pending |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built; D42 and D43 pending |
 | use week | pending |
 | M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
@@ -58,23 +59,25 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      262 passed
-BASELINE_BREAKDOWN  tests/test_cli.py            1
+BASELINE_TOTAL      263 passed
+BASELINE_BREAKDOWN  tests/test_cli.py            2
                     tests/test_events.py        51
                     tests/test_library.py      125
                     tests/test_machine.py       16
                     tests/test_memory_model.py   3
-                    tests/test_session.py       25
-                    tests/test_smoke.py         25
+                    tests/test_session.py       23
+                    tests/test_smoke.py         27
                     tests/test_storage.py       15
                     tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "262 passed in ...")
+                    uv run pytest | tail -1      (prints "263 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
                     count line, so do not add one.
+RUNTIME_DEPENDENCY  pyutils, the sibling ../pyutils (PLAN.md D46): rep's
+                    install needs explorations/pyutils beside rep/
 TOOL_VERSIONS       uv 0.11.1, uv_build >=0.11.1,<0.12.0, CPython 3.12
                     (3.12.12 on the person's machine, 3.12.13 in the build
                     sandbox), pytest 9.1.1, pyright 1.1.414,
@@ -102,7 +105,7 @@ enforcement point with its current line:
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
 define, if a decision whose heading is marked (M2) or later has no
 enforcement point (today D20-D30), or if a decision marked
-"(M<n>, pending)" already has one (today D42, D43 and D46 are pending).
+"(M<n>, pending)" already has one (today D42 and D43 are pending).
 
 ## Known blind spots
 
@@ -121,13 +124,17 @@ enforcement point (today D20-D30), or if a decision marked
 - The nvim plugin does not exist yet, so the stamp, add and lint contracts
   are tested from Python and the shell, never from nvim. D43 closes this:
   the plugin is tested headless in the sandbox.
-- The session's terminal handling is tested under a pseudo-terminal in
-  the sandbox (spike and tests/test_smoke.py), not yet in the person's
-  terminal (Windows Terminal on WSL2); a real session on a throwaway data
-  root checks it.
-- The key-flush race (D35: flush, then prompt) is timing-dependent: no
-  deterministic test catches a regression; the order is fixed in the code
-  and explained there.
+- The session in rounds is tested under a pseudo-terminal in the sandbox
+  (tests/test_smoke.py, with a scripted editor), not yet in the person's
+  terminal (Windows Terminal on WSL2) with nvim as the editor; a real
+  session on a throwaway data root checks it.
+- The flush before each answer line (D35, kept by D45) is
+  timing-dependent: no deterministic test catches a regression; the order
+  is fixed in the code and explained there.
+- Ctrl-C while the editor is open is not tested. nvim and vim read it as
+  a key in raw mode, so no signal reaches rep; an editor that leaves
+  signals on would end the session and lose that sheet's grades, its
+  answers waiting for `rep review`.
 - A wrong source for an attempt's `day` would not show within one
   session's tests (all its attempts share a day); the fold's day tests
   cover reading it.
@@ -156,8 +163,8 @@ Each code commit changes the markers of the decisions it enforces from
 | e43bf50 | cli: plain `rep` runs a session (after the terminal spike), with session_start and session_end, added with their writer as D10 requires; the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35, D40 |
 | 6e7e5ab | docs: D45 (rounds, grading sheet), D46 (pyutils display), use-week decks, R1 log; FINDINGS F18-F20 | D45, D46 recorded, pending |
 | 759c981 | pyutils: terminal_output fixes for F18-F20, before rep draws through it (outside rep/; its own tests) | - |
-| this commit | session: rounds fold and the grading sheet (render and read), pure; the queue stays until the loop moves over | D45, D41 (sheet) |
-| next | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed | D45, D46, D41 |
+| bd5f203 | session: rounds fold and the grading sheet (render and read), pure; the queue stays until the loop moves over | D45, D41 (sheet) |
+| this commit | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
 | then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
 | then | nvim plugin, tested headless | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |

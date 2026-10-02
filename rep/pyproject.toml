@@ -3,11 +3,16 @@ name = "rep"
 version = "0.0.0"
 description = "Personal retrieval practice: readings to items, FSRS scheduling, sessions as data."
 requires-python = ">=3.12"
-# Zero runtime dependencies is a decision (PLAN.md D13), not an accident.
-dependencies = []
+# PLAN.md D13: no third-party runtime dependency. pyutils is the person's
+# own package (PLAN.md D46), imported only by the session and review.
+dependencies = ["pyutils"]
 
 [project.scripts]
 rep = "rep.cli:main"
+
+# A sibling directory in the explorations repository, on both machines.
+[tool.uv.sources]
+pyutils = { path = "../pyutils", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.11.1,<0.12.0"]

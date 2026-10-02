@@ -16,10 +16,14 @@ EXIT CODES (PLAN.md D30)
      a session without a terminal or with a non-UTF-8 one); message on
      stderr, prefixed "rep: "
 
-SESSION
-  Plain `rep` (no command) runs today's session: session.py decides what
-  to show, this branch reads keys, shows text and writes one event per
-  action, under the lock for that append only (PLAN.md D32, D35, D40).
+SESSION AND REVIEW
+  Plain `rep` (no command) runs today's session in rounds: session.py
+  decides what to show; this branch shows each question, reads one typed
+  answer, writes it as an attempt, and at the end of each round opens the
+  round's grading sheet in $EDITOR (PLAN.md D45). `rep review` opens the
+  same sheet for answers still ungraded (D41). The two share the only
+  functions outside main: append_events_waiting and grade_on_a_sheet.
+  Each append holds the writer lock for that append only (D32).
 
 INVARIANTS
   Output meant for the person goes to stdout; warnings and errors go to
@@ -39,7 +43,6 @@ import subprocess
 import sys
 import termios
 import time
-import tty
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -52,7 +55,7 @@ from rep.events import (
     SessionEndEvent,
     SessionStartEvent,
     SuspendEvent,
-    UndoEvent,
+    effective_events,
     fold_events,
     format_canonical_time,
     new_event_id,
@@ -73,7 +76,16 @@ from rep.library import (
 )
 from rep.machine import MachineContextError, resolve_machine_context
 from rep.memory_model import AGAIN, GOOD
-from rep.session import DEFAULT_PRESET, plan_session, session_queue
+from rep.session import (
+    DEFAULT_PRESET,
+    SheetEntry,
+    grading_sheet_entries,
+    plan_session,
+    read_grading_sheet,
+    render_grading_sheet,
+    review_attempt_ids,
+    session_rounds,
+)
 from rep.storage import (
     LIBRARY_FILE_SUFFIX,
     WriterLockBusy,
@@ -84,6 +96,107 @@ from rep.storage import (
     read_bib_citekeys,
     read_library_files,
 )
+
+
+def append_events_waiting(state_directory: Path, events_directory: Path, device_id: str, new_events: list[Event]) -> None:
+    """Append under the writer lock, held for this append only, waiting for
+    it rather than refusing (PLAN.md D32): what is being written is the
+    person's answers or grades, which a refusal would throw away.
+
+    PRE   events_directory's parent, the data root, exists.
+    POST  the events are on disk; or KeyboardInterrupt, with nothing written.
+    """
+    lock_wait_started_at = time.monotonic()
+    person_was_told = False
+    while True:
+        try:
+            lock_descriptor = acquire_writer_lock(state_directory)
+            break
+        except WriterLockBusy as lock_busy:
+            if not person_was_told and time.monotonic() - lock_wait_started_at > 2.0:
+                print(f"rep: {lock_busy}; waiting (Ctrl-C stops)", file=sys.stderr)
+                person_was_told = True
+            time.sleep(0.05)
+    try:
+        append_events(events_directory, device_id, new_events)
+    finally:
+        os.close(lock_descriptor)
+
+
+SHEET_PROBLEM_PREFIX = "# problem: "
+
+
+def grade_on_a_sheet(entries: list[SheetEntry], title: str, sheet_path: Path, device_id: str) -> list[Event]:
+    """Open the grading sheet in $EDITOR until it reads cleanly (PLAN.md D41, D45).
+
+    PRE   entries is not empty; sheet_path is in the machine-local state
+          directory, which exists.
+    POST  the sheet file is gone. Returns the amends and suspends the sheet
+          asks for, to be written by the caller; none when the editor exits
+          non-zero (the person's way to apply nothing) or cannot be run.
+          Either way, answers left ungraded wait for `rep review`.
+    """
+    sheet_path.write_text(render_grading_sheet(entries, title), encoding="utf-8")
+    editor_command = shlex.split(os.environ.get("EDITOR", "")) or ["vi"]
+    try:
+        while True:
+            try:
+                editor_exit_code = subprocess.run([*editor_command, str(sheet_path)], check=False).returncode
+            except OSError as editor_error:
+                print(f"rep: cannot run the editor {editor_command[0]!r}: {editor_error.strerror}", file=sys.stderr)
+                print("No grade applied; ungraded answers wait for `rep review`.")
+                return []
+            if editor_exit_code != 0:
+                print("The editor exited with an error: no grade applied; ungraded answers wait for `rep review`.")
+                return []
+            # The read words are ASCII; a stray invalid byte elsewhere must
+            # not lose the sheet.
+            sheet_text = sheet_path.read_text(encoding="utf-8", errors="replace")
+            sheet_result = read_grading_sheet(sheet_text, entries)
+            if sheet_result["problems"] == []:
+                break
+            # Each problem goes right above its line, and the last pass's
+            # problems are dropped, so the person sees them where they are;
+            # their own edits stay. The sheet is rep's file, not the
+            # person's library, so rewriting it does not break I3.
+            problem_messages_by_line: dict[int, list[str]] = {}
+            for problem_line_number, problem_message in sheet_result["problems"]:
+                problem_messages_by_line.setdefault(problem_line_number, []).append(problem_message)
+            rewritten_lines: list[str] = []
+            for line_index, sheet_line in enumerate(sheet_text.split("\n")):
+                if sheet_line.startswith(SHEET_PROBLEM_PREFIX):
+                    continue
+                rewritten_lines.extend(
+                    SHEET_PROBLEM_PREFIX + problem_message for problem_message in problem_messages_by_line.get(line_index + 1, [])
+                )
+                rewritten_lines.append(sheet_line)
+            sheet_path.write_text("\n".join(rewritten_lines), encoding="utf-8")
+    finally:
+        sheet_path.unlink(missing_ok=True)
+    graded_at = format_canonical_time(datetime.now(UTC))
+    sheet_events: list[Event] = []
+    for attempt_id, new_rating in sheet_result["amends"]:
+        amend: AmendEvent = {
+            "format_version": EVENT_FORMAT_VERSION,
+            "id": new_event_id(secrets.token_bytes),
+            "at": graded_at,
+            "device": device_id,
+            "kind": "amend",
+            "target": attempt_id,
+            "rating": new_rating,
+        }
+        sheet_events.append(amend)
+    for suspended_item_id in sheet_result["suspended_item_ids"]:
+        suspend: SuspendEvent = {
+            "format_version": EVENT_FORMAT_VERSION,
+            "id": new_event_id(secrets.token_bytes),
+            "at": graded_at,
+            "device": device_id,
+            "kind": "suspend",
+            "item": suspended_item_id,
+        }
+        sheet_events.append(suspend)
+    return sheet_events
 
 
 def main(argument_list: list[str] | None = None) -> int:
@@ -130,6 +243,10 @@ def main(argument_list: list[str] | None = None) -> int:
         help="library file to append to (default: <citekey>.md from the items' source)",
     )
     subcommand_parsers.add_parser(
+        "review",
+        help="grade, in $EDITOR, your last session's answers and every answer still ungraded",
+    )
+    subcommand_parsers.add_parser(
         "lint",
         help="check the whole library and the events; print problems as path:line:col for quickfix",
     )
@@ -166,18 +283,52 @@ def main(argument_list: list[str] | None = None) -> int:
         print(f"kbd_root         {kbd_root if kbd_root is not None else '(not set)'}")
         return 0
 
-    if command is None:
-        # PLAN.md D9: plain `rep` runs today's session. Every decision about
-        # what to show is in session.py, pure; this branch reads keys, shows
-        # text and writes events.
+    if command is None or command == "review":
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
             # PLAN.md D28: rep never creates the data root.
             print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
             return 2
+        # The session reads answers from the terminal; both run $EDITOR on it.
         if not sys.stdin.isatty() or not sys.stdout.isatty():
-            print("rep: a session needs a terminal on standard input and output", file=sys.stderr)
+            print(f"rep: {'a session' if command is None else 'review'} needs a terminal on standard input and output", file=sys.stderr)
             return 2
+        preset = DEFAULT_PRESET
+        device_id = machine_context["device_id"]
+        state_directory = machine_context["state_directory"]
+        library_read = read_library_files(data_root / "library")
+        library_check = check_library_files(
+            [(library_file["path"], library_file["text"]) for library_file in library_read["files"]]
+        )
+        located_items_by_id: dict[str, LocatedItem] = {
+            located_item["item"]["id"]: located_item for located_item in library_check["located_items"]
+        }
+        events_load = load_events(data_root / "events")
+        excluded_item_count = library_check["item_count"] - len(library_check["located_items"])
+        if excluded_item_count > 0:
+            print(f"rep: {excluded_item_count} items are left out by errors; `rep lint` lists them", file=sys.stderr)
+
+        if command == "review":
+            # PLAN.md D41: this device's last session, then every answer
+            # still ungraded; the sheet is the whole interface.
+            review_entries = grading_sheet_entries(
+                events_load["events"], review_attempt_ids(events_load["events"], device_id), located_items_by_id
+            )
+            if review_entries == []:
+                print("Nothing to review.")
+                return 0
+            sheet_events = grade_on_a_sheet(
+                review_entries,
+                f"rep review: {len(review_entries)} answers",
+                state_directory / f"review-{new_event_id(secrets.token_bytes)}.txt",
+                device_id,
+            )
+            if sheet_events != []:
+                append_events_waiting(state_directory, data_root / "events", device_id, sheet_events)
+            amend_count = sum(1 for event in sheet_events if event["kind"] == "amend")
+            print(f"{amend_count} grades written, {len(sheet_events) - amend_count} items suspended.")
+            return 0
+
         # PLAN.md D34: under a non-UTF-8 locale stdin decodes with
         # surrogateescape, and an answer could not be written after the
         # person had typed it.
@@ -189,17 +340,7 @@ def main(argument_list: list[str] | None = None) -> int:
             return 2
         # PLAN.md D34: the up arrow must not bring back an earlier answer.
         readline.set_auto_history(False)
-
-        preset = DEFAULT_PRESET
-        library_read = read_library_files(data_root / "library")
-        library_check = check_library_files(
-            [(library_file["path"], library_file["text"]) for library_file in library_read["files"]]
-        )
-        events_load = load_events(data_root / "events")
         fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
-        excluded_item_count = library_check["item_count"] - len(library_check["located_items"])
-        if excluded_item_count > 0:
-            print(f"rep: {excluded_item_count} items are left out by errors; `rep lint` lists them", file=sys.stderr)
         file_problem_count = len(library_read["problems"]) + len(events_load["problems"]) + len(fold_result["problems"])
         if file_problem_count > 0:
             print(f"rep: {file_problem_count} problems in library or event files; `rep lint` lists them", file=sys.stderr)
@@ -218,56 +359,34 @@ def main(argument_list: list[str] | None = None) -> int:
         if plan == []:
             print(f"Nothing to practise today ({today}).")
             return 0
-        located_items_by_id: dict[str, LocatedItem] = {
-            located_item["item"]["id"]: located_item for located_item in library_check["located_items"]
-        }
+        reason_by_item_id = {slot["item_id"]: slot["reason"] for slot in plan}
         due_count = sum(1 for slot in plan if slot["reason"] == "due")
-        device_id = machine_context["device_id"]
+
+        # PLAN.md D46: imported here, so the commands nvim runs on save never
+        # load it. Styling follows NO_COLOR and whether both streams are
+        # terminals.
+        from pyutils import terminal_output  # pyright: ignore[reportMissingTypeStubs]  (no py.typed yet: FINDINGS.md F22)
+
+        terminal_output.set_color(None)
+        terminal_output.set_layout(max_width=76, align="center")
+        # input() writes its own prompt, so prompts and plain lines start at
+        # the column emit() gives the content block, found by the same
+        # function rather than by repeating its arithmetic.
+        aligned_rule = terminal_output.align_text(terminal_output.format_separator(), align="center")
+        block_indent = aligned_rule[: len(aligned_rule) - len(aligned_rule.lstrip(" "))]
         terminal_descriptor = sys.stdin.fileno()
-        cooked_attributes = termios.tcgetattr(terminal_descriptor)
-        session_events: list[Event] = []
-        grade_names = {None: "?", AGAIN: "Again", 2: "Hard", GOOD: "Good", 4: "Easy"}
 
-        def read_key(prompt: str) -> str:
-            """Show prompt, then read one key press, no Enter. Keys pressed
-            before the prompt was shown are discarded (PLAN.md D35): a key
-            counts only once what it answers is on screen, so a grade cannot
-            precede the answer and a latency cannot be zero. The flush comes
-            before the prompt: after it, a key pressed in the moment between
-            seeing the prompt and the flush would be lost (found by the
-            terminal smoke test)."""
-            termios.tcflush(terminal_descriptor, termios.TCIFLUSH)
-            print(prompt, flush=True)
-            # TCSANOW: tty.setcbreak's default, TCSAFLUSH, would also discard
-            # input; the flush above is the deliberate one (spike, PLAN.md
-            # section 3).
-            tty.setcbreak(terminal_descriptor, termios.TCSANOW)
-            try:
-                return os.read(terminal_descriptor, 16).decode("utf-8", "replace")
-            finally:
-                termios.tcsetattr(terminal_descriptor, termios.TCSADRAIN, cooked_attributes)
-
-        def write_events(new_events: list[Event]) -> None:
-            """Append under the writer lock, held for this append only, waiting
-            for it rather than refusing (PLAN.md D32)."""
-            lock_wait_started_at = time.monotonic()
-            person_was_told = False
-            while True:
-                try:
-                    lock_descriptor = acquire_writer_lock(machine_context["state_directory"])
-                    break
-                except WriterLockBusy as lock_busy:
-                    if not person_was_told and time.monotonic() - lock_wait_started_at > 2.0:
-                        print(f"rep: {lock_busy}; waiting (Ctrl-C ends the session)", file=sys.stderr)
-                        person_was_told = True
-                    time.sleep(0.05)
-            try:
-                append_events(data_root / "events", device_id, new_events)
-            finally:
-                os.close(lock_descriptor)
-            session_events.extend(new_events)
-
-        if read_key(f"{due_count} due, {len(plan) - due_count} new. Any key starts; q stops.") == "q":
+        terminal_output.emit(terminal_output.format_labeled_separator(f"{today}: {due_count} due, {len(plan) - due_count} new"))
+        print(f"{block_indent}Type what comes to mind and press Enter; a cue is enough. Each round")
+        print(f"{block_indent}ends with its answers and keys in your editor, to grade.")
+        # PLAN.md D35, kept by D45: a line counts only once its prompt is on
+        # screen. The flush comes before the prompt: after it, a key typed in
+        # the instant between seeing the prompt and the flush would be lost.
+        termios.tcflush(terminal_descriptor, termios.TCIFLUSH)
+        try:
+            input(f"{block_indent}Enter starts; Ctrl-D stops. ")
+        except (EOFError, KeyboardInterrupt):
+            print()
             return 0
         session_start: SessionStartEvent = {
             "format_version": EVENT_FORMAT_VERSION,
@@ -280,148 +399,86 @@ def main(argument_list: list[str] | None = None) -> int:
                 "session_budget": preset["session_budget"],
                 "new_per_day": preset["new_per_day"],
                 "new_item_cost": preset["new_item_cost"],
-                "relearn_gap": preset["relearn_gap"],
                 "day_start_hour": preset["day_start_hour"],
                 "desired_retention": preset["desired_retention"],
             },
         }
-        # The last attempt or suspend: what `u` corrects (PLAN.md D35).
-        last_correctable_event: AttemptEvent | SuspendEvent | None = None
-
-        def correct_last_action() -> None:
-            """`u`: a grade is corrected with an amend, a suspend with an undo;
-            the attempt itself stays in the history (PLAN.md D35)."""
-            nonlocal last_correctable_event
-            if last_correctable_event is None:
-                print("Nothing to correct.")
-                return
-            if last_correctable_event["kind"] == "suspend":
-                undo: UndoEvent = {
-                    "format_version": EVENT_FORMAT_VERSION,
-                    "id": new_event_id(secrets.token_bytes),
-                    "at": format_canonical_time(datetime.now(UTC)),
-                    "device": device_id,
-                    "kind": "undo",
-                    "target": last_correctable_event["id"],
-                }
-                write_events([undo])
-                print(f"Suspend of {last_correctable_event['item']} undone.")
-                last_correctable_event = None
-                return
-            corrected_question = located_items_by_id[last_correctable_event["item"]]["item"]["question"]
-            print(f"Correct the grade of: {corrected_question.splitlines()[0]}")
-            correction_key = read_key("y good  n again  any other key keeps it")
-            if correction_key != "y" and correction_key != "n":
-                print("Kept.")
-                return
-            amend: AmendEvent = {
-                "format_version": EVENT_FORMAT_VERSION,
-                "id": new_event_id(secrets.token_bytes),
-                "at": format_canonical_time(datetime.now(UTC)),
-                "device": device_id,
-                "kind": "amend",
-                "target": last_correctable_event["id"],
-                "rating": GOOD if correction_key == "y" else AGAIN,
-            }
-            write_events([amend])
-            print(f"Now {grade_names[amend['rating']]}.")
-
+        session_events: list[Event] = []
         end_reason: Literal["completed", "quit", "interrupted"] = "interrupted"
-        attempt_count = 0
+        # The events cannot tell an answered round from a graded one (a
+        # sheet saved unchanged writes nothing), so the loop counts graded
+        # rounds and the fold looks no further than the next (session.py R5).
+        graded_round_number = 0
+        stop_requested = False
         session_was_started = False
         try:
-            write_events([session_start])
+            append_events_waiting(state_directory, data_root / "events", device_id, [session_start])
+            session_events.append(session_start)
             session_was_started = True
             while True:
-                queue = session_queue(plan, session_events, preset)
-                if queue == []:
-                    if last_correctable_event is not None:
-                        if read_key("\nSession complete. u corrects the last grade; any other key ends.") == "u":
-                            correct_last_action()
-                            continue  # an amend to Again can bring the item back
-                    end_reason = "completed"
+                round_state = session_rounds(plan, session_events, graded_round_number + 1)
+                round_number = round_state["round_number"]
+                round_is_answered = round_state["unanswered_item_ids"] == []
+                if round_is_answered and graded_round_number == round_number:
+                    end_reason = "completed"  # D45: no round follows
                     break
 
-                # --- show the question; the person commits before the reveal ---
-                slot = queue[0]
-                located_item = located_items_by_id[slot["item_id"]]
+                # --- the round's sheet: when it is answered, or on Ctrl-D for what was answered ---
+                if round_is_answered or stop_requested:
+                    sheet_entries = grading_sheet_entries(
+                        session_events, round_state["round_attempt_ids"], located_items_by_id
+                    )
+                    if sheet_entries != []:
+                        sheet_events = grade_on_a_sheet(
+                            sheet_entries,
+                            f"rep {today}, round {round_number}: {len(sheet_entries)} answers",
+                            state_directory / f"sheet-{session_start['id']}-{round_number}.txt",
+                            device_id,
+                        )
+                        if sheet_events != []:
+                            append_events_waiting(state_directory, data_root / "events", device_id, sheet_events)
+                            session_events.extend(sheet_events)
+                    graded_round_number = round_number
+                    if stop_requested:
+                        end_reason = "quit"
+                        break
+                    continue
+
+                # --- one question; the answer is written, nothing is revealed (D45) ---
+                if round_state["round_attempt_ids"] == []:
+                    terminal_output.emit(terminal_output.format_labeled_separator(f"round {round_number}"))
+                item_id = round_state["unanswered_item_ids"][0]
+                located_item = located_items_by_id[item_id]
                 item = located_item["item"]
-                print(f"\n[{len(queue)} to go] {slot['reason']}  {item['id']}")
-                print(item["question"])
+                round_position = len(round_state["round_attempt_ids"]) + 1
+                card_label = reason_by_item_id[item_id] if round_number == 1 else "again"
+                if item["check"] != "self":
+                    card_label += f", {item['check']}"  # the answer is compared as typed (D20)
+                terminal_output.emit(
+                    terminal_output.format_card(f"{round_position} of {len(round_state['round_item_ids'])}", card_label, item["question"])
+                )
                 shown_at = time.monotonic()
-                typed_answer: str | None = None
-                if item["attempt"] == "typed":
-                    termios.tcflush(terminal_descriptor, termios.TCIFLUSH)
+                termios.tcflush(terminal_descriptor, termios.TCIFLUSH)
+                try:
                     while True:
-                        typed_answer = input("> ")
+                        typed_answer = input(f"{block_indent}> ")
                         # PLAN.md D34: a lone surrogate is a byte that is not
                         # UTF-8; it could not be written to the events file.
                         if not any("\ud800" <= character <= "\udfff" for character in typed_answer):
                             break
-                        print("That was not valid UTF-8; type it again.")
-                else:
-                    key = read_key("(any key reveals; u corrects the last grade, q quits)")
-                    if key == "q":
-                        end_reason = "quit"
-                        break
-                    if key == "u":
-                        correct_last_action()
-                        continue  # the question is shown again, its latency restarts
+                        print(f"{block_indent}That was not valid UTF-8; type it again.")
+                except EOFError:
+                    print()
+                    stop_requested = True
+                    continue
                 latency_milliseconds = round((time.monotonic() - shown_at) * 1000)
                 committed_at = datetime.now(UTC)
-
-                # --- the reveal ---
-                if item["answer"] is not None:
-                    print("A: " + item["answer"].replace("\n", "\n   "))
-                if item["criteria"] is not None:
-                    print("grade against:")
-                    for criterion in item["criteria"]:
-                        print(f"  - {criterion}")
+                # PLAN.md D45: an exact or numeric answer carries its D20
+                # grade, unseen until the sheet, where changing it is a
+                # recorded correction; a self-graded one is graded there.
                 automatic_rating: int | None = None
                 if item["check"] != "self":
-                    assert typed_answer is not None, "check_source_item makes exact and numeric typed"
                     automatic_rating = GOOD if grade_typed_answer(item, typed_answer) else AGAIN
-                    print(f"you typed: {typed_answer}  ->  {'matches' if automatic_rating == GOOD else 'does not match'}")
-                elif typed_answer is not None:
-                    print(f"you typed: {typed_answer}")
-
-                # --- the grade ---
-                while True:
-                    if automatic_rating is None:
-                        key = read_key("y good  n again  ? grade later  s suspend  e edit  u correct last  q quit")
-                    else:
-                        key = read_key("any key next  e edit  s suspend  u correct last  q quit")
-                    if key == "u":
-                        correct_last_action()
-                        continue
-                    if automatic_rating is not None or key in ("y", "n", "?", "s", "e", "q"):
-                        break
-                if key == "q":
-                    end_reason = "quit"
-                    break
-                if key == "s":
-                    suspend: SuspendEvent = {
-                        "format_version": EVENT_FORMAT_VERSION,
-                        "id": new_event_id(secrets.token_bytes),
-                        "at": format_canonical_time(datetime.now(UTC)),
-                        "device": device_id,
-                        "kind": "suspend",
-                        "item": item["id"],
-                    }
-                    write_events([suspend])
-                    last_correctable_event = suspend
-                    print("Suspended.")
-                    continue
-                # PLAN.md D35: `e` records the attempt ungraded, an automatic
-                # grade too: `e` says the item is wrong, so a grade against
-                # its key is suspect; the typed answer is kept for review.
-                rating: int | None = automatic_rating
-                if key == "y":
-                    rating = GOOD
-                elif key == "n":
-                    rating = AGAIN
-                elif key == "?" or key == "e":
-                    rating = None
                 attempt: AttemptEvent = {
                     "format_version": EVENT_FORMAT_VERSION,
                     "id": new_event_id(secrets.token_bytes),
@@ -429,26 +486,22 @@ def main(argument_list: list[str] | None = None) -> int:
                     "device": device_id,
                     "kind": "attempt",
                     "session": session_start["id"],
-                    "item": item["id"],
-                    "rating": rating,
+                    "item": item_id,
+                    "rating": automatic_rating,
                     "latency_milliseconds": latency_milliseconds,
                     # PLAN.md D20 constraint 1: the text as typed.
                     "typed_answer": typed_answer,
                     "fingerprint": item_fingerprint(item),
                     "day": scheduling_day(committed_at, preset["day_start_hour"]),
                 }
-                write_events([attempt])
-                attempt_count += 1
-                last_correctable_event = attempt
-                if key == "e":
-                    editor_command = shlex.split(os.environ.get("EDITOR", "")) or ["vi"]
-                    subprocess.run([*editor_command, f"+{item['line']}", located_item["path"]], check=False)
-                    print("Edited; the item returns next session.")
-        except (KeyboardInterrupt, EOFError):
+                append_events_waiting(state_directory, data_root / "events", device_id, [attempt])
+                session_events.append(attempt)
+                print()
+        except KeyboardInterrupt:
+            # D45: ends at once; this round's answers wait for `rep review`.
             end_reason = "interrupted"
             print()
         finally:
-            termios.tcsetattr(terminal_descriptor, termios.TCSADRAIN, cooked_attributes)
             if session_was_started:
                 session_end: SessionEndEvent = {
                     "format_version": EVENT_FORMAT_VERSION,
@@ -459,8 +512,14 @@ def main(argument_list: list[str] | None = None) -> int:
                     "session": session_start["id"],
                     "reason": end_reason,
                 }
-                write_events([session_end])
-        print(f"{attempt_count} attempts; session {end_reason}.")
+                append_events_waiting(state_directory, data_root / "events", device_id, [session_end])
+        effective_session = effective_events(session_events)
+        session_attempts = [event for event in effective_session["ordered_events"] if event["kind"] == "attempt"]
+        ungraded_count = sum(
+            1 for attempt in session_attempts if effective_session["amended_ratings"].get(attempt["id"], attempt["rating"]) is None
+        )
+        terminal_output.emit(terminal_output.format_labeled_separator(f"session {end_reason}"))
+        print(f"{block_indent}{len(session_attempts)} answers; {ungraded_count} wait for `rep review`.")
         return 0
 
     if command == "stamp":

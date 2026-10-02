@@ -1,4 +1,5 @@
-"""A session's plan and its queue, as pure functions (PLAN.md D9, D31, D36, D37, D39).
+"""A session's plan and its rounds, and the grading sheet, as pure functions
+(PLAN.md D9, D31, D36, D37, D39, D41, D45).
 
 REPRESENTATION
   Preset         the session settings (D39), one constant for now; each
@@ -6,16 +7,21 @@ REPRESENTATION
   LocatedItem    a checked library Item with the path of its file
                  (library.py), from check_library_files: no item with an
                  error, no id twice (D22, library.py L11).
-  PlanSlot       one item id and why it is in the queue: "due", "new", or
-                 "relearn" for a showing added during the session.
+  PlanSlot       one item id and why it is in the plan: "due" or "new".
   Plan           the ordered slots a session starts with: reviews, then new
                  items. A pure function of the library, the fold's states,
                  the events (for capture times only), the scheduling day and
                  the preset.
-  The queue      the slots still to show, recomputed from the plan and the
-                 session's own events after every action (D31). There is no
-                 mutable queue: a correction is an event, and replaying the
-                 events gives the queue.
+  RoundState     the round in progress: its number, its items, those not yet
+                 answered in it, and the attempts that answered it so far.
+                 Recomputed from the plan and the session's own events after
+                 every write (D31): there is no mutable queue, a correction
+                 is an event, and replaying the events gives the rounds.
+  SheetEntry     one answer as the grading sheet shows it: the attempt, its
+                 grade now, the item's place, question, key, what was typed,
+                 and whether the item changed since. SheetResult: the amends
+                 and suspends a saved sheet asks for, or the problems that
+                 stop it.
 
 INVARIANTS
   P1  plan_session is pure: equal inputs give an equal plan.
@@ -27,25 +33,6 @@ INVARIANTS
   P4  New slots follow: items with no memory state not first attempted
       today, at most max(0, min(new_per_day - introduced today,
       (session_budget - due slots) // new_item_cost)), in D37 order.
-  Q1  session_queue is pure, and order-independent in the session's events
-      (it sorts them, as the fold does): replaying a session reproduces it.
-  Q2  An attempt graded Again puts its item back after relearn_gap other
-      slots, or at the end when fewer remain.
-  Q3  An item leaves the queue on a graded attempt other than Again that is
-      not a new item's first showing, on an ungraded attempt (it waits for
-      `rep review`, D35), or on a suspend.
-  Q4  If every showing is graded Good, the queue empties after exactly
-      (due slots) + 2 * (new slots) attempts.
-  (session_queue is replaced by session_rounds when the session loop moves
-  to rounds, PLAN.md D45.)
-
-ROUNDS AND THE GRADING SHEET (PLAN.md D45, D41)
-  RoundState     the round in progress: its number, its items, and those
-                 not yet answered in it.
-  SheetEntry     one answer as the grading sheet shows it: the attempt, its
-                 grade now, the item's place, question, key, and what was
-                 typed. SheetResult: the amends and suspends a saved sheet
-                 asks for, or the problems that stop it.
   R1  session_rounds is pure and order-independent in the session's events;
       an item's k-th effective attempt in the session is its round-k answer.
   R2  Round 1 is the plan's items in plan order; round r+1 is the items of
@@ -56,38 +43,49 @@ ROUNDS AND THE GRADING SHEET (PLAN.md D45, D41)
       waits for `rep review`) or when it was suspended.
   R4  If every answer is graded Good, the session takes exactly
       (due slots) + 2 * (new slots) attempts.
+  R5  session_rounds never computes a round past through_round: round r+1
+      is decided by round r's grades, which exist only once the round's
+      sheet has been saved, and nothing in the events says when that was
+      (a sheet saved unchanged writes nothing). The caller passes the last
+      round it graded plus one.
   G1  read_grading_sheet(render_grading_sheet(entries)) asks for nothing.
   G2  Each entry is one read line, "<grade word> <attempt id> ...";
       everything else in the sheet is a comment or blank.
   G3  read_grading_sheet never raises; problems stop the whole sheet.
-  G4  Changing one entry's word gives exactly one amend or one suspend; an
-      automatic grade cannot be changed back to ?.
+  G4  Changing one entry's word gives exactly one amend; `suspend` gives one
+      suspend per item, however many of its answers say it; an automatic
+      grade cannot be changed back to ?.
+  G5  A sheet entry shows the grade in effect (amends applied) and flags an
+      item whose fingerprint differs from the one its attempt recorded
+      (D20 constraint 2: the key shown may not be the key answered).
+  V1  review_attempt_ids lists, once each and in history order, the
+      effective attempts of this device's last session, then every other
+      effective attempt still without a grade.
 """
 
 from datetime import date
 from typing import Literal, TypedDict
 
-from rep.events import Event, ItemState, effective_events
-from rep.library import LocatedItem
+from rep.events import AttemptEvent, Event, ItemState, effective_events
+from rep.library import LocatedItem, item_fingerprint
 from rep.memory_model import AGAIN, DEFAULT_PARAMETERS, retrievability
 
 
 class Preset(TypedDict):
-    session_budget: int  # most attempts the plan serves before relearning
+    session_budget: int  # most attempts the plan serves before the retry rounds
     new_per_day: int
     new_item_cost: int  # budget one new item uses: its showing, its return, a miss
-    relearn_gap: int  # other slots between two showings of one item
     day_start_hour: int  # local hour a scheduling day starts (D44)
     desired_retention: float
 
 
-# PLAN.md D36, D39. Approved numbers. A constant, not config.toml: tuning is
-# an edit and a commit, and session_start records the values used.
+# PLAN.md D36, D39. Approved numbers (relearn_gap retired by D45: the rest of
+# a round is the gap). A constant, not config.toml: tuning is an edit and a
+# commit, and session_start records the values used.
 DEFAULT_PRESET: Preset = {
     "session_budget": 60,
     "new_per_day": 10,
     "new_item_cost": 3,
-    "relearn_gap": 3,
     "day_start_hour": 4,
     "desired_retention": 0.9,
 }
@@ -95,7 +93,7 @@ DEFAULT_PRESET: Preset = {
 
 class PlanSlot(TypedDict):
     item_id: str
-    reason: Literal["due", "new", "relearn"]
+    reason: Literal["due", "new"]
 
 
 def plan_session(
@@ -183,48 +181,6 @@ def plan_session(
     return due_slots + new_slots
 
 
-def session_queue(plan: list[PlanSlot], session_events: list[Event], preset: Preset) -> list[PlanSlot]:
-    """The slots still to show, after this session's events (PLAN.md D31, D35, D36; Q1-Q4).
-
-    PRE   plan came from plan_session for this session; session_events are
-          the events this session wrote (attempts carrying its id, and the
-          amends, undos and suspends it wrote).
-    POST  the queue, head first; empty when the session is complete.
-    """
-    effective = effective_events(session_events)
-    queue: list[PlanSlot] = list(plan)
-    shown_item_ids: set[str] = set()
-    for event in effective["ordered_events"]:
-        if event["id"] in effective["undone_event_ids"]:
-            continue
-        if event["kind"] == "suspend":
-            queue = [slot for slot in queue if slot["item_id"] != event["item"]]
-            continue
-        if event["kind"] != "attempt":
-            continue
-        item_id = event["item"]
-        # The slot this attempt answered: the item's first slot in the queue.
-        # An attempt for an item no longer queued (its slot removed by a
-        # later correction) is still applied, so replay never fails.
-        answered_reason: str = "relearn"
-        for slot in queue:
-            if slot["item_id"] == item_id:
-                answered_reason = slot["reason"]
-                break
-        queue = [slot for slot in queue if slot["item_id"] != item_id]
-        first_showing_of_new_item = answered_reason == "new" and item_id not in shown_item_ids
-        shown_item_ids.add(item_id)
-        effective_rating = effective["amended_ratings"].get(event["id"], event["rating"])
-        if effective_rating is None:
-            continue  # Q3: `?` waits for review
-        if effective_rating == AGAIN or first_showing_of_new_item:
-            # Q2, and D36's blocking rule: a new item must be recalled once
-            # after other items came between.
-            return_position = min(preset["relearn_gap"], len(queue))
-            queue.insert(return_position, {"item_id": item_id, "reason": "relearn"})
-    return queue
-
-
 # --- rounds and the grading sheet (PLAN.md D45) --------------------------------
 
 
@@ -232,23 +188,24 @@ class RoundState(TypedDict):
     round_number: int  # the round in progress, or the last one when none follows
     round_item_ids: list[str]  # the items of that round, in plan order
     unanswered_item_ids: list[str]  # its items with no attempt in it yet, in order
+    round_attempt_ids: list[str]  # the attempts that answered it so far, in round order
 
 
-def session_rounds(plan: list[PlanSlot], session_events: list[Event]) -> RoundState:
-    """Where a session stands, in rounds (PLAN.md D45, D31, D36; R1-R4).
+def session_rounds(plan: list[PlanSlot], session_events: list[Event], through_round: int) -> RoundState:
+    """Where a session stands, in rounds (PLAN.md D45, D31, D36; R1-R5).
 
     PRE   plan came from plan_session for this session; session_events are
-          the events this session wrote.
-    POST  the first round that still has an unanswered item, with those
-          items; or, when every round so far is answered and none follows,
-          the last round with no unanswered items. Whether that last round
-          has been graded is the caller's to know: grades arrive by amend
-          after the round's answers, and an ungraded answer ends the item's
-          session (R3).
+          the events this session wrote; through_round >= 1.
+    POST  the first round up to through_round that still has an unanswered
+          item, with those items; else, with no unanswered items, round
+          through_round, or the last round when no round follows an earlier
+          one. A caller that passes (rounds graded) + 1 thus sees a round
+          that is answered and not yet graded as such, never the round its
+          ungraded answers would imply (R5).
     """
     effective = effective_events(session_events)
     # R1: an item's k-th effective attempt is its round-k answer.
-    attempt_ratings_by_item: dict[str, list[int | None]] = {}
+    attempts_by_item: dict[str, list[tuple[str, int | None]]] = {}
     suspended_item_ids: set[str] = set()
     for event in effective["ordered_events"]:
         if event["id"] in effective["undone_event_ids"]:
@@ -256,8 +213,8 @@ def session_rounds(plan: list[PlanSlot], session_events: list[Event]) -> RoundSt
         if event["kind"] == "suspend":
             suspended_item_ids.add(event["item"])
         elif event["kind"] == "attempt":
-            attempt_ratings_by_item.setdefault(event["item"], []).append(
-                effective["amended_ratings"].get(event["id"], event["rating"])
+            attempts_by_item.setdefault(event["item"], []).append(
+                (event["id"], effective["amended_ratings"].get(event["id"], event["rating"]))
             )
     new_item_ids = {slot["item_id"] for slot in plan if slot["reason"] == "new"}
 
@@ -268,13 +225,21 @@ def session_rounds(plan: list[PlanSlot], session_events: list[Event]) -> RoundSt
             round_item_ids.append(slot["item_id"])
     while True:
         unanswered_item_ids = [
-            item_id for item_id in round_item_ids if len(attempt_ratings_by_item.get(item_id, [])) < round_number
+            item_id for item_id in round_item_ids if len(attempts_by_item.get(item_id, [])) < round_number
         ]
-        if unanswered_item_ids != []:
-            return {"round_number": round_number, "round_item_ids": round_item_ids, "unanswered_item_ids": unanswered_item_ids}
+        round_attempt_ids = [
+            attempts_by_item[item_id][round_number - 1][0]
+            for item_id in round_item_ids
+            if item_id not in unanswered_item_ids
+        ]
+        if unanswered_item_ids != [] or round_number == through_round:
+            return {
+                "round_number": round_number, "round_item_ids": round_item_ids,
+                "unanswered_item_ids": unanswered_item_ids, "round_attempt_ids": round_attempt_ids,
+            }  # fmt: skip
         next_round_item_ids: list[str] = []
         for item_id in round_item_ids:
-            round_rating = attempt_ratings_by_item[item_id][round_number - 1]
+            round_rating = attempts_by_item[item_id][round_number - 1][1]
             if item_id in suspended_item_ids or round_rating is None:
                 continue  # R3: it waits for `rep review`, or was suspended
             # D36's criterion: a grade other than Again, and for a new item
@@ -283,7 +248,10 @@ def session_rounds(plan: list[PlanSlot], session_events: list[Event]) -> RoundSt
             if round_rating == AGAIN or (item_id in new_item_ids and round_number == 1):
                 next_round_item_ids.append(item_id)
         if next_round_item_ids == []:
-            return {"round_number": round_number, "round_item_ids": round_item_ids, "unanswered_item_ids": []}
+            return {
+                "round_number": round_number, "round_item_ids": round_item_ids,
+                "unanswered_item_ids": [], "round_attempt_ids": round_attempt_ids,
+            }  # fmt: skip
         round_number += 1
         round_item_ids = next_round_item_ids
 
@@ -298,12 +266,15 @@ class SheetEntry(TypedDict):
     typed_answer: str | None
     answer: str | None
     criteria: list[str] | None
+    key_changed: bool  # the item's fingerprint now differs from the attempt's (G5)
 
 
 class SheetResult(TypedDict):
     amends: list[tuple[str, int]]  # (attempt id, new rating), in sheet order
     suspended_item_ids: list[str]
-    problems: list[str]  # "line N: ..." for the person; when not empty, nothing is applied
+    # (line number, message): the shell shows each above its line. When not
+    # empty, nothing is applied.
+    problems: list[tuple[int, str]]
 
 
 GRADE_WORDS: dict[str, int | None] = {"again": AGAIN, "hard": 2, "good": 3, "easy": 4, "?": None}
@@ -340,6 +311,8 @@ def render_grading_sheet(entries: list[SheetEntry], title: str) -> str:
         for criterion in entry["criteria"] or []:
             sheet_lines.append(f"#         check:  {criterion}")
         sheet_lines.append(f"#         item:   {entry['path']}:{entry['line']}")
+        if entry["key_changed"]:
+            sheet_lines.append("#         note:   the item changed after this answer; the key above is today's")
         sheet_lines.append("")
     return "\n".join(sheet_lines)
 
@@ -356,7 +329,7 @@ def read_grading_sheet(sheet_text: str, entries: list[SheetEntry]) -> SheetResul
     entries_by_attempt_id = {entry["attempt_id"]: entry for entry in entries}
     amends: list[tuple[str, int]] = []
     suspended_item_ids: list[str] = []
-    problems: list[str] = []
+    problems: list[tuple[int, str]] = []
     seen_attempt_ids: set[str] = set()
     for line_index, sheet_line in enumerate(sheet_text.split("\n")):
         line_number = line_index + 1
@@ -365,29 +338,98 @@ def read_grading_sheet(sheet_text: str, entries: list[SheetEntry]) -> SheetResul
             continue
         grade_word = words[0].lower()
         if len(words) < 2 or words[1] not in entries_by_attempt_id:
-            problems.append(f"line {line_number}: no answer of this sheet is named here (the second word is its id)")
+            problems.append((line_number, "no answer of this sheet is named here (the second word is its id)"))
             continue
         attempt_id = words[1]
         if attempt_id in seen_attempt_ids:
-            problems.append(f"line {line_number}: answer {attempt_id} appears twice")
+            problems.append((line_number, f"answer {attempt_id} appears twice"))
             continue
         seen_attempt_ids.add(attempt_id)
         entry = entries_by_attempt_id[attempt_id]
         if grade_word == SUSPEND_WORD:
-            suspended_item_ids.append(entry["item_id"])
+            # G4: `rep review` can list two answers of one item.
+            if entry["item_id"] not in suspended_item_ids:
+                suspended_item_ids.append(entry["item_id"])
             continue
         if grade_word not in GRADE_WORDS:
-            problems.append(f"line {line_number}: '{words[0]}' is not a grade (again, hard, good, easy, ?, suspend)")
+            problems.append((line_number, f"'{words[0]}' is not a grade (again, hard, good, easy, ?, suspend)"))
             continue
         new_rating = GRADE_WORDS[grade_word]
         if new_rating is None:
             if entry["rating"] is not None:
                 # G4: an amend needs a grade (events.py E1), so a grade
                 # rep wrote cannot be taken back to "no grade".
-                problems.append(f"line {line_number}: an automatic grade cannot go back to ?; write again or good")
+                problems.append((line_number, "an automatic grade cannot go back to ?; write again or good"))
             continue
         if new_rating != entry["rating"]:
             amends.append((attempt_id, new_rating))
     if problems != []:
         return {"amends": [], "suspended_item_ids": [], "problems": problems}
     return {"amends": amends, "suspended_item_ids": suspended_item_ids, "problems": []}
+
+
+def grading_sheet_entries(
+    events: list[Event], attempt_ids: list[str], located_items_by_id: dict[str, LocatedItem]
+) -> list[SheetEntry]:
+    """The sheet entries for some attempts, as the history stands (PLAN.md D41, D45; G5).
+
+    PRE   every id in attempt_ids is an effective attempt in events.
+    POST  one entry per attempt, in the order given, except attempts whose
+          item is in no library file (lint reports those, I2): with no key
+          there is nothing to grade against. The rating is the one in
+          effect, amends applied.
+    """
+    effective = effective_events(events)
+    attempts_by_id: dict[str, AttemptEvent] = {
+        event["id"]: event for event in effective["ordered_events"] if event["kind"] == "attempt"
+    }
+    entries: list[SheetEntry] = []
+    for attempt_id in attempt_ids:
+        attempt = attempts_by_id[attempt_id]
+        located_item = located_items_by_id.get(attempt["item"])
+        if located_item is None:
+            continue
+        item = located_item["item"]
+        entries.append(
+            {
+                "attempt_id": attempt_id,
+                "item_id": item["id"],
+                "rating": effective["amended_ratings"].get(attempt_id, attempt["rating"]),
+                "path": located_item["path"],
+                "line": item["line"],
+                "question": item["question"],
+                "typed_answer": attempt["typed_answer"],
+                "answer": item["answer"],
+                "criteria": item["criteria"],
+                # PLAN.md D33: stored on the attempt, never recomputed; a
+                # mismatch means the key on the sheet is not the one answered.
+                "key_changed": attempt["fingerprint"] != item_fingerprint(item),
+            }
+        )
+    return entries
+
+
+def review_attempt_ids(events: list[Event], device_id: str) -> list[str]:
+    """The attempts `rep review` shows (PLAN.md D41; V1).
+
+    PRE   events is the whole history.
+    POST  the effective attempts of the last session this device started,
+          graded or not, so a slip can be corrected; then every other
+          effective attempt with no grade in effect, from any session or
+          device, so none is left ungraded for good. History order.
+    """
+    effective = effective_events(events)
+    last_session_id: str | None = None
+    for event in effective["ordered_events"]:
+        if event["kind"] == "session_start" and event["device"] == device_id:
+            last_session_id = event["id"]
+    last_session_attempt_ids: list[str] = []
+    ungraded_attempt_ids: list[str] = []
+    for event in effective["ordered_events"]:
+        if event["kind"] != "attempt" or event["id"] in effective["undone_event_ids"]:
+            continue
+        if event["session"] == last_session_id:
+            last_session_attempt_ids.append(event["id"])
+        elif effective["amended_ratings"].get(event["id"], event["rating"]) is None:
+            ungraded_attempt_ids.append(event["id"])
+    return last_session_attempt_ids + ungraded_attempt_ids

@@ -174,9 +174,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pyutils"
+version = "0.1.0"
+source = { editable = "../pyutils" }
+
+[package.metadata]
+requires-dist = [{ name = "pytest", marker = "extra == 'test'", specifier = ">=8" }]
+provides-extras = ["test"]
+
+[[package]]
 name = "rep"
 version = "0.0.0"
 source = { editable = "." }
+dependencies = [
+    { name = "pyutils" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -187,6 +199,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "pyutils", editable = "../pyutils" }]
 
 [package.metadata.requires-dev]
 dev = [

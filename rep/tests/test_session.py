@@ -1,4 +1,4 @@
-"""The plan and the queue, tested at their contract (session.py P1-P4, Q1-Q4)."""
+"""The plan, the rounds and the grading sheet, tested at their contract (session.py P, R, G, V)."""
 
 import random
 from datetime import UTC, datetime, timedelta
@@ -13,21 +13,23 @@ from rep.events import (
     AttemptEvent,
     Event,
     ItemStampedEvent,
+    SessionStartEvent,
     SuspendEvent,
     UndoEvent,
     fold_events,
     format_canonical_time,
 )
-from rep.library import LocatedItem, check_source_item, parse_library_text
+from rep.library import LocatedItem, check_source_item, item_fingerprint, parse_library_text
 from rep.machine import DEVICE_ID_ALPHABET
 from rep.session import (
     DEFAULT_PRESET,
     PlanSlot,
     SheetEntry,
+    grading_sheet_entries,
     plan_session,
     read_grading_sheet,
     render_grading_sheet,
-    session_queue,
+    review_attempt_ids,
     session_rounds,
 )
 
@@ -172,103 +174,6 @@ def test_plan_is_pure() -> None:
     )
 
 
-# --- the queue (Q1-Q4) ---------------------------------------------------------
-
-
-def run_session(plan: list[PlanSlot], grade_for: dict[str, list[int | None]]) -> tuple[list[Event], int]:
-    """Answer the head of the queue until it empties; grade_for gives each
-    item's grades in order, Good once they run out. Returns the events and
-    the number of attempts."""
-    session_events: list[Event] = []
-    grades_left = {item_id: list(grades) for item_id, grades in grade_for.items()}
-    queue = session_queue(plan, session_events, DEFAULT_PRESET)
-    while queue != []:
-        assert len(session_events) < 1000, "the queue did not empty"
-        head_item_id = queue[0]["item_id"]
-        item_grades = grades_left.get(head_item_id, [])
-        rating = item_grades.pop(0) if item_grades != [] else 3
-        moment = START + timedelta(seconds=len(session_events))
-        session_events.append(attempt(len(session_events), moment, head_item_id, rating, "2026-10-01"))
-        queue = session_queue(plan, session_events, DEFAULT_PRESET)
-    return session_events, len(session_events)
-
-
-@given(strategies.integers(min_value=0, max_value=12), strategies.integers(min_value=0, max_value=12))
-def test_all_good_session_ends_after_reviews_plus_twice_the_new_items(due_count: int, new_count: int) -> None:
-    # Q4: each review is shown once; each new item twice (its first showing
-    # always returns, D36).
-    plan: list[PlanSlot] = [{"item_id": f"due{index}-7q2m", "reason": "due"} for index in range(due_count)]
-    new_slots: list[PlanSlot] = [{"item_id": f"new{index}-7q2m", "reason": "new"} for index in range(new_count)]
-    plan += new_slots
-    _, attempt_count = run_session(plan, {})
-    assert attempt_count == due_count + 2 * new_count
-
-
-def test_again_returns_after_the_gap_and_at_the_end_when_fewer_remain() -> None:
-    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(6)]
-    missed: list[Event] = [attempt(0, START, "item0-7q2m", 1, "2026-10-01")]
-    queue = session_queue(plan, missed, DEFAULT_PRESET)
-    assert [slot["item_id"] for slot in queue] == [
-        "item1-7q2m", "item2-7q2m", "item3-7q2m", "item0-7q2m", "item4-7q2m", "item5-7q2m",
-    ]  # fmt: skip
-    assert queue[3]["reason"] == "relearn"
-    short_plan: list[PlanSlot] = plan[:2]
-    queue = session_queue(short_plan, missed, DEFAULT_PRESET)
-    assert [slot["item_id"] for slot in queue] == ["item1-7q2m", "item0-7q2m"]
-
-
-def test_question_mark_and_suspend_drop_the_item_and_undoing_the_suspend_restores_it() -> None:
-    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
-    ungraded = attempt(0, START, "item0-7q2m", None, "2026-10-01")
-    assert [slot["item_id"] for slot in session_queue(plan, [ungraded], DEFAULT_PRESET)] == ["item1-7q2m", "item2-7q2m"]
-    suspend: SuspendEvent = {
-        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(1), "at": format_canonical_time(START),
-        "device": DEVICE, "kind": "suspend", "item": "item1-7q2m",
-    }  # fmt: skip
-    assert [slot["item_id"] for slot in session_queue(plan, [suspend], DEFAULT_PRESET)] == ["item0-7q2m", "item2-7q2m"]
-    undo: UndoEvent = {
-        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(2), "at": format_canonical_time(START + timedelta(seconds=1)),
-        "device": DEVICE, "kind": "undo", "target": suspend["id"],
-    }  # fmt: skip
-    assert session_queue(plan, [suspend, undo], DEFAULT_PRESET) == plan
-
-
-def test_an_amend_from_again_to_good_takes_the_item_out_of_relearning() -> None:
-    # PLAN.md D35: `u` corrects a grade with an amend, and the queue follows.
-    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(4)]
-    missed = attempt(0, START, "item0-7q2m", 1, "2026-10-01")
-    corrected: AmendEvent = {
-        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(1), "at": format_canonical_time(START + timedelta(seconds=1)),
-        "device": DEVICE, "kind": "amend", "target": missed["id"], "rating": 3,
-    }  # fmt: skip
-    assert [slot["item_id"] for slot in session_queue(plan, [missed, corrected], DEFAULT_PRESET)] == [
-        "item1-7q2m", "item2-7q2m", "item3-7q2m",
-    ]  # fmt: skip
-
-
-def test_a_new_item_recalled_at_first_sight_still_returns_once() -> None:
-    plan: list[PlanSlot] = [{"item_id": "new-7q2m", "reason": "new"}, {"item_id": "due-7q2m", "reason": "due"}]
-    first_sight = attempt(0, START, "new-7q2m", 3, "2026-10-01")
-    queue = session_queue(plan, [first_sight], DEFAULT_PRESET)
-    assert queue == [{"item_id": "due-7q2m", "reason": "due"}, {"item_id": "new-7q2m", "reason": "relearn"}]
-    after_gap = attempt(2, START + timedelta(seconds=2), "new-7q2m", 3, "2026-10-01")
-    between = attempt(1, START + timedelta(seconds=1), "due-7q2m", 3, "2026-10-01")
-    assert session_queue(plan, [first_sight, between, after_gap], DEFAULT_PRESET) == []
-
-
-@given(strategies.lists(strategies.sampled_from([1, 3, None]), min_size=1, max_size=15), strategies.randoms(use_true_random=False))
-def test_queue_is_a_function_of_the_events_not_their_order(grades: list[int | None], shuffler: random.Random) -> None:
-    # Q1: a session replayed from its events in any order gives the same
-    # queue, because the events are sorted as the fold sorts them.
-    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(5)]
-    plan.append({"item_id": "new-7q2m", "reason": "new"})
-    grade_for: dict[str, list[int | None]] = {"item0-7q2m": list(grades), "new-7q2m": list(grades)}
-    session_events, _ = run_session(plan, grade_for)
-    shuffled = list(session_events)
-    shuffler.shuffle(shuffled)
-    assert session_queue(plan, shuffled, DEFAULT_PRESET) == session_queue(plan, session_events, DEFAULT_PRESET) == []
-
-
 # --- rounds (R1-R4, PLAN.md D45) -----------------------------------------------
 
 
@@ -280,10 +185,16 @@ def answer_in_rounds(plan: list[PlanSlot], grade_for: dict[str, list[int | None]
     session_events: list[Event] = []
     grades_left = {item_id: list(grades) for item_id, grades in grade_for.items()}
     round_sizes: list[int] = []
+    # As the session loop does (R5): a round counts as graded once it is
+    # answered, since here every grade is written with its answer.
+    graded_round_count = 0
     while True:
-        state = session_rounds(plan, session_events)
+        state = session_rounds(plan, session_events, graded_round_count + 1)
         if state["unanswered_item_ids"] == []:
-            return session_events, round_sizes
+            if state["round_number"] == graded_round_count:
+                return session_events, round_sizes
+            graded_round_count = state["round_number"]
+            continue
         if len(round_sizes) < state["round_number"]:
             round_sizes.append(len(state["round_item_ids"]))
         assert len(session_events) < 1000, "the rounds did not end"
@@ -318,10 +229,11 @@ def test_a_miss_returns_in_the_next_round_until_recalled() -> None:
 def test_rounds_wait_on_their_unanswered_items_in_plan_order() -> None:
     plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
     first: list[Event] = [attempt(0, START, "item0-7q2m", None, "2026-10-01")]
-    assert session_rounds(plan, first) == {
+    assert session_rounds(plan, first, 1) == {
         "round_number": 1,
         "round_item_ids": ["item0-7q2m", "item1-7q2m", "item2-7q2m"],
         "unanswered_item_ids": ["item1-7q2m", "item2-7q2m"],
+        "round_attempt_ids": [first[0]["id"]],
     }
 
 
@@ -330,8 +242,10 @@ def test_an_ungraded_answer_or_a_suspend_ends_the_item_and_an_amend_decides() ->
     # amend, decide the rest.
     plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
     answers: list[Event] = [attempt(index, START + timedelta(seconds=index), f"item{index}-7q2m", None, "2026-10-01") for index in range(3)]
-    ungraded_round = session_rounds(plan, answers)
+    ungraded_round = session_rounds(plan, answers, 1)
     assert (ungraded_round["round_number"], ungraded_round["unanswered_item_ids"]) == (1, [])
+    # The round's sheet is built from these, in round order.
+    assert ungraded_round["round_attempt_ids"] == [answer["id"] for answer in answers]
     graded: list[Event] = []
     for position, (answer, rating) in enumerate(zip(answers, [1, 1, 3], strict=True)):
         amend: AmendEvent = {
@@ -344,9 +258,33 @@ def test_an_ungraded_answer_or_a_suspend_ends_the_item_and_an_amend_decides() ->
         "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(20), "at": format_canonical_time(START + timedelta(minutes=1)),
         "device": DEVICE, "kind": "suspend", "item": "item1-7q2m",
     }  # fmt: skip
-    assert session_rounds(plan, [*answers, *graded, suspend]) == {
+    assert session_rounds(plan, [*answers, *graded, suspend], 2) == {
         "round_number": 2, "round_item_ids": ["item0-7q2m"], "unanswered_item_ids": ["item0-7q2m"],
+        "round_attempt_ids": [],
     }  # fmt: skip
+
+
+def test_an_answered_round_waits_for_its_grades_before_the_next_is_decided() -> None:
+    # R5: an ungraded answer would end its item (R3), so round 2 cannot be
+    # decided until round 1's sheet has been saved; found by the terminal
+    # test, where self-graded items left before they were graded.
+    plan: list[PlanSlot] = [{"item_id": "new-7q2m", "reason": "new"}, {"item_id": "due-7q2m", "reason": "due"}]
+    answers: list[Event] = [
+        attempt(0, START, "new-7q2m", None, "2026-10-01"),
+        attempt(1, START + timedelta(seconds=1), "due-7q2m", 1, "2026-10-01"),
+    ]
+    assert session_rounds(plan, answers, 1) == {
+        "round_number": 1, "round_item_ids": ["new-7q2m", "due-7q2m"], "unanswered_item_ids": [],
+        "round_attempt_ids": [answers[0]["id"], answers[1]["id"]],
+    }  # fmt: skip
+    graded: AmendEvent = {
+        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(2), "at": format_canonical_time(START + timedelta(minutes=1)),
+        "device": DEVICE, "kind": "amend", "target": answers[0]["id"], "rating": 3,
+    }  # fmt: skip
+    assert session_rounds(plan, [*answers, graded], 2)["unanswered_item_ids"] == ["new-7q2m", "due-7q2m"]
+    # Round 2's sheet holds round 2's answers only.
+    second_answer = attempt(3, START + timedelta(minutes=2), "due-7q2m", 3, "2026-10-01")
+    assert session_rounds(plan, [*answers, graded, second_answer], 2)["round_attempt_ids"] == [second_answer["id"]]
 
 
 def test_a_new_item_recalled_at_first_sight_returns_for_one_more_round() -> None:
@@ -364,8 +302,8 @@ def test_rounds_are_a_function_of_the_events_not_their_order(grades: list[int | 
     session_events, _ = answer_in_rounds(plan, {"item0-7q2m": list(grades), "new-7q2m": list(grades)})
     shuffled = list(session_events)
     shuffler.shuffle(shuffled)
-    assert session_rounds(plan, shuffled) == session_rounds(plan, session_events)
-    assert session_rounds(plan, session_events)["unanswered_item_ids"] == []
+    assert session_rounds(plan, shuffled, 100) == session_rounds(plan, session_events, 100)
+    assert session_rounds(plan, session_events, 100)["unanswered_item_ids"] == []
 
 
 # --- the grading sheet (G1-G4, PLAN.md D41, D45) -------------------------------
@@ -375,7 +313,7 @@ def sheet_entry(position: int, rating: int | None, question: str = "What does Km
     return {
         "attempt_id": event_id_for(position), "item_id": f"item{position}-7q2m", "rating": rating,
         "path": "/home/person/learning/library/a.md", "line": 3 + 4 * position, "question": question,
-        "typed_answer": "half vmax", "answer": "half of Vmax", "criteria": None,
+        "typed_answer": "half vmax", "answer": "half of Vmax", "criteria": None, "key_changed": False,
     }  # fmt: skip
 
 
@@ -440,8 +378,8 @@ def test_a_sheet_with_a_problem_applies_nothing(edited_line: str, problem_fragme
     sheet_lines.append(f"good    {event_id_for(1)}  What does Km measure?")  # a second line for the same answer
     result = read_grading_sheet("\n".join(sheet_lines), entries)
     assert result["amends"] == [] and result["suspended_item_ids"] == []
-    assert any(problem_fragment in problem for problem in result["problems"])
-    assert any("appears twice" in problem for problem in result["problems"])
+    assert any(problem_fragment in message for _, message in result["problems"])
+    assert [line_number for line_number, message in result["problems"] if "appears twice" in message] == [len(sheet_lines)]
 
 
 def test_a_deleted_line_leaves_its_answer_as_it_is() -> None:
@@ -458,6 +396,104 @@ def test_a_new_item_left_ungraded_does_not_return() -> None:
         attempt(0, START, "new-7q2m", None, "2026-10-01"),
         attempt(1, START + timedelta(seconds=1), "due-7q2m", 1, "2026-10-01"),
     ]
-    assert session_rounds(plan, answers) == {
+    assert session_rounds(plan, answers, 2) == {
         "round_number": 2, "round_item_ids": ["due-7q2m"], "unanswered_item_ids": ["due-7q2m"],
+        "round_attempt_ids": [],
     }  # fmt: skip
+
+
+def test_suspend_on_two_answers_of_one_item_suspends_it_once() -> None:
+    # `rep review` can list an item twice (its last session's answer and an
+    # older ungraded one).
+    entries = [sheet_entry(0, None), sheet_entry(1, None)]
+    entries[1]["item_id"] = entries[0]["item_id"]
+    sheet_text = render_grading_sheet(entries, "review").replace("?       ", "suspend ")
+    assert read_grading_sheet(sheet_text, entries) == {
+        "amends": [], "suspended_item_ids": [entries[0]["item_id"]], "problems": [],
+    }  # fmt: skip
+
+
+# --- sheet entries from the history (G5) and what review shows (V1) -----------
+
+REVIEW_LIBRARY = "### Q: Capital of France?\nid: capital-france-7q2m\nA: Paris\ncheck: exact\n\n### Q: What does Km measure?\nid: km-measure-7q2m\nA: half of Vmax\n"
+
+
+def session_start(position: int, moment: datetime, device: str) -> SessionStartEvent:
+    return {
+        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(position), "at": format_canonical_time(moment),
+        "device": device, "kind": "session_start", "preset": {},
+    }  # fmt: skip
+
+
+def answer(position: int, moment: datetime, session_id: str, item_id: str, rating: int | None) -> AttemptEvent:
+    answered = attempt(position, moment, item_id, rating, "2026-10-01")
+    answered["session"] = session_id
+    return answered
+
+
+def test_sheet_entries_show_the_grade_in_effect_and_flag_a_changed_key() -> None:
+    located_items = located("/library/a.md", REVIEW_LIBRARY)
+    located_items_by_id = {located_item["item"]["id"]: located_item for located_item in located_items}
+    capital, km = (located_item["item"] for located_item in located_items)
+    typed = attempt(0, START, capital["id"], 1, "2026-10-01")
+    typed["typed_answer"] = "paris"
+    typed["fingerprint"] = item_fingerprint(capital)
+    # Answered against a key since edited: its recorded fingerprint differs.
+    edited = attempt(1, START, km["id"], None, "2026-10-01")
+    edited["fingerprint"] = "f1:0000000000000000"
+    gone = attempt(2, START, "deleted-7q2m", None, "2026-10-01")
+    amend: AmendEvent = {
+        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(3), "at": format_canonical_time(START + timedelta(minutes=1)),
+        "device": DEVICE, "kind": "amend", "target": typed["id"], "rating": 3,
+    }  # fmt: skip
+    entries = grading_sheet_entries([typed, edited, gone, amend], [edited["id"], gone["id"], typed["id"]], located_items_by_id)
+    assert entries == [
+        {
+            "attempt_id": edited["id"], "item_id": km["id"], "rating": None, "path": "/library/a.md", "line": km["line"],
+            "question": "What does Km measure?", "typed_answer": None, "answer": "half of Vmax", "criteria": None,
+            "key_changed": True,
+        },
+        {
+            "attempt_id": typed["id"], "item_id": capital["id"], "rating": 3, "path": "/library/a.md",
+            "line": capital["line"], "question": "Capital of France?", "typed_answer": "paris", "answer": "Paris",
+            "criteria": None, "key_changed": False,
+        },
+    ]  # fmt: skip
+    sheet_text = render_grading_sheet(entries, "review")
+    assert sheet_text.count("#         note:   the item changed after this answer") == 1
+    assert sheet_text.index("note:") < sheet_text.index(typed["id"])
+
+
+def test_review_shows_the_last_session_of_this_device_then_every_other_ungraded_answer() -> None:
+    other_device = "7b3bj46aif"
+    older = session_start(0, START, DEVICE)
+    older_graded = answer(1, START + timedelta(seconds=1), older["id"], "a-7q2m", 3)
+    older_ungraded = answer(2, START + timedelta(seconds=2), older["id"], "b-7q2m", None)
+    older_amended = answer(3, START + timedelta(seconds=3), older["id"], "c-7q2m", None)
+    amend_older: AmendEvent = {
+        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(4), "at": format_canonical_time(START + timedelta(seconds=4)),
+        "device": DEVICE, "kind": "amend", "target": older_amended["id"], "rating": 1,
+    }  # fmt: skip
+    last = session_start(5, START + timedelta(hours=1), DEVICE)
+    last_graded = answer(6, START + timedelta(hours=1, seconds=1), last["id"], "a-7q2m", 3)
+    last_ungraded = answer(7, START + timedelta(hours=1, seconds=2), last["id"], "b-7q2m", None)
+    last_undone = answer(8, START + timedelta(hours=1, seconds=3), last["id"], "c-7q2m", None)
+    undo: UndoEvent = {
+        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(9), "at": format_canonical_time(START + timedelta(hours=1, seconds=4)),
+        "device": DEVICE, "kind": "undo", "target": last_undone["id"],
+    }  # fmt: skip
+    # A later session on another device is not this device's last session;
+    # its ungraded answer still needs a grade.
+    elsewhere = session_start(10, START + timedelta(hours=2), other_device)
+    elsewhere_graded = answer(11, START + timedelta(hours=2, seconds=1), elsewhere["id"], "a-7q2m", 3)
+    elsewhere_ungraded = answer(12, START + timedelta(hours=2, seconds=2), elsewhere["id"], "b-7q2m", None)
+    elsewhere_graded["device"] = elsewhere_ungraded["device"] = other_device
+    history: list[Event] = [
+        older, older_graded, older_ungraded, older_amended, amend_older, last, last_graded, last_ungraded,
+        last_undone, undo, elsewhere, elsewhere_graded, elsewhere_ungraded,
+    ]  # fmt: skip
+    expected = [last_graded["id"], last_ungraded["id"], older_ungraded["id"], elsewhere_ungraded["id"]]
+    assert review_attempt_ids(history, DEVICE) == expected
+    assert review_attempt_ids(list(reversed(history)), DEVICE) == expected
+    # A device with no session of its own reviews only what is ungraded.
+    assert review_attempt_ids(history, "zzzzzzzzzz") == [older_ungraded["id"], last_ungraded["id"], elsewhere_ungraded["id"]]

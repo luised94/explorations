@@ -6,12 +6,16 @@ takes: the console script uv installs, the package metadata behind
 subprocess with its own HOME, so it cannot touch the real machine setup.
 """
 
+import fcntl
 import json
 import os
 import pty
 import select
 import shutil
+import struct
 import subprocess
+import sys
+import termios
 import time
 from pathlib import Path
 
@@ -318,7 +322,7 @@ def test_lint_of_a_clean_library_exits_0_and_says_when_citekeys_went_unchecked(t
     assert b"bib_path is not set in local.toml; citekeys were not checked" in result.stderr
 
 
-# --- plain `rep`: a session under a real terminal (PLAN.md D9, D34, D35) ------
+# --- plain `rep` and `rep review` under a real terminal (PLAN.md D34, D41, D45) ---
 
 SESSION_LIBRARY = (
     "### Q: Capital of France?\n"
@@ -331,6 +335,34 @@ SESSION_LIBRARY = (
     "A: half of Vmax\n"
 )
 
+# The editor a test runs as $EDITOR. Each call is one pass of the sheet: it
+# logs the sheet as it found it, sets the first word of every read line that
+# contains one of the pass's fragments, and exits with the pass's code.
+EDITOR_SCRIPT = """
+import json, pathlib, sys
+passes_path = pathlib.Path(sys.argv[1])
+sheet_path = pathlib.Path(sys.argv[2])
+log_path = passes_path.with_suffix(".log")
+seen = json.loads(log_path.read_text()) if log_path.exists() else []
+this_pass = json.loads(passes_path.read_text())[len(seen)]
+sheet_text = sheet_path.read_text()
+log_path.write_text(json.dumps([*seen, sheet_text]))
+sheet_lines = sheet_text.split("\\n")
+for index, line in enumerate(sheet_lines):
+    for fragment, word in this_pass["words"].items():
+        if line.strip() != "" and not line.startswith("#") and fragment in line:
+            sheet_lines[index] = word + line[len(line.split()[0]):]
+sheet_path.write_text("\\n".join(sheet_lines))
+sys.exit(this_pass["exit"])
+"""
+
+
+def scripted_editor(tmp_path: Path, passes: list[dict[str, object]]) -> tuple[str, Path]:
+    """$EDITOR for a run, and the log of the sheets it was given."""
+    (tmp_path / "editor.py").write_text(EDITOR_SCRIPT, encoding="utf-8")
+    (tmp_path / "passes.json").write_text(json.dumps(passes), encoding="utf-8")
+    return f"{sys.executable} {tmp_path / 'editor.py'} {tmp_path / 'passes.json'}", tmp_path / "passes.log"
+
 
 def session_home(tmp_path: Path, library_text: str) -> Path:
     config_directory = tmp_path / ".config" / "rep"
@@ -341,37 +373,54 @@ def session_home(tmp_path: Path, library_text: str) -> Path:
     return tmp_path / "learning"
 
 
-def run_rep_on_a_terminal(home_directory: Path, script: list[tuple[str, bytes]]) -> tuple[int, str]:
-    """Run plain `rep` on a pseudo-terminal. For each (text, keys): wait until
-    text appears in the output, then type keys (none for a step that only
-    waits). Waiting for text, not for a time, keeps the test independent of
-    machine speed. Keys go only after their own prompt: the session discards
-    keys typed before its prompt (PLAN.md D35), so a script that types on
-    seeing earlier text loses keys at random, as a person would."""
+def run_rep_on_a_terminal(
+    home_directory: Path, script: list[tuple[str, bytes]], editor: str = "false", arguments: list[str] | None = None
+) -> tuple[int, str]:
+    """Run `rep` on a pseudo-terminal of 30 rows and 100 columns. For each
+    (text, keys): wait until text appears in the output, then type keys
+    (none for a step that only waits). Waiting for text, not for a time,
+    keeps the test independent of machine speed. Keys go only after their
+    own prompt: the session discards keys typed before its prompt (PLAN.md
+    D35), so a script that types on seeing earlier text loses keys at
+    random, as a person would."""
     rep_executable = shutil.which("rep")
     assert rep_executable is not None, "rep is not on PATH; run the tests with `uv run pytest`"
     environment = dict(os.environ)
     environment["HOME"] = str(home_directory)
     environment["LANG"] = environment["LC_ALL"] = "C.UTF-8"
-    for variable in ("REP_DATA_ROOT", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "EDITOR"):
+    # Plain text to search; pyutils turns styling off for NO_COLOR (D46).
+    environment["NO_COLOR"] = "1"
+    environment["EDITOR"] = editor
+    for variable in ("REP_DATA_ROOT", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
         environment.pop(variable, None)
     controller_descriptor, terminal_descriptor = pty.openpty()
+    # A new pseudo-terminal reports 0 columns (measured), unlike any real
+    # terminal, and pyutils would lay out to that width (FINDINGS.md F21).
+    fcntl.ioctl(terminal_descriptor, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+    # As in a person's terminal, the pseudo-terminal is rep's controlling
+    # terminal, so Ctrl-C reaches it as SIGINT; without this, nothing was
+    # delivered (measured). preexec_fn runs after the new session is made
+    # and standard input is in place.
     process = subprocess.Popen(
-        [rep_executable], env=environment, stdin=terminal_descriptor, stdout=terminal_descriptor,
-        stderr=terminal_descriptor, close_fds=True,
+        [rep_executable, *(arguments or [])], env=environment, stdin=terminal_descriptor,
+        stdout=terminal_descriptor, stderr=terminal_descriptor, close_fds=True, start_new_session=True,
+        preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0),
     )  # fmt: skip
     os.close(terminal_descriptor)
     output = b""
+    seen_output = b""
     try:
         for expected_text, keys in script:
             deadline = time.monotonic() + 15
             while expected_text.encode() not in output:
-                assert time.monotonic() < deadline, f"never saw {expected_text!r}; output so far:\n{output.decode(errors='replace')}"
+                assert time.monotonic() < deadline, f"never saw {expected_text!r}; output so far:\n{(seen_output + output).decode(errors='replace')}"
                 if select.select([controller_descriptor], [], [], 0.1)[0]:
                     output += os.read(controller_descriptor, 4096)
             # Only what follows a match is searched next, so one prompt
             # shown twice is waited for twice.
-            output = output[output.index(expected_text.encode()) + len(expected_text.encode()):]
+            match_end = output.index(expected_text.encode()) + len(expected_text.encode())
+            seen_output += output[:match_end]
+            output = output[match_end:]
             os.write(controller_descriptor, keys)
         exit_code = process.wait(timeout=15)
         while select.select([controller_descriptor], [], [], 0.1)[0]:
@@ -382,7 +431,7 @@ def run_rep_on_a_terminal(home_directory: Path, script: list[tuple[str, bytes]])
     finally:
         process.kill()
         os.close(controller_descriptor)
-    return exit_code, output.decode(errors="replace")
+    return exit_code, (seen_output + output).decode(errors="replace")
 
 
 def read_session_events(data_root: Path) -> list[dict[str, object]]:
@@ -390,98 +439,186 @@ def read_session_events(data_root: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in events_text.splitlines()]
 
 
-def test_a_session_end_to_end_on_a_terminal(tmp_path: Path) -> None:
+def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
     data_root = session_home(tmp_path, SESSION_LIBRARY)
+    editor, sheet_log = scripted_editor(
+        tmp_path,
+        [
+            {"words": {"Km measure": "good"}, "exit": 0},  # round 1
+            {"words": {"Km measure": "good"}, "exit": 0},  # round 2: the case slip stays Again
+            {"words": {}, "exit": 0},  # round 3: saved unchanged
+        ],
+    )
     exit_code, output = run_rep_on_a_terminal(
         tmp_path,
         [
-            ("0 due, 2 new. Any key starts", b" "),
-            # Typed and graded by rep. "Pars", left arrow, "i": line editing
-            # must give "Paris", not escape bytes in the answer (D34).
+            ("Enter starts; Ctrl-D stops. ", b"\r"),
+            # "Pars", left arrow, "i": line editing must give "Paris", not
+            # escape bytes in the answer (D34).
             ("Capital of France?", b""),
             ("> ", b"Pars\x1b[Di\r"),
-            ("matches", b""),
-            ("any key next", b" "),
             ("What does Km measure?", b""),
-            ("any key reveals", b" "),
-            ("y good", b"y"),
-            # A new item's first showing always returns (D36); this time a
-            # case slip, which exact grading counts as a miss (D20).
+            ("> ", b"half vmax\r"),
+            # A new item's first showing always returns (D36).
+            ("round 2", b""),
             ("Capital of France?", b""),
             ("> ", b"paris\r"),
-            ("does not match", b""),
-            ("any key next", b" "),
             ("What does Km measure?", b""),
-            ("any key reveals", b" "),
-            ("y good", b"y"),
+            ("> ", b"half of Vmax\r"),
+            ("round 3", b""),
             ("Capital of France?", b""),
             ("> ", b"Paris\r"),
-            ("matches", b""),
-            ("any key next", b" "),
-            ("Session complete", b" "),
+            ("session completed", b""),
         ],
+        editor=editor,
     )
     assert exit_code == 0, output
-    assert "5 attempts; session completed." in output
+    assert "5 answers; 0 wait for `rep review`." in output
+    # A 76-column card centered on 100 columns: 12 spaces before each border.
+    assert "\n" + " " * 12 + "+" + "-" * 74 + "+" in output.replace("\r\n", "\n")
+    assert "1 of 2" in output and "new, exact" in output and "again, exact" in output
+    # Nothing is revealed before the sheet (D45).
+    assert "half of Vmax" not in output.replace("half of Vmax\r", "")
     session_events = read_session_events(data_root)
-    assert [event["kind"] for event in session_events] == ["session_start", *["attempt"] * 5, "session_end"]
-    session_start, *attempts, session_end = session_events
+    assert [event["kind"] for event in session_events] == [
+        "session_start", "attempt", "attempt", "amend", "attempt", "attempt", "amend", "attempt", "session_end",
+    ]  # fmt: skip
+    session_start, *middle, session_end = session_events
     assert session_start["preset"] == {
-        "session_budget": 60, "new_per_day": 10, "new_item_cost": 3, "relearn_gap": 3,
-        "day_start_hour": 4, "desired_retention": 0.9,
+        "session_budget": 60, "new_per_day": 10, "new_item_cost": 3, "day_start_hour": 4, "desired_retention": 0.9,
     }  # fmt: skip
+    attempts = [event for event in middle if event["kind"] == "attempt"]
     assert [(attempt["item"], attempt["rating"], attempt["typed_answer"]) for attempt in attempts] == [
         ("capital-france-7q2m", 3, "Paris"),
-        ("km-measure-7q2m", 3, None),
+        ("km-measure-7q2m", None, "half vmax"),
         ("capital-france-7q2m", 1, "paris"),
-        ("km-measure-7q2m", 3, None),
+        ("km-measure-7q2m", None, "half of Vmax"),
         ("capital-france-7q2m", 3, "Paris"),
     ]
+    amends = [event for event in middle if event["kind"] == "amend"]
+    assert [(amend["target"], amend["rating"]) for amend in amends] == [(attempts[1]["id"], 3), (attempts[3]["id"], 3)]
     assert all(attempt["session"] == session_start["id"] for attempt in attempts)
     assert len({attempt["day"] for attempt in attempts}) == 1
     assert all(str(attempt["fingerprint"]).startswith("f1:") for attempt in attempts)
     assert (session_end["session"], session_end["reason"]) == (session_start["id"], "completed")
+    # Each round's sheet held that round's answers, the automatic grade as
+    # rep wrote it, the typed text beside the key; no sheet is left behind.
+    sheets: list[str] = json.loads(sheet_log.read_text(encoding="utf-8"))
+    assert len(sheets) == 3
+    assert f"good    {attempts[0]['id']}  Capital of France?" in sheets[0]
+    assert f"?       {attempts[1]['id']}  What does Km measure?\n#         typed:  half vmax\n#         key:    half of Vmax" in sheets[0]
+    assert f"again   {attempts[2]['id']}  Capital of France?" in sheets[1]
+    assert f"?       {attempts[3]['id']}  What does Km measure?" in sheets[1]
+    assert str(attempts[4]["id"]) in sheets[2] and str(attempts[3]["id"]) not in sheets[2]
+    assert list((tmp_path / ".local" / "state" / "rep").glob("*.txt")) == []
 
 
-def test_quitting_a_session_writes_its_end_and_no_attempt(tmp_path: Path) -> None:
-    data_root = session_home(tmp_path, "### Q: What does Km measure?\nid: km-measure-7q2m\nA: half of Vmax\n")
-    exit_code, output = run_rep_on_a_terminal(
-        tmp_path, [("0 due, 1 new. Any key starts", b" "), ("any key reveals", b"q")]
-    )
-    assert exit_code == 0 and "0 attempts; session quit." in output
-    assert [(event["kind"], event.get("reason")) for event in read_session_events(data_root)] == [
-        ("session_start", None),
-        ("session_end", "quit"),
-    ]
-
-
-def test_u_corrects_the_last_grade_with_an_amend(tmp_path: Path) -> None:
-    data_root = session_home(
-        tmp_path, SESSION_LIBRARY.replace("A: Paris\ncheck: exact\n", "A: Paris\n")
-    )
+def test_ctrl_d_grades_what_was_answered_then_quits(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY.replace("check: exact\n", ""))
+    editor, sheet_log = scripted_editor(tmp_path, [{"words": {"Capital": "easy"}, "exit": 0}])
     exit_code, output = run_rep_on_a_terminal(
         tmp_path,
         [
-            ("Any key starts", b" "),
+            ("Enter starts; Ctrl-D stops. ", b"\r"),
             ("Capital of France?", b""),
-            ("any key reveals", b" "),
-            ("y good", b"n"),  # a slip: meant Good
+            ("> ", b"Paris\r"),
             ("What does Km measure?", b""),
-            ("any key reveals", b"u"),
-            ("y good  n again  any other key keeps it", b"y"),
-            ("Now Good.", b""),
-            ("any key reveals", b"q"),
+            ("> ", b"\x04"),
+            ("session quit", b""),
+        ],
+        editor=editor,
+    )
+    assert exit_code == 0, output
+    assert "1 answers; 0 wait for `rep review`." in output
+    session_events = read_session_events(data_root)
+    assert [(event["kind"], event.get("rating"), event.get("reason")) for event in session_events] == [
+        ("session_start", None, None), ("attempt", None, None), ("amend", 4, None), ("session_end", None, "quit"),
+    ]  # fmt: skip
+    assert "What does Km measure?" not in json.loads(sheet_log.read_text(encoding="utf-8"))[0]
+
+
+def test_ctrl_c_ends_the_session_at_once_and_leaves_the_round_for_review(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY.replace("check: exact\n", ""))
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path,
+        [
+            ("Enter starts; Ctrl-D stops. ", b"\r"),
+            ("Capital of France?", b""),
+            ("> ", b"Paris\r"),
+            ("What does Km measure?", b""),
+            ("> ", b"\x03"),
+            ("session interrupted", b""),
         ],
     )
     assert exit_code == 0, output
-    session_events = read_session_events(data_root)
-    attempt = session_events[1]
-    amend = session_events[2]
-    assert (attempt["kind"], attempt["rating"]) == ("attempt", 1)
-    assert (amend["kind"], amend["target"], amend["rating"]) == ("amend", attempt["id"], 3)
+    assert "1 answers; 1 wait for `rep review`." in output and "no grade applied" not in output
+    assert [(event["kind"], event.get("rating"), event.get("reason")) for event in read_session_events(data_root)] == [
+        ("session_start", None, None), ("attempt", None, None), ("session_end", None, "interrupted"),
+    ]  # fmt: skip
 
 
-def test_a_session_needs_a_terminal(tmp_path: Path) -> None:
+def test_stopping_before_the_first_question_writes_nothing(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY)
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")])
+    assert exit_code == 0, output
+    assert not (data_root / "events").exists()
+
+
+def test_an_editor_error_applies_nothing_and_review_grades_later(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY.replace("check: exact\n", ""))
+    editor, _ = scripted_editor(tmp_path, [{"words": {"Km measure": "good"}, "exit": 1}])
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path,
+        [
+            ("Enter starts; Ctrl-D stops. ", b"\r"),
+            ("Capital of France?", b""),
+            ("> ", b"Paris\r"),
+            ("What does Km measure?", b""),
+            ("> ", b"\r"),  # nothing came to mind
+            ("session completed", b""),
+        ],
+        editor=editor,
+    )
+    assert exit_code == 0, output
+    assert "no grade applied" in output and "2 answers; 2 wait for `rep review`." in output
+    attempts = [event for event in read_session_events(data_root) if event["kind"] == "attempt"]
+    assert [event["kind"] for event in read_session_events(data_root)].count("amend") == 0
+
+    (tmp_path / "passes.log").unlink()
+    review_editor, sheet_log = scripted_editor(
+        tmp_path,
+        [
+            {"words": {"Km measure": "goood", "Capital": "suspend"}, "exit": 0},  # a typo: reopened
+            {"words": {"Km measure": "agin"}, "exit": 0},  # another: reopened
+            {"words": {"Km measure": "again"}, "exit": 0},
+        ],
+    )
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path, [("items suspended.", b"")], editor=review_editor, arguments=["review"]
+    )
+    assert exit_code == 0, output
+    assert "1 grades written, 1 items suspended." in output
+    review_events = read_session_events(data_root)[len(attempts) + 2:]
+    assert [(event["kind"], event.get("target"), event.get("rating"), event.get("item")) for event in review_events] == [
+        ("amend", attempts[1]["id"], 1, None), ("suspend", None, None, "capital-france-7q2m"),
+    ]  # fmt: skip
+    # The problem is shown right above its line; the person's other edit stays.
+    second_sheet = json.loads(sheet_log.read_text(encoding="utf-8"))[1]
+    problem_line = "# problem: 'goood' is not a grade (again, hard, good, easy, ?, suspend)"
+    sheet_lines = second_sheet.split("\n")
+    assert sheet_lines[sheet_lines.index(problem_line) + 1].split()[:2] == ["goood", attempts[1]["id"]]
+    assert [attempts[0]["id"]] == [line.split()[1] for line in sheet_lines if line.startswith("suspend ")]
+    assert "#         typed:  (nothing typed)" in second_sheet
+    # The last pass's problem is replaced, not added to.
+    third_sheet = json.loads(sheet_log.read_text(encoding="utf-8"))[2]
+    assert [line for line in third_sheet.split("\n") if line.startswith("# problem: ")] == [
+        "# problem: 'agin' is not a grade (again, hard, good, easy, ?, suspend)"
+    ]
+
+
+def test_a_session_and_review_need_a_terminal(tmp_path: Path) -> None:
     session_home(tmp_path, SESSION_LIBRARY)
     result = run_rep([], tmp_path)
     assert result.returncode == 2 and b"a session needs a terminal" in result.stderr
+    result = run_rep(["review"], tmp_path)
+    assert result.returncode == 2 and b"review needs a terminal" in result.stderr
