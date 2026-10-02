@@ -926,7 +926,7 @@ D40. Session events (M3). Extends D10.
   last attempt.
   Revisit: M3b stats.
 
-D41. `rep review` (M3, pending). Revises D8.
+D41. `rep review` (M3). Revises D8.
   Choice: `rep review` writes a file in the state directory with one line
   per attempt of this device's last session, plus every attempt still
   without a grade: a grade word (again, hard, good, easy, ?), the attempt
@@ -1045,13 +1045,18 @@ after the plan lock, before any code depends on it.
   sleep data becoming available (the boundary could be an observed sleep
   rather than a clock hour; section 9).
 
-D45. Rounds: every answer typed, graded per round (M3, pending).
+D45. Rounds: every answer typed, graded per round (M3).
 Revises D8, D31, D35, D36, D41; approved by the person on 2026-10-02
 after the first real session.
   Choice: every attempt is typed. The question is shown, the person types
   what came to mind (a cue is enough) and presses Enter; nothing is
-  revealed. The attempt is written at once, ungraded, with its raw text,
-  latency, fingerprint and day. When every item of the round has an
+  revealed. The attempt is written at once with its raw text, latency,
+  fingerprint and day: ungraded for a self-graded item; for an exact or
+  numeric item, with its automatic grade (D20), still not shown until the
+  sheet, so that changing it there is a recorded correction, which D20's
+  watch and E2 count (refined while building, 2026-10-02: written
+  ungraded, every automatic grade would need an amend, and accepting it
+  could not be told from overriding it). When every item of the round has an
   attempt, rep writes the round's grading sheet (D41's file) and opens
   $EDITOR: one line per attempt, the typed text beside the key; exact and
   numeric lines come graded by D20, self-graded lines come as `?`. Saving
@@ -1080,8 +1085,8 @@ after the first real session.
   (D9) keeps its shape, test, feedback, retest of the misses until
   recalled; the rest of the round is the gap between two showings, so
   relearn_gap is retired from the preset.
-  Event model: unchanged. Attempts are written with rating null and graded
-  by amends (E4). An item's k-th attempt in the session belongs to round k,
+  Event model: unchanged. Self-graded attempts are written with rating
+  null and graded by amends (E4). An item's k-th attempt in the session belongs to round k,
   so replay reproduces the rounds (D31) with no new event kind.
   Rejected: per-item reveal and grading on a clearer screen (7: immediate
   feedback, but two input modes and a grading menu to build); the M3 loop
@@ -1192,7 +1197,9 @@ E2 Commit before reveal
   chore?
   Prediction: amendments in `rep review` under 15% of attempts; median
   session under 15 minutes.
-  Measure: amend events over attempt events; session_start to session_end.
+  Measure: amends of attempts that already had a grade, over attempt
+  events (from D45 a self-graded attempt gets its first grade by amend,
+  which is grading, not correcting); session_start to session_end.
   Guardrail: if sessions are skipped, shorten the preset before changing the
   rule.
 
@@ -1444,3 +1451,8 @@ refusal       a command declines, returns its input and writes nothing
             D13), to be verified against pyutils' packaging before use.
             Section 8 gains the use-week content (two control decks);
             section 9 records R1's data source (a manual sleep log).
+2026-10-02  Building D45's rounds and sheet: exact and numeric attempts are
+            written with their automatic grade (an override in the sheet is
+            a recorded correction), and E2 counts corrections as amends of
+            attempts that already had a grade. Both keep the measures D20
+            and E2 depend on; listed here for the person's review.

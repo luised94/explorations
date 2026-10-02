@@ -3,6 +3,7 @@
 import random
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as strategies
 
@@ -19,7 +20,16 @@ from rep.events import (
 )
 from rep.library import LocatedItem, check_source_item, parse_library_text
 from rep.machine import DEVICE_ID_ALPHABET
-from rep.session import DEFAULT_PRESET, PlanSlot, plan_session, session_queue
+from rep.session import (
+    DEFAULT_PRESET,
+    PlanSlot,
+    SheetEntry,
+    plan_session,
+    read_grading_sheet,
+    render_grading_sheet,
+    session_queue,
+    session_rounds,
+)
 
 DEVICE = "6a2ah35zhe"
 START = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
@@ -257,3 +267,197 @@ def test_queue_is_a_function_of_the_events_not_their_order(grades: list[int | No
     shuffled = list(session_events)
     shuffler.shuffle(shuffled)
     assert session_queue(plan, shuffled, DEFAULT_PRESET) == session_queue(plan, session_events, DEFAULT_PRESET) == []
+
+
+# --- rounds (R1-R4, PLAN.md D45) -----------------------------------------------
+
+
+def answer_in_rounds(plan: list[PlanSlot], grade_for: dict[str, list[int | None]]) -> tuple[list[Event], list[int]]:
+    """Answer every round to its end, each attempt written with its grade
+    (as rep writes exact and numeric ones); grade_for gives an item's grades
+    in order, Good once they run out. Returns the events and the size of
+    each round."""
+    session_events: list[Event] = []
+    grades_left = {item_id: list(grades) for item_id, grades in grade_for.items()}
+    round_sizes: list[int] = []
+    while True:
+        state = session_rounds(plan, session_events)
+        if state["unanswered_item_ids"] == []:
+            return session_events, round_sizes
+        if len(round_sizes) < state["round_number"]:
+            round_sizes.append(len(state["round_item_ids"]))
+        assert len(session_events) < 1000, "the rounds did not end"
+        item_id = state["unanswered_item_ids"][0]
+        item_grades = grades_left.get(item_id, [])
+        rating = item_grades.pop(0) if item_grades != [] else 3
+        moment = START + timedelta(seconds=len(session_events))
+        session_events.append(attempt(len(session_events), moment, item_id, rating, "2026-10-01"))
+
+
+@given(strategies.integers(min_value=0, max_value=12), strategies.integers(min_value=0, max_value=12))
+def test_all_good_rounds_take_reviews_plus_twice_the_new_items(due_count: int, new_count: int) -> None:
+    # R4: a review is answered once; a new item twice, its first showing
+    # always returning (D36).
+    plan: list[PlanSlot] = [{"item_id": f"due{index}-7q2m", "reason": "due"} for index in range(due_count)]
+    new_slots: list[PlanSlot] = [{"item_id": f"new{index}-7q2m", "reason": "new"} for index in range(new_count)]
+    plan += new_slots
+    session_events, round_sizes = answer_in_rounds(plan, {})
+    assert len(session_events) == due_count + 2 * new_count
+    assert round_sizes == ([due_count + new_count] if due_count + new_count > 0 else []) + ([new_count] if new_count > 0 else [])
+
+
+def test_a_miss_returns_in_the_next_round_until_recalled() -> None:
+    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
+    session_events, round_sizes = answer_in_rounds(plan, {"item1-7q2m": [1, 1, 3]})
+    assert round_sizes == [3, 1, 1]
+    assert [event["item"] for event in session_events if event["kind"] == "attempt"] == [
+        "item0-7q2m", "item1-7q2m", "item2-7q2m", "item1-7q2m", "item1-7q2m",
+    ]  # fmt: skip
+
+
+def test_rounds_wait_on_their_unanswered_items_in_plan_order() -> None:
+    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
+    first: list[Event] = [attempt(0, START, "item0-7q2m", None, "2026-10-01")]
+    assert session_rounds(plan, first) == {
+        "round_number": 1,
+        "round_item_ids": ["item0-7q2m", "item1-7q2m", "item2-7q2m"],
+        "unanswered_item_ids": ["item1-7q2m", "item2-7q2m"],
+    }
+
+
+def test_an_ungraded_answer_or_a_suspend_ends_the_item_and_an_amend_decides() -> None:
+    # R3: after the round, "?" and suspend leave; the round's grades, by
+    # amend, decide the rest.
+    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
+    answers: list[Event] = [attempt(index, START + timedelta(seconds=index), f"item{index}-7q2m", None, "2026-10-01") for index in range(3)]
+    ungraded_round = session_rounds(plan, answers)
+    assert (ungraded_round["round_number"], ungraded_round["unanswered_item_ids"]) == (1, [])
+    graded: list[Event] = []
+    for position, (answer, rating) in enumerate(zip(answers, [1, 1, 3], strict=True)):
+        amend: AmendEvent = {
+            "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(10 + position),
+            "at": format_canonical_time(START + timedelta(minutes=1)), "device": DEVICE, "kind": "amend",
+            "target": answer["id"], "rating": rating,
+        }  # fmt: skip
+        graded.append(amend)
+    suspend: SuspendEvent = {
+        "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(20), "at": format_canonical_time(START + timedelta(minutes=1)),
+        "device": DEVICE, "kind": "suspend", "item": "item1-7q2m",
+    }  # fmt: skip
+    assert session_rounds(plan, [*answers, *graded, suspend]) == {
+        "round_number": 2, "round_item_ids": ["item0-7q2m"], "unanswered_item_ids": ["item0-7q2m"],
+    }  # fmt: skip
+
+
+def test_a_new_item_recalled_at_first_sight_returns_for_one_more_round() -> None:
+    plan: list[PlanSlot] = [{"item_id": "new-7q2m", "reason": "new"}, {"item_id": "due-7q2m", "reason": "due"}]
+    session_events, round_sizes = answer_in_rounds(plan, {})
+    assert round_sizes == [2, 1]
+    assert [event["item"] for event in session_events if event["kind"] == "attempt"] == ["new-7q2m", "due-7q2m", "new-7q2m"]
+
+
+@given(strategies.lists(strategies.sampled_from([1, 3, None]), min_size=1, max_size=12), strategies.randoms(use_true_random=False))
+def test_rounds_are_a_function_of_the_events_not_their_order(grades: list[int | None], shuffler: random.Random) -> None:
+    # R1: replaying a session's events in any order gives the same state.
+    plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(4)]
+    plan.append({"item_id": "new-7q2m", "reason": "new"})
+    session_events, _ = answer_in_rounds(plan, {"item0-7q2m": list(grades), "new-7q2m": list(grades)})
+    shuffled = list(session_events)
+    shuffler.shuffle(shuffled)
+    assert session_rounds(plan, shuffled) == session_rounds(plan, session_events)
+    assert session_rounds(plan, session_events)["unanswered_item_ids"] == []
+
+
+# --- the grading sheet (G1-G4, PLAN.md D41, D45) -------------------------------
+
+
+def sheet_entry(position: int, rating: int | None, question: str = "What does Km measure?") -> SheetEntry:
+    return {
+        "attempt_id": event_id_for(position), "item_id": f"item{position}-7q2m", "rating": rating,
+        "path": "/home/person/learning/library/a.md", "line": 3 + 4 * position, "question": question,
+        "typed_answer": "half vmax", "answer": "half of Vmax", "criteria": None,
+    }  # fmt: skip
+
+
+def test_an_unedited_sheet_asks_for_nothing_and_lays_out_each_answer() -> None:
+    entries = [sheet_entry(0, None), sheet_entry(1, 3, "Capital of\nFrance?"), sheet_entry(2, 1)]
+    sheet_text = render_grading_sheet(entries, "round 1")
+    assert read_grading_sheet(sheet_text, entries) == {"amends": [], "suspended_item_ids": [], "problems": []}
+    read_lines = [line for line in sheet_text.split("\n") if line.strip() != "" and not line.startswith("#")]
+    assert read_lines == [
+        f"?       {event_id_for(0)}  What does Km measure?",
+        f"good    {event_id_for(1)}  Capital of / France?",
+        f"again   {event_id_for(2)}  What does Km measure?",
+    ]
+    assert "#         typed:  half vmax\n#         key:    half of Vmax\n#         item:   /home/person/learning/library/a.md:3" in sheet_text
+
+
+@given(
+    strategies.lists(strategies.sampled_from([None, 1, 3]), min_size=1, max_size=8),
+    strategies.lists(strategies.sampled_from(["again", "hard", "good", "easy", "?", "suspend", "Good"]), min_size=8, max_size=8),
+)
+def test_each_changed_word_asks_for_exactly_its_change(ratings: list[int | None], new_words: list[str]) -> None:
+    entries = [sheet_entry(position, rating) for position, rating in enumerate(ratings)]
+    edited_lines: list[str] = []
+    for sheet_line in render_grading_sheet(entries, "round 1").split("\n"):
+        words = sheet_line.split()
+        if words != [] and not words[0].startswith("#"):
+            position = [entry["attempt_id"] for entry in entries].index(words[1])
+            sheet_line = new_words[position] + sheet_line[len(words[0]):]
+        edited_lines.append(sheet_line)
+    result = read_grading_sheet("\n".join(edited_lines), entries)
+    expected_amends: list[tuple[str, int]] = []
+    expected_suspends: list[str] = []
+    expect_problem = False
+    for entry, word in zip(entries, new_words, strict=False):
+        if word == "suspend":
+            expected_suspends.append(entry["item_id"])
+            continue
+        new_rating = {"again": 1, "hard": 2, "good": 3, "easy": 4, "?": None}[word.lower()]
+        if new_rating is None:
+            expect_problem = expect_problem or entry["rating"] is not None
+        elif new_rating != entry["rating"]:
+            expected_amends.append((entry["attempt_id"], new_rating))
+    if expect_problem:
+        assert result["amends"] == [] and result["suspended_item_ids"] == [] and result["problems"] != []
+    else:
+        assert result == {"amends": expected_amends, "suspended_item_ids": expected_suspends, "problems": []}
+
+
+@pytest.mark.parametrize(
+    ("edited_line", "problem_fragment"),
+    [
+        (f"goood   {event_id_for(0)}  What does Km measure?", "is not a grade"),
+        ("good    zzzzzzzzzzzz  What does Km measure?", "no answer of this sheet"),
+        ("good", "no answer of this sheet"),
+    ],
+)
+def test_a_sheet_with_a_problem_applies_nothing(edited_line: str, problem_fragment: str) -> None:
+    entries = [sheet_entry(0, None), sheet_entry(1, None)]
+    sheet_lines = render_grading_sheet(entries, "round 1").split("\n")
+    first_read_line = next(index for index, line in enumerate(sheet_lines) if line.startswith("?"))
+    sheet_lines[first_read_line] = edited_line
+    sheet_lines.append(f"good    {event_id_for(1)}  What does Km measure?")  # a second line for the same answer
+    result = read_grading_sheet("\n".join(sheet_lines), entries)
+    assert result["amends"] == [] and result["suspended_item_ids"] == []
+    assert any(problem_fragment in problem for problem in result["problems"])
+    assert any("appears twice" in problem for problem in result["problems"])
+
+
+def test_a_deleted_line_leaves_its_answer_as_it_is() -> None:
+    entries = [sheet_entry(0, 1), sheet_entry(1, None)]
+    sheet_lines = [line for line in render_grading_sheet(entries, "round 1").split("\n") if event_id_for(0) not in line]
+    assert read_grading_sheet("\n".join(sheet_lines), entries) == {"amends": [], "suspended_item_ids": [], "problems": []}
+
+
+def test_a_new_item_left_ungraded_does_not_return() -> None:
+    # R3 before D36's blocking rule: a new item's first showing returns
+    # whatever its grade, unless it was left ungraded; "?" waits for review.
+    plan: list[PlanSlot] = [{"item_id": "new-7q2m", "reason": "new"}, {"item_id": "due-7q2m", "reason": "due"}]
+    answers: list[Event] = [
+        attempt(0, START, "new-7q2m", None, "2026-10-01"),
+        attempt(1, START + timedelta(seconds=1), "due-7q2m", 1, "2026-10-01"),
+    ]
+    assert session_rounds(plan, answers) == {
+        "round_number": 2, "round_item_ids": ["due-7q2m"], "unanswered_item_ids": ["due-7q2m"],
+    }  # fmt: skip
