@@ -155,7 +155,18 @@ class ItemState(TypedDict):
     due_day: str | None  # scheduling day; last review's day plus fuzzed interval
     graded_review_count: int
     lapse_count: int  # E8
+    first_attempt_day: str | None  # scheduling day of the first effective attempt, graded or not
     suspended: bool
+
+
+# PLAN.md D31. Which events are in effect, decided once for every reader of
+# corrections: the fold over the whole log, and a session's queue over its own
+# events. Two copies of these rules could disagree about what an undo means.
+class EffectiveEvents(TypedDict):
+    ordered_events: list[Event]  # sorted by (at, id), first copy of each id only
+    undone_event_ids: set[str]  # E3
+    amended_ratings: dict[str, int]  # attempt id -> latest effective amend (E4)
+    problems: list[str]
 
 
 class FoldResult(TypedDict):
@@ -381,18 +392,13 @@ def new_item_stamped_events(
     return stamped_events
 
 
-def fold_events(
-    events: list[Event],
-    parameters: tuple[float, ...] = DEFAULT_PARAMETERS,
-    desired_retention: float = DEFAULT_DESIRED_RETENTION,
-    maximum_interval_days: int = DEFAULT_MAXIMUM_INTERVAL_DAYS,
-) -> FoldResult:
-    """Replay every event and return each item's state (E2-E6).
+def effective_events(events: list[Event]) -> EffectiveEvents:
+    """Order the events and decide which corrections are in effect (E2, E3, E4).
 
     PRE   every event came from decode_event or satisfies E1.
-    POST  result.items holds every item mentioned by an effective (not undone)
-          attempt, suspend or unsuspend; result.problems lists references
-          the fold had to ignore, each naming the event id.
+    POST  ordered_events holds each id once, in (at, id) order; undone and
+          amended attempts are listed, not removed or rewritten; problems
+          names every reference that had to be ignored.
     """
     problems: list[str] = []
 
@@ -436,8 +442,34 @@ def fold_events(
         else:
             amended_ratings[event["target"]] = event["rating"]
 
+    return {
+        "ordered_events": list(events_by_id.values()),
+        "undone_event_ids": undone_event_ids,
+        "amended_ratings": amended_ratings,
+        "problems": problems,
+    }
+
+
+def fold_events(
+    events: list[Event],
+    parameters: tuple[float, ...] = DEFAULT_PARAMETERS,
+    desired_retention: float = DEFAULT_DESIRED_RETENTION,
+    maximum_interval_days: int = DEFAULT_MAXIMUM_INTERVAL_DAYS,
+) -> FoldResult:
+    """Replay every event and return each item's state (E2-E6).
+
+    PRE   every event came from decode_event or satisfies E1.
+    POST  result.items holds every item mentioned by an effective (not undone)
+          attempt, suspend or unsuspend; result.problems lists references
+          the fold had to ignore, each naming the event id.
+    """
+    effective = effective_events(events)
+    problems = effective["problems"]
+    undone_event_ids = effective["undone_event_ids"]
+    amended_ratings = effective["amended_ratings"]
+
     items: dict[str, ItemState] = {}
-    for event in events_by_id.values():
+    for event in effective["ordered_events"]:
         # Undo and amend were consumed above; undone events never touch state.
         # item_stamped measures capture and says nothing about memory, so it
         # must not create a state either: an item never reviewed has none.
@@ -458,6 +490,7 @@ def fold_events(
                 "due_day": None,
                 "graded_review_count": 0,
                 "lapse_count": 0,
+                "first_attempt_day": None,
                 "suspended": False,
             }
             items[event["item"]] = new_item_state
@@ -465,6 +498,10 @@ def fold_events(
         if event["kind"] == "suspend" or event["kind"] == "unsuspend":
             item_state["suspended"] = event["kind"] == "suspend"
             continue
+        if item_state["first_attempt_day"] is None:
+            # Ordered by time, so the first attempt seen is the first made;
+            # an ungraded one counts: the item was shown (PLAN.md D36).
+            item_state["first_attempt_day"] = event["day"]
 
         effective_rating = amended_ratings.get(event["id"], event["rating"])
         if effective_rating is None:

@@ -33,7 +33,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             ef7b978  library: fingerprint and typed-answer grading
             92af31e  docs: D44 scheduling days, D36/D38/D42/D43 revised
             d847984  docs: research questions R1-R3
-            (this commit)  events: scheduling days, lapse rule
+            40932b8  events: scheduling days, lapse rule
+            (this commit)  session: plan and queue, pure
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -53,18 +54,19 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      217 passed
+BASELINE_TOTAL      230 passed
 BASELINE_BREAKDOWN  tests/test_cli.py            1
-                    tests/test_events.py        36
+                    tests/test_events.py        37
                     tests/test_library.py      124
                     tests/test_machine.py       16
                     tests/test_memory_model.py   3
+                    tests/test_session.py       12
                     tests/test_smoke.py         21
                     tests/test_storage.py       15
                     tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "217 passed in ...")
+                    uv run pytest | tail -1      (prints "230 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -96,7 +98,7 @@ enforcement point with its current line:
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
 define, if a decision whose heading is marked (M2) or later has no
 enforcement point (today D20-D30), or if a decision marked
-"(M<n>, pending)" already has one (today D31, D32, D35-D37 and D39-D43 are pending).
+"(M<n>, pending)" already has one (today D32 and D40-D43 are pending).
 
 ## Known blind spots
 
@@ -139,9 +141,9 @@ Each code commit changes the markers of the decisions it enforces from
 | ef7b978 | library: fingerprint, typed-answer grading | D33, D34 (grading) |
 | 92af31e | docs: D44, scheduling days; D36, D38, D42, D43 revised | D44 recorded, pending |
 | d847984 | docs: research questions R1-R3 and their protocol (PLAN.md section 9) | - |
-| this commit | events: `day` on attempts, elapsed and due by day, lapse rule | D44, D38 |
-| next | session: plan and queue fold, both pure; first-attempt day and the shared effective-event code, at their consumers (BUILDING.md section 2) | D31, D36, D37, D39 |
-| then | cli: plain `rep` runs a session (after the terminal spike), with session_start and session_end, added with their writer as D10 requires; the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35, D40 |
+| 40932b8 | events: `day` on attempts, elapsed and due by day, lapse rule | D44, D38 |
+| this commit | session: plan and queue fold, both pure; first-attempt day and the shared effective-event code, at their consumers (BUILDING.md section 2) | D31, D35 (queue rule), D36, D37, D39 |
+| next | cli: plain `rep` runs a session (after the terminal spike), with session_start and session_end, added with their writer as D10 requires; the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35, D40 |
 | then | cli: `rep review` | D41 |
 | then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
 | then | nvim plugin, tested headless | D43 |

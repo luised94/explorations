@@ -343,6 +343,25 @@ def test_time_of_day_of_a_session_does_not_change_memory() -> None:
     assert stability is not None and stability["stability"] > 10
 
 
+def test_first_attempt_day_is_the_earliest_effective_attempt_graded_or_not() -> None:
+    # PLAN.md D36: "introduced today" counts any first attempt, so an
+    # ungraded one sets the day; an undone one never happened.
+    undone_first = make_attempt(event_id_for(0), START, "km-measure-7q2m", 3)
+    ungraded_second = make_attempt(event_id_for(1), START + timedelta(days=2), "km-measure-7q2m", None)
+    graded_third = make_attempt(event_id_for(2), START + timedelta(days=4), "km-measure-7q2m", 3)
+    undo: UndoEvent = {
+        "format_version": 1, "id": event_id_for(3), "at": format_canonical_time(START + timedelta(days=5)),
+        "device": DEVICE, "kind": "undo", "target": undone_first["id"],
+    }  # fmt: skip
+    item_state = fold_events([undone_first, ungraded_second, graded_third, undo])["items"]["km-measure-7q2m"]
+    assert item_state["first_attempt_day"] == ungraded_second["day"]
+    suspend_only: SuspendEvent = {
+        "format_version": 1, "id": event_id_for(4), "at": format_canonical_time(START),
+        "device": DEVICE, "kind": "suspend", "item": "atp-synthase-k3xa",
+    }  # fmt: skip
+    assert fold_events([suspend_only])["items"]["atp-synthase-k3xa"]["first_attempt_day"] is None
+
+
 def test_fuzz_spreads_items_reviewed_alike_over_several_due_days() -> None:
     # What fuzz is for (E6): items reviewed on the same days with the same
     # grades must not all come due on one day. Twenty items, Good on day 0

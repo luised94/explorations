@@ -96,6 +96,29 @@ real caller arrives, in that caller's commit, and the message says so.
 - Startup cost: `python -X importtime -c "import rep.cli"` names what each
   import costs. A command with a time target is measured this way before
   anything is cached.
+- Planted-bug harness, as run in thread 3: copy src and tests to a
+  scratch directory, apply one exact-text replacement (refuse if the
+  anchor is not found exactly once), run with PYTHONPATH=<copy>/src, and
+  read only `^FAILED` and `^[0-9]+ (passed|failed)` lines. Three traps
+  met: test_smoke.py runs the installed `rep`, so without the PATH shim
+  the unmodified copy already fails (leave smoke out, or use the shim);
+  adding -q to pyproject's -q hides the count line; Hypothesis's
+  explanation text can contain the word "failed", so unanchored greps
+  report it as a result.
+- Write the expected value independently of the code under test: the
+  fingerprint test spells its JSON out by hand, so a changed definition
+  cannot pass by agreeing with itself.
+- A test's own arithmetic can carry the bug it guards against: the
+  numeric boundary property first computed a boundary outside the exact
+  Decimal context and rounded it. Compute expected values under the same
+  discipline as the code.
+- When a formula would only be restated, test what the mechanism is for:
+  fuzz is tested by twenty items reviewed alike spreading over several
+  due days, which caught a fold that dropped fuzz (an M1 gap).
+- Before a code commit, look for the strongest objection to the next step
+  and measure the composition of decisions with the real code. Thread 3
+  found D44 this way: two sound decisions (py-fsrs's 24-hour floor, the
+  plan's due-by-day rule) that stalled intervals together.
 - Terminal behavior (single keys, line input) is tested under a
   pseudo-terminal (the `pty` module), never by assuming the person's
   terminal; the person then confirms with a real session on a throwaway
@@ -130,6 +153,9 @@ real caller arrives, in that caller's commit, and the message says so.
   re-includes it with `!uv.lock`. A sandbox repository has no such root
   rule, so add `uv.lock` to its .git/info/exclude to reproduce the
   person's ignore state before testing anything about tracked files.
+- Python's Decimal rounds arithmetic to 28 significant digits in its
+  default context; exact comparison needs a local context with unlimited
+  precision and Inexact trapped (library.py grade_typed_answer).
 - An `# expect:` line that does not match is a stop, not a detail: chain
   dependent commands with `&&` so a wrong assumption halts before a
   commit. (Thread 3: `git status` showed nothing where `?? rep/uv.lock`
@@ -151,6 +177,9 @@ These add to the person's code style and to PLAN.md D14.
   requires every decision marked (M2) or later to have one such reference,
   and every reference to name a defined decision. Line numbers are never
   stored: `grep -rn "PLAN.md D" rep/src`.
+- A decision whose parts land in several commits leaves pending at its
+  first enforcement point (D34's grading before its reading, D35's queue
+  rule before its keys); the commit message says which part landed.
 - A decision approved before its code is written is marked
   `(M<k>, pending)`. It must have no enforcement point; the commit that
   adds one changes the marker to `(M<k>)` in the same commit. The test

@@ -702,7 +702,7 @@ marked "(M3, pending)" has no enforcement point yet; the commit that adds
 its code changes the marker to "(M3)", and tests/test_traceability.py
 checks both states (BUILDING.md section 5).
 
-D31. Session state is a fold over the session's events (M3, pending).
+D31. Session state is a fold over the session's events (M3).
   Choice: the plan is computed once, at session start, as a pure function
   of the library, the history, the preset and the time (D9). The queue at
   any moment is a pure function of the plan and this session's events,
@@ -783,7 +783,7 @@ D34. Typed answers: reading and grading (M3). Critical (D20).
   1e99999999 for 1 +- 1) is an Again, amended in review if it was right.
   Revisit: libedit behaving differently in the person's terminal.
 
-D35. Session keys (M3, pending). Revises D8.
+D35. Session keys (M3). Revises D8.
   Choice: commit with any key (recall) or Enter (typed). After the reveal:
   `y` Good, `n` Again, `?` no grade, `s` suspend, `e` edit, `q` quit, `u`
   correct. `u` after a grade reopens it, and the new grade is written as
@@ -802,7 +802,7 @@ D35. Session keys (M3, pending). Revises D8.
   Trade-off: every correction is visible in the history as an amend.
   Revisit: none expected.
 
-D36. The plan (M3, pending). Revises D9's two caps into one budget.
+D36. The plan (M3). Revises D9's two caps into one budget.
   Choice: due items are error-free, unsuspended items with a memory state
   whose due day (D44) is today or earlier, today being the scheduling day
   of the session's start. Reviews are taken lowest retrievability first
@@ -828,7 +828,7 @@ D36. The plan (M3, pending). Revises D9's two caps into one budget.
   day runs past 60; with one item left, the gap cannot be kept.
   Revisit: E2 session length and E3 in the use week.
 
-D37. Order of new items (M3, pending).
+D37. Order of new items (M3).
   Choice: within a file, by line; between files, by the earliest
   item_stamped time among each file's new items; items without an
   item_stamped event come last, by path and line.
@@ -861,7 +861,7 @@ D38. What counts as a lapse (M3).
   scheduling day is relearning, not a lapse.
   Revisit: the leech threshold (M3b).
 
-D39. The preset is a constant (M3, pending). Revises D9.
+D39. The preset is a constant (M3). Revises D9.
   Choice: one default preset, a constant in the session code. Each
   session_start event records a copy (D40).
   Reason: config.toml would add a reader, validation and a file format for
