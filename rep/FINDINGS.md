@@ -181,6 +181,40 @@ F15 bug and inconsistency  kbd.lua
      match "^%?:".
 
 --------------------------------------------------------------------------------
+## pyutils: terminal_output.py (read 2026-10-02, sha256 efd098c4...)
+--------------------------------------------------------------------------------
+
+rep's session draws through this module from M3 (PLAN.md D46), so these
+matter to rep as well as to the person's other tools.
+
+F18 bug  terminal_output.py, _layout_max_width (default 80)
+  What: until set_layout() is called, content width is 80 whatever the
+  terminal's width, so separators and cards wider than a narrow terminal
+  wrap into broken borders. The clamp to the terminal happens only inside
+  set_layout.
+  Evidence: with the terminal width at 60, format_separator() and
+  format_card() were 80 columns wide; after set_layout(), 60.
+  Fix: clamp in _get_max_width (min of the setting and the terminal width
+  minus 4), so the default is safe without a call. rep calls set_layout.
+
+F19 inconsistency  terminal_output.py, STDERR_IS_TERMINAL
+  What: computed once at import and not refreshed by set_color(None),
+  while styles follow set_color; clear_screen() decides by the stale
+  value. A caller that redirects stderr after import (tests, embedding)
+  gets escape codes in a non-terminal stream.
+  Fix: let clear_screen() call sys.stderr.isatty() when it runs, or have
+  set_color(None) refresh it.
+
+F20 suggestion  terminal_output.py under pyright strict
+  What: strict mode reports errors that trace to one line,
+  `_ANSI_PATTERN: re.Pattern` (line 167, no type argument), which makes
+  every match on it partially unknown, and to VERBOSITY being reassigned
+  while its uppercase name marks it a constant (line 160). rep checks only
+  its own files and the functions it calls return annotated types, so rep
+  is unaffected.
+  Fix: `re.Pattern[str]`; rename the mutable setting (verbosity_level).
+
+--------------------------------------------------------------------------------
 ## Suggestions for the rework: data flow, boundaries, interfaces
 --------------------------------------------------------------------------------
 

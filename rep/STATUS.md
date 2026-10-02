@@ -35,7 +35,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             d847984  docs: research questions R1-R3
             40932b8  events: scheduling days, lapse rule
             2c82e2b  session: plan and queue, pure
-            (this commit)  cli: plain `rep` runs a session
+            e43bf50  cli: plain `rep` runs a session (first loop)
+            (this commit)  docs: D45 rounds, D46 display
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -99,7 +100,7 @@ enforcement point with its current line:
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
 define, if a decision whose heading is marked (M2) or later has no
 enforcement point (today D20-D30), or if a decision marked
-"(M<n>, pending)" already has one (today D41-D43 are pending).
+"(M<n>, pending)" already has one (today D41-D43, D45 and D46 are pending).
 
 ## Known blind spots
 
@@ -150,11 +151,13 @@ Each code commit changes the markers of the decisions it enforces from
 | d847984 | docs: research questions R1-R3 and their protocol (PLAN.md section 9) | - |
 | 40932b8 | events: `day` on attempts, elapsed and due by day, lapse rule | D44, D38 |
 | 2c82e2b | session: plan and queue fold, both pure; first-attempt day and the shared effective-event code, at their consumers (BUILDING.md section 2) | D31, D35 (queue rule), D36, D37, D39 |
-| this commit | cli: plain `rep` runs a session (after the terminal spike), with session_start and session_end, added with their writer as D10 requires; the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35, D40 |
-| next | cli: `rep review` | D41 |
+| e43bf50 | cli: plain `rep` runs a session (after the terminal spike), with session_start and session_end, added with their writer as D10 requires; the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35, D40 |
+| this commit | docs: D45 (rounds, grading sheet), D46 (pyutils display), use-week decks, R1 log; FINDINGS F18-F20 | D45, D46 recorded, pending |
+| next | session: rounds fold and the grading sheet (render and parse), pure | D45 (fold, sheet) |
+| then | cli: the session in rounds, `rep review` on the same sheet, pyutils display | D45, D46, D41 |
 | then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
 | then | nvim plugin, tested headless | D43 |
-| last | docs: close M3, kickoff for thread 4; R1's data source (a manual sleep log, one line per night, kept outside rep and started after the use week) | - |
+| last | docs: close M3, kickoff for thread 4 | - |
 
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text
 before any normalization (D34); the fingerprint covers the question,

@@ -318,6 +318,9 @@ D8. Grading.
   instead of undoing the attempt (D35); `e` and `?` drop the item from the
   rest of the session (D35); `rep review` changes grades only, and marking
   slips, misconceptions and bad items is deferred (D41).
+  Revised again in M3 (2026-10-02), by D45: every attempt is typed, and
+  the reveal and the grade come at the end of each round, in a grading
+  sheet; the session keys are gone.
 
 D9. Sessions.
   A session is a preset (data in config.toml), a plan and an event trace.
@@ -726,6 +729,8 @@ D31. Session state is a fold over the session's events (M3).
   of the state that can disagree with the log).
   Trade-off: the queue is recomputed on every key, over fewer than about
   200 events.
+  Revised by D45: the fold computes rounds (an item's k-th attempt in the
+  session belongs to round k) instead of a queue with a relearn gap.
   Revisit: none expected.
 
 D32. Writer lock during a session (M3).
@@ -827,6 +832,10 @@ D35. Session keys (M3). Revises D8.
   key pressed while a prompt is being drawn, within milliseconds, is
   dropped and must be pressed again.
   Revisit: none expected.
+  Superseded by D45 (2026-10-02), except the flush before each prompt,
+  which stays for the answer line: the keys are replaced by one typed
+  answer per item and a grading sheet per round, where a correction is an
+  edit, `e` is `gF` on the item's path:line and `s` is the word suspend.
 
 D36. The plan (M3). Revises D9's two caps into one budget.
   Choice: due items are error-free, unsuspended items with a memory state
@@ -852,6 +861,8 @@ D36. The plan (M3). Revises D9's two caps into one budget.
   leaves debt).
   Trade-off: relearning attempts are not counted in the budget, so a bad
   day runs past 60; with one item left, the gap cannot be kept.
+  Revised by D45: relearning runs in rounds; an item leaves after a round
+  in which it met the criterion above, and relearn_gap is retired.
   Revisit: E2 session length and E3 in the use week.
 
 D37. Order of new items (M3).
@@ -937,6 +948,10 @@ D41. `rep review` (M3, pending). Revises D8.
   Trade-off: no slip or misconception labels in the use-week data; a grade
   cannot be amended back to `?` (an amend needs a grade).
   Revisit: M5 or M6 asking for labels.
+  Revised by D45: the same sheet grades each round of a session; `rep
+  review` opens it for attempts still ungraded. Lines carry the item's
+  path:line, so `gF` opens the item; the grade words are again, hard,
+  good, easy, ? and suspend.
 
 D42. `rep why`, `rep unsuspend`, startup cost (M3, pending).
   Choice: `rep why ID` prints where the item is (path:line), its state
@@ -1030,6 +1045,82 @@ after the plan lock, before any code depends on it.
   sleep data becoming available (the boundary could be an observed sleep
   rather than a clock hour; section 9).
 
+D45. Rounds: every answer typed, graded per round (M3, pending).
+Revises D8, D31, D35, D36, D41; approved by the person on 2026-10-02
+after the first real session.
+  Choice: every attempt is typed. The question is shown, the person types
+  what came to mind (a cue is enough) and presses Enter; nothing is
+  revealed. The attempt is written at once, ungraded, with its raw text,
+  latency, fingerprint and day. When every item of the round has an
+  attempt, rep writes the round's grading sheet (D41's file) and opens
+  $EDITOR: one line per attempt, the typed text beside the key; exact and
+  numeric lines come graded by D20, self-graded lines come as `?`. Saving
+  writes one amend per graded line and a suspend per `suspend` line; lines
+  left `?` stay ungraded and wait for `rep review`. Round 1 is the plan;
+  round r+1 holds the items of round r that have not met D36's criterion;
+  the session ends when a round is empty. Ctrl-D at the answer prompt
+  stops showing items, opens the sheet for what was answered, then ends
+  the session (reason quit); Ctrl-C ends it at once (interrupted; its
+  attempts stay ungraded for `rep review`).
+  Reason: the first real session (2026-10-02, the person's terminal):
+  single-letter keys, two input modes (a key for recall items, a line for
+  typed ones) and no separation between items made it jarring, and it was
+  unclear which inputs were answers. Now there is one input mode, and every
+  retrieval leaves a written record, so a self-grade compares that record
+  with the key instead of an impression of having known it; giving people
+  the correct answer as a standard is how research on self-scoring has
+  improved its accuracy (Dunlosky, Hartwig, Rawson and Lipko 2011,
+  "Improving college students' evaluation of text learning using idea-unit
+  standards"; title and listing checked, full text not read). Grading
+  happens in nvim, where the person works, with the round in view, and
+  `gF` on a line's path:line opens the item to fix it. Feedback at the end
+  of a round, not after each item: for adults, delayed and immediate
+  feedback gave the same final performance once the delay to the final
+  test was equal (Metcalfe, Kornell and Finn 2009). Successive relearning
+  (D9) keeps its shape, test, feedback, retest of the misses until
+  recalled; the rest of the round is the gap between two showings, so
+  relearn_gap is retired from the preset.
+  Event model: unchanged. Attempts are written with rating null and graded
+  by amends (E4). An item's k-th attempt in the session belongs to round k,
+  so replay reproduces the rounds (D31) with no new event kind.
+  Rejected: per-item reveal and grading on a clearer screen (7: immediate
+  feedback, but two input modes and a grading menu to build); the M3 loop
+  as first built (5, the person's verdict); a full-screen terminal
+  interface (4: a dependency or several hundred lines for what nvim does).
+  Trade-off: every item is typed, so sessions are slower, most for long
+  answers (D8's trade-off on every item; E2 measures it). Latency now
+  includes typing, so E5 compares an item with itself over time, not items
+  with each other. A miss stays uncorrected until its round ends. A crash
+  during grading leaves the round for `rep review`. A round of one item
+  shows it right after its feedback.
+  Revisit: E2 sessions over 15 minutes; grading sheets the person finds
+  slow.
+
+D46. The session's display uses pyutils.terminal_output (M3, pending).
+Revises D13.
+  Choice: the session and `rep review` draw through the person's pyutils
+  package (explorations/pyutils, module terminal_output): a card per
+  question, labeled separators between items and rounds, wrapped text.
+  pyutils is a path dependency of rep (a uv source, ../pyutils, editable),
+  imported only inside the session and review branches, so stamp, add,
+  lint and where never load it. The library's own detection turns styling
+  off for NO_COLOR or a non-terminal; the terminal tests set NO_COLOR.
+  Reason: the person's tools should share one look, and a change to that
+  look should reach rep: by the boundary test the presentation layer is
+  shared, not rep's to copy. Contained: a fault in it cannot break the
+  commands nvim runs on save.
+  Rejected: copying the needed functions into rep (6: two looks that drift
+  apart); plain print with ASCII separators (5: a second visual language);
+  rich (5: a third-party dependency of about 13 MB, D13).
+  Trade-off: rep's runtime now needs the sibling pyutils directory (both
+  machines clone explorations); uv.lock changes; pyutils keeps module
+  state (layout, color), which the session sets once.
+  Verify before use (in the code commit): pyutils/pyproject.toml (name,
+  Python version, build backend), and that `uv tool install --editable`
+  resolves the path source.
+  Revisit: pyutils leaving explorations, or a second consumer needing a
+  different look.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
@@ -1079,6 +1170,15 @@ The only way to know is to use it. Instruments are the event log itself
 (kbd principle: metrics are passive), read by `rep stats`, plus a written
 friction log in the person's existing friction module. Each experiment card
 is written before the use week; Result and Decision are filled after.
+
+Use-week content (the person, 2026-10-02): the planned reading, plus two
+control decks. Country capitals: short answers with unambiguous keys, a
+clean baseline for E4 and E5. The Massachusetts learner's permit test:
+applied material with a deadline and an outside result, pass or fail
+within weeks, against which rep's predictions can be checked. Its items
+are written by the person from the RMV driver's manual (minimum
+information); the real test is multiple choice, so free recall is the
+harder condition.
 
 E1 Capture friction
   Question: is capture cheap enough to happen while reading?
@@ -1159,7 +1259,10 @@ shell cue exists (target under 100 ms, D42).
      (D44; Diekelmann and Born 2010; Mazza et al. 2016). Does a model
      with sleeps between reviews and hours since the last review as
      separate inputs predict recall better than scheduling days? Needs:
-     sleep times from an outside source for the weeks being tested.
+     sleep times for the weeks being tested. The person's choice
+     (2026-10-02): a manual log, one line per night (date, lights out,
+     wake), in a plain file outside rep, started after the use week so
+     its daily cost does not touch E2 and E3. No code.
   R2 Latency. FSRS ignores how long a correct answer took; E5 records it
      to find slow items. Does latency on a passing attempt predict the
      next recall beyond FSRS's state, for example a slow Good acting
@@ -1333,3 +1436,11 @@ refusal       a command declines, returns its input and writes nothing
             records, and D34 turns readline's history off; both are
             refinements inside the approved decisions, listed here for the
             person's review.
+2026-10-02  After the first real session (e43bf50, in the person's
+            terminal), approved by the person before any code: D45, rounds
+            with every answer typed and grading at the end of each round in
+            a sheet in nvim (revising D8, D31, D35, D36, D41); D46, the
+            display through the person's pyutils.terminal_output (revising
+            D13), to be verified against pyutils' packaging before use.
+            Section 8 gains the use-week content (two control decks);
+            section 9 records R1's data source (a manual sleep log).
