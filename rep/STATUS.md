@@ -30,7 +30,8 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             57559e3  build: track uv.lock
             5fad124  docs: lock M3, decisions D31-D43 pending
             f3d3681  docs: FINDINGS.md, neighbouring code
-            (this commit)  library: fingerprint and typed-answer grading
+            ef7b978  library: fingerprint and typed-answer grading
+            (this commit)  docs: D44 scheduling days, D36/D38/D42/D43 revised
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -93,7 +94,7 @@ enforcement point with its current line:
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
 define, if a decision whose heading is marked (M2) or later has no
 enforcement point (today D20-D30), or if a decision marked
-"(M<n>, pending)" already has one (today D31-D43 are pending).
+"(M<n>, pending)" already has one (today D31, D32 and D35-D44 are pending).
 
 ## Known blind spots
 
@@ -133,12 +134,13 @@ Each code commit changes the markers of the decisions it enforces from
 | 57559e3 | build: track uv.lock | - |
 | 5fad124 | docs: lock M3 | D31-D43 recorded, pending |
 | f3d3681 | docs: FINDINGS.md (neighbouring code) | - |
-| this commit | library: fingerprint, typed-answer grading | D33, D34 (grading) |
-| next | events: lapse rule, first attempt time, session events, shared effective-event code | D38, D40 |
-| then | session: plan and queue fold, both pure | D31, D36, D37, D39 |
+| ef7b978 | library: fingerprint, typed-answer grading | D33, D34 (grading) |
+| this commit | docs: D44, scheduling days; D36, D38, D42, D43 revised | D44 recorded, pending |
+| next | events: `day` on attempts and elapsed days by day, lapse rule, session events | D44, D38, D40 |
+| then | session: plan and queue fold, both pure; first-attempt day and the shared effective-event code, at their consumers (BUILDING.md section 2) | D31, D36, D37, D39 |
 | then | cli: plain `rep` runs a session (after the terminal spike); the library-wide load and checks move out of lint here, at their second caller (BUILDING.md section 2) | D32, D34 (reading), D35 |
 | then | cli: `rep review` | D41 |
-| then | cli: `rep why`, `rep due --brief`, `rep unsuspend`, `rep where --data-root` | D42 |
+| then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
 | then | nvim plugin, tested headless | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |
 

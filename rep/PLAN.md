@@ -168,6 +168,13 @@ Measured while starting M3 (thread 3, 2026-10-01):
   with unlimited precision. Exact arithmetic costs time with the decimal
   places the operands span: 1e999999 against 1e-999999 took 1.7 ms,
   1e99999999 against 1 took 92 ms (D34).
+- The fold counted elapsed time in whole 24-hour periods while the plan
+  serves by local day. Six daily Goods on one item, through the M1 fold:
+  with each session 30 minutes earlier than the day before (23.5 hours
+  apart) stability ended at 2.31 days and the next interval at 2; with
+  each 30 minutes later (24.5 hours apart), 24.76 days and 25. Every
+  review under 24 hours after the last was folded as a same-day review
+  (D44).
 - nvim 0.11.4 runs headless in the build sandbox (release tarball from
   GitHub); the person runs nvim 0.11.6. The person's locale is C.UTF-8.
 - The explorations root .gitignore ignored uv.lock (line 20, `uv.lock`). A
@@ -282,6 +289,9 @@ D7. FSRS memory math is transplanted, with the library as a test oracle.
   Trade-off: we own numerical code; an FSRS upgrade is a manual re-transplant
   that the oracle test checks.
   Revisit: a new FSRS version, or enough history to run the optimizer.
+  Revised in M3 (thread 3), by D44: the fold counts elapsed days in
+  scheduling days recorded on each attempt, not in 24-hour periods; the
+  transplanted math is unchanged.
 
 D8. Grading.
   In session: commit before reveal (`recall`: press a key; `typed`: type the
@@ -337,7 +347,7 @@ D10. Event record (as built in M1, src/rep/events.py).
   Events for items no longer in the library are skipped and reported.
   Rejected: single-letter field `v` (naming rule).
   Extended in M3 (thread 3): session_start and session_end (D40); what
-  counts as a lapse (D38).
+  counts as a lapse (D38); `day` on every attempt (D44).
 
 D11. Language models are a seam with two transports.
   One function, `complete(task, prompt_text) -> response_text`.
@@ -794,12 +804,13 @@ D35. Session keys (M3, pending). Revises D8.
 
 D36. The plan (M3, pending). Revises D9's two caps into one budget.
   Choice: due items are error-free, unsuspended items with a memory state
-  whose due_at is before the end of today's local day (day start hour,
-  I6). Reviews are taken lowest retrievability first (ties: due_at, then
-  id), at most `session_budget`. New items are error-free, unsuspended
+  whose due day (D44) is today or earlier, today being the scheduling day
+  of the session's start. Reviews are taken lowest retrievability first
+  (ties: due day, then id), at most `session_budget`. New items are error-free, unsuspended
   items with no graded review. New today = min(new_per_day minus items
   introduced today, (session_budget minus reviews) // new_item_cost),
-  where introduced today means a first attempt of any kind today. Order:
+  where introduced today means a first attempt of any kind on today's
+  scheduling day. Order:
   reviews, then new items (D37). In the session: an Again returns after
   `relearn_gap` other items (at the end when fewer remain); a new item's
   first showing always returns after the gap; an item leaves the session
@@ -830,18 +841,24 @@ D37. Order of new items (M3, pending).
   Revisit: the use week.
 
 D38. What counts as a lapse (M3, pending).
-  Choice: a lapse is an Again on an item's first graded attempt in a
-  session, when the item had a memory state before that session. Only
-  lapse_count changes; memory does not, so the oracle test is unaffected.
+  Choice: a lapse is an Again on an item with a memory state, at least one
+  scheduling day (D44) after its previous graded review: exactly where
+  memory_model.py applies its post-lapse stability formula instead of the
+  same-day one. Only lapse_count changes; memory does not, so the oracle
+  test is unaffected.
   Reason: section 11 defines a lapse as a failed review of a learned item.
-  Successive relearning makes repeated Agains in one session normal; the
-  old rule counted them (measured, section 3).
-  Rejected: an Again at least one elapsed day after the last review (6:
-  FSRS floors elapsed time to whole 24-hour periods, so a one-day item
-  reviewed early the next morning could never lapse); every Again on an
-  item with a memory state (3, the M1 rule).
-  Trade-off: an item failed in two sessions on one day (two devices before
-  a sync) counts two lapses.
+  Successive relearning makes repeated Agains in one day normal; the old
+  rule counted them (measured, section 3). Counting a lapse where the
+  model treats the Again as forgetting keeps the two from disagreeing, and
+  the fold needs no record of sessions.
+  Rejected: an Again on an item's first graded attempt in a session (7,
+  the plan-lock choice: the fold must track sessions, and two sessions on
+  one day, such as two devices before a sync, count two lapses); every
+  Again on an item with a memory state (3, the M1 rule). Revised on
+  2026-10-01 with D44, before any code: the 24-hour floor that ruled out
+  the elapsed-day rule is gone.
+  Trade-off: an item learned and failed again later on the same
+  scheduling day is relearning, not a lapse.
   Revisit: the leech threshold (M3b).
 
 D39. The preset is a constant (M3, pending). Revises D9.
@@ -895,34 +912,37 @@ D41. `rep review` (M3, pending). Revises D8.
   cannot be amended back to `?` (an amend needs a grade).
   Revisit: M5 or M6 asking for labels.
 
-D42. `rep why`, `rep due --brief`, `rep unsuspend` (M3, pending).
+D42. `rep why`, `rep unsuspend`, startup cost (M3, pending).
   Choice: `rep why ID` prints where the item is (path:line), its state
-  (stability, difficulty, retrievability now, due, reviews, lapses,
+  (stability, difficulty, retrievability now, due day, reviews, lapses,
   suspended), its attempts with their grades and whether each attempt's
   fingerprint matches the item now, and whether and why today's plan
-  includes it. `rep due --brief` computes the plan from a full replay and
-  prints `<due> due, <new> new`, or nothing when both are 0; there is no
-  snapshot. importlib.metadata is imported only for `--version`.
-  `rep unsuspend ID` writes one unsuspend event (D10 has the kind; nothing
-  wrote it).
-  Reason: the scheduler must be inspectable during the use week. The
-  snapshot is a cache whose need is measurable and not yet here, D25's
-  argument against the bib cache. `--version` costs 39 of 57 ms of import
-  on every command (section 3). Without unsuspend, a suspend is
-  permanent.
-  Rejected: the snapshot now (5); `rep stats` and `rep forecast` now (5:
-  views designed against synthetic histories; they move to M3b, built on
-  the use week's events).
-  Trade-off: `rep due --brief` grows with the history, about 18
-  microseconds per event (section 3), estimated to reach 100 ms near 4,000
-  events.
-  Revisit: `rep due --brief` over 100 ms through the installed command on
-  the person's machine: build the snapshot then.
+  includes it. `rep unsuspend ID` writes one unsuspend event (D10 has the
+  kind; nothing wrote it). importlib.metadata is imported only for
+  `--version`. `rep due --brief` is not built in M3: it is the shell cue,
+  which E3 names as the remedy when sessions are skipped, and plain `rep`
+  already shows the session's size. When E3's guardrail calls for it, it
+  is built as a full replay first, with a snapshot only if that measures
+  over 100 ms (D25's argument against caches before measured need).
+  Reason: the scheduler must be inspectable during the use week; without
+  unsuspend, a suspend is permanent; `--version` costs 39 of 57 ms of
+  import on every command (section 3), and stamp on save (D43) runs rep
+  on every save of a library file.
+  Rejected: `rep due --brief` in M3 (6: code for a remedy before its
+  guardrail fires); the snapshot now (5); `rep stats` and `rep forecast`
+  now (5: views designed against synthetic histories; they move to M3b,
+  built on the use week's events).
+  Trade-off: no shell cue in the use week, and section 8's `rep due
+  --brief` time has nothing to measure until the cue exists.
+  Revisit: E3 under 4 sessions in 7 days.
 
 D43. nvim plugin (M3, pending). Revises D12.
   Choice: rep/nvim/ is a plugin directory on the runtime path:
-  lua/rep/init.lua with setup(), the commands :RepCapture and :RepLint,
-  and stamp on save for <data root>/library/*.md. Key bindings live in the
+  lua/rep/init.lua with setup(), the command :RepCapture, and stamp on
+  save for <data root>/library/*.md. Lint needs no plugin code: nvim's
+  :make with makeprg set to `rep lint` and an errorformat for D30's
+  `path:line:col: severity: message` fills quickfix, and the plugin's
+  documentation gives those two settings. Key bindings live in the
   person's lazy.nvim spec ({ dir = ".../rep/nvim", keys = ... }), so rep
   chooses no key prefix. The data root comes from `rep where --data-root`,
   asked once per nvim session. Stamp on save inserts only the lines stamp
@@ -935,10 +955,54 @@ D43. nvim plugin (M3, pending). Revises D12.
   folds. D3 has one implementation.
   Rejected: D12's {keymaps, autocmds, commands} file (5: targets the
   loader being archived); D3's rules copied into Lua (6: two copies that
-  can drift); replacing the whole buffer (4: loses cursor, marks, folds).
+  can drift); replacing the whole buffer (4: loses cursor, marks, folds);
+  a :RepLint command (6: re-implements :make and errorformat, which nvim
+  has built in).
   Trade-off: no keys until the person adds the lazy spec; the commands
   work without it.
   Revisit: the person's nvim config rework.
+
+D44. Elapsed time is counted in scheduling days (M3, pending). Revises
+D7's elapsed days and D36's due rule; approved by the person on 2026-10-01
+after the plan lock, before any code depends on it.
+  Choice: every attempt event carries `day`, the scheduling day the
+  answer was committed in: the local calendar date of that moment moved
+  back by day_start_hour (D36, 04:00), as YYYY-MM-DD, computed by the
+  writer from the machine's time zone and never recomputed. The fold's
+  elapsed days between two graded reviews are the difference of their
+  days; an item is due on a day (the day of its last graded review plus
+  the fuzzed interval). memory_model.py does not change: it takes elapsed
+  days as a number, and the oracle test (I5) supplies its own.
+  Reason: measured (section 3): the plan serves by day, and a review
+  served today but under 24 hours after the last one was folded as a
+  same-day review, so the interval barely grew (six daily Goods: 2.31
+  days of stability against 24.76, depending only on whether each session
+  was earlier or later in the day than the one before). Anki, whose review
+  logs fitted FSRS's default parameters, counts elapsed days by its
+  rollover day the same way. The day is recorded, not derived from `at`,
+  because `at` does not hold the time zone and rollover in effect when
+  the person answered.
+  What the day stands for: the rollover hour is meant to fall while the
+  person sleeps, so a day boundary approximates one night of sleep
+  between two retrievals. Sleep is when declarative memories consolidate
+  (Diekelmann and Born 2010), and with the time between sessions held at
+  12 hours, a night of sleep between learning and relearning halved the
+  trials needed to relearn and left more retained at one week and six
+  months than a waking 12 hours (Mazza et al. 2016). Elapsed days in FSRS
+  thus carry two quantities: time, over which retrievability decays, and
+  sleeps, across which a review counts as long-term. day_start_hour is
+  the hour the person is most surely asleep, not a clock convention.
+  Rejected: whole 24-hour periods (2: the measured stall); the day
+  computed in the fold from the current time zone (7: travel or a second
+  machine in another zone would re-date past reviews near the rollover);
+  due by exact time instead of by day (5: a session a little earlier
+  than yesterday's would push items a whole day later, again and again).
+  Trade-off: an attempt carries a value that `at` usually implies; a
+  review after midnight and before 04:00 belongs to the day before;
+  changing day_start_hour does not re-date past attempts.
+  Revisit: the person's sleep regularly crossing 04:00 (move the hour);
+  sleep data becoming available (the boundary could be an observed sleep
+  rather than a clock hour; section 9).
 
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
@@ -971,9 +1035,9 @@ I11 Every event line has format_version and a unique id.      check on write
 | 1 | M0 | uv project, pyright strict, pytest, data root and local.toml resolution, device_id, `rep where`, `rep --help` | smoke test through the installed `rep` entry point (done, aef91db) |
 | 1 | M1 | FSRS transplant, event record, fold | oracle property test, deterministic replay (done, b1aadfe) |
 | 2 | M2 | parser (line-classifying state machine), checks, `rep stamp`, `rep add`, `rep lint`, NFC, citekey check, single-writer lock, events file loader and appender, `item_stamped` event | round-trip and stamp properties; checks red on injected violations; lock refuses a second writer (done, a64d51f) |
-| 3 | M3 | planner, session loop, `session_start`/`session_end` events, `rep review`, `rep why`, `rep due --brief` (full replay), `rep unsuspend`, the nvim plugin (D31-D43) | real session end to end; `rep due --brief` wall time |
+| 3 | M3 | planner, session loop, `session_start`/`session_end` events, scheduling days, `rep review`, `rep why`, `rep unsuspend`, the nvim plugin (D31-D44) | real session end to end |
 | - | use week | daily use on one real reading; then a session porting drill/ | instrumentation (section 8) |
-| after the use week | M3b | `rep stats`, `rep forecast`, the leech threshold, built on the use week's events; the `rep due --brief` snapshot only if it measured over 100 ms | the E-cards of section 8 answered from real data |
+| after the use week | M3b | `rep stats`, `rep forecast`, the leech threshold, built on the use week's events; `rep due --brief` when E3's guardrail calls for the shell cue (D42) | the E-cards of section 8 answered from real data |
 | 4 | M4 | LLM seam (manual, OpenRouter), inbox, `rep accept`, generation from source-notes | manual transport end to end |
 | 5, 6 | M5, M6 | M5 concept layer and diagnostics; M6 tutor (Socratic), leech doctor, graph builder | ordered by the use week: prerequisite pain first means M5, comprehension pain first means M6 |
 | later | - | generated items (drill/ port), optimizer, rich views, GUI renderer, cloze | - |
@@ -1030,8 +1094,8 @@ are classified by cause from the raw typed answer and the key (D41).
 
 Always visible (from M3b): leeches (lapse count over a threshold), items edited after
 their first review, suspended items, model-written versus self-written pass
-rates (`by:`), forecast versus actual load, `rep due --brief` time (target
-under 100 ms).
+rates (`by:`), forecast versus actual load, `rep due --brief` time once the
+shell cue exists (target under 100 ms, D42).
 
 --------------------------------------------------------------------------------
 ## 9. Open items and pending spikes
@@ -1041,9 +1105,16 @@ under 100 ms).
   spec binds the keys; `<leader>p` is free on the person's machine
   (2026-10-01).
 - Writer lock scope in a session: decided in M3, around each append (D32).
-- `rep due --brief` snapshot: deferred with a measured trigger (D42). When
-  built: a small derived file in machine-local state, rebuilt from events
-  when any events file is newer; never a source of truth.
+- `rep due --brief` and its snapshot: deferred to E3's guardrail (D42).
+  If a snapshot is ever built: a small derived file in machine-local
+  state, rebuilt from events when any events file is newer; never a
+  source of truth.
+- Elapsed days carry two quantities, time (decay) and sleeps
+  (consolidation), and FSRS models them as one (D44). An open question
+  for after the optimizer has data: with sleep recorded (a wearable, or a
+  bedtime the person logs), would a model with sleeps and hours as
+  separate inputs predict recall better than days? Nothing is built for
+  it; the `day` on each attempt and the exact `at` keep both answerable.
 - Slip and misconception labels, and flagging items in `rep review`:
   deferred until M5 or M6 asks for them (D41).
 - Findings about neighbouring code (the person's nvim config, kbd.lua, the
@@ -1111,6 +1182,8 @@ problem       a finding about a file or item, as data: line, column,
 capture       creating an item; recorded as an item_stamped event (E1)
 budget        the most attempts a plan serves before relearning: reviews
               first, then new items at new_item_cost each (D36)
+scheduling day the local date an attempt belongs to, rolling over at
+              day_start_hour; recorded on each attempt (D44)
 relearn gap   how many other items come between two showings of an item
               in one session (D36)
 fingerprint   a hash of what an item asks, stored on each attempt, so a
@@ -1186,3 +1259,11 @@ refusal       a command declines, returns its input and writes nothing
             measurement that found the old rule wrong; the decisions are
             numbered D31-D43 and marked pending until enforced. Facts
             measured at the start of thread 3 added to section 3.
+2026-10-01  Thread 3, after commit ef7b978, approved by the person before
+            any dependent code: D44 (elapsed time in scheduling days,
+            recorded on each attempt), found by measuring the fold against
+            the plan's due rule; D36 and D38 revised to it (a lapse is now
+            where the memory model applies its lapse formula); `rep due
+            --brief` deferred to E3's guardrail (D42); :RepLint dropped
+            for nvim's :make (D43). Section 9 records what a day stands
+            for as an open question.
