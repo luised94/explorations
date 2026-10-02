@@ -1040,7 +1040,7 @@ I11 Every event line has format_version and a unique id.      check on write
 | after the use week | M3b | `rep stats`, `rep forecast`, the leech threshold, built on the use week's events; `rep due --brief` when E3's guardrail calls for the shell cue (D42) | the E-cards of section 8 answered from real data |
 | 4 | M4 | LLM seam (manual, OpenRouter), inbox, `rep accept`, generation from source-notes | manual transport end to end |
 | 5, 6 | M5, M6 | M5 concept layer and diagnostics; M6 tutor (Socratic), leech doctor, graph builder | ordered by the use week: prerequisite pain first means M5, comprehension pain first means M6 |
-| later | - | generated items (drill/ port), optimizer, rich views, GUI renderer, cloze | - |
+| later | - | generated items (drill/ port), optimizer, rich views, GUI renderer, cloze; research questions R1-R3 tested offline (section 9) | each by the section 9 protocol |
 
 Every milestone ends with a smoke test through the real installed command,
 because unit tests import functions directly and never touch that path.
@@ -1109,12 +1109,39 @@ shell cue exists (target under 100 ms, D42).
   If a snapshot is ever built: a small derived file in machine-local
   state, rebuilt from events when any events file is newer; never a
   source of truth.
-- Elapsed days carry two quantities, time (decay) and sleeps
-  (consolidation), and FSRS models them as one (D44). An open question
-  for after the optimizer has data: with sleep recorded (a wearable, or a
-  bedtime the person logs), would a model with sleeps and hours as
-  separate inputs predict recall better than days? Nothing is built for
-  it; the `day` on each attempt and the exact `at` keep both answerable.
+- Research questions (deferred until the data can answer them). Each is a
+  question about the memory model, not a feature; none changes the
+  scheduler until it passes the protocol below.
+  Protocol: after the use week, and only once the optimizer has enough
+  history to run (D7), replay the person's log offline through FSRS-6
+  and through the candidate, training on older reviews and testing on
+  newer ones (a time-series split), and compare log loss, RMSE(bins) and
+  AUC, the metrics of the open-spaced-repetition srs-benchmark. A
+  candidate is adopted only if it predicts held-out recall better, and
+  then as a decision in section 5 with its numbers. A single person's
+  log is small: a candidate with more free parameters must win by more
+  than noise, so prefer one added input over several.
+  Data rule: rep records retrieval, nothing else. Other measurements
+  (sleep from a wearable, a logged bedtime) stay in their own source and
+  are joined to attempts by the exact UTC `at` when a question is
+  tested; rep never copies them into the events (one source per fact,
+  D1). So nothing needs recording in rep today, and no migration follows
+  later: each attempt already carries `at`, `day` (D44),
+  latency_milliseconds and the fingerprint.
+  R1 Sleeps and hours. Elapsed days carry two quantities, time (decay)
+     and nights of sleep (consolidation), and FSRS models them as one
+     (D44; Diekelmann and Born 2010; Mazza et al. 2016). Does a model
+     with sleeps between reviews and hours since the last review as
+     separate inputs predict recall better than scheduling days? Needs:
+     sleep times from an outside source for the weeks being tested.
+  R2 Latency. FSRS ignores how long a correct answer took; E5 records it
+     to find slow items. Does latency on a passing attempt predict the
+     next recall beyond FSRS's state, for example a slow Good acting
+     like a Hard? Needs: nothing new; testable on the log alone.
+  R3 State at review time. Do time of day, or sleep in the night before
+     the session, change recall on that day (performance) as opposed to
+     retention later (learning; Soderstrom and Bjork)? This bears on when
+     sessions should run rather than on the model. Needs: the R1 data.
 - Slip and misconception labels, and flagging items in `rep review`:
   deferred until M5 or M6 asks for them (D41).
 - Findings about neighbouring code (the person's nvim config, kbd.lua, the
@@ -1267,3 +1294,10 @@ refusal       a command declines, returns its input and writes nothing
             --brief` deferred to E3's guardrail (D42); :RepLint dropped
             for nvim's :make (D43). Section 9 records what a day stands
             for as an open question.
+2026-10-02  Section 9: research questions R1-R3 (sleeps and hours,
+            latency, state at review time), with one protocol (offline
+            replay, time-series split, log loss, RMSE(bins) and AUC as the
+            srs-benchmark measures them) and one data rule (other sources
+            joined by `at`, never copied into the events). At the person's
+            request, so the ideas wait for data instead of shaping the
+            scheduler now.
