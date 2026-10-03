@@ -46,6 +46,7 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             d8723ea  cli: cards after round 1 say "retest"
             0028     cli: `--version` imported lazily
             0029     cli: `rep why`, `rep unsuspend`
+            0030     nvim: the plugin, `rep where --data-root`
                      (patch numbers stand for SHAs until reported)
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
@@ -58,7 +59,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 built; D43 pending |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 and D43 built; to run end to end by the person, then the use week |
 | use week | pending |
 | M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
@@ -66,19 +67,20 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      264 passed
+BASELINE_TOTAL      268 passed (with nvim on PATH; without it, 265 passed, 3 skipped)
 BASELINE_BREAKDOWN  tests/test_cli.py            2
                     tests/test_events.py        51
                     tests/test_library.py      125
                     tests/test_machine.py       16
+                    tests/test_nvim.py           3
                     tests/test_memory_model.py   3
                     tests/test_session.py       23
-                    tests/test_smoke.py         28
+                    tests/test_smoke.py         29
                     tests/test_storage.py       15
                     tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "264 passed in ...")
+                    uv run pytest | tail -1      (prints "268 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -112,7 +114,7 @@ enforcement point with its current line:
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
 define, if a decision whose heading is marked (M2) or later has no
 enforcement point (today D20-D30), or if a decision marked
-"(M<n>, pending)" already has one (today D43 is pending).
+"(M<n>, pending)" already has one (none pending after D43).
 
 ## Known blind spots
 
@@ -128,9 +130,10 @@ enforcement point (today D20-D30), or if a decision marked
 - Problems the fold finds (duplicate event ids, bad undo or amend targets)
   are printed by lint without a location; locating them needs the fold to
   return structured problems, a change to M1 code.
-- The nvim plugin does not exist yet, so the stamp, add and lint contracts
-  are tested from Python and the shell, never from nvim. D43 closes this:
-  the plugin is tested headless in the sandbox.
+- The nvim plugin is tested headless with `-u NONE`, so not with the
+  person's config or lazy.nvim loading it; the person's first save of a
+  library file checks that. Startinsert after :RepCapture is not
+  observable headless.
 - The session in rounds is tested under a pseudo-terminal in the sandbox
   (tests/test_smoke.py, with a scripted editor), and ran once in the
   person's terminal (Windows Terminal on WSL2, nvim 0.11.6, a throwaway
@@ -178,7 +181,7 @@ Each code commit changes the markers of the decisions it enforces from
 | d8723ea | cli: cards after round 1 say "retest" | D45 |
 | 0028 | cli: `--version` imported lazily; stamp end to end 75 to 52 ms | D42 (startup cost) |
 | 0029 | cli: `rep why ID` (facts only), `rep unsuspend ID` | D42 |
-| then | nvim plugin, tested headless, with `rep where --data-root` (moved here from D42's row: the plugin is its only caller) | D43 |
+| 0030 | nvim plugin, tested headless, with `rep where --data-root` (moved here from D42's row: the plugin is its only caller) | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |
 
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text

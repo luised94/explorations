@@ -221,9 +221,15 @@ def main(argument_list: list[str] | None = None) -> int:
         help="data folder for this run (default: $REP_DATA_ROOT, else ~/learning)",
     )
     subcommand_parsers = argument_parser.add_subparsers(dest="command", metavar="COMMAND")
-    subcommand_parsers.add_parser(
+    where_parser = subcommand_parsers.add_parser(
         "where",
         help="show where rep keeps its files on this machine, and this device's id",
+    )
+    # PLAN.md D43: the nvim plugin asks for the data root this way. Its own
+    # dest: the default, data_root, is the global --data-root PATH, which a
+    # subcommand's value would overwrite in the shared namespace.
+    where_parser.add_argument(
+        "--data-root", dest="print_data_root_only", action="store_true", help="print only the data root's path"
     )
     stamp_parser = subcommand_parsers.add_parser(
         "stamp",
@@ -284,6 +290,12 @@ def main(argument_list: list[str] | None = None) -> int:
         print(f"rep: warning: {warning}", file=sys.stderr)
 
     if command == "where":
+        print_data_root_only: bool = parsed_arguments.print_data_root_only
+        if print_data_root_only:
+            # Printed whether or not it exists: the caller only matches
+            # paths against it.
+            print(machine_context["data_root"])
+            return 0
         # Inspectability: every path rep will read or write, in one place,
         # with the rule that chose the data root.
         data_root_note = machine_context["data_root_source"]

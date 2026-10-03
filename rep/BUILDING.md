@@ -34,6 +34,10 @@ has settled on, so a new thread does not rediscover them.
   GitHub (nvim-linux-x86_64.tar.gz) runs headless in the sandbox. Match
   the person's version (0.11.6 on 2026-10-01) and run tests with
   `nvim --headless -u NONE`, so the person's config never enters them.
+  tests/test_nvim.py needs nvim on PATH and is skipped without it; put
+  the tarball's bin/ first on PATH before running the suite. A plugin
+  that raises leaves headless nvim at a prompt: the tests time out at
+  20 s rather than hang.
 
 --------------------------------------------------------------------------------
 ## 2. One commit per turn

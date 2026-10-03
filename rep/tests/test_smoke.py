@@ -56,6 +56,17 @@ def test_help_and_version(tmp_path: Path) -> None:
     assert version_result.stdout.decode() == f"rep {importlib.metadata.version('rep')}\n"
 
 
+def test_where_data_root_prints_only_the_path_and_keeps_the_global_flag(tmp_path: Path) -> None:
+    # PLAN.md D43: what the nvim plugin reads. The global --data-root PATH and
+    # where's --data-root flag share a name; argparse would let the flag's
+    # False overwrite the path if they shared a destination.
+    default_result = run_rep(["where", "--data-root"], tmp_path)
+    assert default_result.stdout == f"{tmp_path / 'learning'}\n".encode(), default_result.stderr
+    chosen_root = tmp_path / "elsewhere"
+    flagged_result = run_rep(["--data-root", str(chosen_root), "where", "--data-root"], tmp_path)
+    assert flagged_result.stdout == f"{chosen_root}\n".encode(), flagged_result.stderr
+
+
 def test_where_reports_stable_identity_and_default_root(tmp_path: Path) -> None:
     first_result = run_rep(["where"], tmp_path)
     assert first_result.returncode == 0, first_result.stderr

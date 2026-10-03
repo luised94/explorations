@@ -1039,7 +1039,7 @@ D42. `rep why`, `rep unsuspend`, startup cost (M3).
   share the session's library and events read, in the same branch.
   An unknown id exits 2 (a bad argument, D30).
 
-D43. nvim plugin (M3, pending). Revises D12.
+D43. nvim plugin (M3). Revises D12.
   Choice: rep/nvim/ is a plugin directory on the runtime path:
   lua/rep/init.lua with setup(), the command :RepCapture, and stamp on
   save for <data root>/library/*.md. Lint needs no plugin code: nvim's
@@ -1064,6 +1064,33 @@ D43. nvim plugin (M3, pending). Revises D12.
   Trade-off: no keys until the person adds the lazy spec; the commands
   work without it.
   Revisit: the person's nvim config rework.
+  Built (thread 3): rep/nvim/lua/rep/init.lua and rep/nvim/README.md
+  (the lazy spec, and lint through :make). Stamp on save runs for
+  files directly in the library directory, compared by real path; it
+  applies stamp's output as the insertions vim.diff finds, refuses
+  output that changes a line, and on a refusal saves the file as
+  written with the problems in quickfix. The data root is asked on
+  the first .md save or capture, not at startup, so nvim starts
+  without running rep; a failure to ask is reported once per session.
+  Capture changed from D12's template split piped to `rep add
+  --stdin`, made by the build for the person's review: :RepCapture
+  opens library/<citekey>.md (citekey from the nearest `## @citekey`
+  above the cursor, the grammar's source section, or a name given)
+  with an item template at the end, and the ordinary save stamps it.
+  Reason: one write path instead of two, and stamp problems land in
+  quickfix at the real file's lines, where `rep add`'s are at
+  <stdin> lines with no buffer to jump to; about half the Lua.
+  Rejected: D12's split piped to `rep add` (6: a second write path
+  with its own error mapping and buffer lifecycle, for checks stamp
+  and lint already make). Trade-off: a captured item is written into
+  the library file even when it has problems (stamp refuses its id,
+  quickfix lists it, lint finds it), where `rep add` refused to write
+  it at all; and the template's `source:` line repeats the citekey on
+  every item. `rep where --data-root` prints only the path; its flag
+  has its own argparse destination, because the global --data-root
+  PATH has the same name and argparse would overwrite one with the
+  other. Tested headless with nvim 0.11.6 (tests/test_nvim.py, which
+  is skipped when nvim is not on PATH).
 
 D44. Elapsed time is counted in scheduling days (M3). Revises
 D7's elapsed days and D36's due rule; approved by the person on 2026-10-01
@@ -1600,3 +1627,11 @@ refusal       a command declines, returns its input and writes nothing
             the amends before its session_end (D45 Replay, with the
             round_graded rejection that f0c1b06 had not recorded). Terms:
             replay added, grade brought up to date.
+2026-10-02  The rest of M3 built in one turn at the person's request
+            ("less ceremony"): `--version` imported lazily, `rep why`
+            (facts only) and `rep unsuspend` (D42 Built), the nvim
+            plugin and `rep where --data-root` (D43 Built). Listed for
+            the person's review: capture opens the library file
+            instead of piping a split to `rep add` (D43 Built);
+            `rep why` does not explain an item left out by the plan's
+            caps (D42 Built).
