@@ -32,7 +32,6 @@ INVARIANTS
 
 import argparse
 import codecs
-import importlib.metadata
 import os
 # Imported for its effect on input(): line editing for typed answers
 # (PLAN.md D34). libedit in uv's CPython; 0.4 ms to import.
@@ -210,9 +209,10 @@ def main(argument_list: list[str] | None = None) -> int:
         description="Retrieval practice from your readings. With no command, runs today's session. "
         "See PLAN.md and CONVENTIONS.md.",
     )
-    argument_parser.add_argument(
-        "--version", action="version", version=f"rep {importlib.metadata.version('rep')}"
-    )
+    # PLAN.md D42: a flag, not action="version", which needs the version
+    # string, and so importlib.metadata, while the parser is built: 39 of 57
+    # ms of import on every command, and nvim runs `rep stamp` on every save.
+    argument_parser.add_argument("--version", action="store_true", help="show program's version number and exit")
     argument_parser.add_argument(
         "--data-root",
         metavar="PATH",
@@ -252,6 +252,14 @@ def main(argument_list: list[str] | None = None) -> int:
     )
 
     parsed_arguments = argument_parser.parse_args(argument_list)
+    version_requested: bool = parsed_arguments.version
+    if version_requested:
+        # Before the machine context, as action="version" was: the version
+        # prints even where rep cannot run.
+        import importlib.metadata
+
+        print(f"rep {importlib.metadata.version('rep')}")
+        return 0
     command: str | None = parsed_arguments.command
     data_root_flag: str | None = parsed_arguments.data_root
 

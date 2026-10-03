@@ -55,20 +55,22 @@ def test_stamp_redraws_an_id_used_in_another_library_file(tmp_path: Path, monkey
     assert suffix_draws == []
 
 
-def test_the_commands_nvim_runs_never_load_the_display_package(tmp_path: Path) -> None:
-    # PLAN.md D46: pyutils is imported by the session and review only, so a
-    # fault in it cannot break stamp on save or lint through :make. A fresh
-    # interpreter, so no other test's imports count.
+def test_the_commands_nvim_runs_never_load_the_display_package_or_package_metadata(tmp_path: Path) -> None:
+    # PLAN.md D46: pyutils is imported by the session only, so a fault in it
+    # cannot break stamp on save or lint through :make. PLAN.md D42:
+    # importlib.metadata is imported for --version only; it was most of the
+    # import time of every save. A fresh interpreter, so no other test's
+    # imports count.
     (tmp_path / "learning").mkdir()
     script = (
         "import io, sys\n"
         "from rep.cli import main\n"
         "sys.stdin = io.TextIOWrapper(io.BytesIO(b'### Q: q\\nA: x\\n'))\n"
         "exit_codes = [main(['stamp']), main(['lint'])]\n"
-        "print(exit_codes, 'pyutils' in sys.modules, file=sys.stderr)\n"
+        "print(exit_codes, 'pyutils' in sys.modules, 'importlib.metadata' in sys.modules, file=sys.stderr)\n"
     )
     environment = {**os.environ, "HOME": str(tmp_path)}
     for variable in ("REP_DATA_ROOT", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):
         environment.pop(variable, None)
     result = subprocess.run([sys.executable, "-c", script], env=environment, capture_output=True, check=False)
-    assert result.stderr.decode().splitlines()[-1] == "[0, 0] False", result.stderr
+    assert result.stderr.decode().splitlines()[-1] == "[0, 0] False False", result.stderr

@@ -42,9 +42,9 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             f0c1b06  cli: the session in rounds, `rep review`
                      (thread 3 continued in a new chat here,
                      BUILDING.md section 6)
-            0026     docs: thread handoff, decisions after f0c1b06
-                     (SHA filled in once reported)
-            (this commit)  cli: cards after round 1 say "retest"
+            60e7447  docs: thread handoff, decisions after f0c1b06
+            d8723ea  cli: cards after round 1 say "retest"
+            (this commit)  cli: `--version` imported lazily
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -56,7 +56,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 and D43 pending |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 in progress (lazy `--version`), D43 pending |
 | use week | pending |
 | M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
@@ -110,7 +110,7 @@ enforcement point with its current line:
 tests/test_traceability.py fails if code cites a decision PLAN.md does not
 define, if a decision whose heading is marked (M2) or later has no
 enforcement point (today D20-D30), or if a decision marked
-"(M<n>, pending)" already has one (today D42 and D43 are pending).
+"(M<n>, pending)" already has one (today D43 is pending).
 
 ## Known blind spots
 
@@ -172,10 +172,12 @@ Each code commit changes the markers of the decisions it enforces from
 | 759c981 | pyutils: terminal_output fixes for F18-F20, before rep draws through it (outside rep/; its own tests) | - |
 | bd5f203 | session: rounds fold and the grading sheet (render and read), pure; the queue stays until the loop moves over | D45, D41 (sheet) |
 | f0c1b06 | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
-| 0026 | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
-| this commit | cli: cards after round 1 say "retest" | D45 |
-| then | cli: `rep why`, `rep unsuspend`, `rep where --data-root`, `--version` imported lazily | D42 |
-| then | nvim plugin, tested headless | D43 |
+| 60e7447 | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
+| d8723ea | cli: cards after round 1 say "retest" | D45 |
+| this commit | cli: `--version` imported lazily; stamp end to end 75 to 52 ms | D42 (startup cost) |
+| then | cli: `rep unsuspend ID` | D42 |
+| then | cli: `rep why ID` | D42 |
+| then | nvim plugin, tested headless, with `rep where --data-root` (moved here from D42's row: the plugin is its only caller) | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |
 
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text

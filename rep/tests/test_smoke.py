@@ -7,6 +7,7 @@ subprocess with its own HOME, so it cannot touch the real machine setup.
 """
 
 import fcntl
+import importlib.metadata
 import json
 import os
 import pty
@@ -52,7 +53,7 @@ def test_help_and_version(tmp_path: Path) -> None:
     assert "stamp" in help_result.stdout.decode()
     version_result = run_rep(["--version"], tmp_path)
     assert version_result.returncode == 0
-    assert version_result.stdout.decode().startswith("rep ")
+    assert version_result.stdout.decode() == f"rep {importlib.metadata.version('rep')}\n"
 
 
 def test_where_reports_stable_identity_and_default_root(tmp_path: Path) -> None:

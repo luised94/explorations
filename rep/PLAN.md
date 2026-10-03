@@ -195,6 +195,13 @@ Measured while starting M3 (thread 3, 2026-10-01):
   py.typed, pyright strict reports a missing stub at the import and still
   infers and checks every call from the source (D46).
 
+Measured for D42's startup cost (thread 3, 2026-10-02, sandbox):
+- `rep stamp` through the installed command, on one already stamped
+  item (no write), 30 runs: median 75 ms (min 69) with
+  importlib.metadata imported for `--version`, 52 ms (min 47) with it
+  imported only when `--version` is given. `python -X importtime -c
+  "import rep.cli"`, 15 runs: median 54 ms before, 32 ms after.
+
 Measured after the session in rounds landed (thread 3, f0c1b06, 2026-10-02):
 - The session in the person's terminal (Windows Terminal on WSL2, nvim
   0.11.6, a throwaway data root): two new items over two rounds, nvim
@@ -988,7 +995,7 @@ D41. `rep review` (M3). Revises D8.
   (D32) instead of refusing as stamp and add do (D27): a refusal would
   discard grades the person had just written.
 
-D42. `rep why`, `rep unsuspend`, startup cost (M3, pending).
+D42. `rep why`, `rep unsuspend`, startup cost (M3).
   Choice: `rep why ID` prints where the item is (path:line), its state
   (stability, difficulty, retrievability now, due day, reviews, lapses,
   suspended), its attempts with their grades and whether each attempt's
@@ -1011,6 +1018,14 @@ D42. `rep why`, `rep unsuspend`, startup cost (M3, pending).
   Trade-off: no shell cue in the use week, and section 8's `rep due
   --brief` time has nothing to measure until the cue exists.
   Revisit: E3 under 4 sessions in 7 days.
+  Built (thread 3, in parts): `--version` is a plain flag, handled
+  right after parsing and before the machine context, as
+  action="version" was; it imports importlib.metadata only then
+  (section 3: stamp end to end 75 to 52 ms). A test checks that stamp
+  and lint never load importlib.metadata. Trade-off: `rep --version
+  add` now reports add's missing --stdin instead of the version
+  (action="version" stopped parsing at the flag). `rep unsuspend` and
+  `rep why` follow in their own commits.
 
 D43. nvim plugin (M3, pending). Revises D12.
   Choice: rep/nvim/ is a plugin directory on the runtime path:
