@@ -44,7 +44,9 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
                      BUILDING.md section 6)
             60e7447  docs: thread handoff, decisions after f0c1b06
             d8723ea  cli: cards after round 1 say "retest"
-            (this commit)  cli: `--version` imported lazily
+            0028     cli: `--version` imported lazily
+            0029     cli: `rep why`, `rep unsuspend`
+                     (patch numbers stand for SHAs until reported)
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
 
@@ -56,7 +58,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 in progress (lazy `--version`), D43 pending |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 built; D43 pending |
 | use week | pending |
 | M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
@@ -64,19 +66,19 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      263 passed
+BASELINE_TOTAL      264 passed
 BASELINE_BREAKDOWN  tests/test_cli.py            2
                     tests/test_events.py        51
                     tests/test_library.py      125
                     tests/test_machine.py       16
                     tests/test_memory_model.py   3
                     tests/test_session.py       23
-                    tests/test_smoke.py         27
+                    tests/test_smoke.py         28
                     tests/test_storage.py       15
                     tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "263 passed in ...")
+                    uv run pytest | tail -1      (prints "264 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -174,9 +176,8 @@ Each code commit changes the markers of the decisions it enforces from
 | f0c1b06 | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
 | 60e7447 | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
 | d8723ea | cli: cards after round 1 say "retest" | D45 |
-| this commit | cli: `--version` imported lazily; stamp end to end 75 to 52 ms | D42 (startup cost) |
-| then | cli: `rep unsuspend ID` | D42 |
-| then | cli: `rep why ID` | D42 |
+| 0028 | cli: `--version` imported lazily; stamp end to end 75 to 52 ms | D42 (startup cost) |
+| 0029 | cli: `rep why ID` (facts only), `rep unsuspend ID` | D42 |
 | then | nvim plugin, tested headless, with `rep where --data-root` (moved here from D42's row: the plugin is its only caller) | D43 |
 | last | docs: close M3, kickoff for thread 4 | - |
 

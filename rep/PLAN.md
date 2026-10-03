@@ -1024,8 +1024,20 @@ D42. `rep why`, `rep unsuspend`, startup cost (M3).
   (section 3: stamp end to end 75 to 52 ms). A test checks that stamp
   and lint never load importlib.metadata. Trade-off: `rep --version
   add` now reports add's missing --stdin instead of the version
-  (action="version" stopped parsing at the flag). `rep unsuspend` and
-  `rep why` follow in their own commits.
+  (action="version" stopped parsing at the flag).
+  `rep why ID` prints facts only: place, memory state, recall now, due
+  day, reviews and lapses, suspended, whether today's plan has it and
+  as what (due or new), and each attempt with its grade, typed text and
+  whether the item changed since. It does not say why an item is left
+  out of today's plan: that would be a second copy of plan_session's
+  rules, which could disagree with it. The state lines show the reason
+  (suspended, a due day ahead, shown today) except for the two caps
+  (budget, new items per day). Anki's card info makes the same cut.
+  `rep unsuspend ID` writes nothing for an item that is not suspended,
+  and waits for the writer lock as review does (D41 Built): it is one
+  quick event, and a session holds the lock only per append. Both
+  share the session's library and events read, in the same branch.
+  An unknown id exits 2 (a bad argument, D30).
 
 D43. nvim plugin (M3, pending). Revises D12.
   Choice: rep/nvim/ is a plugin directory on the runtime path:

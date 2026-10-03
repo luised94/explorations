@@ -42,7 +42,7 @@ import subprocess
 import sys
 import termios
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -54,6 +54,7 @@ from rep.events import (
     SessionEndEvent,
     SessionStartEvent,
     SuspendEvent,
+    UnsuspendEvent,
     effective_events,
     fold_events,
     format_canonical_time,
@@ -74,9 +75,10 @@ from rep.library import (
     stamp_library_text,
 )
 from rep.machine import MachineContextError, resolve_machine_context
-from rep.memory_model import AGAIN, GOOD
+from rep.memory_model import AGAIN, DEFAULT_PARAMETERS, GOOD, retrievability
 from rep.session import (
     DEFAULT_PRESET,
+    GRADE_WORDS,
     SheetEntry,
     grading_sheet_entries,
     plan_session,
@@ -246,6 +248,12 @@ def main(argument_list: list[str] | None = None) -> int:
         "review",
         help="grade, in $EDITOR, your last session's answers and every answer still ungraded",
     )
+    why_parser = subcommand_parsers.add_parser(
+        "why", help="show an item's place, memory state, attempts and whether today's plan has it"
+    )
+    why_parser.add_argument("item_id", metavar="ID")
+    unsuspend_parser = subcommand_parsers.add_parser("unsuspend", help="return a suspended item to sessions")
+    unsuspend_parser.add_argument("item_id", metavar="ID")
     subcommand_parsers.add_parser(
         "lint",
         help="check the whole library and the events; print problems as path:line:col for quickfix",
@@ -291,14 +299,14 @@ def main(argument_list: list[str] | None = None) -> int:
         print(f"kbd_root         {kbd_root if kbd_root is not None else '(not set)'}")
         return 0
 
-    if command is None or command == "review":
+    if command is None or command == "review" or command == "why" or command == "unsuspend":
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
             # PLAN.md D28: rep never creates the data root.
             print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
             return 2
         # The session reads answers from the terminal; both run $EDITOR on it.
-        if not sys.stdin.isatty() or not sys.stdout.isatty():
+        if (command is None or command == "review") and (not sys.stdin.isatty() or not sys.stdout.isatty()):
             print(f"rep: {'a session' if command is None else 'review'} needs a terminal on standard input and output", file=sys.stderr)
             return 2
         preset = DEFAULT_PRESET
@@ -315,6 +323,79 @@ def main(argument_list: list[str] | None = None) -> int:
         excluded_item_count = library_check["item_count"] - len(library_check["located_items"])
         if excluded_item_count > 0:
             print(f"rep: {excluded_item_count} items are left out by errors; `rep lint` lists them", file=sys.stderr)
+
+        if command == "why" or command == "unsuspend":
+            requested_item_id: str = parsed_arguments.item_id
+            fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
+            item_state = fold_result["items"].get(requested_item_id)
+            located_item = located_items_by_id.get(requested_item_id)
+            if item_state is None and requested_item_id not in library_check["written_item_ids"]:
+                print(f"rep: no item {requested_item_id} in the library or its history", file=sys.stderr)
+                return 2
+
+            if command == "unsuspend":
+                # PLAN.md D42. Nothing is written for an item that is not
+                # suspended: the event would change nothing.
+                if item_state is None or not item_state["suspended"]:
+                    print(f"Item {requested_item_id} is not suspended; nothing written.")
+                    return 0
+                unsuspend: UnsuspendEvent = {
+                    "format_version": EVENT_FORMAT_VERSION,
+                    "id": new_event_id(secrets.token_bytes),
+                    "at": format_canonical_time(datetime.now(UTC)),
+                    "device": device_id,
+                    "kind": "unsuspend",
+                    "item": requested_item_id,
+                }
+                append_events_waiting(state_directory, data_root / "events", device_id, [unsuspend])
+                print(f"Item {requested_item_id} is back in sessions.")
+                return 0
+
+            # --- rep why (PLAN.md D42): facts only, so the reasons stay the
+            # plan's; a second copy of its rules here could disagree ---
+            today = scheduling_day(datetime.now(UTC), preset["day_start_hour"])
+            print(f"item        {requested_item_id}")
+            if located_item is not None:
+                print(f"question    {' / '.join(located_item['item']['question'].splitlines())}")
+                print(f"where       {located_item['path']}:{located_item['item']['line']}")
+            elif requested_item_id in library_check["written_item_ids"]:
+                print("where       in the library, left out by errors (`rep lint` lists them)")
+            else:
+                print("where       in no library file: deleted, or its id line changed (I2)")
+            if item_state is None or item_state["memory"] is None:
+                print("memory      none yet: no graded review")
+            else:
+                last_review_day = item_state["last_review_day"]
+                assert last_review_day is not None, "a memory state has a last review day"
+                elapsed_days = max((date.fromisoformat(today) - date.fromisoformat(last_review_day)).days, 0)
+                recall_now = retrievability(item_state["memory"]["stability"], elapsed_days, DEFAULT_PARAMETERS)
+                print(f"stability   {item_state['memory']['stability']:.2f} days")
+                print(f"difficulty  {item_state['memory']['difficulty']:.2f} (1 to 10)")
+                print(f"recall now  {recall_now:.2f} (today {today}; last graded review {last_review_day})")
+                print(f"due         {item_state['due_day']}")
+            if item_state is not None:
+                print(f"reviews     {item_state['graded_review_count']} graded, {item_state['lapse_count']} lapses")
+                print(f"suspended   {'yes (rep unsuspend ' + requested_item_id + ')' if item_state['suspended'] else 'no'}")
+            plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+            plan_reasons = [slot["reason"] for slot in plan if slot["item_id"] == requested_item_id]
+            print(f"today       {'in the plan, ' + plan_reasons[0] if plan_reasons != [] else 'not in the plan'}")
+            effective = effective_events(events_load["events"])
+            grade_word_by_rating = {rating: word for word, rating in GRADE_WORDS.items() if rating is not None}
+            item_attempts = [
+                event for event in effective["ordered_events"]
+                if event["kind"] == "attempt" and event["item"] == requested_item_id
+                and event["id"] not in effective["undone_event_ids"]
+            ]  # fmt: skip
+            print(f"attempts    {len(item_attempts)}")
+            current_fingerprint = item_fingerprint(located_item["item"]) if located_item is not None else None
+            for attempt in item_attempts:
+                attempt_rating = effective["amended_ratings"].get(attempt["id"], attempt["rating"])
+                grade_word = "?" if attempt_rating is None else grade_word_by_rating[attempt_rating]
+                typed_answer = attempt["typed_answer"] or ""
+                # PLAN.md D33: stored on the attempt, so an edit since shows.
+                changed_note = "  (item changed since)" if attempt["fingerprint"] != current_fingerprint else ""
+                print(f"  {attempt['day']}  {grade_word:<6} {typed_answer}{changed_note}")
+            return 0
 
         if command == "review":
             # PLAN.md D41: this device's last session, then every answer

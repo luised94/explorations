@@ -623,3 +623,50 @@ def test_a_session_and_review_need_a_terminal(tmp_path: Path) -> None:
     assert result.returncode == 2 and b"a session needs a terminal" in result.stderr
     result = run_rep(["review"], tmp_path)
     assert result.returncode == 2 and b"review needs a terminal" in result.stderr
+
+
+# --- rep why and rep unsuspend (PLAN.md D42) -----------------------------------
+
+
+def test_why_shows_the_facts_and_unsuspend_returns_a_suspended_item(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY)
+    (data_root / "events").mkdir()
+    # An Easy a month ago, against a fingerprint that is not the item's now,
+    # then a suspend.
+    events_path = data_root / "events" / "6a2ah35zhe.jsonl"
+    events_path.write_text(
+        '{"at":"2026-09-01T10:00:00.000000Z","day":"2026-09-01","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+        '"id":"aaaaaaaaaaaa","item":"km-measure-7q2m","kind":"attempt","latency_milliseconds":900,'
+        '"rating":4,"session":"s","typed_answer":"half Vmax"}\n'
+        '{"at":"2026-09-01T10:01:00.000000Z","device":"6a2ah35zhe","format_version":1,'
+        '"id":"bbbbbbbbbbbb","item":"km-measure-7q2m","kind":"suspend"}\n',
+        encoding="utf-8",
+    )
+    why_result = run_rep(["why", "km-measure-7q2m"], tmp_path)
+    assert why_result.returncode == 0, why_result.stderr
+    why_lines = why_result.stdout.decode().splitlines()
+    assert f"where       {data_root / 'library' / 'a.md'}:6" in why_lines
+    assert "reviews     1 graded, 0 lapses" in why_lines
+    assert "suspended   yes (rep unsuspend km-measure-7q2m)" in why_lines
+    assert "today       not in the plan" in why_lines
+    assert "  2026-09-01  easy   half Vmax  (item changed since)" in why_lines
+    assert any(line.startswith("stability   ") for line in why_lines)
+
+    new_item_lines = run_rep(["why", "capital-france-7q2m"], tmp_path).stdout.decode().splitlines()
+    assert "memory      none yet: no graded review" in new_item_lines
+    assert "today       in the plan, new" in new_item_lines
+
+    unsuspend_result = run_rep(["unsuspend", "km-measure-7q2m"], tmp_path)
+    assert unsuspend_result.stdout == b"Item km-measure-7q2m is back in sessions.\n", unsuspend_result.stderr
+    assert json.loads(events_path.read_text(encoding="utf-8").splitlines()[-1])["kind"] == "unsuspend"
+    # Due since early September, it is a review today.
+    after_lines = run_rep(["why", "km-measure-7q2m"], tmp_path).stdout.decode().splitlines()
+    assert "suspended   no" in after_lines and "today       in the plan, due" in after_lines
+
+    event_count = len(events_path.read_text(encoding="utf-8").splitlines())
+    again_result = run_rep(["unsuspend", "km-measure-7q2m"], tmp_path)
+    assert again_result.stdout == b"Item km-measure-7q2m is not suspended; nothing written.\n"
+    assert len(events_path.read_text(encoding="utf-8").splitlines()) == event_count
+
+    unknown_result = run_rep(["why", "nope-0000"], tmp_path)
+    assert unknown_result.returncode == 2 and b"no item nope-0000" in unknown_result.stderr
