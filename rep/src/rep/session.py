@@ -36,13 +36,18 @@ INVARIANTS
   R1  session_rounds is pure and order-independent in the session's events;
       an item's k-th effective attempt in the session is its round-k answer.
   R2  Round 1 is the plan's items in plan order; round r+1 is the items of
-      round r, in that order, that did not meet D36's criterion in round r
+      round r, in R6's order, that did not meet D36's criterion in round r
       (a grade other than Again, and not a new item's first showing) and
       did not leave.
   R3  An item leaves after round r when its round-r answer is ungraded (it
       waits for `rep review`) or when it was suspended.
   R4  If every answer is graded Good, the session takes exactly
       (due slots) + 2 * (new slots) attempts.
+  R6  Round 1 is in plan order (P3: a session cut short loses the least;
+      D37: a reading's new items in reading order). A later round shows
+      its items ordered by sha256 of (session id, round number, item id):
+      a different order in every session and round, the same on every
+      replay, on any Python version (PLAN.md D48).
   R5  session_rounds never computes a round past through_round: round r+1
       is decided by round r's grades, which exist only once the round's
       sheet has been saved, and nothing in the events says when that was
@@ -63,6 +68,7 @@ INVARIANTS
       effective attempt still without a grade.
 """
 
+import hashlib
 from datetime import date
 from typing import Literal, TypedDict
 
@@ -191,11 +197,14 @@ class RoundState(TypedDict):
     round_attempt_ids: list[str]  # the attempts that answered it so far, in round order
 
 
-def session_rounds(plan: list[PlanSlot], session_events: list[Event], through_round: int) -> RoundState:
-    """Where a session stands, in rounds (PLAN.md D45, D31, D36; R1-R5).
+def session_rounds(
+    plan: list[PlanSlot], session_events: list[Event], through_round: int, session_id: str
+) -> RoundState:
+    """Where a session stands, in rounds (PLAN.md D45, D31, D36, D48; R1-R6).
 
     PRE   plan came from plan_session for this session; session_events are
-          the events this session wrote; through_round >= 1.
+          the events this session wrote; through_round >= 1; session_id is
+          its session_start's id.
     POST  the first round up to through_round that still has an unanswered
           item, with those items; else, with no unanswered items, round
           through_round, or the last round when no round follows an earlier
@@ -252,6 +261,11 @@ def session_rounds(plan: list[PlanSlot], session_events: list[Event], through_ro
                 "round_number": round_number, "round_item_ids": round_item_ids,
                 "unanswered_item_ids": [], "round_attempt_ids": round_attempt_ids,
             }  # fmt: skip
+        # R6: random.shuffle is not promised to give the same order on
+        # another Python version; a hash is, so a replay years later agrees.
+        next_round_item_ids.sort(
+            key=lambda item_id: hashlib.sha256(f"{session_id}\n{round_number + 1}\n{item_id}".encode()).digest()
+        )
         round_number += 1
         round_item_ids = next_round_item_ids
 

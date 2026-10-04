@@ -1282,6 +1282,25 @@ editing; approved by the person on 2026-10-03.
   Revisit: the use week finding the prompt too limited (then the session
   in nvim).
 
+D48. Later rounds in a fresh order (M3). Revises D45's round order;
+approved by the person on 2026-10-03.
+  Choice: round 1 keeps plan order; each later round shows its items
+  ordered by sha256 of (session id, round number, item id) (session.py
+  R6). Which items a round holds does not change.
+  Reason: the person: meeting items in the same order is a cue, and
+  "weird". Round 2 repeated round 1's order only because it was the
+  simplest code. A hash, not random.shuffle: the random module promises
+  the same sequence across Python versions only for random() itself, so
+  a replay on a later Python could reorder a past session.
+  Rejected: shuffling round 1 too (6: mixes reviews and new items, but
+  loses P3, the most-forgotten first so a session cut short loses the
+  least, and D37's reading order for a reading's new items; a deck's
+  file is shuffled once instead, CONVENTIONS.md Decks); a per-session
+  random seed recorded in the events (5: a new field for what the
+  session id already provides).
+  Trade-off: round 1 of a reading still follows the file's order, by
+  design.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

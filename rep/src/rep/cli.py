@@ -523,7 +523,7 @@ def main(argument_list: list[str] | None = None) -> int:
             session_events.append(session_start)
             session_was_started = True
             while True:
-                round_state = session_rounds(plan, session_events, graded_round_number + 1)
+                round_state = session_rounds(plan, session_events, graded_round_number + 1, session_start["id"])
                 round_number = round_state["round_number"]
                 round_is_answered = round_state["unanswered_item_ids"] == []
                 if round_is_answered and graded_round_number == round_number:

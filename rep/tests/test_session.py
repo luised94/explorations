@@ -1,5 +1,6 @@
 """The plan, the rounds and the grading sheet, tested at their contract (session.py P, R, G, V)."""
 
+import hashlib
 import random
 from datetime import UTC, datetime, timedelta
 
@@ -177,6 +178,9 @@ def test_plan_is_pure() -> None:
 # --- rounds (R1-R4, PLAN.md D45) -----------------------------------------------
 
 
+SESSION_ID = "s3ss10naaaaa"
+
+
 def answer_in_rounds(plan: list[PlanSlot], grade_for: dict[str, list[int | None]]) -> tuple[list[Event], list[int]]:
     """Answer every round to its end, each attempt written with its grade
     (as rep writes exact and numeric ones); grade_for gives an item's grades
@@ -189,7 +193,7 @@ def answer_in_rounds(plan: list[PlanSlot], grade_for: dict[str, list[int | None]
     # answered, since here every grade is written with its answer.
     graded_round_count = 0
     while True:
-        state = session_rounds(plan, session_events, graded_round_count + 1)
+        state = session_rounds(plan, session_events, graded_round_count + 1, SESSION_ID)
         if state["unanswered_item_ids"] == []:
             if state["round_number"] == graded_round_count:
                 return session_events, round_sizes
@@ -229,7 +233,7 @@ def test_a_miss_returns_in_the_next_round_until_recalled() -> None:
 def test_rounds_wait_on_their_unanswered_items_in_plan_order() -> None:
     plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
     first: list[Event] = [attempt(0, START, "item0-7q2m", None, "2026-10-01")]
-    assert session_rounds(plan, first, 1) == {
+    assert session_rounds(plan, first, 1, SESSION_ID) == {
         "round_number": 1,
         "round_item_ids": ["item0-7q2m", "item1-7q2m", "item2-7q2m"],
         "unanswered_item_ids": ["item1-7q2m", "item2-7q2m"],
@@ -242,7 +246,7 @@ def test_an_ungraded_answer_or_a_suspend_ends_the_item_and_an_amend_decides() ->
     # amend, decide the rest.
     plan: list[PlanSlot] = [{"item_id": f"item{index}-7q2m", "reason": "due"} for index in range(3)]
     answers: list[Event] = [attempt(index, START + timedelta(seconds=index), f"item{index}-7q2m", None, "2026-10-01") for index in range(3)]
-    ungraded_round = session_rounds(plan, answers, 1)
+    ungraded_round = session_rounds(plan, answers, 1, SESSION_ID)
     assert (ungraded_round["round_number"], ungraded_round["unanswered_item_ids"]) == (1, [])
     # The round's sheet is built from these, in round order.
     assert ungraded_round["round_attempt_ids"] == [answer["id"] for answer in answers]
@@ -258,7 +262,7 @@ def test_an_ungraded_answer_or_a_suspend_ends_the_item_and_an_amend_decides() ->
         "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(20), "at": format_canonical_time(START + timedelta(minutes=1)),
         "device": DEVICE, "kind": "suspend", "item": "item1-7q2m",
     }  # fmt: skip
-    assert session_rounds(plan, [*answers, *graded, suspend], 2) == {
+    assert session_rounds(plan, [*answers, *graded, suspend], 2, SESSION_ID) == {
         "round_number": 2, "round_item_ids": ["item0-7q2m"], "unanswered_item_ids": ["item0-7q2m"],
         "round_attempt_ids": [],
     }  # fmt: skip
@@ -273,7 +277,7 @@ def test_an_answered_round_waits_for_its_grades_before_the_next_is_decided() -> 
         attempt(0, START, "new-7q2m", None, "2026-10-01"),
         attempt(1, START + timedelta(seconds=1), "due-7q2m", 1, "2026-10-01"),
     ]
-    assert session_rounds(plan, answers, 1) == {
+    assert session_rounds(plan, answers, 1, SESSION_ID) == {
         "round_number": 1, "round_item_ids": ["new-7q2m", "due-7q2m"], "unanswered_item_ids": [],
         "round_attempt_ids": [answers[0]["id"], answers[1]["id"]],
     }  # fmt: skip
@@ -281,10 +285,10 @@ def test_an_answered_round_waits_for_its_grades_before_the_next_is_decided() -> 
         "format_version": EVENT_FORMAT_VERSION, "id": event_id_for(2), "at": format_canonical_time(START + timedelta(minutes=1)),
         "device": DEVICE, "kind": "amend", "target": answers[0]["id"], "rating": 3,
     }  # fmt: skip
-    assert session_rounds(plan, [*answers, graded], 2)["unanswered_item_ids"] == ["new-7q2m", "due-7q2m"]
+    assert sorted(session_rounds(plan, [*answers, graded], 2, SESSION_ID)["unanswered_item_ids"]) == ["due-7q2m", "new-7q2m"]
     # Round 2's sheet holds round 2's answers only.
     second_answer = attempt(3, START + timedelta(minutes=2), "due-7q2m", 3, "2026-10-01")
-    assert session_rounds(plan, [*answers, graded, second_answer], 2)["round_attempt_ids"] == [second_answer["id"]]
+    assert session_rounds(plan, [*answers, graded, second_answer], 2, SESSION_ID)["round_attempt_ids"] == [second_answer["id"]]
 
 
 def test_a_new_item_recalled_at_first_sight_returns_for_one_more_round() -> None:
@@ -292,6 +296,28 @@ def test_a_new_item_recalled_at_first_sight_returns_for_one_more_round() -> None
     session_events, round_sizes = answer_in_rounds(plan, {})
     assert round_sizes == [2, 1]
     assert [event["item"] for event in session_events if event["kind"] == "attempt"] == ["new-7q2m", "due-7q2m", "new-7q2m"]
+
+
+def test_later_rounds_are_reordered_by_session_and_round_and_replay_alike() -> None:
+    # R6 (PLAN.md D48): round 1 keeps plan order; round 2 is the same items
+    # in an order fixed by the session id and round number. Expected orders
+    # are computed here from the rule, not taken from the code.
+    plan: list[PlanSlot] = [{"item_id": f"new{index}-7q2m", "reason": "new"} for index in range(8)]
+    plan_item_ids = [slot["item_id"] for slot in plan]
+    answers: list[Event] = [
+        attempt(index, START + timedelta(seconds=index), item_id, 3, "2026-10-01") for index, item_id in enumerate(plan_item_ids)
+    ]
+    assert session_rounds(plan, answers[:1], 1, SESSION_ID)["round_item_ids"] == plan_item_ids
+    orders: list[list[str]] = []
+    for session_id in ("s3ss10naaaaa", "s3ss10nbbbbb"):
+        second_round = session_rounds(plan, answers, 2, session_id)["round_item_ids"]
+        expected = sorted(
+            plan_item_ids, key=lambda item_id: hashlib.sha256(f"{session_id}\n2\n{item_id}".encode()).digest()
+        )
+        assert second_round == expected
+        assert session_rounds(plan, list(reversed(answers)), 2, session_id)["round_item_ids"] == expected
+        orders.append(second_round)
+    assert orders[0] != orders[1] and orders[0] != plan_item_ids
 
 
 @given(strategies.lists(strategies.sampled_from([1, 3, None]), min_size=1, max_size=12), strategies.randoms(use_true_random=False))
@@ -302,8 +328,8 @@ def test_rounds_are_a_function_of_the_events_not_their_order(grades: list[int | 
     session_events, _ = answer_in_rounds(plan, {"item0-7q2m": list(grades), "new-7q2m": list(grades)})
     shuffled = list(session_events)
     shuffler.shuffle(shuffled)
-    assert session_rounds(plan, shuffled, 100) == session_rounds(plan, session_events, 100)
-    assert session_rounds(plan, session_events, 100)["unanswered_item_ids"] == []
+    assert session_rounds(plan, shuffled, 100, SESSION_ID) == session_rounds(plan, session_events, 100, SESSION_ID)
+    assert session_rounds(plan, session_events, 100, SESSION_ID)["unanswered_item_ids"] == []
 
 
 # --- the grading sheet (G1-G4, PLAN.md D41, D45) -------------------------------
@@ -396,7 +422,7 @@ def test_a_new_item_left_ungraded_does_not_return() -> None:
         attempt(0, START, "new-7q2m", None, "2026-10-01"),
         attempt(1, START + timedelta(seconds=1), "due-7q2m", 1, "2026-10-01"),
     ]
-    assert session_rounds(plan, answers, 2) == {
+    assert session_rounds(plan, answers, 2, SESSION_ID) == {
         "round_number": 2, "round_item_ids": ["due-7q2m"], "unanswered_item_ids": ["due-7q2m"],
         "round_attempt_ids": [],
     }  # fmt: skip

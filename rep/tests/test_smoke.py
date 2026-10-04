@@ -386,7 +386,10 @@ def session_home(tmp_path: Path, library_text: str) -> Path:
 
 
 def run_rep_on_a_terminal(
-    home_directory: Path, script: list[tuple[str, bytes]], editor: str = "false", arguments: list[str] | None = None
+    home_directory: Path,
+    script: list[tuple[str, bytes] | dict[str, bytes]],
+    editor: str = "false",
+    arguments: list[str] | None = None,
 ) -> tuple[int, str]:
     """Run `rep` on a pseudo-terminal of 30 rows and 100 columns. For each
     (text, keys): wait until text appears in the output, then type keys
@@ -394,7 +397,9 @@ def run_rep_on_a_terminal(
     keeps the test independent of machine speed. Keys go only after their
     own prompt: the session discards keys typed before its prompt (PLAN.md
     D35), so a script that types on seeing earlier text loses keys at
-    random, as a person would."""
+    random, as a person would. A dict step is questions shown in any order
+    (later rounds, PLAN.md D48): each question's keys are typed at the
+    prompt that follows it, whichever comes first."""
     rep_executable = shutil.which("rep")
     assert rep_executable is not None, "rep is not on PATH; run the tests with `uv run pytest`"
     environment = dict(os.environ)
@@ -422,7 +427,25 @@ def run_rep_on_a_terminal(
     output = b""
     seen_output = b""
     try:
-        for expected_text, keys in script:
+        # A dict step becomes, question by question as each appears, the
+        # same (question, no keys) then (prompt, keys) pair as a fixed step.
+        pending_steps: list[tuple[str, bytes] | dict[str, bytes]] = list(script)
+        while pending_steps != []:
+            step = pending_steps.pop(0)
+            if isinstance(step, dict):
+                deadline = time.monotonic() + 15
+                while not any(question.encode() in output for question in step):
+                    assert time.monotonic() < deadline, f"never saw any of {list(step)}; output so far:\n{(seen_output + output).decode(errors='replace')}"
+                    if select.select([controller_descriptor], [], [], 0.1)[0]:
+                        output += os.read(controller_descriptor, 4096)
+                first_question = min(
+                    (question for question in step if question.encode() in output),
+                    key=lambda question: output.index(question.encode()),
+                )
+                remaining = {question: keys for question, keys in step.items() if question != first_question}
+                pending_steps[:0] = [(first_question, b""), ("> ", step[first_question])] + ([remaining] if remaining else [])
+                continue
+            expected_text, keys = step
             deadline = time.monotonic() + 15
             while expected_text.encode() not in output:
                 assert time.monotonic() < deadline, f"never saw {expected_text!r}; output so far:\n{(seen_output + output).decode(errors='replace')}"
@@ -471,12 +494,10 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
             ("> ", b"Pars\x1bii\r"),
             ("What does Km measure?", b""),
             ("> ", b"half vmax\r"),
-            # A new item's first showing always returns (D36).
+            # A new item's first showing always returns (D36), in an order
+            # drawn from the session id (D48).
             ("round 2", b""),
-            ("Capital of France?", b""),
-            ("> ", b"paris\r"),
-            ("What does Km measure?", b""),
-            ("> ", b"half of Vmax\r"),
+            {"Capital of France?": b"paris\r", "What does Km measure?": b"half of Vmax\r"},
             ("round 3", b""),
             ("Capital of France?", b""),
             ("> ", b"Paris\r"),
@@ -500,6 +521,8 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
         "session_budget": 60, "new_per_day": 10, "new_item_cost": 3, "day_start_hour": 4, "desired_retention": 0.9,
     }  # fmt: skip
     attempts = [event for event in middle if event["kind"] == "attempt"]
+    # Round 2's order is the session's own (D48); compare it by item.
+    attempts = attempts[:2] + sorted(attempts[2:4], key=lambda attempt: str(attempt["item"])) + attempts[4:]
     assert [(attempt["item"], attempt["rating"], attempt["typed_answer"]) for attempt in attempts] == [
         ("capital-france-7q2m", 3, "Paris"),
         ("km-measure-7q2m", None, "half vmax"),
