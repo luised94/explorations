@@ -540,7 +540,19 @@ def main(argument_list: list[str] | None = None) -> int:
         else:
             plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
         if plan == []:
+            # PLAN.md D51: say what comes next and what can be done now,
+            # instead of leaving the person to remember drills and deck names.
+            upcoming_due_days = sorted(
+                item_state["due_day"] for item_state in fold_result["items"].values()
+                if item_state["due_day"] is not None and not item_state["suspended"] and item_state["due_day"] > today
+            )  # fmt: skip
             print(f"Nothing to practise today ({today}).")
+            if upcoming_due_days != []:
+                print(f"Next due: {upcoming_due_days.count(upcoming_due_days[0])} on {upcoming_due_days[0]}.")
+            deck_counts = Counter(Path(located_item["path"]).name for located_item in library_check["located_items"])
+            if deck_counts:
+                deck_list = ", ".join(f"{name.removesuffix(LIBRARY_FILE_SUFFIX)} ({count})" for name, count in sorted(deck_counts.items()))
+                print(f"To practise anyway: rep drill DECK   (decks: {deck_list})")
             return 0
         reason_by_item_id = {slot["item_id"]: slot["reason"] for slot in plan}
         due_count = sum(1 for slot in plan if slot["reason"] == "due")
@@ -565,8 +577,26 @@ def main(argument_list: list[str] | None = None) -> int:
                 print(f"{block_indent}{drill_note}")
         else:
             terminal_output.emit(terminal_output.format_labeled_separator(f"{today}: {due_count} due, {len(plan) - due_count} new"))
-        print(f"{block_indent}Type what comes to mind and press Enter; a cue is enough. Each round")
-        print(f"{block_indent}ends with its answers and keys in your editor, to grade.")
+        # PLAN.md D51: what the session holds, how long it is, and the keys,
+        # on screen, so none of it has to be remembered.
+        if command != "drill":
+            planned_by_deck_and_reason = Counter(
+                (Path(located_items_by_id[slot["item_id"]]["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX), slot["reason"])
+                for slot in plan
+            )
+            deck_summaries: list[str] = []
+            for deck_name in sorted({deck_and_reason[0] for deck_and_reason in planned_by_deck_and_reason}):
+                reason_counts = [
+                    f"{planned_by_deck_and_reason[(deck_name, reason)]} {reason}" for reason in ("due", "new")
+                    if planned_by_deck_and_reason[(deck_name, reason)] > 0
+                ]  # fmt: skip
+                deck_summaries.append(f"{deck_name}: {', '.join(reason_counts)}")
+            print(f"{block_indent}From {'; '.join(deck_summaries)}.")
+        new_slot_count = sum(1 for slot in plan if slot["reason"] == "new")
+        print(f"{block_indent}About {len(plan) + new_slot_count} answers if each is recalled (a new item comes back once).")
+        print(f"{block_indent}At > type what comes to mind, a cue is enough, and press Enter.")
+        print(f"{block_indent}Esc: vi keys (h l w b 0 $ x cw u; i to type). Esc v: use your editor.")
+        print(f"{block_indent}Each round ends with its answers and the keys in your editor, to grade.")
         # PLAN.md D35, kept by D45: a line counts only once its prompt is on
         # screen. The flush comes before the prompt: after it, a key typed in
         # the instant between seeing the prompt and the flush would be lost.
@@ -646,16 +676,23 @@ def main(argument_list: list[str] | None = None) -> int:
 
                 # --- one question; the answer is written, nothing is revealed (D45) ---
                 if round_state["round_attempt_ids"] == []:
-                    terminal_output.emit(terminal_output.format_labeled_separator(f"round {round_number}"))
+                    round_size = len(round_state["round_item_ids"])
+                    round_label = f"round {round_number}: {round_size} {'items' if round_number == 1 else 'to retest'}"
+                    terminal_output.emit(terminal_output.format_labeled_separator(round_label))
+                    print(f"{block_indent}Esc: vi keys   Esc v: editor   Ctrl-D: grade, then stop   Ctrl-C: stop now")
                 item_id = round_state["unanswered_item_ids"][0]
                 located_item = located_items_by_id[item_id]
                 item = located_item["item"]
                 round_position = len(round_state["round_attempt_ids"]) + 1
                 # Not "again": that is a grade word, and an item graded Easy
                 # that returns (a new item always does, D36) read as a miss.
-                card_label = reason_by_item_id[item_id] if round_number == 1 else "retest"
-                if item["check"] != "self":
-                    card_label += f", {item['check']}"  # the answer is compared as typed (D20)
+                card_label = Path(located_item["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX) + ", "
+                card_label += reason_by_item_id[item_id] if round_number == 1 else "retest"
+                # D20 compares these as typed; say how, in words (D51).
+                if item["check"] == "exact":
+                    card_label += ", as written"
+                elif item["check"] == "numeric":
+                    card_label += ", a number"
                 terminal_output.emit(
                     terminal_output.format_card(f"{round_position} of {len(round_state['round_item_ids'])}", card_label, item["question"])
                 )
@@ -722,6 +759,17 @@ def main(argument_list: list[str] | None = None) -> int:
         )
         terminal_output.emit(terminal_output.format_labeled_separator(f"session {end_reason}"))
         print(f"{block_indent}{len(session_attempts)} answers; {ungraded_count} wait for `rep review`.")
+        # PLAN.md D51: when these come back, from the history as it now stands.
+        fold_after_session = fold_events([*events_load["events"], *session_events], desired_retention=preset["desired_retention"])
+        next_review_counts: Counter[str] = Counter()
+        for slot in plan:
+            item_state_after = fold_after_session["items"].get(slot["item_id"])
+            if item_state_after is not None and item_state_after["due_day"] is not None:
+                next_review_counts[item_state_after["due_day"]] += 1
+        if next_review_counts:
+            next_review_days = sorted(next_review_counts.items())
+            next_review_text = ", ".join(f"{count} on {day}" for day, count in next_review_days[:4])
+            print(f"{block_indent}Next reviews: {next_review_text}{', and later' if len(next_review_days) > 4 else ''}.")
         return 0
 
     if command == "stamp":

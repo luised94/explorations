@@ -1369,6 +1369,38 @@ the person on 2026-10-03.
   has no budget, so --count is the person's limit.
   Revisit: the use week's drills crowding out scheduled sessions (E3).
 
+D51. The session shows what the person would otherwise hold in mind
+(M3). Approved by the person on 2026-10-03 ("prevent the user from having
+to hold state, interface, units, domain, format, order, sequence").
+  Choice: each screen states what it depends on.
+  Start: the session's decks with their due and new counts, about how
+  many answers it takes (R4: reviews once, new items twice), and the
+  keys (typing, Esc vi keys, Esc v editor). A drill says what it chose
+  (D50).
+  Each round: its number and size ("round 2: 4 to retest") and one line
+  of keys, Ctrl-D and Ctrl-C included.
+  Each card: its deck, why it is there (new, due, drill, retest) and, for
+  an exact or numeric item, how the answer is compared, in words ("as
+  written", "a number").
+  The sheet: what each grade word means, and that a new item's first
+  grade sets most of its first interval (good about 2 days, easy a week
+  or more; section 3).
+  The end: when this session's items come back.
+  Nothing to practise: when the next item is due, and `rep drill` with
+  the decks that exist.
+  Reason: what a screen does not show, the person must remember (Krug's
+  "don't make me think"); the schedule is otherwise invisible (Victor:
+  show the consequence where the decision is made). In the first
+  sessions the person met each of these as a question: what "again"
+  meant on a card (now "retest"), why a second `rep` said nothing, what
+  easy would do.
+  Rejected: a help screen or a `?` key (5: help the person must think to
+  ask for); a full-screen status bar (4: a terminal interface, D45).
+  Trade-off: more lines on screen, each read once; the key line repeats
+  every round. Units stay in the question (CONVENTIONS.md): rep does not
+  know an answer's unit.
+  Revisit: the person finding the screens noisy.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

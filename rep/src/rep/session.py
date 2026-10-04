@@ -306,9 +306,16 @@ def render_grading_sheet(entries: list[SheetEntry], title: str) -> str:
     """
     sheet_lines = [
         f"# {title}",
-        "# Change the first word of an answer to: again, hard, good, easy;",
-        "# ? leaves it for `rep review`; suspend stops the item. Save and quit to",
-        "# apply; quit without saving (:cq) applies nothing. gF on a path opens the item.",
+        # PLAN.md D51: what each word means, and what it does to the schedule,
+        # at the moment of choosing (measured, PLAN.md section 3).
+        "# Grade each answer by changing its first word:",
+        "#   again  not recalled        hard  recalled, with effort",
+        "#   good   recalled            easy  recalled at once",
+        "#   ?      leave it for `rep review`      suspend  stop showing the item",
+        "# On a new item's first showing the grade sets most of its first interval:",
+        "# good puts the next review about 2 days away, easy a week or more.",
+        "# Save and quit to apply; quit without saving (:cq) applies nothing.",
+        "# gF on an item path opens the item, to fix it.",
         "",
     ]
     for entry in entries:

@@ -512,7 +512,11 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
     assert "5 answers; 0 wait for `rep review`." in output
     # A 76-column card centered on 100 columns: 12 spaces before each border.
     assert "\n" + " " * 12 + "+" + "-" * 74 + "+" in output.replace("\r\n", "\n")
-    assert "1 of 2" in output and "new, exact" in output and "retest, exact" in output
+    assert "1 of 2" in output and "a, new, as written" in output and "a, retest, as written" in output
+    # PLAN.md D51: what the session holds, its length, the keys, what comes next.
+    assert "From a: 2 new." in output and "About 4 answers if each is recalled" in output
+    assert "round 1: 2 items" in output and "round 2: 2 to retest" in output and "Esc v: editor" in output
+    assert re.search(r"Next reviews: \d+ on \d{4}-\d{2}-\d{2}", output)
     # Nothing is revealed before the sheet (D45).
     assert "half of Vmax" not in output.replace("half of Vmax\r", "")
     session_events = read_session_events(data_root)
@@ -785,3 +789,23 @@ def test_drill_leaves_suspended_items_out_and_says_how_many(tmp_path: Path) -> N
     )
     exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["drill", "a"])
     assert exit_code == 0 and "1 of the 2 items in a." in output and "1 suspended, left out (`rep unsuspend ID`)." in output, output
+
+
+def test_nothing_due_says_when_and_offers_a_drill(tmp_path: Path) -> None:
+    # PLAN.md D51. Reviewed far in the future, so nothing is due and nothing
+    # is new, whatever today's date (the clock warning is expected).
+    data_root = session_home(tmp_path, SESSION_LIBRARY)
+    (data_root / "events").mkdir()
+    (data_root / "events" / "6a2ah35zhe.jsonl").write_text(
+        "".join(
+            f'{{"at":"2099-01-01T10:0{index}:00.000000Z","day":"2099-01-01","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+            f'"id":"{letter * 12}","item":"{item_id}","kind":"attempt","latency_milliseconds":900,'
+            f'"rating":3,"session":"s","typed_answer":"x"}}\n'
+            for index, (letter, item_id) in enumerate([("a", "capital-france-7q2m"), ("b", "km-measure-7q2m")])
+        ),
+        encoding="utf-8",
+    )
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Nothing to practise today", b"")])
+    assert exit_code == 0, output
+    assert re.search(r"Next due: [12] on 2099-01-0\d\.", output), output
+    assert "To practise anyway: rep drill DECK   (decks: a (2))" in output
