@@ -1562,6 +1562,29 @@ shell cue exists (target under 100 ms, D42).
      (the protocol's RMSE(bins), per group). Once there is enough history
      the optimizer refits the initial stabilities (D7); until then the
      grades keep the weight FSRS gives them (the person, 2026-10-02).
+  R5 Alcohol. Does alcohol, by amount and by its timing relative to a
+     session and to sleep, change recall (performance) or retention
+     (learning)? Alcohol suppresses REM sleep mostly in the first half
+     of the night (Ebrahim et al. 2013, a review), and one naturalistic
+     study found better recall of material learned before drinking
+     (Carlyle et al. 2017), so the time of each drink is the
+     measurement, not a daily total. Needs: the body form below.
+  The body form (the person's choice, 2026-10-03, started then, before
+  the use week, which revises R1's later start). One file a day,
+  <data root>/body/YYYY-MM-DD.md, named by the scheduling day (D44:
+  rolls over at 04:00, so a drink at 01:30 belongs to the evening
+  before), started from <data root>/templates/body.md by an nvim
+  BufNewFile autocmd and opened by a shell alias (`body`). Fields are
+  `key: value` lines, the library's own form: bed, wake, quality (1 to
+  5), then one `drink: HH:MM N` (standard drinks) or `coffee: HH:MM N`
+  line per occasion, and note. No rep code: rep never reads it until a
+  question is tested (the data rule above). Extending it is editing the
+  template; a day without a field simply lacks it. Trade-offs, chosen
+  over an append-only log with automatic timestamps: when a value was
+  written is not recorded (a value typed next morning looks like one
+  typed live, as in any sleep diary), and a past day can be edited; a
+  daily snapshot outside the synced folder would freeze past days if
+  that ever matters.
 - Slip and misconception labels, and flagging items in `rep review`:
   deferred until M5 or M6 asks for them (D41).
 - Findings about neighbouring code (the person's nvim config, kbd.lua, the
@@ -1779,3 +1802,14 @@ refusal       a command declines, returns its input and writes nothing
             instead of piping a split to `rep add` (D43 Built);
             `rep why` does not explain an item left out by the plan's
             caps (D42 Built).
+2026-10-03  After the person's review of M3 and their two control decks,
+            before the trial session, approved by the person: D47 (vi
+            mode at the prompt, rep turns it on itself), D48 (later
+            rounds in a fresh order), D49 (session_start records offset,
+            plan, source hash), D50 (`rep drill`, a deck is a library
+            file), D51 (every screen states what it depends on); the
+            multi-line sheet fix (D45); R5 alcohol and the body form
+            (section 9), with the body form starting now. Measured for
+            them: vi mode on uv's CPython and its arrow-key limit;
+            same-day Goods leave stability unchanged (section 3); --tag
+            permit would select 7 of 53 permit items.

@@ -1,6 +1,6 @@
 # rep: status
 
-date: 2026-10-02
+date: 2026-10-03
 purpose: the numbers a build thread fills into clone-and-verify before it
 changes anything. Updated in the same commit as the change it describes.
 
@@ -44,9 +44,16 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
                      BUILDING.md section 6)
             60e7447  docs: thread handoff, decisions after f0c1b06
             d8723ea  cli: cards after round 1 say "retest"
-            0028     cli: `--version` imported lazily
-            0029     cli: `rep why`, `rep unsuspend`
-            0030     nvim: the plugin, `rep where --data-root`
+            5f3d9b0  cli: `--version` imported lazily
+            cc1c47a  cli: `rep why`, `rep unsuspend`
+            40db1dd  nvim: the plugin, `rep where --data-root`
+            0031     session: vi-mode editing at the answer prompt
+            0032     session: later rounds in a fresh order
+            0033     session: multi-line answers on the grading sheet
+            0034     events: a session records its offset, plan and code
+            0035     cli: `rep drill`
+            0036     session: every screen states what it depends on
+            0037     docs: Decks, the body form, R5
                      (patch numbers stand for SHAs until reported)
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
             The base for thread 4 is set when M3 closes.
@@ -59,7 +66,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 | M0 skeleton | landed, aef91db; verified on the person's machine |
 | M1 FSRS transplant, event record, fold | landed, b1aadfe; verified on the person's machine |
 | M2 grammar, stamp, add, lint, writer lock, events loader | landed, 01ba3ea..a64d51f; each commit verified on the person's machine; stamp and add run there against a throwaway data root |
-| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42 and D43 built; to run end to end by the person, then the use week |
+| M3 sessions, review, why, due, nvim plugin | in progress (thread 3): sessions in rounds and `rep review` built (f0c1b06) and run once in the person's terminal; D42-D43 and D47-D51 built (vi prompt, round order, session record, drill, visibility); the person's trial session next, then the use week |
 | use week | pending |
 | M3b stats, forecast, leech threshold (snapshot if measured slow) | after the use week |
 | M4 language-model seam | pending |
@@ -67,20 +74,20 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      268 passed (with nvim on PATH; without it, 265 passed, 3 skipped)
+BASELINE_TOTAL      284 passed (with nvim on PATH; without it, 281 passed, 3 skipped)
 BASELINE_BREAKDOWN  tests/test_cli.py            2
-                    tests/test_events.py        51
+                    tests/test_events.py        60
                     tests/test_library.py      125
                     tests/test_machine.py       16
                     tests/test_nvim.py           3
                     tests/test_memory_model.py   3
-                    tests/test_session.py       23
-                    tests/test_smoke.py         29
+                    tests/test_session.py       25
+                    tests/test_smoke.py         34
                     tests/test_storage.py       15
                     tests/test_traceability.py   1
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "268 passed in ...")
+                    uv run pytest | tail -1      (prints "284 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -143,6 +150,10 @@ enforcement point (today D20-D30), or if a decision marked
 - The flush before each answer line (D35, kept by D45) is
   timing-dependent: no deterministic test catches a regression; the order
   is fixed in the code and explained there.
+- Vi mode at the prompt (D47) loses the arrow keys, Home and End in
+  insert mode on libedit; measured in the sandbox, not yet met in the
+  person's terminal. `rep drill` and the D51 screens are tested on a
+  pseudo-terminal only, until the trial session.
 - Ctrl-C while the editor is open is not tested. nvim and vim read it as
   a key in raw mode, so no signal reaches rep; an editor that leaves
   signals on would end the session and lose that sheet's grades, its
@@ -179,9 +190,17 @@ Each code commit changes the markers of the decisions it enforces from
 | f0c1b06 | cli: the session in rounds, `rep review` on the same sheet, pyutils display; session_queue and relearn_gap removed; the rounds fold bounded by the last graded round (R5, found by the terminal test) | D45, D46, D41 |
 | 60e7447 | docs: thread handoff (BUILDING.md section 6); approvals after f0c1b06: first-showing grades kept (R4), "retest" label, replay cutoff; F23 closed | D45 (text only) |
 | d8723ea | cli: cards after round 1 say "retest" | D45 |
-| 0028 | cli: `--version` imported lazily; stamp end to end 75 to 52 ms | D42 (startup cost) |
-| 0029 | cli: `rep why ID` (facts only), `rep unsuspend ID` | D42 |
-| 0030 | nvim plugin, tested headless, with `rep where --data-root` (moved here from D42's row: the plugin is its only caller) | D43 |
+| 5f3d9b0 | cli: `--version` imported lazily; stamp end to end 75 to 52 ms | D42 (startup cost) |
+| cc1c47a | cli: `rep why ID` (facts only), `rep unsuspend ID` | D42 |
+| 40db1dd | nvim plugin, tested headless, with `rep where --data-root` (moved here from D42's row: the plugin is its only caller) | D43 |
+| 0031 | session: vi mode at the prompt, turned on by rep | D47 |
+| 0032 | session: later rounds ordered by a hash of session, round and item | D48 |
+| 0033 | session: multi-line typed answers and keys on the sheet | D45 (fix) |
+| 0034 | events: session_start records utc_offset, plan, rep_source | D49 |
+| 0035 | cli: `rep drill [DECK] [--tag] [--count]` | D50 |
+| 0036 | session: every screen states what it depends on | D51 |
+| 0037 | docs: CONVENTIONS Decks section, `attempt:` retired in prose; PLAN R5 and the body form | - |
+| then | fixes from the person's trial session | - |
 | last | docs: close M3, kickoff for thread 4 | - |
 
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text

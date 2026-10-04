@@ -1,6 +1,6 @@
 # rep conventions
 
-date: 2026-09
+date: 2026-10
 status: locked for M2 (the parser implements exactly this; changes go
 through PLAN.md decision D4 and a note in the changelog at the bottom)
 
@@ -76,9 +76,9 @@ at the first line that is not block content.
 | `attempt:` recall, typed     | no              | `recall`                 | you                                |
 | `by: model:<name> <llm file>`| no              | you                      | `rep accept`                       |
 
-- `criteria:` is a checklist. In a session you answer `y` only if every
-  element is present. When both `A:` and `criteria:` exist, `A:` is shown at
-  reveal and `criteria:` is what you grade against.
+- `criteria:` is a checklist. On the grading sheet you grade it good only if
+  every element is in your answer. When both `A:` and `criteria:` exist, the
+  sheet shows both and `criteria:` is what you grade against.
 - `check: exact` and `check: numeric` imply `attempt: typed`, and need a
   one-line `A:` (a block answer cannot be typed on one line). Writing
   `attempt: recall` with either is an error. Reasons: PLAN.md D20.
@@ -99,9 +99,9 @@ at the first line that is not block content.
   fractions or units: put the unit and the expected form in the question
   ("in m/s^2, to two decimals"). Without a tolerance your answer must equal
   `A:` as a number (`9.810` equals `9.81`); with one, the edge passes.
-- `attempt: recall` means: think of the answer, press a key to commit, then
-  see it. `attempt: typed` means: type the answer, then see it. Both commit
-  before reveal.
+- `attempt:` no longer changes anything: since PLAN.md D45 every answer is
+  typed (a cue is enough) and graded on the sheet after its round. The
+  field is still read, so files that have it stay valid.
 - Locations follow the kbd location specifiers: `p42`, `pp42-45`, `ch3`,
   `S2.1`, `fig3`, `t12m34s`, and the pinned-key forms such as `John.3.16`.
   rep checks only that a location has no spaces; it never reads its parts.
@@ -154,6 +154,31 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 - Content is UTF-8 and is normalized to NFC when read. IDs, field names and
   markers are ASCII.
 
+## Decks
+
+A deck is a library file. `rep drill permit` practises `library/permit.md`
+as often as you like (PLAN.md D50); plain `rep` serves what the schedule
+says is due, from every deck.
+
+- Tags narrow a deck or cut across decks: `rep drill permit --tag jol`,
+  `rep drill --tag europe`. A tag says what an item is about; the file says
+  which deck it is in, so an item can never be in two decks by mistake.
+- One fact per item (Item rules below). Put the unit and the expected form
+  in the question, "(in dollars)", "(in feet)": rep does not know units.
+- A numeric answer is one number. An answer with a second fact ("30 mph,
+  25 if posted") is two items, or one self-graded item.
+- `check: self` when spelling is not the skill (capitals: "Bogota" is
+  right); `check: exact` when it is.
+- File order is the order new items are introduced. Keep a reading's
+  order; shuffle a list deck (capitals, vocabulary) once before adding it,
+  so neighbours do not cue each other. Later rounds of a session are
+  reordered by rep (PLAN.md D48).
+- An answer with several lines (code, a definition): write the key as a
+  block (`A:` then `    >` lines); in the session, press Esc then v to
+  write your answer in your editor.
+- Add a deck with `rep add --stdin --to NAME < file.md`; `rep lint` before
+  the first session.
+
 ## Changelog
 
 ```
@@ -164,4 +189,6 @@ M5), variant pools (arrive with generated problems), cloze deletions,
 2026-09-30  M2: what lint reports; `@llm:` sources accepted, not checked.
 2026-09-30  M2: `q-` ids also for questions of only common words; how
             accented and other non-ASCII letters enter an id.
+2026-10-03  M3: `attempt:` has no effect (every answer is typed, D45);
+            criteria are graded on the sheet; the Decks section.
 ```
