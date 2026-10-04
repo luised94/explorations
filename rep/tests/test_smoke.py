@@ -465,10 +465,10 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
         tmp_path,
         [
             ("Enter starts; Ctrl-D stops. ", b"\r"),
-            # "Pars", left arrow, "i": line editing must give "Paris", not
-            # escape bytes in the answer (D34).
+            # "Pars", Esc, i, "i": vi-mode editing must give "Paris", not
+            # escape bytes in the answer (D34, D47).
             ("Capital of France?", b""),
-            ("> ", b"Pars\x1b[Di\r"),
+            ("> ", b"Pars\x1bii\r"),
             ("What does Km measure?", b""),
             ("> ", b"half vmax\r"),
             # A new item's first showing always returns (D36).

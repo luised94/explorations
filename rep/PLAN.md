@@ -1257,6 +1257,31 @@ Revises D13.
   Revisit: pyutils leaving explorations, or a second consumer needing a
   different look.
 
+D47. Vi-mode editing at the answer prompt (M3). Revises D34's line
+editing; approved by the person on 2026-10-03.
+  Choice: the session switches readline to vi mode itself (libedit's
+  `bind -v`, or GNU readline's `set editing-mode vi`), so no dotfile is
+  needed. Esc gives normal mode (h l w b e 0 $ x cw cc dw u A); Esc v
+  opens the answer in $EDITOR and what is saved there becomes the
+  answer, several lines included. Tab inserts a tab.
+  Reason: the person edits in nvim; the answer prompt should use the
+  same modal editing. Measured on uv's CPython (libedit), on a
+  pseudo-terminal: the motions and operators above work, and v hands the
+  line to $EDITOR and returns its text.
+  Rejected: ~/.editrc (7: no code, but a setting the person must know to
+  make, and it changes every libedit program); the whole session in nvim
+  (6: full nvim, but a protocol and a second interface; revisit after
+  the use week); nvim opened for every answer (4: a screen switch per
+  question); prompt_toolkit (4, D13).
+  Trade-off: libedit has no text objects (ciw), no visual mode and no
+  mode indicator, and the arrow keys, Home and End do nothing useful in
+  insert mode: its Esc cannot be both the mode switch and the first byte
+  of an arrow's sequence (binding the sequences broke Esc, measured).
+  GNU readline has a timeout for this; uv's CPython does not ship it.
+  The session shows the keys on screen (D51).
+  Revisit: the use week finding the prompt too limited (then the session
+  in nvim).
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

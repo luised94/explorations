@@ -441,6 +441,12 @@ def main(argument_list: list[str] | None = None) -> int:
             return 2
         # PLAN.md D34: the up arrow must not bring back an earlier answer.
         readline.set_auto_history(False)
+        # PLAN.md D47: vi-mode editing at the answer prompt, and Esc v opens
+        # the answer in $EDITOR. libedit (uv's CPython) and GNU readline
+        # spell it differently. libedit cannot keep the arrow keys in insert
+        # mode as well: its Esc cannot be both the mode switch and the start
+        # of a key sequence (measured), so the session shows the vi keys.
+        readline.parse_and_bind("bind -v" if "libedit" in (readline.__doc__ or "") else "set editing-mode vi")
         fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
         file_problem_count = len(library_read["problems"]) + len(events_load["problems"]) + len(fold_result["problems"])
         if file_problem_count > 0:
