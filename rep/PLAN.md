@@ -184,6 +184,11 @@ Measured while starting M3 (thread 3, 2026-10-01):
   each 30 minutes later (24.5 hours apart), 24.76 days and 25. Every
   review under 24 hours after the last was folded as a same-day review
   (D44).
+- Same-day practice (2026-10-03, the fold with default parameters): a
+  new item's stability after 2, 6 or 12 Goods on one day is 2.31 days
+  each time, due two days later; Again then five Goods leaves 0.41. A
+  same-day Good does not raise stability past the first, and a miss
+  lowers it (D50).
 - A new pseudo-terminal reports 0 columns and 0 rows until TIOCSWINSZ
   sets a size; pyutils then lays content out to width 0 (FINDINGS.md F21).
   A real terminal always reports its size. Nor is a new pseudo-terminal
@@ -1329,6 +1334,40 @@ D40; approved by the person on 2026-10-03.
   commit that matches a hash is found by hashing commits.
   Revisit: R3 needing the zone name, or sessions needing the plan's
   reasons beyond due and new (drill, D50).
+
+D50. Drill: practise chosen items, as often as wanted (M3). Approved by
+the person on 2026-10-03.
+  Choice: `rep drill [DECK] [--tag TAG] [--count N]`. A deck is a library
+  file (its name without .md); --tag narrows to items with that tag;
+  --count draws at most N at random. No deck means every deck. Suspended
+  items are left out. The items are ordered by sha256 of (session id,
+  item id), then run in rounds exactly like a session (D45): the same
+  sheet, the same grading, new items returning once (D36). An item never
+  graded before is "new"; one seen before is "drill". Attempts are
+  ordinary attempts; session_start records the plan (D49) and the
+  selection as given. Before Enter, the drill says what it chose: "N of
+  the M items in DECK tagged TAG", how many suspended were left out, how
+  many have never been seen (from today they are on the schedule). A deck
+  or tag that matches nothing is answered with the decks, or the deck's
+  tags, that exist, with their counts.
+  Reason: the person wants to go through the permit questions several
+  times a day before the test, and to choose a session's content (a deck,
+  a topic before an interview). Measured (section 3): after a first Good,
+  further Goods the same day leave stability where it was (2.31 days
+  after 2, 6 or 12 Goods), and an Again lowers it; so drill attempts can
+  be ordinary attempts, and the scheduler stays honest without a special
+  case. A file as the deck, tested on the person's two decks: --tag permit
+  would have selected 7 of the 53 permit items, since #permit meant "about
+  the permit"; the file selects all 53 and cannot put an item in two decks.
+  Rejected: attempts that do not count (6: Anki's cram that leaves the
+  schedule alone; it throws away real retrievals); a tag as the deck (5:
+  measured above, a topic word read as membership); a deck field or a
+  reserved #deck_ tag (4: repeats the file, and can drift from it); a
+  separate tool (2).
+  Trade-off: drilling new items puts them all on the schedule at once,
+  past new_per_day (the drill says so before it starts); a drill
+  has no budget, so --count is the person's limit.
+  Revisit: the use week's drills crowding out scheduled sessions (E3).
 
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)

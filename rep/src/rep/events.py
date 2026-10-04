@@ -149,7 +149,7 @@ class ItemStampedEvent(TypedDict):
 
 class PlannedItem(TypedDict):
     item: str
-    reason: Literal["due", "new"]
+    reason: Literal["due", "new", "drill"]
 
 
 class SessionStartEvent(TypedDict):
@@ -164,6 +164,7 @@ class SessionStartEvent(TypedDict):
     utc_offset: NotRequired[str]  # the machine's offset at the start, "+HH:MM" or "-HH:MM"
     plan: NotRequired[list[PlannedItem]]  # the items the session started with, in plan order
     rep_source: NotRequired[str]  # 12 hex digits of sha256 over rep's source files
+    selection: NotRequired[str]  # a drill's deck, tag and count as given (D50); absent for a scheduled session
 
 
 class SessionEndEvent(TypedDict):
@@ -433,15 +434,24 @@ def decode_event(line: str) -> Event:
                 planned_reason = planned_fields.get("reason")
                 if not isinstance(planned_item, str) or planned_item == "":
                     raise EventDecodeError(f"session_start.plan item must be an item id, found {planned_item!r}")
-                if planned_reason != "due" and planned_reason != "new":
-                    raise EventDecodeError(f"session_start.plan reason must be due or new, found {planned_reason!r}")
-                planned_items.append({"item": planned_item, "reason": "due" if planned_reason == "due" else "new"})
+                if planned_reason != "due" and planned_reason != "new" and planned_reason != "drill":
+                    raise EventDecodeError(f"session_start.plan reason must be due, new or drill, found {planned_reason!r}")
+                # Re-spelled so the checker sees the literal it already checked.
+                checked_reason: Literal["due", "new", "drill"] = (
+                    "due" if planned_reason == "due" else "new" if planned_reason == "new" else "drill"
+                )
+                planned_items.append({"item": planned_item, "reason": checked_reason})
             session_start_event["plan"] = planned_items
         if "rep_source" in fields:
             rep_source = fields["rep_source"]
             if not isinstance(rep_source, str) or REP_SOURCE_PATTERN.match(rep_source) is None:
                 raise EventDecodeError(f"session_start.rep_source must be 12 hex digits, found {rep_source!r}")
             session_start_event["rep_source"] = rep_source
+        if "selection" in fields:
+            selection = fields["selection"]
+            if not isinstance(selection, str) or selection == "":
+                raise EventDecodeError(f"session_start.selection must be a non-empty string, found {selection!r}")
+            session_start_event["selection"] = selection
         return session_start_event
 
     if kind == "session_end":

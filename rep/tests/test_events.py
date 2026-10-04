@@ -478,6 +478,8 @@ def test_session_start_keeps_what_d49_records_and_reads_older_sessions_without_i
     recorded["utc_offset"] = "-04:00"
     recorded["plan"] = [{"item": "km-measure-7q2m", "reason": "due"}, {"item": "capital-france-7q2m", "reason": "new"}]
     recorded["rep_source"] = "0123456789ab"
+    recorded["plan"].append({"item": "q-free-7q2m", "reason": "drill"})  # PLAN.md D50
+    recorded["selection"] = "permit #jol count=20"
     assert decode_event(encode_event(recorded)) == recorded
     older = session_start_event(81)
     assert decode_event(encode_event(older)) == older and "plan" not in decode_event(encode_event(older))
@@ -507,7 +509,8 @@ def test_session_events_round_trip_and_change_no_state() -> None:
         ({"plan": {"item": "x"}}, "plan must be a list"),
         ({"plan": ["km-measure-7q2m"]}, "plan entries must be objects"),
         ({"plan": [{"item": "", "reason": "due"}]}, "plan item must be an item id"),
-        ({"plan": [{"item": "km-measure-7q2m", "reason": "later"}]}, "plan reason must be due or new"),
+        ({"plan": [{"item": "km-measure-7q2m", "reason": "later"}]}, "plan reason must be due, new or drill"),
+        ({"selection": ""}, "selection must be a non-empty string"),
         ({"rep_source": "0123"}, "rep_source must be 12 hex digits"),
     ],
 )

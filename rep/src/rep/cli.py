@@ -32,6 +32,7 @@ INVARIANTS
 
 import argparse
 import codecs
+from collections import Counter
 import hashlib
 import os
 # Imported for its effect on input(): line editing for typed answers
@@ -80,6 +81,7 @@ from rep.memory_model import AGAIN, DEFAULT_PARAMETERS, GOOD, retrievability
 from rep.session import (
     DEFAULT_PRESET,
     GRADE_WORDS,
+    PlanSlot,
     SheetEntry,
     grading_sheet_entries,
     plan_session,
@@ -255,6 +257,12 @@ def main(argument_list: list[str] | None = None) -> int:
         "review",
         help="grade, in $EDITOR, your last session's answers and every answer still ungraded",
     )
+    drill_parser = subcommand_parsers.add_parser(
+        "drill", help="practise items you choose, as often as you like: a deck (a library file), a tag, or both"
+    )
+    drill_parser.add_argument("deck", nargs="?", metavar="DECK", help="a library file's name, without .md (default: every deck)")
+    drill_parser.add_argument("--tag", metavar="TAG", help="only items with this tag (with or without #)")
+    drill_parser.add_argument("--count", type=int, metavar="N", help="at most N of them, drawn at random")
     why_parser = subcommand_parsers.add_parser(
         "why", help="show an item's place, memory state, attempts and whether today's plan has it"
     )
@@ -312,7 +320,7 @@ def main(argument_list: list[str] | None = None) -> int:
         print(f"kbd_root         {kbd_root if kbd_root is not None else '(not set)'}")
         return 0
 
-    if command is None or command == "review" or command == "why" or command == "unsuspend":
+    if command is None or command == "review" or command == "why" or command == "unsuspend" or command == "drill":
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
             # PLAN.md D28: rep never creates the data root.
@@ -463,7 +471,74 @@ def main(argument_list: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
         today = scheduling_day(started_at, preset["day_start_hour"])
-        plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+        # Drawn now, not at session_start: a drill's order and sample come from it (D50).
+        session_id = new_event_id(secrets.token_bytes)
+        drill_selection = ""
+        drill_notes: list[str] = []
+        if command == "drill":
+            # PLAN.md D50: the person chooses the items; the schedule does
+            # not. A deck is a library file (one file per item, so no item
+            # is in two decks by mistake); a tag narrows it.
+            deck_argument: str | None = parsed_arguments.deck
+            tag_argument: str | None = parsed_arguments.tag
+            count_argument: int | None = parsed_arguments.count
+            if count_argument is not None and count_argument < 1:
+                print("rep: --count must be 1 or more", file=sys.stderr)
+                return 2
+            deck_file_name = None if deck_argument is None else deck_argument.removesuffix(LIBRARY_FILE_SUFFIX) + LIBRARY_FILE_SUFFIX
+            wanted_tag = None if tag_argument is None else "#" + tag_argument.lstrip("#")
+            deck_counts = Counter(Path(located_item["path"]).name for located_item in library_check["located_items"])
+            deck_items = [
+                located_item for located_item in library_check["located_items"]
+                if deck_file_name is None or Path(located_item["path"]).name == deck_file_name
+            ]  # fmt: skip
+            # Nothing to remember: a name that matches nothing lists what does.
+            if deck_items == []:
+                deck_list = ", ".join(f"{name.removesuffix(LIBRARY_FILE_SUFFIX)} ({count})" for name, count in sorted(deck_counts.items()))
+                print(f"rep: no deck {deck_argument!r}; decks: {deck_list or 'none yet'}", file=sys.stderr)
+                return 2
+            deck_label = "every deck" if deck_file_name is None else deck_file_name.removesuffix(LIBRARY_FILE_SUFFIX)
+            tagged_items = [located_item for located_item in deck_items if wanted_tag is None or wanted_tag in located_item["item"]["tags"]]
+            if tagged_items == []:
+                tag_counts = Counter(tag for located_item in deck_items for tag in located_item["item"]["tags"])
+                tag_list = ", ".join(f"{tag} ({count})" for tag, count in sorted(tag_counts.items(), key=lambda pair: (-pair[1], pair[0])))
+                print(f"rep: no item in {deck_label} is tagged {wanted_tag}; its tags: {tag_list or 'none'}", file=sys.stderr)
+                return 2
+            selectable_items = [
+                located_item for located_item in tagged_items
+                if not (located_item["item"]["id"] in fold_result["items"] and fold_result["items"][located_item["item"]["id"]]["suspended"])
+            ]  # fmt: skip
+            # Shuffled by hash, as later rounds are (D48): the same order on replay.
+            selectable_items.sort(
+                key=lambda located_item: hashlib.sha256(f"{session_id}\n1\n{located_item['item']['id']}".encode()).digest()
+            )
+            plan: list[PlanSlot] = []
+            for located_item in selectable_items[:count_argument]:
+                item_state = fold_result["items"].get(located_item["item"]["id"])
+                seen_before = item_state is not None and item_state["memory"] is not None
+                plan.append({"item_id": located_item["item"]["id"], "reason": "drill" if seen_before else "new"})
+            drill_selection = " ".join(
+                part for part in (deck_label, wanted_tag, None if count_argument is None else f"count={count_argument}") if part is not None
+            )
+            new_in_drill = sum(1 for slot in plan if slot["reason"] == "new")
+            drill_notes.append(
+                f"{len(plan)} of the {len(tagged_items)} items in {deck_label}"
+                + ("" if wanted_tag is None else f" tagged {wanted_tag}")
+                + ("" if count_argument is None else ", drawn at random")
+                + "."
+            )
+            if len(tagged_items) > len(selectable_items):
+                drill_notes.append(f"{len(tagged_items) - len(selectable_items)} suspended, left out (`rep unsuspend ID`).")
+            if new_in_drill > 0:
+                drill_notes.append(f"{new_in_drill} never seen before: from today they are on your schedule.")
+            if plan == []:
+                print(f"Every item in {deck_label} is suspended.")
+                return 0
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                print("rep: a drill needs a terminal on standard input and output", file=sys.stderr)
+                return 2
+        else:
+            plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
         if plan == []:
             print(f"Nothing to practise today ({today}).")
             return 0
@@ -484,7 +559,12 @@ def main(argument_list: list[str] | None = None) -> int:
         block_indent = aligned_rule[: len(aligned_rule) - len(aligned_rule.lstrip(" "))]
         terminal_descriptor = sys.stdin.fileno()
 
-        terminal_output.emit(terminal_output.format_labeled_separator(f"{today}: {due_count} due, {len(plan) - due_count} new"))
+        if command == "drill":
+            terminal_output.emit(terminal_output.format_labeled_separator(f"{today}: drill {drill_selection}"))
+            for drill_note in drill_notes:
+                print(f"{block_indent}{drill_note}")
+        else:
+            terminal_output.emit(terminal_output.format_labeled_separator(f"{today}: {due_count} due, {len(plan) - due_count} new"))
         print(f"{block_indent}Type what comes to mind and press Enter; a cue is enough. Each round")
         print(f"{block_indent}ends with its answers and keys in your editor, to grade.")
         # PLAN.md D35, kept by D45: a line counts only once its prompt is on
@@ -501,7 +581,7 @@ def main(argument_list: list[str] | None = None) -> int:
             source_digest.update(source_path.name.encode() + b"\0" + source_path.read_bytes())
         session_start: SessionStartEvent = {
             "format_version": EVENT_FORMAT_VERSION,
-            "id": new_event_id(secrets.token_bytes),
+            "id": session_id,
             "at": format_canonical_time(datetime.now(UTC)),
             "device": device_id,
             "kind": "session_start",
@@ -521,6 +601,8 @@ def main(argument_list: list[str] | None = None) -> int:
             "plan": [{"item": slot["item_id"], "reason": slot["reason"]} for slot in plan],
             "rep_source": source_digest.hexdigest()[:12],
         }
+        if drill_selection != "":
+            session_start["selection"] = drill_selection
         session_events: list[Event] = []
         end_reason: Literal["completed", "quit", "interrupted"] = "interrupted"
         # The events cannot tell an answered round from a graded one (a

@@ -99,7 +99,7 @@ DEFAULT_PRESET: Preset = {
 
 class PlanSlot(TypedDict):
     item_id: str
-    reason: Literal["due", "new"]
+    reason: Literal["due", "new", "drill"]  # drill: chosen by the person, seen before (D50)
 
 
 def plan_session(

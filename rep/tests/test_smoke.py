@@ -716,3 +716,72 @@ def test_why_shows_the_facts_and_unsuspend_returns_a_suspended_item(tmp_path: Pa
 
     unknown_result = run_rep(["why", "nope-0000"], tmp_path)
     assert unknown_result.returncode == 2 and b"no item nope-0000" in unknown_result.stderr
+
+
+# --- rep drill (PLAN.md D50) -----------------------------------------------------
+
+DRILL_LIBRARY = SESSION_LIBRARY.replace("A: half of Vmax\n", "A: half of Vmax\ntags: #enzymes\n")
+
+
+def test_drill_names_what_exists_when_a_deck_or_tag_matches_nothing(tmp_path: Path) -> None:
+    session_home(tmp_path, DRILL_LIBRARY)
+    unknown_deck = run_rep(["drill", "nosuch"], tmp_path)
+    assert unknown_deck.returncode == 2 and b"no deck 'nosuch'; decks: a (2)" in unknown_deck.stderr
+    unknown_tag = run_rep(["drill", "a", "--tag", "zzz"], tmp_path)
+    assert unknown_tag.returncode == 2 and b"no item in a is tagged #zzz; its tags: #enzymes (1)" in unknown_tag.stderr
+    zero_count = run_rep(["drill", "a", "--count", "0"], tmp_path)
+    assert zero_count.returncode == 2 and b"--count must be 1 or more" in zero_count.stderr
+
+
+def test_a_deck_can_be_drilled_twice_in_a_day(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, DRILL_LIBRARY)
+    editor, _ = scripted_editor(
+        tmp_path,
+        [
+            {"words": {"Km measure": "good"}, "exit": 0},  # first drill, round 1
+            {"words": {"Km measure": "good"}, "exit": 0},  # first drill, round 2
+            {"words": {"Km measure": "good"}, "exit": 0},  # second drill, its one round
+        ],
+    )
+    answers = {"Capital of France?": b"Paris\r", "What does Km measure?": b"half of Vmax\r"}
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path,
+        [("Enter starts; Ctrl-D stops. ", b"\r"), answers, ("round 2", b""), answers, ("session completed", b"")],
+        editor=editor, arguments=["drill", "a"],
+    )  # fmt: skip
+    assert exit_code == 0, output
+    assert "drill a" in output and "2 of the 2 items in a." in output
+    assert "2 never seen before: from today they are on your schedule." in output
+    # Again the same day: both are now seen, both recalled, so one round.
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path, [("Enter starts; Ctrl-D stops. ", b"\r"), answers, ("session completed", b"")],
+        editor=editor, arguments=["drill", "a"],
+    )  # fmt: skip
+    assert exit_code == 0, output
+    assert "never seen before" not in output and "round 2" not in output
+    starts = [event for event in read_session_events(data_root) if event["kind"] == "session_start"]
+    assert [start["selection"] for start in starts] == ["a", "a"]
+    assert [sorted((planned["item"], planned["reason"]) for planned in start["plan"]) for start in starts] == [  # type: ignore[union-attr]
+        [("capital-france-7q2m", "new"), ("km-measure-7q2m", "new")],
+        [("capital-france-7q2m", "drill"), ("km-measure-7q2m", "drill")],
+    ]
+
+
+def test_drill_count_and_tag_narrow_the_selection_and_say_so(tmp_path: Path) -> None:
+    session_home(tmp_path, DRILL_LIBRARY)
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["drill", "a", "--count", "1"])
+    assert exit_code == 0 and "1 of the 2 items in a, drawn at random." in output, output
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["drill", "--tag", "enzymes"])
+    assert exit_code == 0 and "drill every deck #enzymes" in output and "1 of the 1 items in every deck tagged #enzymes." in output, output
+
+
+def test_drill_leaves_suspended_items_out_and_says_how_many(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, DRILL_LIBRARY)
+    (data_root / "events").mkdir()
+    (data_root / "events" / "6a2ah35zhe.jsonl").write_text(
+        '{"at":"2026-09-01T10:01:00.000000Z","device":"6a2ah35zhe","format_version":1,'
+        '"id":"bbbbbbbbbbbb","item":"km-measure-7q2m","kind":"suspend"}\n',
+        encoding="utf-8",
+    )
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["drill", "a"])
+    assert exit_code == 0 and "1 of the 2 items in a." in output and "1 suspended, left out (`rep unsuspend ID`)." in output, output
