@@ -318,10 +318,17 @@ def render_grading_sheet(entries: list[SheetEntry], title: str) -> str:
                 grade_word = word
         # Questions and keys may span lines; the read line must not.
         sheet_lines.append(f"{grade_word:<7} {entry['attempt_id']}  {' / '.join(entry['question'].splitlines())}")
+        # An answer written in $EDITOR (Esc v, PLAN.md D47) or a block key
+        # spans lines: each gets its own comment line, indented under the
+        # first, so code keeps its shape and no line becomes a read line (G2).
         typed_answer = entry["typed_answer"]
-        sheet_lines.append(f"#         typed:  {'(nothing typed)' if typed_answer is None or typed_answer.strip() == '' else typed_answer}")
+        typed_lines = ["(nothing typed)"] if typed_answer is None or typed_answer.strip() == "" else typed_answer.split("\n")
+        sheet_lines.append(f"#         typed:  {typed_lines[0]}")
+        sheet_lines.extend(f"#                 {typed_line}" for typed_line in typed_lines[1:])
         if entry["answer"] is not None:
-            sheet_lines.append(f"#         key:    {' / '.join(entry['answer'].splitlines())}")
+            key_lines = entry["answer"].split("\n")
+            sheet_lines.append(f"#         key:    {key_lines[0]}")
+            sheet_lines.extend(f"#                 {key_line}" for key_line in key_lines[1:])
         for criterion in entry["criteria"] or []:
             sheet_lines.append(f"#         check:  {criterion}")
         sheet_lines.append(f"#         item:   {entry['path']}:{entry['line']}")

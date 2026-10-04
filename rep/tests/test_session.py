@@ -408,6 +408,20 @@ def test_a_sheet_with_a_problem_applies_nothing(edited_line: str, problem_fragme
     assert [line_number for line_number, message in result["problems"] if "appears twice" in message] == [len(sheet_lines)]
 
 
+def test_a_multi_line_answer_keeps_its_lines_as_comments() -> None:
+    # PLAN.md D47: Esc v returns what was written in $EDITOR, lines and
+    # tabs included; every line of it must stay a comment (G2).
+    entry = sheet_entry(1, None)
+    entry["typed_answer"] = "def area(radius):\n\treturn 3.14 * radius ** 2"
+    entry["answer"] = "def area(radius):\n    return math.pi * radius ** 2"
+    sheet_text = render_grading_sheet([entry], "title")
+    assert (
+        "#         typed:  def area(radius):\n#                 \treturn 3.14 * radius ** 2\n"
+        "#         key:    def area(radius):\n#                     return math.pi * radius ** 2\n"
+    ) in sheet_text
+    assert read_grading_sheet(sheet_text, [entry]) == {"amends": [], "suspended_item_ids": [], "problems": []}
+
+
 def test_a_deleted_line_leaves_its_answer_as_it_is() -> None:
     entries = [sheet_entry(0, 1), sheet_entry(1, None)]
     sheet_lines = [line for line in render_grading_sheet(entries, "round 1").split("\n") if event_id_for(0) not in line]

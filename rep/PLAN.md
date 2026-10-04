@@ -1203,6 +1203,10 @@ after the first real session.
   session goes on as the automatic grades decide. Each card shows its
   place in the round, why the item is there (new, due, retest) and, for an
   exact or numeric item, its check, since that answer is compared as typed.
+  The sheet shows a typed answer or key that spans lines (an answer
+  written in $EDITOR through Esc v, D47; a block key) one comment line per
+  line, indented under the first; before, a second line would have read
+  as an entry and stopped the sheet (found by the D47 measurement).
   Cards after round 1 say "retest", not "again" as first built: in the
   person's first session in rounds, "again" read as the grade Again on
   an item just graded Easy (approved 2026-10-02).
