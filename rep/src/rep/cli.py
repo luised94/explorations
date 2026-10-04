@@ -32,6 +32,7 @@ INVARIANTS
 
 import argparse
 import codecs
+import hashlib
 import os
 # Imported for its effect on input(): line editing for typed answers
 # (PLAN.md D34). libedit in uv's CPython; 0.4 ms to import.
@@ -495,6 +496,9 @@ def main(argument_list: list[str] | None = None) -> int:
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
+        source_digest = hashlib.sha256()
+        for source_path in sorted(Path(__file__).parent.glob("*.py")):
+            source_digest.update(source_path.name.encode() + b"\0" + source_path.read_bytes())
         session_start: SessionStartEvent = {
             "format_version": EVENT_FORMAT_VERSION,
             "id": new_event_id(secrets.token_bytes),
@@ -509,6 +513,13 @@ def main(argument_list: list[str] | None = None) -> int:
                 "day_start_hour": preset["day_start_hour"],
                 "desired_retention": preset["desired_retention"],
             },
+            # PLAN.md D49. The offset: `at` is UTC, so without it the local
+            # hour of a session is a guess. The plan: once the library
+            # changes it cannot be recomputed. The source hash: exactly which
+            # code ran, with no version number anyone must remember to bump.
+            "utc_offset": datetime.now(UTC).astimezone().isoformat(timespec="seconds")[-6:],
+            "plan": [{"item": slot["item_id"], "reason": slot["reason"]} for slot in plan],
+            "rep_source": source_digest.hexdigest()[:12],
         }
         session_events: list[Event] = []
         end_reason: Literal["completed", "quit", "interrupted"] = "interrupted"

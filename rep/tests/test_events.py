@@ -471,6 +471,18 @@ def session_start_event(position: int) -> SessionStartEvent:
     }  # fmt: skip
 
 
+def test_session_start_keeps_what_d49_records_and_reads_older_sessions_without_it() -> None:
+    # PLAN.md D49: offset, plan and source hash survive a round trip; a
+    # session written before D49 (none of them) still reads, unchanged.
+    recorded = session_start_event(80)
+    recorded["utc_offset"] = "-04:00"
+    recorded["plan"] = [{"item": "km-measure-7q2m", "reason": "due"}, {"item": "capital-france-7q2m", "reason": "new"}]
+    recorded["rep_source"] = "0123456789ab"
+    assert decode_event(encode_event(recorded)) == recorded
+    older = session_start_event(81)
+    assert decode_event(encode_event(older)) == older and "plan" not in decode_event(encode_event(older))
+
+
 def test_session_events_round_trip_and_change_no_state() -> None:
     session_start = session_start_event(80)
     session_end: SessionEndEvent = {
@@ -490,6 +502,13 @@ def test_session_events_round_trip_and_change_no_state() -> None:
         ({"preset": [60]}, "preset must be a non-empty object"),
         ({"preset": {"session_budget": True}}, "session_budget must be a number"),
         ({"preset": {"session_budget": "60"}}, "session_budget must be a number"),
+        ({"utc_offset": "-4"}, "utc_offset must be"),
+        ({"utc_offset": "EDT"}, "utc_offset must be"),
+        ({"plan": {"item": "x"}}, "plan must be a list"),
+        ({"plan": ["km-measure-7q2m"]}, "plan entries must be objects"),
+        ({"plan": [{"item": "", "reason": "due"}]}, "plan item must be an item id"),
+        ({"plan": [{"item": "km-measure-7q2m", "reason": "later"}]}, "plan reason must be due or new"),
+        ({"rep_source": "0123"}, "rep_source must be 12 hex digits"),
     ],
 )
 def test_invalid_session_start_is_rejected(changes: dict[str, object], message_fragment: str) -> None:

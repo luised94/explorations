@@ -49,7 +49,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict, cast
 
 from rep.machine import DEVICE_ID_ALPHABET, DEVICE_ID_PATTERN
 from rep.memory_model import (
@@ -74,6 +74,8 @@ CANONICAL_TIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6
 # PLAN.md D44. ASCII digits only: date.fromisoformat alone would also take
 # other forms ("20261001", week dates) that two writers could disagree on.
 SCHEDULING_DAY_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+UTC_OFFSET_PATTERN = re.compile(r"^[+-][0-9]{2}:[0-9]{2}$")
+REP_SOURCE_PATTERN = re.compile(r"^[0-9a-f]{12}$")
 
 
 class EventDecodeError(Exception):
@@ -145,6 +147,11 @@ class ItemStampedEvent(TypedDict):
     item: str
 
 
+class PlannedItem(TypedDict):
+    item: str
+    reason: Literal["due", "new"]
+
+
 class SessionStartEvent(TypedDict):
     format_version: int
     id: str  # the session id that the session's attempts carry
@@ -152,6 +159,11 @@ class SessionStartEvent(TypedDict):
     device: str
     kind: Literal["session_start"]
     preset: dict[str, int | float]  # the values used (PLAN.md D39, D40)
+    # PLAN.md D49: what cannot be recovered later. Absent from sessions
+    # written before it, so optional on reading; every new session has all three.
+    utc_offset: NotRequired[str]  # the machine's offset at the start, "+HH:MM" or "-HH:MM"
+    plan: NotRequired[list[PlannedItem]]  # the items the session started with, in plan order
+    rep_source: NotRequired[str]  # 12 hex digits of sha256 over rep's source files
 
 
 class SessionEndEvent(TypedDict):
@@ -402,6 +414,34 @@ def decode_event(line: str) -> Event:
             "kind": "session_start",
             "preset": preset_values,
         }
+        # PLAN.md D49: each is checked when present and left out when absent.
+        if "utc_offset" in fields:
+            utc_offset = fields["utc_offset"]
+            if not isinstance(utc_offset, str) or UTC_OFFSET_PATTERN.match(utc_offset) is None:
+                raise EventDecodeError(f"session_start.utc_offset must be +HH:MM or -HH:MM, found {utc_offset!r}")
+            session_start_event["utc_offset"] = utc_offset
+        if "plan" in fields:
+            plan = fields["plan"]
+            if not isinstance(plan, list):
+                raise EventDecodeError("session_start.plan must be a list")
+            planned_items: list[PlannedItem] = []
+            for planned in cast(list[object], plan):
+                if not isinstance(planned, dict):
+                    raise EventDecodeError("session_start.plan entries must be objects")
+                planned_fields = cast(dict[str, object], planned)
+                planned_item = planned_fields.get("item")
+                planned_reason = planned_fields.get("reason")
+                if not isinstance(planned_item, str) or planned_item == "":
+                    raise EventDecodeError(f"session_start.plan item must be an item id, found {planned_item!r}")
+                if planned_reason != "due" and planned_reason != "new":
+                    raise EventDecodeError(f"session_start.plan reason must be due or new, found {planned_reason!r}")
+                planned_items.append({"item": planned_item, "reason": "due" if planned_reason == "due" else "new"})
+            session_start_event["plan"] = planned_items
+        if "rep_source" in fields:
+            rep_source = fields["rep_source"]
+            if not isinstance(rep_source, str) or REP_SOURCE_PATTERN.match(rep_source) is None:
+                raise EventDecodeError(f"session_start.rep_source must be 12 hex digits, found {rep_source!r}")
+            session_start_event["rep_source"] = rep_source
         return session_start_event
 
     if kind == "session_end":

@@ -7,10 +7,12 @@ subprocess with its own HOME, so it cannot touch the real machine setup.
 """
 
 import fcntl
+import hashlib
 import importlib.metadata
 import json
 import os
 import pty
+import re
 import select
 import shutil
 import struct
@@ -22,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from rep import cli
 from rep.storage import acquire_writer_lock
 
 
@@ -520,6 +523,15 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
     assert session_start["preset"] == {
         "session_budget": 60, "new_per_day": 10, "new_item_cost": 3, "day_start_hour": 4, "desired_retention": 0.9,
     }  # fmt: skip
+    # PLAN.md D49: the local offset, the plan as served, the code that ran.
+    assert re.fullmatch(r"[+-][0-9]{2}:[0-9]{2}", str(session_start["utc_offset"]))
+    assert session_start["plan"] == [
+        {"item": "capital-france-7q2m", "reason": "new"}, {"item": "km-measure-7q2m", "reason": "new"},
+    ]  # fmt: skip
+    source_digest = hashlib.sha256()
+    for source_path in sorted(Path(cli.__file__).parent.glob("*.py")):
+        source_digest.update(source_path.name.encode() + b"\0" + source_path.read_bytes())
+    assert session_start["rep_source"] == source_digest.hexdigest()[:12]
     attempts = [event for event in middle if event["kind"] == "attempt"]
     # Round 2's order is the session's own (D48); compare it by item.
     attempts = attempts[:2] + sorted(attempts[2:4], key=lambda attempt: str(attempt["item"])) + attempts[4:]

@@ -1305,6 +1305,31 @@ approved by the person on 2026-10-03.
   Trade-off: round 1 of a reading still follows the file's order, by
   design.
 
+D49. A session records what cannot be recovered later (M3). Revises
+D40; approved by the person on 2026-10-03.
+  Choice: session_start also carries utc_offset (the machine's offset
+  when the session started, +HH:MM or -HH:MM), plan (the items it started
+  with, in plan order, each with its reason) and rep_source (12 hex digits
+  of sha256 over rep's source files). All three are optional when read,
+  so sessions written before them still read; every new session writes
+  them.
+  Reason: the person wants the time of day, the size of a session and
+  the version of the session as a whole tracked. Measured against the
+  events: the order and round of every attempt can already be derived
+  (times, and an item's k-th attempt is round k, D45, still true under
+  D48); the local hour cannot, since `at` is UTC; the plan cannot be
+  recomputed once the library changes; the code that ran was recorded
+  nowhere, the package version being always 0.0.0.
+  Rejected: a version number bumped by hand (6: readable, but a bump
+  forgotten once makes two different codes look the same); the git
+  commit (5: rep runs from an editable install with no promise of a
+  clean tree); the time zone name (5: the offset is what converts `at`
+  to local time; a name is only needed to predict future offsets).
+  Trade-off: a source hash says "different code", not what changed; the
+  commit that matches a hash is found by hashing commits.
+  Revisit: R3 needing the zone name, or sessions needing the plan's
+  reasons beyond due and new (drill, D50).
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
