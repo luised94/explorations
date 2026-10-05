@@ -1638,6 +1638,32 @@ each place is for (M3). Revises D53; approved by the person on 2026-10-05.
   Trade-off: where prints the checkout only when installed editable from
   it, which is how rep is installed.
 
+D61. The week report knows which week it is and is a form (M3). Revises
+D56; approved by the person on 2026-10-05.
+  Choice: the week is seven scheduling days from the first day practised
+  (the first attempt), or from --start; after those, the next seven. Run
+  before the week's last day, the report says "day N of 7 of week W
+  (first to last)" and writes nothing, unless --partial, which reports
+  the days so far. The file is reports/week-<first day>.md. The questions
+  are no longer asked with input(): the report ends with a form, each
+  card and question under its own heading with an `answer: ` line, and
+  rep-week opens it in nvim. A rerun recomputes the numbers and keeps
+  the answers already written (a card's answer by its id, E1..E5, since
+  its numbers change). Each card's number is shown beside its target
+  (section 8), called a target, not a prediction. The questions each ask
+  for one concrete thing.
+  Reason: on day one the report covered the seven days before it, which
+  held nothing; "what explains this?" under each card left nothing to
+  answer ("terrible"); questions asked one at a time could not be
+  revised, and Ctrl-C ended in a traceback. Forms in nvim are already
+  how the person grades, logs the body and reviews the code.
+  Rejected: a calendar week, Monday to Sunday (5: the use week started
+  on a Monday by chance; a week from the first practice holds for any
+  start); keeping input() with Ctrl-C caught (4: fixes the traceback,
+  not the one-shot answers); refusing to overwrite an answered report
+  (6: safe, but a rerun for fresh numbers is wanted mid-week).
+  Trade-off: an answer is kept up to its first blank line.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

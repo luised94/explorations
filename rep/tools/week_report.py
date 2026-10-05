@@ -1,16 +1,22 @@
-"""The week's report: statistics, then the person's answers, in one file for
-the next thread (rep/PLAN.md D56).
+"""The week's report: statistics, then a form for the person's answers, in
+one file for the next thread (rep/PLAN.md D56, D61).
 
-Run at the end of the week, `rep-week` (rep/shell/rep.sh), or
-    uv run python tools/week_report.py [--days 7] [--no-questions]
+Run at the end of the week, `rep-week` (rep/shell/rep.sh), which opens the
+report in nvim to answer; or
+    uv run python tools/week_report.py [--partial] [--start YYYY-MM-DD]
 It reads, never writes, rep's data: the events (what the person did), the
 run log (what rep did, D55), the body forms and notes.md. It writes one file,
-<data root>/reports/week-<today>.md, and prints its path.
+<data root>/reports/week-<first day>.md, and prints its path.
 
-The statistics follow PLAN.md section 8's cards (E1-E5); each card's
-prediction is printed beside its number, and the person is asked about it.
-Everything is computed from the same readers rep uses (storage, events), so
-the report and rep cannot disagree about the data.
+The week: seven scheduling days from the first day anything was practised
+(the first attempt), or from --start; once those seven have passed, the
+next seven, and so on. Before the week's last day it says which day it is
+and stops, unless --partial. Run again, it recomputes the numbers and keeps
+the answers already written in the file.
+
+The statistics follow PLAN.md section 8's cards (E1-E5), each beside its
+target. Everything is computed from the same readers rep uses
+(storage, events), so the report and rep cannot disagree about the data.
 """
 
 import argparse
@@ -35,15 +41,18 @@ from rep.storage import LIBRARY_FILE_SUFFIX, load_events, read_library_files
 USUAL_STRENGTH_PERCENT = {"beer": 5.0, "cider": 5.0, "seltzer": 5.0, "wine": 12.0, "spirits": 40.0, "liquor": 40.0}
 CAFFEINE_MILLIGRAMS_PER_OUNCE = {"brewed": 12.0, "coffee": 12.0, "espresso": 63.0, "tea": 6.0, "energy": 10.0, "decaf": 0.3}
 
+# PLAN.md D61: each asks for one concrete thing, with what a useful answer
+# holds, since "what explains this?" left the person nothing to answer.
 QUESTIONS = [
-    "What was the most annoying moment of the week?",
-    "What did you avoid doing, and why?",
-    "What would you cut from rep?",
-    "What did you wish rep did?",
-    "How ready do you feel for the permit test, 1 to 5, and did the drills change that?",
-    "The body form: what did you skip, and what was unclear?",
-    "Anything for the next thread that is not in your notes?",
+    "The moment rep got in your way most: what you were doing, and what happened.",
+    "Something you meant to do with rep and did not: what, and what stopped you.",
+    "One thing to remove from rep, and why.",
+    "One thing you wanted rep to do, and when you wanted it.",
+    "Permit test readiness, 1 to 5. Did the drills change it, and how?",
+    "The body form: fields you skipped, and anything unclear.",
+    "Anything else for the next thread that is not in notes.md.",
 ]
+ANSWER_PREFIX = "answer: "
 
 
 def evening_order(clock_text: str, day_start_hour: int) -> int:
@@ -58,19 +67,18 @@ def median_text(values: list[float], unit: str) -> str:
 
 
 def main() -> int:
-    argument_parser = argparse.ArgumentParser(description="The week's statistics and the person's answers, in one file.")
-    argument_parser.add_argument("--days", type=int, default=7, help="how many scheduling days, ending today (default 7)")
-    argument_parser.add_argument("--no-questions", action="store_true", help="statistics only")
+    argument_parser = argparse.ArgumentParser(description="The week's statistics and a form for your answers, in one file.")
+    argument_parser.add_argument("--partial", action="store_true", help="report the week so far, before its last day")
+    argument_parser.add_argument("--start", metavar="YYYY-MM-DD", help="the week's first day (default: the first day practised)")
     parsed_arguments = argument_parser.parse_args()
-    day_count: int = parsed_arguments.days
-    asking: bool = not parsed_arguments.no_questions
+    partial: bool = parsed_arguments.partial
+    start_argument: str | None = parsed_arguments.start
+    day_count = 7
 
     machine_context = resolve_machine_context(data_root_flag=None, environment=os.environ, home_directory=Path.home())
     data_root = machine_context["data_root"]
     day_start_hour = DEFAULT_PRESET["day_start_hour"]
     today = scheduling_day(datetime.now(timezone.utc), day_start_hour)
-    first_day = (date.fromisoformat(today) - timedelta(days=day_count - 1)).isoformat()
-    window_days = [(date.fromisoformat(first_day) + timedelta(days=offset)).isoformat() for offset in range(day_count)]
 
     library_read = read_library_files(data_root / "library")
     library_check = check_library_files([(library_file["path"], library_file["text"]) for library_file in library_read["files"]])
@@ -85,11 +93,51 @@ def main() -> int:
     effective = effective_events(events)
     live_events = [event for event in effective["ordered_events"] if event["id"] not in effective["undone_event_ids"]]
 
+    # --- which week (PLAN.md D61): the person ran this on day one and got
+    # the seven days before it, which held nothing ---
+    attempt_days = sorted(event["day"] for event in live_events if event["kind"] == "attempt")
+    if start_argument is not None:
+        practice_start = start_argument
+    elif attempt_days != []:
+        practice_start = attempt_days[0]
+    else:
+        print("rep week report: nothing practised yet, so no week has started (run `rep` first).", file=sys.stderr)
+        return 2
+    week_index = max((date.fromisoformat(today) - date.fromisoformat(practice_start)).days // day_count, 0)
+    first_day = (date.fromisoformat(practice_start) + timedelta(days=week_index * day_count)).isoformat()
+    last_day = (date.fromisoformat(first_day) + timedelta(days=day_count - 1)).isoformat()
+    day_number = (date.fromisoformat(today) - date.fromisoformat(first_day)).days + 1
+    if day_number < day_count and not partial:
+        print(
+            f"rep week report: today is day {day_number} of 7 of week {week_index + 1} ({first_day} to {last_day}).\n"
+            f"The report is for the week's end: run it on {last_day}, or now with --partial for the days so far.",
+            file=sys.stderr,
+        )
+        return 2
+    # Only days that have happened: the rest would read as days skipped.
+    window_days = [(date.fromisoformat(first_day) + timedelta(days=offset)).isoformat() for offset in range(min(day_number, day_count))]
+    day_count = len(window_days)
+    report_path = data_root / "reports" / f"week-{first_day}.md"
+    # Answers already written, by their heading, so a rerun keeps them.
+    kept_answers: dict[str, list[str]] = {}
+    if report_path.exists():
+        heading = ""
+        capturing = False  # from an answer line to the next blank line
+        for line in report_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#"):
+                heading, capturing = line, False
+            elif line.startswith(ANSWER_PREFIX):
+                kept_answers[heading], capturing = [line], True
+            elif capturing and line.strip() != "":
+                kept_answers[heading].append(line)
+            else:
+                capturing = False
+
     def event_day(event_at: str) -> str:
         return scheduling_day(parse_canonical_time(event_at), day_start_hour)
 
     report: list[str] = [
-        f"# rep week report, {first_day} to {today}",
+        f"# rep week {week_index + 1} report, {first_day} to {last_day}" + ("" if day_number >= 7 else f" (day {day_number} of 7, partial)"),
         "",
         "> For the next thread: read with PLAN.md section 8 (the cards) and",
         "> STATUS.md. Every number is computed by rep/tools/week_report.py from",
@@ -101,7 +149,7 @@ def main() -> int:
         f"library: {library_check['item_count']} items in {len(library_read['files'])} decks; events: {len(events)}",
         "",
     ]
-    card_findings: list[tuple[str, str, str]] = []  # (card, observed, prediction)
+    card_findings: list[tuple[str, str, str]] = []  # (card, observed, target)
 
     # --- E1 capture: item_stamped per day and per deck ---
     stamped_by_day = Counter(event_day(event["at"]) for event in live_events if event["kind"] == "item_stamped")
@@ -301,28 +349,32 @@ def main() -> int:
         report.append("(no notes.md)")
     report.append("")
 
-    # --- the cards, then the questions ---
-    report += ["## Cards: observed against predicted", ""]
-    answers: list[tuple[str, str]] = []
-    if asking:
-        print(f"rep week report, {first_day} to {today}. Enter skips any question; Ctrl-D stops asking.\n")
-    try:
-        for card, observed, prediction in card_findings:
-            report += [f"- {card}: {observed}. Predicted: {prediction}."]
-            if asking:
-                print(f"{card}\n  observed:  {observed}\n  predicted: {prediction}")
-                answers.append((f"{card}: what explains this?", input("  what explains this? ").strip()))
-        if asking:
-            print()
-            for question in QUESTIONS:
-                answers.append((question, input(f"{question}\n  ").strip()))
-    except EOFError:
-        print("\n(stopped asking)")
-    report += ["", "## The person's answers", ""]
-    report += [f"- {question}\n  {answer or '(skipped)'}" for question, answer in answers] or ["(not asked: --no-questions)"]
-    report += ["", f"body forms: {form_days} of {day_count} days. Generated {datetime.now(timezone.utc).isoformat(timespec='seconds')}."]
+    # --- the form (PLAN.md D61): the cards and questions, each with an
+    # answer line, filled in nvim rather than asked one at a time ---
+    report += [
+        "## Your answers",
+        "",
+        "> Write after `answer: `; lines below it, up to a blank line, are kept too.",
+        "> In nvim: /^answer Enter goes to the next one, A types at its end, n moves on.",
+        "> Rerunning the report keeps what you wrote here.",
+        "",
+        "### The cards: each number beside the target PLAN.md section 8 set before the week",
+        "",
+    ]
+    for card, observed, target in card_findings:
+        heading = f"#### {card}: {observed}. Target: {target}."
+        # The card's id (E1..E5) keys its answer: the numbers in the heading
+        # change on every rerun, the id does not.
+        card_key = f"#### {card}:"
+        report += [heading, "Does this match your week? If not, what happened that the number misses?"]
+        kept = next((lines for kept_heading, lines in kept_answers.items() if kept_heading.startswith(card_key)), [ANSWER_PREFIX])
+        report += [*kept, ""]
+    report += ["### Questions", ""]
+    for question_number, question in enumerate(QUESTIONS, start=1):
+        heading = f"#### {question_number}. {question}"
+        report += [heading, *kept_answers.get(heading, [ANSWER_PREFIX]), ""]
+    report += [f"body forms: {form_days} of {day_count} days. Generated {datetime.now(timezone.utc).isoformat(timespec='seconds')}."]
 
-    report_path = data_root / "reports" / f"week-{today}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(report) + "\n", encoding="utf-8")
     print(report_path)

@@ -77,19 +77,36 @@ def run_report(home_directory: Path, arguments: list[str], answers: str = "") ->
     )  # fmt: skip
 
 
+def test_before_the_weeks_end_it_says_which_day_and_writes_nothing(tmp_path: Path) -> None:
+    # PLAN.md D61: run on day one, the report covered the seven days before.
+    # The week starts on the first day practised: two days ago here.
+    data_root, today = build_week(tmp_path)
+    two_days_ago = (date.fromisoformat(today) - timedelta(days=2)).isoformat()
+    result = run_report(tmp_path, [])
+    assert result.returncode == 2 and result.stdout == ""
+    assert f"today is day 3 of 7 of week 1 ({two_days_ago} to " in result.stderr and "--partial" in result.stderr
+    assert not (data_root / "reports").exists()
+    # --start names another first day; nine days back makes this week 2.
+    nine_days_ago = (date.fromisoformat(today) - timedelta(days=9)).isoformat()
+    result = run_report(tmp_path, ["--start", nine_days_ago])
+    assert result.returncode == 2 and f"day 3 of 7 of week 2 ({two_days_ago} to " in result.stderr
+
+
 def test_the_report_computes_each_card_and_keeps_the_notes(tmp_path: Path) -> None:
     data_root, today = build_week(tmp_path)
-    result = run_report(tmp_path, ["--no-questions"])
+    two_days_ago = (date.fromisoformat(today) - timedelta(days=2)).isoformat()
+    result = run_report(tmp_path, ["--partial"])
     assert result.returncode == 0, result.stderr
-    report_path = data_root / "reports" / f"week-{today}.md"
+    report_path = data_root / "reports" / f"week-{two_days_ago}.md"
     assert result.stdout.strip() == str(report_path)
     report = report_path.read_text(encoding="utf-8")
+    assert "(day 3 of 7, partial)" in report.splitlines()[0]
     assert f"| {today} | 1 |" in report  # E1: one capture today
     # Both road-test attempts fall in the week; one was corrected.
     assert "graded by rep (exact, numeric): 2, of which corrected on a sheet: 1 (50%)" in report
     assert "left without a grade: 1" in report
     assert "| 2-3 | 1 | 100% |" in report  # E4: corrected to good, two days after
-    assert "E3 consistency: 1 of 7 days with a completed scheduled session" in report
+    assert "#### E3 consistency: 1 of 3 days with a completed scheduled session" in report
     assert "| 6.5 | road-test-fee-7q2m | permit | yes |" in report  # E5: median of 4.0 and 9.0 s
     assert "median minutes: 12 min (n=1)" in report
     # Body: 12:00 flagged; beer at 5% (1.0), wine at its usual 12% (1.0), and
@@ -101,17 +118,24 @@ def test_the_report_computes_each_card_and_keeps_the_notes(tmp_path: Path) -> No
     assert "| stamp | 1 | 0 | 61 | 61 |" in report and "| status | 1 | 1 | 40 | 40 |" in report
     assert "RuntimeError: planted" in report
     assert "- QoL: the retest is unclear" in report and "- old" not in report
-    assert "(not asked: --no-questions)" in report
 
 
-def test_the_answers_are_kept_beside_their_questions(tmp_path: Path) -> None:
+def test_the_form_has_an_answer_line_per_question_and_a_rerun_keeps_answers(tmp_path: Path) -> None:
+    # PLAN.md D61: a form filled in nvim, not questions asked one at a time.
     data_root, today = build_week(tmp_path)
-    # Five cards, then seven questions; the fifth question is readiness.
-    answers = "\n".join(["capture was hard", "", "", "", "", "the sheet", "", "nothing", "drills", "4, yes", "", ""]) + "\n"
-    result = run_report(tmp_path, [], answers)
-    assert result.returncode == 0, result.stderr
-    report = (data_root / "reports" / f"week-{today}.md").read_text(encoding="utf-8")
-    assert "- E1 capture: what explains this?\n  capture was hard" in report
-    assert "- What was the most annoying moment of the week?\n  the sheet" in report
-    assert "- How ready do you feel for the permit test, 1 to 5, and did the drills change that?\n  4, yes" in report
-    assert "- What did you avoid doing, and why?\n  (skipped)" in report
+    two_days_ago = (date.fromisoformat(today) - timedelta(days=2)).isoformat()
+    assert run_report(tmp_path, ["--partial"]).returncode == 0
+    report_path = data_root / "reports" / f"week-{two_days_ago}.md"
+    report_lines = report_path.read_text(encoding="utf-8").splitlines()
+    assert report_lines.count("answer: ") == 5 + 7  # the five cards, then seven questions
+    # The person answers the first card on two lines and the fifth question.
+    first_card = report_lines.index("answer: ")
+    report_lines[first_card : first_card + 1] = ["answer: capture was hard", "  only read on Tuesday"]
+    readiness = next(index for index, line in enumerate(report_lines) if line.startswith("#### 5. Permit test readiness"))
+    report_lines[readiness + 1] = "answer: 4, the drills helped"
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+    assert run_report(tmp_path, ["--partial"]).returncode == 0
+    report = report_path.read_text(encoding="utf-8")
+    assert "answer: capture was hard\n  only read on Tuesday\n" in report
+    assert "Permit test readiness, 1 to 5. Did the drills change it, and how?\nanswer: 4, the drills helped\n" in report
+    assert report.count("answer: \n") == 5 + 7 - 2

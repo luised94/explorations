@@ -32,10 +32,13 @@ function rep-nvim {
   nvim --cmd "luafile $REP_REPOSITORY/nvim/load.lua" "$@"
 }
 
-# The end of the week: statistics, then a few questions, into one report
-# for the next thread (tools/week_report.py).
+# The end of the week: statistics and a form of questions, in one report
+# for the next thread, opened in nvim to answer (tools/week_report.py).
+# Before the week's last day it says which day it is; --partial reports
+# the days so far.
 function rep-week {
-  (cd "$REP_REPOSITORY" && uv run python tools/week_report.py "$@")
+  local report_path
+  report_path="$(cd "$REP_REPOSITORY" && uv run python tools/week_report.py "$@")" && nvim "$report_path"
 }
 
 # A guided tour of rep's code, written as a form, opened in nvim: answer
