@@ -20,6 +20,7 @@ import subprocess
 import sys
 import termios
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -832,3 +833,34 @@ def test_adding_the_same_file_twice_is_refused_and_lint_names_duplicates(tmp_pat
     lint = run_rep(["lint"], tmp_path)
     assert lint.returncode == 0
     assert "copy.md:1:1: warning: same question as " in lint.stdout.decode() and "capitals.md:5; added twice?" in lint.stdout.decode()
+
+
+# --- rep status (PLAN.md D53) ---------------------------------------------------
+
+
+def test_status_shows_the_root_each_deck_what_waits_and_today(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY + "\n### Q: Capital of Peru?\nid: capital-peru-7q2m\nA: Lima\n")
+    (data_root / "events").mkdir()
+    now_text = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+    (data_root / "events" / "6a2ah35zhe.jsonl").write_text(
+        # France reviewed long ago (due now), Peru suspended, Km answered
+        # today without a grade, inside a session and a drill started today.
+        '{"at":"2026-01-01T10:00:00.000000Z","day":"2026-01-01","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+        '"id":"aaaaaaaaaaaa","item":"capital-france-7q2m","kind":"attempt","latency_milliseconds":900,"rating":3,"session":"s","typed_answer":"Paris"}\n'
+        '{"at":"2026-01-01T10:01:00.000000Z","device":"6a2ah35zhe","format_version":1,"id":"bbbbbbbbbbbb","item":"capital-peru-7q2m","kind":"suspend"}\n'
+        f'{{"at":"{now_text}","device":"6a2ah35zhe","format_version":1,"id":"cccccccccccc","kind":"session_start","preset":{{"session_budget":60}}}}\n'
+        f'{{"at":"{now_text}","device":"6a2ah35zhe","format_version":1,"id":"dddddddddddd","kind":"session_start","preset":{{"session_budget":60}},"selection":"a"}}\n'
+        f'{{"at":"{now_text}","day":"2026-10-05","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+        '"id":"eeeeeeeeeeee","item":"km-measure-7q2m","kind":"attempt","latency_milliseconds":900,"rating":null,"session":"cccccccccccc","typed_answer":"x"}\n',
+        encoding="utf-8",
+    )
+    result = run_rep(["status"], tmp_path)
+    assert result.returncode == 0, result.stderr
+    status_lines = result.stdout.decode().splitlines()
+    assert status_lines[0] == f"data root   {data_root}  (default)"
+    assert status_lines[1].startswith("today       ") and status_lines[1].endswith("(a day runs 04:00 to 04:00)")
+    assert "            a                    3     1        1          1  -" in status_lines, status_lines
+    assert "waiting     1 answers without a grade: rep review" in status_lines
+    assert "today did   1 sessions, 1 drills" in status_lines
+    missing_root = run_rep(["--data-root", str(tmp_path / "nowhere"), "status"], tmp_path)
+    assert missing_root.returncode == 2 and b"(flag) does not exist" in missing_root.stderr and b"REP_DATA_ROOT" in missing_root.stderr

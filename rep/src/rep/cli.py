@@ -62,6 +62,7 @@ from rep.events import (
     format_canonical_time,
     new_event_id,
     new_item_stamped_events,
+    parse_canonical_time,
     scheduling_day,
 )
 from rep.library import (
@@ -268,6 +269,9 @@ def main(argument_list: list[str] | None = None) -> int:
     )
     why_parser.add_argument("item_id", metavar="ID")
     unsuspend_parser = subcommand_parsers.add_parser("unsuspend", help="return a suspended item to sessions")
+    subcommand_parsers.add_parser(
+        "status", help="which data root, each deck's items, new and due, answers waiting for review, sessions today"
+    )
     unsuspend_parser.add_argument("item_id", metavar="ID")
     subcommand_parsers.add_parser(
         "lint",
@@ -320,11 +324,16 @@ def main(argument_list: list[str] | None = None) -> int:
         print(f"kbd_root         {kbd_root if kbd_root is not None else '(not set)'}")
         return 0
 
-    if command is None or command == "review" or command == "why" or command == "unsuspend" or command == "drill":
+    if command is None or command in ("review", "why", "unsuspend", "drill", "status"):
         data_root = machine_context["data_root"]
         if not machine_context["data_root_exists"]:
-            # PLAN.md D28: rep never creates the data root.
-            print(f"rep: data root {data_root} does not exist; create it with: mkdir -p {data_root}", file=sys.stderr)
+            # PLAN.md D28: rep never creates the data root. D53: say which
+            # rule chose it, since a forgotten REP_DATA_ROOT looks like data loss.
+            print(
+                f"rep: data root {data_root} ({machine_context['data_root_source']}) does not exist; "
+                f"create it with: mkdir -p {data_root}, or choose another with REP_DATA_ROOT=... or --data-root",
+                file=sys.stderr,
+            )
             return 2
         # The session reads answers from the terminal; both run $EDITOR on it.
         if (command is None or command == "review") and (not sys.stdin.isatty() or not sys.stdout.isatty()):
@@ -344,6 +353,51 @@ def main(argument_list: list[str] | None = None) -> int:
         excluded_item_count = library_check["item_count"] - len(library_check["located_items"])
         if excluded_item_count > 0:
             print(f"rep: {excluded_item_count} items are left out by errors; `rep lint` lists them", file=sys.stderr)
+
+        if command == "status":
+            # PLAN.md D53: the state of everything in one screen, read-only.
+            fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
+            now = datetime.now(UTC)
+            today = scheduling_day(now, preset["day_start_hour"])
+            print(f"data root   {data_root}  ({machine_context['data_root_source']})")
+            print(f"today       {today}  (a day runs {preset['day_start_hour']:02d}:00 to {preset['day_start_hour']:02d}:00)")
+            # deck -> [items, new, due now, suspended, earliest future due day]
+            deck_rows: dict[str, list[int | str]] = {}
+            for located_item in library_check["located_items"]:
+                deck_name = Path(located_item["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX)
+                deck_row = deck_rows.setdefault(deck_name, [0, 0, 0, 0, ""])
+                deck_row[0] = int(deck_row[0]) + 1
+                item_state = fold_result["items"].get(located_item["item"]["id"])
+                if item_state is not None and item_state["suspended"]:
+                    deck_row[3] = int(deck_row[3]) + 1
+                elif item_state is None or item_state["memory"] is None:
+                    deck_row[1] = int(deck_row[1]) + 1
+                elif item_state["due_day"] is not None and item_state["due_day"] <= today:
+                    deck_row[2] = int(deck_row[2]) + 1
+                elif item_state["due_day"] is not None and (deck_row[4] == "" or item_state["due_day"] < str(deck_row[4])):
+                    deck_row[4] = item_state["due_day"]
+            print(f"decks       {'deck':<16}{'items':>6}{'new':>6}{'due now':>9}{'suspended':>11}  next due")
+            for deck_name, deck_row in sorted(deck_rows.items()):
+                print(f"            {deck_name:<16}{deck_row[0]:>6}{deck_row[1]:>6}{deck_row[2]:>9}{deck_row[3]:>11}  {deck_row[4] or '-'}")
+            if deck_rows == {}:
+                print("            none yet: rep add --stdin --to NAME < file.md")
+            effective = effective_events(events_load["events"])
+            waiting_count = sum(
+                1 for event in effective["ordered_events"]
+                if event["kind"] == "attempt" and event["id"] not in effective["undone_event_ids"]
+                and effective["amended_ratings"].get(event["id"], event["rating"]) is None
+            )  # fmt: skip
+            print(f"waiting     {waiting_count} answers without a grade" + (": rep review" if waiting_count > 0 else ""))
+            sessions_today = 0
+            drills_today = 0
+            for event in effective["ordered_events"]:
+                if event["kind"] == "session_start" and scheduling_day(parse_canonical_time(event["at"]), preset["day_start_hour"]) == today:
+                    if "selection" in event:
+                        drills_today += 1
+                    else:
+                        sessions_today += 1
+            print(f"today did   {sessions_today} sessions, {drills_today} drills")
+            return 0
 
         if command == "why" or command == "unsuspend":
             requested_item_id: str = parsed_arguments.item_id

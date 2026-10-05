@@ -1417,6 +1417,23 @@ Approved by the person on 2026-10-05 (after the trial).
   Trade-off: an item reworded only in case or spacing is refused; reword
   it, or add it by hand and accept lint's warning.
 
+D53. `rep status`: the state of everything on one screen (M3). Approved
+by the person on 2026-10-05 ("maybe a rep status or something").
+  Choice: `rep status` prints the data root and the rule that chose it,
+  today's scheduling day and its rollover hour, each deck's items, new,
+  due now, suspended and next due day, the answers still without a
+  grade, and today's sessions and drills. Read-only, no terminal needed.
+  A missing data root's message names the rule that chose it and how to
+  choose another.
+  Reason: in the trial, `rep review` after `unset REP_DATA_ROOT` said
+  only "data root ~/learning does not exist", which reads like lost
+  data; and after a session there was no way to see what was due, by
+  deck, without running one.
+  Rejected: `rep decks` alone (6: decks without the root and the
+  waiting answers misses both trial confusions); folding it into `rep
+  where` (5: where answers "which files", status answers "what now").
+  Trade-off: one more command.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
