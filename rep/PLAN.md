@@ -1527,6 +1527,37 @@ Approved by the person on 2026-10-05.
   conversions use typical strengths and caffeine per kind, marked as
   estimates where used.
 
+D57. The code tour: the person reviews the code through a form (M3).
+Approved by the person on 2026-10-05.
+  Choice: tools/code_tour.py writes a tour of the code as a form, opened
+  in nvim by `rep-tour`: each stop names why it was chosen, gives its
+  path:line for gF (larger blocks of a long function as sections), and
+  three lines to answer: Understand (in one line, what does it do?),
+  Style (what would you write differently?), Change (would you change it
+  with confidence?). Stops: first every module's contract (its docstring),
+  then three rankings taking turns: functions enforcing the most
+  decisions (`PLAN.md D<n>`), the most lines changed in recent commits
+  (git blame), and the longest; whole files for non-Python code. It reads
+  Python with ast and imports nothing from rep, so it copies into another
+  Python codebase unchanged.
+  Reason: the person wants to gauge their understanding of the code and
+  find style and guideline updates without reading it line by line. A
+  form in nvim is how rep already asks for judgement (the grading sheet,
+  the body form); the answers come back as a file the next thread reads.
+  Understand answers compared with the docstrings show where the code or
+  its comments fail to explain themselves. On rep itself the first tour
+  shows run_command at 996 lines enforcing 26 decisions: one function
+  holding every command (D13 chose that for one readable control flow;
+  whether it still is readable is the question the tour puts to the
+  person).
+  Rejected: tree-sitter (6: language-independent, the right tool once a
+  second language's code is toured; for Python alone it is a dependency
+  that ast makes unnecessary); quickfix lists with :cnext (6: native
+  navigation, but no place to write answers beside each stop); reading
+  by git history alone (5: misses old code that matters).
+  Trade-off: Python functions only, others as whole files; the rankings
+  are proxies for importance, and the reader may skip any stop.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

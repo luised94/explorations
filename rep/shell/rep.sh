@@ -38,7 +38,11 @@ function rep-week {
   (cd "$REP_REPOSITORY" && uv run python tools/week_report.py "$@")
 }
 
-# A guided tour of rep's code, to read and comment on (tools/code_tour.py).
+# A guided tour of rep's code, written as a form, opened in nvim: answer
+# under each stop (tools/code_tour.py). The file lands beside the reports.
 function rep-tour {
-  (cd "$REP_REPOSITORY" && uv run python tools/code_tour.py "$@")
+  local tour_path
+  tour_path="$(rep where --data-root)/reports/code-tour-$(date +%F).md" || return
+  (cd "$REP_REPOSITORY" && uv run python tools/code_tour.py --repository "$REP_REPOSITORY" \
+    --sources "src/rep/*.py" --whole-file nvim/lua/rep/init.lua --output "$tour_path" "$@") && nvim "$tour_path"
 }
