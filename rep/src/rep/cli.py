@@ -709,19 +709,40 @@ def main(argument_list: list[str] | None = None) -> int:
 
                 # --- the round's sheet: when it is answered, or on Ctrl-D for what was answered ---
                 if round_is_answered or stop_requested:
-                    sheet_entries = grading_sheet_entries(
-                        session_events, round_state["round_attempt_ids"], located_items_by_id
-                    )
-                    if sheet_entries != []:
+                    sheet_attempt_ids = round_state["round_attempt_ids"]
+                    sheet_title = f"rep {today}, round {round_number}: {len(sheet_attempt_ids)} answers"
+                    sheet_pass = 1
+                    while sheet_attempt_ids != []:
+                        sheet_entries = grading_sheet_entries(session_events, sheet_attempt_ids, located_items_by_id)
+                        if sheet_entries == []:
+                            break
                         sheet_events = grade_on_a_sheet(
-                            sheet_entries,
-                            f"rep {today}, round {round_number}: {len(sheet_entries)} answers",
-                            state_directory / f"sheet-{session_start['id']}-{round_number}.txt",
-                            device_id,
-                        )
+                            sheet_entries, sheet_title,
+                            state_directory / f"sheet-{session_start['id']}-{round_number}-{sheet_pass}.txt", device_id,
+                        )  # fmt: skip
                         if sheet_events != []:
                             append_events_waiting(state_directory, data_root / "events", device_id, sheet_events)
                             session_events.extend(sheet_events)
+                        # PLAN.md D54: an answer left ? leaves the session (R3);
+                        # the trial showed that is easy to do by accident, so say
+                        # so and offer the sheet again before it happens.
+                        sheet_attempt_ids = [
+                            entry["attempt_id"] for entry in grading_sheet_entries(session_events, sheet_attempt_ids, located_items_by_id)
+                            if entry["rating"] is None
+                        ]  # fmt: skip
+                        if sheet_attempt_ids == [] or stop_requested:
+                            break
+                        print(f"{block_indent}{len(sheet_attempt_ids)} answers left ?: an answer without a grade leaves this session, no retest.")
+                        termios.tcflush(terminal_descriptor, termios.TCIFLUSH)
+                        try:
+                            reply = input(f"{block_indent}Enter: grade them now.   n, Enter: leave them for `rep review`. ")
+                        except EOFError:
+                            print()
+                            break
+                        if reply.strip().lower().startswith("n"):
+                            break
+                        sheet_pass += 1
+                        sheet_title = f"rep {today}, round {round_number}: {len(sheet_attempt_ids)} still without a grade"
                     graded_round_number = round_number
                     if stop_requested:
                         end_reason = "quit"
@@ -734,6 +755,9 @@ def main(argument_list: list[str] | None = None) -> int:
                     round_label = f"round {round_number}: {round_size} {'items' if round_number == 1 else 'to retest'}"
                     terminal_output.emit(terminal_output.format_labeled_separator(round_label))
                     print(f"{block_indent}Esc: vi keys   Esc v: editor   Ctrl-D: grade, then stop   Ctrl-C: stop now")
+                    if round_number > 1:
+                        # PLAN.md D54: why items come back, which the trial left unclear.
+                        print(f"{block_indent}Back: answers graded again, and new items for a second look (D36).")
                 item_id = round_state["unanswered_item_ids"][0]
                 located_item = located_items_by_id[item_id]
                 item = located_item["item"]
@@ -741,7 +765,17 @@ def main(argument_list: list[str] | None = None) -> int:
                 # Not "again": that is a grade word, and an item graded Easy
                 # that returns (a new item always does, D36) read as a miss.
                 card_label = Path(located_item["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX) + ", "
-                card_label += reason_by_item_id[item_id] if round_number == 1 else "retest"
+                if round_number == 1:
+                    card_label += reason_by_item_id[item_id]
+                else:
+                    # PLAN.md D54: missed, or a new item's second look (D36).
+                    effective_so_far = effective_events(session_events)
+                    previous_ratings = [
+                        effective_so_far["amended_ratings"].get(event["id"], event["rating"])
+                        for event in effective_so_far["ordered_events"]
+                        if event["kind"] == "attempt" and event["item"] == item_id
+                    ]  # fmt: skip
+                    card_label += "retest, missed" if previous_ratings[-1] == AGAIN else "retest, second look"
                 # D20 compares these as typed; say how, in words (D51).
                 if item["check"] == "exact":
                     card_label += ", as written"
@@ -824,6 +858,13 @@ def main(argument_list: list[str] | None = None) -> int:
             next_review_days = sorted(next_review_counts.items())
             next_review_text = ", ".join(f"{count} on {day}" for day, count in next_review_days[:4])
             print(f"{block_indent}Next reviews: {next_review_text}{', and later' if len(next_review_days) > 4 else ''}.")
+        # PLAN.md D54: the next step is offered, not remembered.
+        deck_names = sorted({Path(located_item["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX) for located_item in library_check["located_items"]})
+        print(f"{block_indent}What next:")
+        if ungraded_count > 0:
+            print(f"{block_indent}  rep review         grade the {ungraded_count} answers still waiting")
+        print(f"{block_indent}  rep drill DECK     practise more now ({', '.join(deck_names)})")
+        print(f"{block_indent}  rep status         what is due, by deck")
         return 0
 
     if command == "stamp":

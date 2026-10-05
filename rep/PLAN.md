@@ -1434,6 +1434,33 @@ by the person on 2026-10-05 ("maybe a rep status or something").
   where` (5: where answers "which files", status answers "what now").
   Trade-off: one more command.
 
+D54. A session explains its own rules where they act (M3). Revises
+D51; approved by the person on 2026-10-05, after the trial.
+  Choice: a retest card says why it is back: "retest, missed" (graded
+  again) or "retest, second look" (a new item's first showing, D36), and
+  each later round says so in one line. When a saved sheet still has
+  answers left ?, rep says they will leave the session without a retest
+  (R3) and offers the sheet again with only those answers (Enter), or
+  leaves them for `rep review` (n). The sheet opens with "the sheet is
+  where you learn the answer". The end lists what to do next: `rep
+  review` when answers wait, `rep drill` with the decks, `rep status`.
+  Reason: the trial: "the retest happened and I don't think it's clear
+  why"; seven self-graded answers were saved as ? and dropped out of the
+  session unnoticed ("I forgot that I should take the time to grade
+  myself"); and after the session the next step was unclear. On the
+  person's question of when to study unseen material (the permit deck,
+  manual unread): trying first and reading the key right after is how
+  the sheet already works, and an attempt that fails before feedback
+  improves learning of that feedback (the pretesting effect: Richland,
+  Kornell and Kao 2009; Kornell, Hays and Bjork 2009). Getting it right
+  in round 2, minutes later, is not yet evidence of learning; tomorrow's
+  review is.
+  Rejected: forbidding ? on a round's sheet (5: some answers truly cannot
+  be judged then); grading them automatically as again (4: a grade the
+  person did not give).
+  Trade-off: one more prompt after a sheet with ? left; the person can
+  always answer n.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

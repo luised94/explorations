@@ -308,6 +308,9 @@ def render_grading_sheet(entries: list[SheetEntry], title: str) -> str:
         f"# {title}",
         # PLAN.md D51: what each word means, and what it does to the schedule,
         # at the moment of choosing (measured, PLAN.md section 3).
+        # PLAN.md D54: an answer tried and missed, then read here, is learned
+        # better than one only read (the pretesting effect).
+        "# Read each key closely: the sheet is where you learn the answer.",
         "# Grade each answer by changing its first word:",
         "#   again  not recalled        hard  recalled, with effort",
         "#   good   recalled            easy  recalled at once",

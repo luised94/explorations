@@ -513,10 +513,15 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
     assert "5 answers; 0 wait for `rep review`." in output
     # A 76-column card centered on 100 columns: 12 spaces before each border.
     assert "\n" + " " * 12 + "+" + "-" * 74 + "+" in output.replace("\r\n", "\n")
-    assert "1 of 2" in output and "a, new, as written" in output and "a, retest, as written" in output
+    assert "1 of 2" in output and "a, new, as written" in output
     # PLAN.md D51: what the session holds, its length, the keys, what comes next.
     assert "From a: 2 new." in output and "About 4 answers if each is recalled" in output
     assert "round 1: 2 items" in output and "round 2: 2 to retest" in output and "Esc v: editor" in output
+    # D54: why each comes back, and what to do next.
+    # France (the one exact item): Good in round 1, so round 2 is its second
+    # look; Again in round 2 ("paris"), so round 3 says missed.
+    assert 0 <= output.index("a, retest, second look, as written") < output.index("a, retest, missed, as written")
+    assert "Back: answers graded again" in output and "What next:" in output and "rep drill DECK     practise more now (a)" in output
     assert re.search(r"Next reviews: \d+ on \d{4}-\d{2}-\d{2}", output)
     # Nothing is revealed before the sheet (D45).
     assert "half of Vmax" not in output.replace("half of Vmax\r", "")
@@ -627,6 +632,8 @@ def test_an_editor_error_applies_nothing_and_review_grades_later(tmp_path: Path)
             ("> ", b"Paris\r"),
             ("What does Km measure?", b""),
             ("> ", b"\r"),  # nothing came to mind
+            # D54: both left ?, so rep offers the sheet again; n leaves them.
+            ("leave them for `rep review`. ", b"n\r"),
             ("session completed", b""),
         ],
         editor=editor,
@@ -864,3 +871,30 @@ def test_status_shows_the_root_each_deck_what_waits_and_today(tmp_path: Path) ->
     assert "today did   1 sessions, 1 drills" in status_lines
     missing_root = run_rep(["--data-root", str(tmp_path / "nowhere"), "status"], tmp_path)
     assert missing_root.returncode == 2 and b"(flag) does not exist" in missing_root.stderr and b"REP_DATA_ROOT" in missing_root.stderr
+
+
+def test_answers_left_ungraded_are_offered_again_before_they_leave(tmp_path: Path) -> None:
+    # PLAN.md D54: in the trial, seven answers left ? quietly dropped out.
+    data_root = session_home(tmp_path, "### Q: What does Km measure?\nid: km-measure-7q2m\nA: half of Vmax\n")
+    editor, sheet_log = scripted_editor(
+        tmp_path,
+        [
+            {"words": {}, "exit": 0},  # saved without grading
+            {"words": {"Km measure": "good"}, "exit": 0},  # offered again: graded
+            {"words": {"Km measure": "good"}, "exit": 0},  # round 2, the second look
+        ],
+    )
+    exit_code, output = run_rep_on_a_terminal(
+        tmp_path,
+        [
+            ("Enter starts; Ctrl-D stops. ", b"\r"), ("> ", b"half\r"),
+            ("1 answers left ?: an answer without a grade leaves this session", b""),
+            ("leave them for `rep review`. ", b"\r"),
+            ("round 2", b""), ("> ", b"half of Vmax\r"), ("session completed", b""),
+        ],
+        editor=editor,
+    )  # fmt: skip
+    assert exit_code == 0, output
+    sheets: list[str] = json.loads(sheet_log.read_text(encoding="utf-8"))
+    assert len(sheets) == 3 and "round 1: 1 still without a grade" in sheets[1]
+    assert [event["kind"] for event in read_session_events(data_root)].count("amend") == 2
