@@ -102,19 +102,31 @@ class PlanSlot(TypedDict):
     reason: Literal["due", "new", "drill"]  # drill: chosen by the person, seen before (D50)
 
 
+class SessionPlan(TypedDict):
+    """A plan and the facts that set its new count, so a screen can say why
+    it holds N new items without a second copy of P4's arithmetic (D59)."""
+
+    slots: list[PlanSlot]
+    introduced_today: int  # items first attempted today, drills included
+    new_left_today: int  # max(0, new_per_day - introduced_today)
+    new_room_in_budget: int  # max(0, (session_budget - due slots) // new_item_cost)
+    new_waiting: int  # new candidates left out of the slots
+
+
 def plan_session(
     located_items: list[LocatedItem],
     item_states: dict[str, ItemState],
     events: list[Event],
     today: str,
     preset: Preset,
-) -> list[PlanSlot]:
+) -> SessionPlan:
     """The ordered slots a session starts with (PLAN.md D36, D37; P1-P4).
 
     PRE   located_items hold no item with an error and no id twice (the
           caller applies D22). item_states is fold_events(...)["items"] over
           the same events. today is a scheduling day, YYYY-MM-DD.
-    POST  due slots, then new slots, satisfying P2-P4.
+    POST  slots: due slots, then new slots, satisfying P2-P4; the other
+          fields are P4's terms, as computed (D59).
     """
     today_date = date.fromisoformat(today)
 
@@ -177,14 +189,17 @@ def plan_session(
             located_item["item"]["line"],
         )
     )
-    new_allowance = min(
-        preset["new_per_day"] - introduced_today_count,
-        (preset["session_budget"] - len(due_slots)) // preset["new_item_cost"],
-    )
+    new_left_today = max(preset["new_per_day"] - introduced_today_count, 0)
+    new_room_in_budget = max((preset["session_budget"] - len(due_slots)) // preset["new_item_cost"], 0)
     new_slots: list[PlanSlot] = [
-        {"item_id": located_item["item"]["id"], "reason": "new"} for located_item in new_candidates[: max(new_allowance, 0)]
+        {"item_id": located_item["item"]["id"], "reason": "new"}
+        for located_item in new_candidates[: min(new_left_today, new_room_in_budget)]
     ]
-    return due_slots + new_slots
+    return {
+        "slots": due_slots + new_slots, "introduced_today": introduced_today_count,
+        "new_left_today": new_left_today, "new_room_in_budget": new_room_in_budget,
+        "new_waiting": len(new_candidates) - len(new_slots),
+    }  # fmt: skip
 
 
 # --- rounds and the grading sheet (PLAN.md D45) --------------------------------
@@ -317,6 +332,8 @@ def render_grading_sheet(entries: list[SheetEntry], title: str) -> str:
         "#   ?      leave it for `rep review`      suspend  stop showing the item",
         "# On a new item's first showing the grade sets most of its first interval:",
         "# good puts the next review about 2 days away, easy a week or more.",
+        # PLAN.md D59: moving between ungraded answers in plain nvim.
+        "# To move: /^? Enter finds an answer left ?, n the next; cw good Esc grades it.",
         "# Save and quit to apply; quit without saving (:cq) applies nothing.",
         "# gF on an item path opens the item, to fix it.",
         "",

@@ -1580,6 +1580,40 @@ the person on 2026-10-05, from going through the commands one by one.
   Trade-off: longer help; a search that matches several items needs more
   words or an id.
 
+D59. A session's screens give the reason for every number (M3). Revises
+D51 and D54; approved by the person on 2026-10-05 ("peruse and address
+all", after the first day on the real data root).
+  Choice: plan_session returns its slots with P4's terms (started today,
+  left today, room in the budget, waiting), and the start screen says
+  them: "3 new: up to 10 new a day, 7 started earlier today (drills
+  count); 241 more wait, deck by deck in the order added". The typing
+  line says exact and numeric cards are checked as typed and a cue is
+  enough only on self-graded ones. The start says stopping is fine
+  (Ctrl-D grades what was answered). A retest round gives its counts and
+  why: missed ones return until recalled once; new ones return for a
+  second look, recalled after others came between. The sheet says how to
+  jump between ungraded answers in plain nvim (/^? then n). With nothing
+  planned, a day whose scheduled session completed says "Today's session
+  is done", and why no new items remain. A drill of every deck lists its
+  decks; one over 50 items gives its length and the --count way out
+  before Enter, and every drill says its grades update the schedule and
+  that stopping loses nothing. Deck lists name at most 3 decks. The
+  limits are named constants in cli.py.
+  Reason: on day one the person asked "why three new? why only permit?"
+  (the drill had used 7 of the day's 10, and decks are introduced in the
+  order added, D37: neither was shown); typed arithmetic under "a cue is
+  enough"; started a 251-item drill with no sign of its length; read
+  "nothing to practise" after finishing as if nothing had been done; and
+  found "(D36)" meaningless.
+  Rejected: a second copy of P4's arithmetic in the screen (4: two copies
+  of a rule drift; the plan returns its own terms); a confirmation prompt
+  for long drills (5: Enter already confirms; the length beside it is
+  the missing fact); a configurable preset now (6: the right fix for "can
+  I add more for tomorrow", but it is a decision about where settings
+  live, for thread 4; `rep drill DECK --count N` covers it this week).
+  Trade-off: the start screen grows by three lines; the long-drill line
+  estimates at 10 seconds an answer.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

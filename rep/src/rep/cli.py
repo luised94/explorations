@@ -85,6 +85,7 @@ from rep.session import (
     DEFAULT_PRESET,
     GRADE_WORDS,
     PlanSlot,
+    SessionPlan,
     SheetEntry,
     grading_sheet_entries,
     plan_session,
@@ -131,6 +132,13 @@ def append_events_waiting(state_directory: Path, events_directory: Path, device_
 
 
 SHEET_PROBLEM_PREFIX = "# problem: "
+# PLAN.md D59: screen limits, named so they are found and changed in one
+# place. A drill over DRILL_SIZE_WARNING items says so before Enter (the
+# person's 251-item drill: 30 to 50 was their limit); SECONDS_PER_ANSWER is
+# the estimate for its length; DECKS_LISTED names at most that many decks.
+DRILL_SIZE_WARNING = 50
+SECONDS_PER_ANSWER = 10
+DECKS_LISTED = 3
 
 
 def grade_on_a_sheet(entries: list[SheetEntry], title: str, sheet_path: Path, device_id: str) -> list[Event]:
@@ -529,7 +537,7 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
             if item_state is not None:
                 print(f"reviews     {item_state['graded_review_count']} graded, {item_state['lapse_count']} lapses")
                 print(f"suspended   {'yes (rep unsuspend ' + requested_item_id + ')' if item_state['suspended'] else 'no'}")
-            plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+            plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)["slots"]
             plan_reasons = [slot["reason"] for slot in plan if slot["item_id"] == requested_item_id]
             print(f"today       {'in the plan, ' + plan_reasons[0] if plan_reasons != [] else 'not in the plan'}")
             effective = effective_events(events_load["events"])
@@ -613,6 +621,7 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         session_id = new_event_id(secrets.token_bytes)
         drill_selection = ""
         drill_notes: list[str] = []
+        session_plan: SessionPlan | None = None  # a session's plan facts; a drill has none
         if command == "drill":
             # PLAN.md D50: the person chooses the items; the schedule does
             # not. A deck is a library file (one file per item, so no item
@@ -667,8 +676,23 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
             )
             if len(tagged_items) > len(selectable_items):
                 drill_notes.append(f"{len(tagged_items) - len(selectable_items)} suspended, left out (`rep unsuspend ID`).")
+            if deck_file_name is None and plan != []:
+                # PLAN.md D59: "every deck" hides which decks; say them.
+                plan_deck_counts = Counter(
+                    Path(located_items_by_id[slot["item_id"]]["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX) for slot in plan
+                )
+                drill_notes.append("From " + ", ".join(f"{name} {count}" for name, count in sorted(plan_deck_counts.items())) + ".")
             if new_in_drill > 0:
-                drill_notes.append(f"{new_in_drill} never seen before: from today they are on your schedule.")
+                drill_notes.append(f"{new_in_drill} never seen before: from today they are on your schedule, and count")
+                drill_notes.append(f"toward today's {preset['new_per_day']} new items, so today's session brings fewer.")
+            if len(plan) > DRILL_SIZE_WARNING:
+                # PLAN.md D59: a drill of every item in a big deck was started
+                # by accident, with no sign of its length until it ran.
+                drill_notes.append(
+                    f"That is a long drill: {len(plan)} items, over {len(plan) * SECONDS_PER_ANSWER // 60} minutes. "
+                    f"Ctrl-D here, then add --count 20 for a smaller set."
+                )
+            drill_notes.append("Grades update the schedule as a session's do; stopping early loses nothing.")
             if plan == []:
                 print(f"Every item in {deck_label} is suspended.")
                 return 0
@@ -677,7 +701,8 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                 return 2
         else:
             with run_log.phase(run_record, "plan"):
-                plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+                session_plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+            plan = session_plan["slots"]
         run_record["counts"]["planned_items"] = len(plan)
         if plan == []:
             # PLAN.md D51: say what comes next and what can be done now,
@@ -686,13 +711,34 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                 item_state["due_day"] for item_state in fold_result["items"].values()
                 if item_state["due_day"] is not None and not item_state["suspended"] and item_state["due_day"] > today
             )  # fmt: skip
-            print(f"Nothing to practise today ({today}).")
+            # PLAN.md D59: a finished day is not an empty one; say which it is.
+            effective_so_far = effective_events(events_load["events"])
+            completed_session_ids = {
+                event["session"] for event in effective_so_far["ordered_events"]
+                if event["kind"] == "session_end" and event["reason"] == "completed"
+            }  # fmt: skip
+            session_done_today = any(
+                event["kind"] == "session_start" and "selection" not in event and event["id"] in completed_session_ids
+                and scheduling_day(parse_canonical_time(event["at"]), preset["day_start_hour"]) == today
+                for event in effective_so_far["ordered_events"]
+            )  # fmt: skip
+            print(f"Today's session is done ({today})." if session_done_today else f"Nothing due today ({today}).")
+            assert session_plan is not None, "an empty drill returned earlier"
+            if session_plan["new_waiting"] > 0 and session_plan["new_left_today"] == 0:
+                print(
+                    f"New items: today's {preset['new_per_day']} are started ({session_plan['introduced_today']} today, drills included); "
+                    f"{session_plan['new_waiting']} more wait for the next days."
+                )
+            elif session_plan["new_waiting"] == 0:
+                print("New items: none left; add some with `rep add --help`.")
             if upcoming_due_days != []:
                 print(f"Next due: {upcoming_due_days.count(upcoming_due_days[0])} on {upcoming_due_days[0]}.")
-            deck_counts = Counter(Path(located_item["path"]).name for located_item in library_check["located_items"])
+            deck_counts = Counter(Path(located_item["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX) for located_item in library_check["located_items"])
             if deck_counts:
-                deck_list = ", ".join(f"{name.removesuffix(LIBRARY_FILE_SUFFIX)} ({count})" for name, count in sorted(deck_counts.items()))
-                print(f"To practise anyway: rep drill DECK   (decks: {deck_list})")
+                deck_list = ", ".join(f"{name} ({count})" for name, count in sorted(deck_counts.items())[:DECKS_LISTED])
+                if len(deck_counts) > DECKS_LISTED:
+                    deck_list += f", +{len(deck_counts) - DECKS_LISTED} more (rep status)"
+                print(f"To practise more now: rep drill DECK --count 20   (decks: {deck_list})")
             return 0
         reason_by_item_id = {slot["item_id"]: slot["reason"] for slot in plan}
         due_count = sum(1 for slot in plan if slot["reason"] == "due")
@@ -733,10 +779,23 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                 deck_summaries.append(f"{deck_name}: {', '.join(reason_counts)}")
             print(f"{block_indent}From {'; '.join(deck_summaries)}.")
         new_slot_count = sum(1 for slot in plan if slot["reason"] == "new")
+        if session_plan is not None:
+            # PLAN.md D59: why this many new items, from the plan's own terms,
+            # so the limit and what used it up are on screen.
+            new_reason = f"up to {preset['new_per_day']} new a day"
+            if session_plan["introduced_today"] > 0:
+                new_reason += f", {session_plan['introduced_today']} started earlier today (drills count)"
+            if session_plan["new_room_in_budget"] < session_plan["new_left_today"]:
+                new_reason += f"; {due_count} due leave room for {session_plan['new_room_in_budget']} in a {preset['session_budget']}-answer session"
+            waiting_text = f"; {session_plan['new_waiting']} more wait, deck by deck in the order added" if session_plan["new_waiting"] > 0 else ""
+            print(f"{block_indent}{new_slot_count} new: {new_reason}{waiting_text}.")
         print(f"{block_indent}About {len(plan) + new_slot_count} answers if each is recalled (a new item comes back once).")
-        print(f"{block_indent}At > type what comes to mind, a cue is enough, and press Enter.")
+        # PLAN.md D59: "a cue is enough" was wrong for arithmetic and names.
+        print(f"{block_indent}At > type your answer and press Enter. Cards marked \"a number\" or \"as written\"")
+        print(f"{block_indent}are checked as typed; on the others a cue is enough, and you grade it.")
         print(f"{block_indent}Esc: vi keys (h l w b 0 $ x cw u; i to type). Esc v: use your editor.")
         print(f"{block_indent}Each round ends with its answers and the keys in your editor, to grade.")
+        print(f"{block_indent}Stopping is fine: Ctrl-D grades what you answered; the rest wait for next time.")
         # PLAN.md D35, kept by D45: a line counts only once its prompt is on
         # screen. The flush comes before the prompt: after it, a key typed in
         # the instant between seeing the prompt and the flush would be lost.
@@ -778,6 +837,9 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         graded_round_number = 0
         stop_requested = False
         session_was_started = False
+        # PLAN.md D54, D59: why each item of a later round is back, decided
+        # once at the round's start from the grades so far.
+        retest_reason_by_item_id: dict[str, str] = {}
         try:
             append_events_waiting(state_directory, data_root / "events", device_id, [session_start])
             session_events.append(session_start)
@@ -839,8 +901,24 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                     terminal_output.emit(terminal_output.format_labeled_separator(round_label))
                     print(f"{block_indent}Esc: vi keys   Esc v: editor   Ctrl-D: grade, then stop   Ctrl-C: stop now")
                     if round_number > 1:
-                        # PLAN.md D54: why items come back, which the trial left unclear.
-                        print(f"{block_indent}Back: answers graded again, and new items for a second look (D36).")
+                        effective_so_far = effective_events(session_events)
+                        for round_item_id in round_state["round_item_ids"]:
+                            previous_ratings = [
+                                effective_so_far["amended_ratings"].get(event["id"], event["rating"])
+                                for event in effective_so_far["ordered_events"]
+                                if event["kind"] == "attempt" and event["item"] == round_item_id
+                            ]  # fmt: skip
+                            retest_reason_by_item_id[round_item_id] = "missed" if previous_ratings[-1] == AGAIN else "second look"
+                        missed_count = sum(1 for round_item_id in round_state["round_item_ids"] if retest_reason_by_item_id[round_item_id] == "missed")
+                        second_look_count = round_size - missed_count
+                        # PLAN.md D59: counts and the reason, without a decision number.
+                        if missed_count > 0:
+                            print(f"{block_indent}{missed_count} missed: each comes back until you recall it once.")
+                        if second_look_count > 0:
+                            print(
+                                f"{block_indent}{second_look_count} new, for a second look: recalling a new item again after"
+                            )
+                            print(f"{block_indent}others came between is what makes it last past today.")
                 item_id = round_state["unanswered_item_ids"][0]
                 located_item = located_items_by_id[item_id]
                 item = located_item["item"]
@@ -852,13 +930,7 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                     card_label += reason_by_item_id[item_id]
                 else:
                     # PLAN.md D54: missed, or a new item's second look (D36).
-                    effective_so_far = effective_events(session_events)
-                    previous_ratings = [
-                        effective_so_far["amended_ratings"].get(event["id"], event["rating"])
-                        for event in effective_so_far["ordered_events"]
-                        if event["kind"] == "attempt" and event["item"] == item_id
-                    ]  # fmt: skip
-                    card_label += "retest, missed" if previous_ratings[-1] == AGAIN else "retest, second look"
+                    card_label += "retest, " + retest_reason_by_item_id[item_id]
                 # D20 compares these as typed; say how, in words (D51).
                 if item["check"] == "exact":
                     card_label += ", as written"
@@ -943,10 +1015,14 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
             print(f"{block_indent}Next reviews: {next_review_text}{', and later' if len(next_review_days) > 4 else ''}.")
         # PLAN.md D54: the next step is offered, not remembered.
         deck_names = sorted({Path(located_item["path"]).name.removesuffix(LIBRARY_FILE_SUFFIX) for located_item in library_check["located_items"]})
+        # PLAN.md D59: a few names, not every deck; status lists them all.
+        deck_list = ", ".join(deck_names[:DECKS_LISTED])
+        if len(deck_names) > DECKS_LISTED:
+            deck_list += f", +{len(deck_names) - DECKS_LISTED} more"
         print(f"{block_indent}What next:")
         if ungraded_count > 0:
             print(f"{block_indent}  rep review         grade the {ungraded_count} answers still waiting")
-        print(f"{block_indent}  rep drill DECK     practise more now ({', '.join(deck_names)})")
+        print(f"{block_indent}  rep drill DECK     practise more now ({deck_list})")
         print(f"{block_indent}  rep status         what is due, by deck")
         return 0
 

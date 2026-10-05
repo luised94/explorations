@@ -26,6 +26,8 @@ from pathlib import Path
 import pytest
 
 from rep import cli
+from rep.events import scheduling_day
+from rep.session import DEFAULT_PRESET
 from rep.storage import acquire_writer_lock
 
 
@@ -521,7 +523,12 @@ def test_a_session_in_rounds_end_to_end_on_a_terminal(tmp_path: Path) -> None:
     # France (the one exact item): Good in round 1, so round 2 is its second
     # look; Again in round 2 ("paris"), so round 3 says missed.
     assert 0 <= output.index("a, retest, second look, as written") < output.index("a, retest, missed, as written")
-    assert "Back: answers graded again" in output and "What next:" in output and "rep drill DECK     practise more now (a)" in output
+    # D59: the retest round says how many of each and why; the start says
+    # why this many new; exact cards are flagged as checked as typed.
+    assert "2 new, for a second look" in output and "1 missed: each comes back" in output
+    assert "2 new: up to 10 new a day." in output and "are checked as typed" in output
+    assert "Ctrl-D grades what you answered" in output
+    assert "What next:" in output and "rep drill DECK     practise more now (a)" in output
     assert re.search(r"Next reviews: \d+ on \d{4}-\d{2}-\d{2}", output)
     # Nothing is revealed before the sheet (D45).
     assert "half of Vmax" not in output.replace("half of Vmax\r", "")
@@ -763,7 +770,8 @@ def test_a_deck_can_be_drilled_twice_in_a_day(tmp_path: Path) -> None:
     )  # fmt: skip
     assert exit_code == 0, output
     assert "drill a" in output and "2 of the 2 items in a." in output
-    assert "2 never seen before: from today they are on your schedule." in output
+    assert "2 never seen before: from today they are on your schedule, and count" in output
+    assert "Grades update the schedule as a session's do" in output
     # Again the same day: both are now seen, both recalled, so one round.
     exit_code, output = run_rep_on_a_terminal(
         tmp_path, [("Enter starts; Ctrl-D stops. ", b"\r"), answers, ("session completed", b"")],
@@ -785,6 +793,18 @@ def test_drill_count_and_tag_narrow_the_selection_and_say_so(tmp_path: Path) -> 
     assert exit_code == 0 and "1 of the 2 items in a, drawn at random." in output, output
     exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["drill", "--tag", "enzymes"])
     assert exit_code == 0 and "drill every deck #enzymes" in output and "1 of the 1 items in every deck tagged #enzymes." in output, output
+
+
+def test_a_long_drill_of_every_deck_names_its_decks_and_its_length(tmp_path: Path) -> None:
+    # PLAN.md D59: the person's first drill was 251 items with no sign of it.
+    data_root = session_home(
+        tmp_path, "".join(f"### Q: Question number {index}?\nid: question-{index}-7q2m\nA: {index}\n\n" for index in range(51))
+    )
+    (data_root / "library" / "b.md").write_text("### Q: Alone in b?\nid: alone-b-7q2m\nA: yes\n", encoding="utf-8")
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["drill"])
+    assert exit_code == 0, output
+    assert "52 of the 52 items in every deck." in output and "From a 51, b 1." in output, output
+    assert "That is a long drill: 52 items, over 8 minutes." in output and "--count 20" in output, output
 
 
 def test_drill_leaves_suspended_items_out_and_says_how_many(tmp_path: Path) -> None:
@@ -813,10 +833,42 @@ def test_nothing_due_says_when_and_offers_a_drill(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Nothing to practise today", b"")])
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Nothing due today", b"")])
     assert exit_code == 0, output
     assert re.search(r"Next due: [12] on 2099-01-0\d\.", output), output
-    assert "To practise anyway: rep drill DECK   (decks: a (2))" in output
+    assert "To practise more now: rep drill DECK --count 20   (decks: a (2))" in output
+
+
+def test_a_finished_day_says_the_session_is_done_not_that_nothing_is_due(tmp_path: Path) -> None:
+    # PLAN.md D59: after today's scheduled session completed, the empty plan
+    # says so, and why no new items come: the day's allowance is used.
+    data_root = session_home(tmp_path, SESSION_LIBRARY)
+    (data_root / "events").mkdir()
+    # Now, written as the session would: today's scheduling day, whatever
+    # the hour the test runs (a day starts at 04:00 local).
+    now_text = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    today = scheduling_day(datetime.now(UTC), DEFAULT_PRESET["day_start_hour"])
+    event_lines = [
+        f'{{"at":"{now_text}","device":"6a2ah35zhe","format_version":1,"id":"ssssssssssss","kind":"session_start",'
+        f'"preset":{json.dumps(DEFAULT_PRESET, sort_keys=True)}}}',
+        *(
+            f'{{"at":"{now_text}","day":"{today}","device":"6a2ah35zhe","fingerprint":"f","format_version":1,'
+            f'"id":"{letter * 12}","item":"{item_id}","kind":"attempt","latency_milliseconds":900,'
+            f'"rating":3,"session":"ssssssssssss","typed_answer":"x"}}'
+            for letter, item_id in [("a", "capital-france-7q2m"), ("b", "km-measure-7q2m")]
+        ),
+        f'{{"at":"{now_text}","device":"6a2ah35zhe","format_version":1,"id":"eeeeeeeeeeee","kind":"session_end",'
+        f'"reason":"completed","session":"ssssssssssss"}}',
+    ]
+    events_path = data_root / "events" / "6a2ah35zhe.jsonl"
+    # Stopped early, the day is not done: the plain message.
+    events_path.write_text("".join(line + "\n" for line in event_lines).replace('"completed"', '"quit"'), encoding="utf-8")
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Nothing due today", b"")])
+    assert exit_code == 0 and "session is done" not in output, output
+    events_path.write_text("".join(line + "\n" for line in event_lines), encoding="utf-8")
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Today's session is done", b"")])
+    assert exit_code == 0, output
+    assert "New items: none left" in output and "Next due:" in output, output
 
 
 # --- the same items added twice (PLAN.md D52) ----------------------------------

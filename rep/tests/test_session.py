@@ -91,7 +91,7 @@ def test_due_items_come_first_lowest_retrievability_first_and_future_items_wait(
     states = fold_events(events)["items"]
     strong_due_day = states["strong-7q2m"]["due_day"]
     assert strong_due_day is not None
-    plan = plan_session(items, states, events, strong_due_day, DEFAULT_PRESET)
+    plan = plan_session(items, states, events, strong_due_day, DEFAULT_PRESET)["slots"]
     assert plan == [
         {"item_id": "weak-7q2m", "reason": "due"},
         {"item_id": "middle-7q2m", "reason": "due"},
@@ -99,7 +99,7 @@ def test_due_items_come_first_lowest_retrievability_first_and_future_items_wait(
         {"item_id": "fresh-7q2m", "reason": "new"},
     ]
     # The next day only the Again item (interval 1 day) is due.
-    plan_on_day_two = plan_session(items, states, events, "2026-10-02", DEFAULT_PRESET)
+    plan_on_day_two = plan_session(items, states, events, "2026-10-02", DEFAULT_PRESET)["slots"]
     assert [slot["item_id"] for slot in plan_on_day_two if slot["reason"] == "due"] == ["weak-7q2m"]
 
 
@@ -110,7 +110,7 @@ def test_suspended_items_are_never_planned() -> None:
         "device": DEVICE, "kind": "suspend", "item": "paused-7q2m",
     }  # fmt: skip
     events: list[Event] = [suspend]
-    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-01", DEFAULT_PRESET)
+    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-01", DEFAULT_PRESET)["slots"]
     assert plan == [{"item_id": "kept-7q2m", "reason": "new"}]
 
 
@@ -123,11 +123,11 @@ def test_one_budget_caps_reviews_and_shrinks_new_intake() -> None:
     # Budget 7, cost 2: 4 reviews leave 3, which buys one new item.
     preset = DEFAULT_PRESET.copy()
     preset["session_budget"], preset["new_item_cost"] = 7, 2
-    plan = plan_session(items, states, events, "2026-10-01", preset)
+    plan = plan_session(items, states, events, "2026-10-01", preset)["slots"]
     assert [slot["reason"] for slot in plan] == ["due", "due", "due", "due", "new"]
     # Budget 3: the backlog is capped and no new item enters.
     preset["session_budget"] = 3
-    plan = plan_session(items, states, events, "2026-10-01", preset)
+    plan = plan_session(items, states, events, "2026-10-01", preset)["slots"]
     assert [slot["reason"] for slot in plan] == ["due", "due", "due"]
 
 
@@ -141,11 +141,15 @@ def test_items_introduced_today_use_up_the_daily_allowance() -> None:
     ]
     preset = DEFAULT_PRESET.copy()
     preset["new_per_day"] = 3
-    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-01", preset)
+    session_plan = plan_session(items, fold_events(events)["items"], events, "2026-10-01", preset)
     # 3 per day, 2 introduced: one more, and never the ungraded one again.
-    assert plan == [{"item_id": "new2-7q2m", "reason": "new"}]
+    assert session_plan["slots"] == [{"item_id": "new2-7q2m", "reason": "new"}]
+    # The facts the start screen gives as the reason (D59): 2 started today,
+    # 1 left of the 3, room for 20 in the budget, 3 more waiting.
+    assert (session_plan["introduced_today"], session_plan["new_left_today"]) == (2, 1)
+    assert (session_plan["new_room_in_budget"], session_plan["new_waiting"]) == (20, 3)
     # The next day the ungraded item is new again; the graded one is not.
-    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-02", preset)
+    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-02", preset)["slots"]
     assert [slot["item_id"] for slot in plan if slot["reason"] == "new"] == ["new1-7q2m", "new2-7q2m", "new3-7q2m"]
 
 
@@ -162,7 +166,7 @@ def test_new_items_follow_capture_order_between_files_and_line_order_within() ->
         stamped(2, START + timedelta(days=1), "b2-7q2m"),
         stamped(3, START + timedelta(days=1, hours=1), "b1-7q2m"),
     ]
-    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-05", DEFAULT_PRESET)
+    plan = plan_session(items, fold_events(events)["items"], events, "2026-10-05", DEFAULT_PRESET)["slots"]
     assert [slot["item_id"] for slot in plan] == ["b1-7q2m", "b2-7q2m", "a1-7q2m", "a2-7q2m", "byhand-7q2m"]
 
 
