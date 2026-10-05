@@ -1576,7 +1576,7 @@ the person on 2026-10-05, from going through the commands one by one.
   ask for; the help and the empty states are where a first-time person
   already is); dropping stdin for a file argument (6: friendlier, but it
   changes D29's default deck, the items' citekey, and nvim's capture uses
-  stdin; open for thread 4).
+  stdin; open for thread 4b).
   Trade-off: longer help; a search that matches several items needs more
   words or an id.
 
@@ -1610,7 +1610,7 @@ all", after the first day on the real data root).
   for long drills (5: Enter already confirms; the length beside it is
   the missing fact); a configurable preset now (6: the right fix for "can
   I add more for tomorrow", but it is a decision about where settings
-  live, for thread 4; `rep drill DECK --count N` covers it this week).
+  live, for thread 4b; `rep drill DECK --count N` covers it this week).
   Trade-off: the start screen grows by three lines; the long-drill line
   estimates at 10 seconds an answer.
 
@@ -2103,3 +2103,10 @@ refusal       a command declines, returns its input and writes nothing
             D57 (the code tour). Section 9 gains languages, multimodal,
             the drill/ question and run_command's size. M3 closes here;
             KICKOFF.md starts thread 4 after the use week.
+2026-10-05  After the person's first day on ~/learning (on 266cbfe),
+            "peruse and address all", approved by the person: D58 (every
+            command explains itself), D59 (a session's screens give the
+            reason for every number), D60 (status gives the clock and the
+            day's plan; where gives each place's purpose), D61 (the week
+            report knows its week and is a form). KICKOFF.md now plans
+            two threads: 4a for fixes during the week, 4b at its end.

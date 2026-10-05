@@ -55,16 +55,24 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             634f962  session: every screen states what it depends on
             7d6e878  docs: Decks, the body form, R5
                      (the person's trial session ran here, 2026-10-04)
-            0038     add, lint: the same question twice
-            0039     cli: `rep status`
-            0040     session: explain retests, offer the sheet again for ?
-            0041     run log: the program measures itself
-            0042     week: notes, the body form, the report; helpers
-            0043     tools: the code tour
-            0044     docs: close M3, kickoff for thread 4
+            70b5f7b  add, lint: the same question twice
+            c0adfc9  cli: `rep status`
+            621aabd  session: explain retests, offer the sheet again for ?
+            4d2ad66  run log: the program measures itself
+            b66645f  week: notes, the body form, the report; helpers
+            ef77049  tools: the code tour
+            266cbfe  docs: close M3, kickoff for thread 4
+                     (the person's first day on ~/learning, 2026-10-05,
+                     then its feedback, in the same thread)
+            0045     cli: every command explains itself before it acts
+            0046     session: every number on the screen comes with its reason
+            0047     status, where: the clock, the day's plan, each place
+            0048     week report: the week it is, and a form
+            0049     notes, body, screen: how to move, what a screen leaks
+            0050     docs: the last round before the week
                      (patch numbers stand for SHAs until reported)
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
-            Thread 4 starts from the commit of 0044 (KICKOFF.md).
+            Thread 4a starts from the commit of 0050 (KICKOFF.md).
 
 ## Build state
 
@@ -82,7 +90,7 @@ BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
 
 ## Baseline
 
-BASELINE_TOTAL      300 passed (with nvim on PATH; without it, 296 passed, 4 skipped)
+BASELINE_TOTAL      304 passed (with nvim on PATH; without it, 300 passed, 4 skipped)
 BASELINE_BREAKDOWN  tests/test_cli.py            2
                     tests/test_code_tour.py      2
                     tests/test_events.py        60
@@ -93,13 +101,13 @@ BASELINE_BREAKDOWN  tests/test_cli.py            2
                     tests/test_run_log.py        5
                     tests/test_session.py       25
                     tests/test_shell.py          3
-                    tests/test_smoke.py         37
+                    tests/test_smoke.py         40
                     tests/test_storage.py       15
                     tests/test_traceability.py   1
-                    tests/test_week_report.py    2
+                    tests/test_week_report.py    3
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings (src, tests, tools)
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
-                    uv run pytest | tail -1      (prints "300 passed in ...")
+                    uv run pytest | tail -1      (prints "304 passed in ...")
                     uv run pyright | tail -1
                     uv tool install --editable .   (puts `rep` on PATH)
                     pyproject.toml already adds -q; a second -q hides the
@@ -217,13 +225,19 @@ Each code commit changes the markers of the decisions it enforces from
 | 70d1693 | cli: `rep drill [DECK] [--tag] [--count]` | D50 |
 | 634f962 | session: every screen states what it depends on | D51 |
 | 7d6e878 | docs: CONVENTIONS Decks section, `attempt:` retired in prose; PLAN R5 and the body form | - |
-| 0038 | add refuses a question already in the library; lint warns on copies | D52 |
-| 0039 | cli: `rep status` | D53 |
-| 0040 | session: retest reasons, the sheet offered again for ?, next steps | D54 |
-| 0041 | run log (runs.jsonl), stdlib only, copyable | D55 |
-| 0042 | shell and nvim helpers, templates, tools/week_report.py | D56 |
-| 0043 | tools/code_tour.py | D57 |
-| 0044 | docs: close M3, KICKOFF.md for thread 4 | - |
+| 70b5f7b | add refuses a question already in the library; lint warns on copies | D52 |
+| c0adfc9 | cli: `rep status` | D53 |
+| 621aabd | session: retest reasons, the sheet offered again for ?, next steps | D54 |
+| 4d2ad66 | run log (runs.jsonl), stdlib only, copyable | D55 |
+| b66645f | shell and nvim helpers, templates, tools/week_report.py | D56 |
+| ef77049 | tools/code_tour.py | D57 |
+| 266cbfe | docs: close M3, KICKOFF.md for thread 4 | - |
+| 0045 | cli: help in loop order; stamp and add explain instead of waiting; why and unsuspend by question words; `rep today` | D58 |
+| 0046 | session: plan_session returns its new-item terms; the screens give the reason for each number | D59 |
+| 0047 | status: clock, day left, the session and the new allowance; where: each place's purpose, helper paths | D60 |
+| 0048 | week report: the week from the first practice day, --partial, a form opened in nvim | D61 |
+| 0049 | templates and rep-screen: how to move in nvim; the scrollback warning | - |
+| 0050 | docs: STATUS, KICKOFF for threads 4a and 4b | - |
 
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text
 before any normalization (D34); the fingerprint covers the question,
