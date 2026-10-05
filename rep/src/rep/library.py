@@ -832,6 +832,9 @@ def check_library_files(files: list[tuple[str, str]]) -> LibraryCheck:
     written_item_ids: set[str] = set()
     # first location of each id, for I1
     id_first_locations: dict[str, tuple[str, int]] = {}
+    # PLAN.md D52: first location of each question, spaces and case folded,
+    # so an item added twice is seen.
+    question_first_locations: dict[str, tuple[str, int]] = {}
     item_count = 0
     for path, text in files:
         for source_item in parse_library_text(text):
@@ -871,6 +874,18 @@ def check_library_files(files: list[tuple[str, str]]) -> LibraryCheck:
                             ),
                         }
                     )
+            # A warning, not an error: two items may ask the same thing on
+            # purpose (two sources); both stay in sessions.
+            question_key = " ".join(source_item["question"].split()).casefold()
+            question_first_location = question_first_locations.get(question_key)
+            if question_first_location is None:
+                question_first_locations[question_key] = (path, source_item["line"])
+            elif question_key != "":
+                problems.append(
+                    {"path": path, "line": source_item["line"], "column": 1, "severity": "warning",
+                     "message": f"same question as {question_first_location[0]}:{question_first_location[1]}; "
+                                "added twice? delete one (or reword if both are meant)"}
+                )  # fmt: skip
             # D22: an error excludes the item, and only the item (I10).
             if checked_item is not None and not id_is_a_later_copy:
                 located_items.append({"path": path, "item": checked_item})

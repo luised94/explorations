@@ -809,3 +809,26 @@ def test_nothing_due_says_when_and_offers_a_drill(tmp_path: Path) -> None:
     assert exit_code == 0, output
     assert re.search(r"Next due: [12] on 2099-01-0\d\.", output), output
     assert "To practise anyway: rep drill DECK   (decks: a (2))" in output
+
+
+# --- the same items added twice (PLAN.md D52) ----------------------------------
+
+
+def test_adding_the_same_file_twice_is_refused_and_lint_names_duplicates(tmp_path: Path) -> None:
+    # The person's trial root grew to five copies of each deck by re-running
+    # one command block; the second add must change nothing.
+    (tmp_path / "learning").mkdir()
+    deck = b"### Q: Capital of Chad?\nA: N'Djamena\n\n### Q: Capital of Peru?\nA: Lima\n"
+    assert run_rep(["add", "--stdin", "--to", "capitals"], tmp_path, deck).returncode == 0
+    before = library_snapshot(tmp_path)
+    # Spacing and case do not make a question new.
+    second = run_rep(["add", "--stdin", "--to", "capitals"], tmp_path, deck.replace(b"of Chad", b"of  chad").replace(b"Peru?", b"PERU?  "))
+    assert second.returncode == 1
+    assert b"error: this question is already in the library at library/capitals.md:1;" in second.stderr, second.stderr
+    assert b"error: this question is already in the library at library/capitals.md:5;" in second.stderr, second.stderr
+    assert library_snapshot(tmp_path) == before
+    # Duplicates written by hand, or by an older rep: lint warns, both stay.
+    (tmp_path / "learning" / "library" / "copy.md").write_text("### Q: Capital of  Peru?\nid: copy-peru-7q2m\nA: Lima\n", encoding="utf-8")
+    lint = run_rep(["lint"], tmp_path)
+    assert lint.returncode == 0
+    assert "copy.md:1:1: warning: same question as " in lint.stdout.decode() and "capitals.md:5; added twice?" in lint.stdout.decode()

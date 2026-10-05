@@ -869,11 +869,17 @@ def main(argument_list: list[str] | None = None) -> int:
             for file_problem in library_read["problems"]:
                 print(f"rep: warning: {file_problem['path']}: {file_problem['message']}", file=sys.stderr)
             existing_item_ids: set[str] = set()
+            # PLAN.md D52: where each question already is, spaces and case
+            # folded; running the same add twice must not double a deck.
+            existing_question_locations: dict[str, str] = {}
             for library_file in library_read["files"]:
                 for source_item in parse_library_text(library_file["text"]):
                     id_field = source_item["fields"].get("id")
                     if id_field is not None:
                         existing_item_ids.add(id_field["value"])
+                    existing_question_locations.setdefault(
+                        " ".join(source_item["question"].split()).casefold(), f"library/{library_file['name']}:{source_item['line']}"
+                    )
 
             # --- stamp, then check every item as it will be written (D14) ---
             stamp_result = stamp_library_text(input_text, existing_item_ids, secrets.token_bytes)
@@ -897,6 +903,12 @@ def main(argument_list: list[str] | None = None) -> int:
                     if checked_item["id"] in existing_item_ids and checked_item["id"] not in stamp_result["stamped_item_ids"]:
                         refusals.append(
                             f"<stdin>:{checked_item['line']}:1: error: id {checked_item['id']} is already in the library"
+                        )
+                    elif " ".join(checked_item["question"].split()).casefold() in existing_question_locations:
+                        refusals.append(
+                            f"<stdin>:{checked_item['line']}:1: error: this question is already in the library at "
+                            f"{existing_question_locations[' '.join(checked_item['question'].split()).casefold()]}; "
+                            "nothing added (was this file added before?)"
                         )
                     elif checked_item["id"] in {added_item["id"] for added_item in added_items}:
                         refusals.append(

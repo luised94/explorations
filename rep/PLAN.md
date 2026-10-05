@@ -1401,6 +1401,22 @@ to hold state, interface, units, domain, format, order, sequence").
   know an answer's unit.
   Revisit: the person finding the screens noisy.
 
+D52. The same question twice is refused by add, warned by lint (M3).
+Approved by the person on 2026-10-05 (after the trial).
+  Choice: `rep add` refuses, writing nothing, an item whose question is
+  already in the library; lint warns on every later copy of a question,
+  naming the first. Questions are compared with spaces collapsed and case
+  folded.
+  Reason: the trial root grew to five copies of each deck (1,255 items
+  from 251) because one command block, re-run, added the decks again;
+  nothing said so. Refusing makes re-running an add harmless.
+  Rejected: refusing in lint, or excluding duplicates from sessions (5:
+  two sources may ask the same thing on purpose; a warning keeps both);
+  comparing answers too (4: the same question with a corrected answer is
+  still a duplicate).
+  Trade-off: an item reworded only in case or spacing is refused; reword
+  it, or add it by hand and accept lint's warning.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
