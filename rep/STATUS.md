@@ -64,15 +64,18 @@ COMMITS     c7a57f3856c7c5772b5113b1c67a81dca6160b47  docs: plan of record
             266cbfe  docs: close M3, kickoff for thread 4
                      (the person's first day on ~/learning, 2026-10-05,
                      then its feedback, in the same thread)
-            0045     cli: every command explains itself before it acts
-            0046     session: every number on the screen comes with its reason
-            0047     status, where: the clock, the day's plan, each place
-            0048     week report: the week it is, and a form
-            0049     notes, body, screen: how to move, what a screen leaks
-            0050     docs: the last round before the week
+            5ae78cb  cli: every command explains itself before it acts
+            9c98366  session: every number on the screen comes with its reason
+            6ba9c0f  status, where: the clock, the day's plan, each place
+            fe6c609  week report: the week it is, and a form
+            eff5a0b  notes, body, screen: how to move, what a screen leaks
+            16df41e  docs: the last round before the week
+            0051     meta: faq (outside rep/: meta/ is new)
+            0052     rep: FAQ.md
+            0053     docs: handoff to threads 4a and 4b; meta/THREADS.md
                      (patch numbers stand for SHAs until reported)
 BASE_SHA    thread 3 started from cf5e5f2c1d839f5642dc2485945ff37f9f1e526e.
-            Thread 4a starts from the commit of 0050 (KICKOFF.md).
+            Thread 4a starts from the commit of 0053 (KICKOFF.md).
 
 ## Build state
 
@@ -106,6 +109,7 @@ BASELINE_BREAKDOWN  tests/test_cli.py            2
                     tests/test_traceability.py   1
                     tests/test_week_report.py    3
 TYPE_CHECK          pyright strict: 0 errors, 0 warnings (src, tests, tools)
+META_CHECK          bash meta/tests/test_faq.sh   (prints "ok: 23 checks")
 SETUP_COMMANDS      cd rep && uv lock --check && uv sync
                     uv run pytest | tail -1      (prints "304 passed in ...")
                     uv run pyright | tail -1
@@ -232,12 +236,15 @@ Each code commit changes the markers of the decisions it enforces from
 | b66645f | shell and nvim helpers, templates, tools/week_report.py | D56 |
 | ef77049 | tools/code_tour.py | D57 |
 | 266cbfe | docs: close M3, KICKOFF.md for thread 4 | - |
-| 0045 | cli: help in loop order; stamp and add explain instead of waiting; why and unsuspend by question words; `rep today` | D58 |
-| 0046 | session: plan_session returns its new-item terms; the screens give the reason for each number | D59 |
-| 0047 | status: clock, day left, the session and the new allowance; where: each place's purpose, helper paths | D60 |
-| 0048 | week report: the week from the first practice day, --partial, a form opened in nvim | D61 |
-| 0049 | templates and rep-screen: how to move in nvim; the scrollback warning | - |
-| 0050 | docs: STATUS, KICKOFF for threads 4a and 4b | - |
+| 5ae78cb | cli: help in loop order; stamp and add explain instead of waiting; why and unsuspend by question words; `rep today` | D58 |
+| 9c98366 | session: plan_session returns its new-item terms; the screens give the reason for each number | D59 |
+| 6ba9c0f | status: clock, day left, the session and the new allowance; where: each place's purpose, helper paths | D60 |
+| fe6c609 | week report: the week from the first practice day, --partial, a form opened in nvim | D61 |
+| eff5a0b | templates and rep-screen: how to move in nvim; the scrollback warning | - |
+| 16df41e | docs: STATUS, KICKOFF for threads 4a and 4b | - |
+| 0051 | meta/: faq (shell, nvim fold view, template, test); outside rep/ | - |
+| 0052 | rep/FAQ.md: the first day's questions, answered by their rules | - |
+| 0053 | docs: KICKOFF for 4a (rolling) and 4b (strategy); meta/THREADS.md; packs include meta/ | - |
 
 Binding on M3 (D20, critical): `typed_answer` stores the raw typed text
 before any normalization (D34); the fingerprint covers the question,

@@ -14,6 +14,7 @@ project (rep's `rep-week`, for example).
 | nvim/faq.lua | the folded, questions-only view `faq` opens |
 | templates/FAQ.md | a new FAQ.md starts from this; its header is the format |
 | tests/test_faq.sh | `bash meta/tests/test_faq.sh` prints "ok: N checks" |
+| THREADS.md | the kinds of chat thread, and how to start and hand off each |
 
 Load the functions as rep's are loaded: source the file, or symlink it
 into the directory your bashrc sources.

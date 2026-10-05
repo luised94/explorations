@@ -13,9 +13,10 @@ has settled on, so a new thread does not rediscover them.
 ## 1. Setting up the sandbox (clone-and-verify)
 --------------------------------------------------------------------------------
 
-- The packs are tars of rep/ and of pyutils/ (rep's install needs the
-  sibling, PLAN.md D46) at the commit the thread starts from; section 6
-  has how they are made. They arrive without .git. Make a local git
+- The packs are tars of rep/, pyutils/ (rep's install needs the
+  sibling, PLAN.md D46) and meta/ (the repository-level tools, since
+  0051) at the commit the thread starts from; section 6 has how they
+  are made. They arrive without .git. Make a local git
   repository whose first commit is exactly the packs (nothing added),
   so every patch can be built by diffing two real commits, with paths
   rep/... and pyutils/... as in the person's repository. Keep uv.lock
@@ -279,12 +280,11 @@ These add to the person's code style and to PLAN.md D14.
   a commit boundary after about six commits, or sooner when the person
   finds the chat long; tune the number from experience. The handoff:
   1. Once the last commit is verified and committed, the person packs
-     both directories at HEAD, each under its own name (one name for
-     both makes the second archive overwrite the first):
+     the three directories at HEAD, each under its own name (one name
+     for all makes each archive overwrite the last):
        H=$(git rev-parse --short HEAD)
-       git archive --format=tar.gz -o "$D/pack-$H-rep.tar.gz" HEAD rep/
-       git archive --format=tar.gz -o "$D/pack-$H-pyutils.tar.gz" HEAD pyutils/
-  2. The new chat gets both packs, the old chat's last response and
+       for part in rep pyutils meta; do git archive --format=tar.gz -o "$D/pack-$H-$part.tar.gz" HEAD "$part/"; done
+  2. The new chat gets the packs, the old chat's last response and
      the output of its commands, and says which mode it opens in:
      "implement mode" to continue an agreed series; without it,
      design mode applies (the person's working defaults).
@@ -296,6 +296,8 @@ These add to the person's code style and to PLAN.md D14.
   At a milestone's close the thread also writes KICKOFF.md: the person's
   routine until the next thread, the next thread's role and first steps,
   its open questions, and predictions the coming data will test.
+  ../meta/THREADS.md has the kinds of thread (build, continuation,
+  rolling, strategy, spike, review) and how each is started.
 
 --------------------------------------------------------------------------------
 ## 7. Working vocabulary

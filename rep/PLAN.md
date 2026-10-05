@@ -2110,3 +2110,9 @@ refusal       a command declines, returns its input and writes nothing
             day's plan; where gives each place's purpose), D61 (the week
             report knows its week and is a form). KICKOFF.md now plans
             two threads: 4a for fixes during the week, 4b at its end.
+2026-10-05  At the person's request, outside rep's decisions: meta/ at the
+            repository root for tools that know no project (faq first),
+            rep/FAQ.md for questions answered by their rules, and
+            meta/THREADS.md for the kinds of thread. Thread 4 becomes 4a
+            (rolling fixes during the week, with a continuation if long)
+            and 4b (strategy, on 2026-10-11 or later).

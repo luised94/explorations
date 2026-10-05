@@ -2,96 +2,144 @@
 
 date: 2026-10-05
 written at the close of thread 3 (M3), revised after the person's first
-day on ~/learning (0045-0050). Read with STATUS.md, PLAN.md (sections 8,
-9, 12) and BUILDING.md. Precedence as in BUILDING.md.
+day on ~/learning (0045-0053). Read with STATUS.md, PLAN.md (sections 8,
+9, 12), BUILDING.md and ../meta/THREADS.md (the kinds of thread and how
+to start one). Precedence as in BUILDING.md.
 
-Two threads, not one: 4a runs during the week and fixes what the week
-turns up; 4b opens at the week's end, reads the report, and decides
-whether rep continues as it is or pivots. Changes made in 4a stay
-measurable: every session records the hash of the code that ran it
-(rep_source, D49) and every run is in the run log (D55), so the report
-can split the week by code version.
+Two kinds of thread follow, in this order:
+- 4a, rolling: fixes while the person uses rep, from now until the week
+  ends. If 4a grows long, a continuation (4a-2) picks up from a pack.
+- 4b, strategy: on 2026-10-11 or later, reads the week and decides
+  whether rep continues as built, changes course, or stops.
+Fixes made in 4a stay measurable: every session records the hash of the
+code that ran it (rep_source, D49), and every run is in the run log
+(D55), so 4b can split the week by code version.
 
 ## 1. The week, for the person
 
-The use week runs on the real data root, ~/learning. Week 1 starts on the
-first day practised (2026-10-05) and ends seven days later. Each day:
-
-- Morning: `body`. Fill in last night; add drinks and coffee as they happen.
-- Once a day: `rep`. It serves what is due and up to 10 new items, and says
-  why that many (drills count toward the 10).
+Week 1 runs 2026-10-05 to 2026-10-11 (the first day practised, D61).
+Each day:
+- Morning: `body`. Fill in last night; add drinks and coffee as they
+  happen. `/: $` jumps to the next empty field.
+- Once a day: `rep`. It serves what is due and up to 10 new items, and
+  says why that many.
 - Whenever wanted: `rep drill permit --count 20` (or `--tag jol`).
 - Anything that bugs, helps or confuses you: `rep-notes`, one line.
+- A question about how rep behaves: `faq WORDS` first (rep/FAQ.md); if
+  it is not there, `faq --add "the question"` and leave the answer
+  blank, or put it in the notes. 4a answers open questions.
 - A screen worth showing: `rep-screen`; read the file, then attach it.
-- `rep status` for the time left in the day, what `rep` would do now, and
-  each deck's numbers; `rep where` for where everything lives.
+- `rep status`: time left today, what `rep` would do now, each deck.
+- `rep where`: every place and helper, with paths.
 
-During the week: open thread 4a with this file and the line "Thread 4a:
-fixes during the use week. implement mode." Paste notes, screens or
-errors as they come.
+## 2. Thread 4a: rolling fixes
 
-At the end of the week, in this order:
-1. `rep-week`: writes reports/week-<first day>.md and opens it in nvim;
-   answer under each heading, then `:wq`. (Before the last day it says
-   which day it is; `rep-week --partial` reports the days so far.)
-2. `rep-tour`: a tour of the code; answer under each stop, then `:wq`.
-3. Pack both directories (BUILDING.md section 6), then open thread 4b
-   with the packs, the week report, the code tour, any screens, and this
-   line: "Thread 4b kickoff: design mode."
+Start it now, or at the first thing worth fixing.
 
-## 2. Thread 4a: role and routine
+Attach: the three packs (../meta/THREADS.md section 3 has the command),
+this thread's last response and the output of its commands.
 
-Role: IMPL, on fixes only. A fix is a bug, or friction the person
-reports, whose remedy does not change a decision; anything that does is
-written down for 4b instead, with the note that raised it.
+First message, filled in:
 
-1. Clone-and-verify (BUILDING.md section 1): the packs' commit ids, the
-   tests file by file against STATUS.md's breakdown (304 with nvim).
-2. Per report: reproduce, then one commit per fix, each green, with a
-   test that fails without it (planted-bug check as in thread 3).
-3. Each commit says in its message which note or screen it answers, so
-   4b can line fixes up against the week's data.
-4. Deferred list, for 4b unless the week shows one is blocking:
-   - generic dev helpers (rep-screen, the code tour) at the explorations
-     level, with a convention for finding the current project;
-   - emphasis in questions (bold or colour) through pyutils
-     terminal_output, and a display that scales to many decks;
-   - the code tour by smaller units (tree-sitter, Lua and shell);
-   - presets the person can change (new items a day, session length),
-     and an audit of the constants left in code;
-   - the parser organized as data, and run_command's size;
-   - `rep add FILE`; languages and keyboards; multimodal; drill/.
+    Thread 4a: rolling fixes during the use week. implement mode.
+    Read rep/KICKOFF.md section 2 first.
+    HEAD: <git log --oneline -1>
+    Today: <date>, day <N> of 7
+    Since the last thread: <what happened>
+    Context: <anything the files cannot know>
+    Asks: <fixes wanted, in order; paste notes, screens, errors below>
+    Not now: <what to leave alone>
 
-## 3. Thread 4b: role and first steps
+The thread's routine:
+1. Clone-and-verify (BUILDING.md section 1): the packs' commit ids
+   against the HEAD given, rep's tests file by file against STATUS.md
+   (304 with nvim), and `bash meta/tests/test_faq.sh` (ok: 23 checks).
+2. Per report: reproduce, then one commit per fix, green, with a test
+   that fails without it (a planted bug, BUILDING.md section 3).
+3. Each commit message names the note or screen it answers, so 4b can
+   line fixes up against the week's data.
+4. A fix that would change a recorded decision is not made: it goes to
+   section 4 below, with the note that raised it.
+5. Open FAQ questions (`faq --open` in rep/) get answers, each pointing
+   at its rule and a command that shows the data (meta/README.md).
+6. At about six commits, or when the chat is long: pack, and open 4a-2
+   with the same first message, "continuation" in place of "rolling".
 
-Role: DESIGN, until a plan for the next milestone is agreed and locked
-(the person's working defaults); then IMPL.
+Commands the person will want during 4a (each from the explorations
+root, D as in THREADS.md):
+- apply a delivered series: the COMMANDS block of each reply
+  (BUILDING.md section 6 has the shape)
+- the state for a report: `rep status; rep where; tail -5
+  ~/.local/state/rep/runs.jsonl`
+- a week report so far: `rep-week --partial`
 
+## 3. Thread 4b: strategy, at the week's end
+
+On 2026-10-11 or later, in this order:
+1. `rep-week`: writes reports/week-2026-10-05.md and opens it in nvim;
+   answer under each heading, then `:wq`.
+2. `rep-tour`: answer under each stop, then `:wq`.
+3. Pack (THREADS.md section 3) and open 4b with the packs, the week
+   report, the code tour, notes.md, any screens, and:
+
+    Thread 4b: strategy after use week 1. design mode.
+    Read rep/KICKOFF.md section 3 first.
+    HEAD: <git log --oneline -1>
+    Permit test: <date, or not booked>
+    Time I want to give this next month: <hours a week>
+    What I want from it: <in your words>
+    Context: <anything the files cannot know>
+
+The thread's agenda:
 1. Clone-and-verify, as in 4a.
-2. Read the week report before anything else. Its numbers come from
-   tools/week_report.py; do not recompute them by hand. Fill in each
-   card's Result and Decision in PLAN.md section 8.
-3. Rank everything in the report's answers, notes.md, 4a's deferred
-   list and the code tour's answers into: fixes, decisions to revisit,
-   new features.
-4. Read the code tour's Understand answers against the docstrings: a
-   wrong or empty answer marks code or comments that do not explain
-   themselves.
-5. The strategic question: continue rep as built, or pivot. Inputs: the
-   cards, the person's readiness for the permit test, how much of the
-   week rep was used without being pushed, and the open questions below.
+2. The week report first, before any view is formed. Its numbers come
+   from tools/week_report.py; do not recompute them by hand. Fill in
+   each card's Result and Decision in PLAN.md section 8, and score the
+   predictions in section 5 below.
+3. Split the numbers by code version (rep_source on session_start)
+   wherever 4a changed something that bears on them.
+4. Rank the week's answers, notes.md, FAQ entries asked during the
+   week, section 4's deferred list and the code tour's answers into:
+   fixes, decisions to revisit, new features.
+5. The strategic decision, recorded in PLAN.md as a decision with the
+   options scored. At least these options, each argued at its best:
+   - continue as built: M3b (stats, forecast) on the week's data;
+   - narrow: rep serves the permit test until it is passed, nothing else;
+   - widen: languages (the person's Spanish, other alphabets), the
+     drill/ generators, reading capture from Zotero and kbd;
+   - replace the core: a mature tool (Anki, with FSRS) for scheduling,
+     rep's ideas kept as small tools around it;
+   - stop: what the week taught, written down, and nothing more built.
+6. The kickoff for the next build thread, or the pivot's plan.
 
-## 4. Open questions for thread 4b
+Tactics for 4b, easy to forget:
+- Days not practised are data (E3): ask what happened on them before
+  explaining the days that were.
+- Day one held a 251-item drill: read E2 and E5 with and without it.
+- Count the time spent building rep this week against the time spent
+  using it; code is a liability, and the week can show which paid.
+- Separate rep's friction from the material's difficulty: a slow
+  correct answer on a long permit rule is the material, not the tool.
+- The person's goals come before the tool's roadmap: ask, then rank.
+- Write the decision's kill criteria down, so the next period can test
+  them as this week tested the predictions.
 
-- M3b (PLAN.md section 7): stats and forecast, built on the week's events.
-- The drill/ repository: port its generators as a kind of rep item, or
-  start rep over with what the week taught (PLAN.md section 9).
-- Languages: typing other alphabets, the keyboard map (section 9).
-- The session inside nvim (D47's revisit) and multimodal (section 9).
-- How rep fits the person's wider practice: reading in Zotero, kbd,
-  reflection, exercise; where capture while reading enters (E1).
-- make-it-visible (the person's draft method prompt): kept locally by the
-  person; apply it to every new screen.
+## 4. Deferred, for 4b unless the week shows one blocking
+
+Ranked by value for its cost, scored 1 to 10:
+1. Settings the person can change (new items a day, session length),
+   and an audit of the constants left in code (8).
+2. Emphasis in questions (bold, colour) through pyutils terminal_output,
+   so near-identical names (Australia, Austria) stand apart; a display
+   that scales to many decks (7).
+3. Generic tools at the repository level: rep-screen and the code tour
+   into meta/, on its project convention (6).
+4. The code tour by smaller units: tree-sitter, Lua and shell (5).
+5. The argument parser as a table of data, and run_command's size (5).
+6. `rep add FILE` (4).
+Open questions as well: languages and keyboards, multimodal, the
+session inside nvim (D47's revisit), the drill/ repository, how rep fits
+reading, exercise and reflection (rep/FAQ.md has a first answer).
 
 ## 5. Predictions at the close of thread 3
 
@@ -117,3 +165,5 @@ calibrated too.
 - Added after day one: a drill started on all 251 items on day one, so
   day one's attempts may be an outlier; compare E2 and E5 with and
   without it.
+- Added with the FAQ: fewer than 5 new questions added with `faq --add`
+  during the week; most questions arrive as notes instead.
