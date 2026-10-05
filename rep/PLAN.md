@@ -1461,6 +1461,35 @@ D51; approved by the person on 2026-10-05, after the trial.
   Trade-off: one more prompt after a sheet with ? left; the person can
   always answer n.
 
+D55. The run log: the program measures itself (M3). Approved by the
+person on 2026-10-05 ("we have to measure", after Mike Acton).
+  Choice: every run of rep appends one JSON line to
+  <state directory>/runs.jsonl: the command and arguments, the time in
+  each phase (read_library, load_events, fold, plan; read_library and
+  stamp for stamp), counts (library items, events, planned items,
+  stamped items), the duration, the exit code, the traceback when an
+  exception ended the run, the source hash (D49) and the Python version.
+  rep/src/rep/run_log.py does it and imports only the standard library
+  and nothing from rep (a test enforces it), so it can be copied into
+  another project unchanged. main() wraps the command; a failure to
+  write the log is reported on stderr and changes nothing else.
+  Reason: the events record what the person did; nothing recorded what
+  rep did: how long its phases take at the person's real sizes (D42's
+  100 ms target for stamp on save), how often each command runs, and
+  every crash with its traceback, which the person would otherwise have
+  to copy from the screen. Machine-local, beside the writer lock: it
+  describes this machine's runs and must not sync.
+  Rejected: structlog, OpenTelemetry or a hosted error tracker (5: each
+  is code or a service for what one appended line does; the person
+  offered two or three dependencies for this task, and none earns its
+  place at this size); logging inside the events (3: one source per
+  fact, D1; the events are the person's history, not the program's).
+  Trade-off: about 2 ms per run (stamp on save: median 59 ms without,
+  61 ms with, 30 runs each); a run that fails before the state directory
+  is known (bad setup, bad arguments) is not logged; argparse already
+  shows those.
+  Revisit: the week's run log showing a phase worth optimizing.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

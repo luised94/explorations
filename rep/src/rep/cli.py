@@ -32,6 +32,7 @@ INVARIANTS
 
 import argparse
 import codecs
+import traceback
 from collections import Counter
 import hashlib
 import os
@@ -46,7 +47,7 @@ import termios
 import time
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from rep.events import (
     EVENT_FORMAT_VERSION,
@@ -77,6 +78,7 @@ from rep.library import (
     plan_library_append,
     stamp_library_text,
 )
+from rep import run_log
 from rep.machine import MachineContextError, resolve_machine_context
 from rep.memory_model import AGAIN, DEFAULT_PARAMETERS, GOOD, retrievability
 from rep.session import (
@@ -205,10 +207,44 @@ def grade_on_a_sheet(entries: list[SheetEntry], title: str, sheet_path: Path, de
 
 
 def main(argument_list: list[str] | None = None) -> int:
-    """Entry point for the `rep` console script.
+    """Entry point for the `rep` console script: runs the command and logs
+    the run (PLAN.md D55), however it ends.
 
     PRE   argument_list is None (use sys.argv) or the arguments after "rep".
-    POST  returns an exit code from the table in the module docstring.
+    POST  returns an exit code from the table in the module docstring; one
+          line in the run log, once the state directory is known.
+    """
+    arguments = sys.argv[1:] if argument_list is None else argument_list
+    run_record = run_log.start_run("rep", arguments)
+    # PLAN.md D49, D55: exactly which code ran, with no version number
+    # anyone must remember to bump (1 ms, measured).
+    source_digest = hashlib.sha256()
+    for source_path in sorted(Path(__file__).parent.glob("*.py")):
+        source_digest.update(source_path.name.encode() + b"\0" + source_path.read_bytes())
+    run_record["source"] = source_digest.hexdigest()[:12]
+    exit_code: int | None = None
+    error_text: str | None = None
+    try:
+        exit_code = run_command(arguments, run_record)
+        return exit_code
+    except SystemExit as system_exit:
+        # argparse ends --help and bad arguments this way.
+        exit_code = system_exit.code if isinstance(system_exit.code, int) else (0 if system_exit.code is None else 2)
+        raise
+    except BaseException:
+        error_text = traceback.format_exc()
+        raise
+    finally:
+        run_log.finish_run(run_record, run_record.get("_log_path"), exit_code, error_text)
+
+
+def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
+    """One command, from its arguments to its exit code (main logs it).
+
+    PRE   argument_list holds the arguments after "rep"; run_record came
+          from run_log.start_run.
+    POST  returns an exit code from the table in the module docstring;
+          run_record holds the command, its phases and counts.
     """
     argument_parser = argparse.ArgumentParser(
         prog="rep",
@@ -279,6 +315,7 @@ def main(argument_list: list[str] | None = None) -> int:
     )
 
     parsed_arguments = argument_parser.parse_args(argument_list)
+    run_record["command"] = "session" if parsed_arguments.command is None else parsed_arguments.command
     version_requested: bool = parsed_arguments.version
     if version_requested:
         # Before the machine context, as action="version" was: the version
@@ -299,6 +336,8 @@ def main(argument_list: list[str] | None = None) -> int:
     except MachineContextError as setup_error:
         print(f"rep: {setup_error}", file=sys.stderr)
         return 2
+    # PLAN.md D55: machine-local, beside the writer lock; never synced.
+    run_record["_log_path"] = machine_context["state_directory"] / "runs.jsonl"
     for warning in machine_context["warnings"]:
         print(f"rep: warning: {warning}", file=sys.stderr)
 
@@ -342,14 +381,17 @@ def main(argument_list: list[str] | None = None) -> int:
         preset = DEFAULT_PRESET
         device_id = machine_context["device_id"]
         state_directory = machine_context["state_directory"]
-        library_read = read_library_files(data_root / "library")
-        library_check = check_library_files(
-            [(library_file["path"], library_file["text"]) for library_file in library_read["files"]]
-        )
+        with run_log.phase(run_record, "read_library"):
+            library_read = read_library_files(data_root / "library")
+            library_check = check_library_files(
+                [(library_file["path"], library_file["text"]) for library_file in library_read["files"]]
+            )
         located_items_by_id: dict[str, LocatedItem] = {
             located_item["item"]["id"]: located_item for located_item in library_check["located_items"]
         }
-        events_load = load_events(data_root / "events")
+        with run_log.phase(run_record, "load_events"):
+            events_load = load_events(data_root / "events")
+        run_record["counts"].update({"library_items": library_check["item_count"], "events": len(events_load["events"])})
         excluded_item_count = library_check["item_count"] - len(library_check["located_items"])
         if excluded_item_count > 0:
             print(f"rep: {excluded_item_count} items are left out by errors; `rep lint` lists them", file=sys.stderr)
@@ -510,7 +552,8 @@ def main(argument_list: list[str] | None = None) -> int:
         # mode as well: its Esc cannot be both the mode switch and the start
         # of a key sequence (measured), so the session shows the vi keys.
         readline.parse_and_bind("bind -v" if "libedit" in (readline.__doc__ or "") else "set editing-mode vi")
-        fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
+        with run_log.phase(run_record, "fold"):
+            fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
         file_problem_count = len(library_read["problems"]) + len(events_load["problems"]) + len(fold_result["problems"])
         if file_problem_count > 0:
             print(f"rep: {file_problem_count} problems in library or event files; `rep lint` lists them", file=sys.stderr)
@@ -592,7 +635,9 @@ def main(argument_list: list[str] | None = None) -> int:
                 print("rep: a drill needs a terminal on standard input and output", file=sys.stderr)
                 return 2
         else:
-            plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+            with run_log.phase(run_record, "plan"):
+                plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+        run_record["counts"]["planned_items"] = len(plan)
         if plan == []:
             # PLAN.md D51: say what comes next and what can be done now,
             # instead of leaving the person to remember drills and deck names.
@@ -660,9 +705,6 @@ def main(argument_list: list[str] | None = None) -> int:
         except (EOFError, KeyboardInterrupt):
             print()
             return 0
-        source_digest = hashlib.sha256()
-        for source_path in sorted(Path(__file__).parent.glob("*.py")):
-            source_digest.update(source_path.name.encode() + b"\0" + source_path.read_bytes())
         session_start: SessionStartEvent = {
             "format_version": EVENT_FORMAT_VERSION,
             "id": session_id,
@@ -683,7 +725,7 @@ def main(argument_list: list[str] | None = None) -> int:
             # code ran, with no version number anyone must remember to bump.
             "utc_offset": datetime.now(UTC).astimezone().isoformat(timespec="seconds")[-6:],
             "plan": [{"item": slot["item_id"], "reason": slot["reason"]} for slot in plan],
-            "rep_source": source_digest.hexdigest()[:12],
+            "rep_source": run_record["source"],
         }
         if drill_selection != "":
             session_start["selection"] = drill_selection
@@ -895,7 +937,8 @@ def main(argument_list: list[str] | None = None) -> int:
         # I1 is library-wide, so new ids must avoid every id in every file.
         # Problems in other files are lint's to report; their ids still count.
         existing_item_ids: set[str] = set()
-        library_read = read_library_files(data_root / "library")
+        with run_log.phase(run_record, "read_library"):
+            library_read = read_library_files(data_root / "library")
         for file_problem in library_read["problems"]:
             print(f"rep: warning: {file_problem['path']}: {file_problem['message']}", file=sys.stderr)
         for library_file in library_read["files"]:
@@ -904,7 +947,9 @@ def main(argument_list: list[str] | None = None) -> int:
                 if id_field is not None:
                     existing_item_ids.add(id_field["value"])
 
-        stamp_result = stamp_library_text(input_text, existing_item_ids, secrets.token_bytes)
+        with run_log.phase(run_record, "stamp"):
+            stamp_result = stamp_library_text(input_text, existing_item_ids, secrets.token_bytes)
+        run_record["counts"]["stamped_items"] = len(stamp_result["stamped_item_ids"])
         if stamp_result["problems"] != []:
             sys.stdout.buffer.write(input_bytes)
             for problem in stamp_result["problems"]:
