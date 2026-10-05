@@ -1,6 +1,6 @@
 # rep: how a build thread works
 
-date: 2026-10-02
+date: 2026-10-05
 status: practice, written down after thread 2 (M2), extended in thread 3. Read with PLAN.md,
 CONVENTIONS.md and STATUS.md at the start of every build thread.
 precedence: the person's working defaults (preferences) come first, then
@@ -293,6 +293,9 @@ These add to the person's code style and to PLAN.md D14.
      Its first commit records in STATUS.md where the new chat began.
   What the old chat knew and the files do not say is lost, so it goes
   into these files before the handoff, as at any thread's end.
+  At a milestone's close the thread also writes KICKOFF.md: the person's
+  routine until the next thread, the next thread's role and first steps,
+  its open questions, and predictions the coming data will test.
 
 --------------------------------------------------------------------------------
 ## 7. Working vocabulary

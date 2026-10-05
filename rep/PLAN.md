@@ -1763,7 +1763,25 @@ shell cue exists (target under 100 ms, D42).
   generation does.
 - Default preset numbers: set in M3 (D36), tuned by the use week. Leech
   threshold: M3b, with lapses counted as D38 says.
-- The drill/ repo: attach in the session after M3.
+- The drill/ repo: attach in thread 4. The question is whether its
+  generated exercises (arithmetic and the like) become a kind of rep item
+  with `rep drill --count` as the control, or whether rep starts over with
+  what the use week teaches; the person asked for both to be weighed.
+- Languages (the person, 2026-10-05; the person speaks Spanish). rep
+  should serve language learning. Open: typing in another alphabet
+  (Russian, Greek) without switching the system keyboard, and showing
+  the alphabet laid over the keyboard. First look: nvim ships keymaps
+  (`:set keymap=russian-jcukenwin`, `greek_utf-8`; Ctrl-^ toggles), which
+  serve answers written through Esc v with no code; the prompt itself
+  (libedit) has no keymaps; a keyboard map could be printed on the card
+  (D51's rule). Switching the Windows input method from WSL is outside
+  what a terminal program controls.
+- Multimodal (deferred by the person): images in questions (Windows
+  Terminal draws sixel), audio prompts, spoken answers. Belongs with the
+  session inside nvim (D47's revisit), after the use week.
+- run_command (cli.py) is 996 lines enforcing 26 decisions (the first
+  code tour, D57). D13 chose one function for one readable control
+  flow; the person's tour answers decide whether it still is.
 
 --------------------------------------------------------------------------------
 ## 10. Rejected, so no thread proposes them again
@@ -1970,3 +1988,12 @@ refusal       a command declines, returns its input and writes nothing
             them: vi mode on uv's CPython and its arrow-key limit;
             same-day Goods leave stability unchanged (section 3); --tag
             permit would select 7 of 53 permit items.
+2026-10-05  After the person's trial session (2026-10-04, on 0031-0037)
+            and their notes, approved by the person: D52 (the same
+            question twice: add refuses, lint warns), D53 (`rep status`),
+            D54 (a session explains its rules where they act), D55 (the
+            run log), D56 (the week's instruments: notes, body form,
+            report, shell and nvim helpers outside the person's config),
+            D57 (the code tour). Section 9 gains languages, multimodal,
+            the drill/ question and run_command's size. M3 closes here;
+            KICKOFF.md starts thread 4 after the use week.
