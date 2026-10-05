@@ -45,7 +45,7 @@ import subprocess
 import sys
 import termios
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -388,6 +388,40 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         print(f"state_directory  {machine_context['state_directory']}")
         print(f"bib_path         {bib_path if bib_path is not None else '(not set)'}")
         print(f"kbd_root         {kbd_root if kbd_root is not None else '(not set)'}")
+        print(f"run_log          {machine_context['state_directory'] / 'runs.jsonl'}  (each run's timings; machine-local)")
+        # PLAN.md D60: what each thing under the data root is for, and who
+        # writes it, so the folder explains itself (the person could not
+        # tell ~/learning was rep's, nor what each part held).
+        data_root = machine_context["data_root"]
+        print("in the data root:")
+        for entry_name, purpose in (
+            ("library/", "decks: one .md file per deck; yours to edit (rep add appends, nvim stamps ids)"),
+            ("events/", "the history: one .jsonl per device; rep appends, never edit by hand"),
+            ("body/", "the body form, one file a day (body)"),
+            ("notes.md", "the week's notes (rep-notes)"),
+            ("reports/", "week reports and code tours (rep-week, rep-tour)"),
+            ("screens/", "saved terminal screens (rep-screen); may hold anything on screen, keep private"),
+        ):
+            entry_path = data_root / entry_name
+            if not entry_path.exists():
+                presence = "not yet"
+            elif entry_path.is_dir():
+                presence = f"{sum(1 for _ in entry_path.iterdir())} files"
+            else:
+                presence = "exists"
+            print(f"  {entry_name:<15}{presence:<10}{purpose}")
+        # The checkout this code runs from, found from this file: an
+        # editable install keeps it there, and the helpers live beside it.
+        repository = Path(__file__).resolve().parents[2]
+        if (repository / "shell" / "rep.sh").exists():
+            print(f"repository       {repository}  (this code)")
+            # Whole paths, to copy into a bashrc or an nvim config as they are.
+            print(f"  source {repository / 'shell' / 'rep.sh'}    rep-notes, rep-screen, rep-nvim, rep-week, rep-tour")
+            print(f"  source {repository / 'shell' / 'body.sh'}   body")
+            print(f"  nvim --cmd 'luafile {repository / 'nvim' / 'load.lua'}'   rep's nvim plugin (or rep-nvim)")
+            print(f"  {repository / 'templates'}/   the body form and notes templates the helpers copy")
+        else:
+            print(f"repository       not found beside {Path(__file__).resolve()}  (installed without its checkout)")
         return 0
 
     if command is None or command in ("review", "why", "unsuspend", "drill", "status"):
@@ -429,7 +463,17 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
             now = datetime.now(UTC)
             today = scheduling_day(now, preset["day_start_hour"])
             print(f"data root   {data_root}  ({machine_context['data_root_source']})")
-            print(f"today       {today}  (a day runs {preset['day_start_hour']:02d}:00 to {preset['day_start_hour']:02d}:00)")
+            # PLAN.md D60: the clock and what is left of the day, since the
+            # day's end (04:00) is not midnight and "today" alone hid both.
+            local_now = now.astimezone()
+            day_end = datetime.combine(date.fromisoformat(today) + timedelta(days=1), datetime.min.time(), local_now.tzinfo).replace(
+                hour=preset["day_start_hour"]
+            )
+            minutes_left = max(int((day_end - local_now).total_seconds()) // 60, 0)
+            print(
+                f"today       {today}, now {local_now:%H:%M}, {minutes_left // 60} h {minutes_left % 60:02d} min left"
+                f"  (a day runs {preset['day_start_hour']:02d}:00 to {preset['day_start_hour']:02d}:00)"
+            )
             # deck -> [items, new, due now, suspended, earliest future due day]
             deck_rows: dict[str, list[int | str]] = {}
             for located_item in library_check["located_items"]:
@@ -466,6 +510,31 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                     else:
                         sessions_today += 1
             print(f"today did   {sessions_today} sessions, {drills_today} drills")
+            # PLAN.md D60: what plain `rep` would do now, from the planner
+            # itself, and the day's new-item allowance it draws on.
+            session_plan = plan_session(library_check["located_items"], fold_result["items"], events_load["events"], today, preset)
+            completed_session_ids = {
+                event["session"] for event in effective["ordered_events"]
+                if event["kind"] == "session_end" and event["reason"] == "completed"
+            }  # fmt: skip
+            session_done_today = any(
+                event["kind"] == "session_start" and "selection" not in event and event["id"] in completed_session_ids
+                and scheduling_day(parse_canonical_time(event["at"]), preset["day_start_hour"]) == today
+                for event in effective["ordered_events"]
+            )  # fmt: skip
+            planned_due = sum(1 for slot in session_plan["slots"] if slot["reason"] == "due")
+            planned_new = len(session_plan["slots"]) - planned_due
+            if session_plan["slots"] != []:
+                session_text = f"{planned_due} due and {planned_new} new waiting: rep"
+                if session_done_today:
+                    session_text = "done once; " + session_text
+            else:
+                session_text = "done" if session_done_today else "nothing planned"
+            print(f"session     {session_text}")
+            print(
+                f"new items   up to {preset['new_per_day']} a day: {session_plan['introduced_today']} started today "
+                f"(drills count), {session_plan['new_left_today']} left; {session_plan['new_waiting'] + planned_new} not yet seen"
+            )
             return 0
 
         if command == "why" or command == "unsuspend":

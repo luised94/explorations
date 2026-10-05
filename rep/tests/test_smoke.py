@@ -80,6 +80,11 @@ def test_where_reports_stable_identity_and_default_root(tmp_path: Path) -> None:
     first_lines = dict(line.split(None, 1) for line in first_result.stdout.decode().splitlines())
     assert first_lines["data_root"] == f"{tmp_path / 'learning'}  (default; does not exist yet)"
     assert first_lines["local_config"] == str(tmp_path / ".config" / "rep" / "local.toml")
+    # D60: each part of the data root with its purpose, and the helpers'
+    # whole paths, ready to copy.
+    where_text = first_result.stdout.decode()
+    assert "  events/        not yet   the history" in where_text and "screens/" in where_text
+    assert f"source {Path(cli.__file__).resolve().parents[2] / 'shell' / 'rep.sh'}" in where_text
     second_result = run_rep(["where"], tmp_path)
     second_lines = dict(line.split(None, 1) for line in second_result.stdout.decode().splitlines())
     assert second_lines["device_id"] == first_lines["device_id"]
@@ -917,7 +922,11 @@ def test_status_shows_the_root_each_deck_what_waits_and_today(tmp_path: Path) ->
     assert result.returncode == 0, result.stderr
     status_lines = result.stdout.decode().splitlines()
     assert status_lines[0] == f"data root   {data_root}  (default)"
-    assert status_lines[1].startswith("today       ") and status_lines[1].endswith("(a day runs 04:00 to 04:00)")
+    assert re.fullmatch(r"today       \d{4}-\d\d-\d\d, now \d\d:\d\d, \d+ h \d\d min left  \(a day runs 04:00 to 04:00\)", status_lines[1]), status_lines
+    # D60: what plain `rep` would do, and the day's new-item allowance. France
+    # is due; Km was answered today (P4 keeps it out until graded).
+    assert "session     1 due and 0 new waiting: rep" in status_lines, status_lines
+    assert "new items   up to 10 a day: 1 started today (drills count), 9 left; 0 not yet seen" in status_lines, status_lines
     assert "            a                    3     1        1          1  -" in status_lines, status_lines
     assert "waiting     1 answers without a grade: rep review" in status_lines
     assert "today did   1 sessions, 1 drills" in status_lines

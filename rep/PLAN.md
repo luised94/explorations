@@ -1614,6 +1614,30 @@ all", after the first day on the real data root).
   Trade-off: the start screen grows by three lines; the long-drill line
   estimates at 10 seconds an answer.
 
+D60. `rep status` says the clock and the day's plan; `rep where` says what
+each place is for (M3). Revises D53; approved by the person on 2026-10-05.
+  Choice: status adds the local time and what is left of the scheduling
+  day ("now 13:35, 14 h 25 min left"); a session line, from plan_session
+  itself: "done", "N due and M new waiting: rep", or "nothing planned";
+  and the new-item allowance: up to new_per_day, how many started today
+  (drills count), how many left, how many not yet seen. where adds the
+  run log; each part of the data root (library, events, body, notes.md,
+  reports, screens) with whether it exists and its purpose and writer;
+  and the checkout this code runs from, with the whole paths of the shell
+  helpers and the nvim loader, ready to copy.
+  Reason: the person read "today 2026-10-05" without a time, reached for
+  `rep today` to learn what was left, could not tell that ~/learning was
+  rep's or what its folders held, and asked for the shell and Lua helpers
+  to be part of what rep reports.
+  Rejected: detecting whether the shell helpers are sourced (4: a child
+  process cannot see its shell's functions; the paths are what it can
+  give); a README written into the data root (5: rep never creates files
+  in the data root it was not asked to, D28); renaming the default data
+  root (5: it holds the body form and notes too, and REP_DATA_ROOT
+  already chooses another).
+  Trade-off: where prints the checkout only when installed editable from
+  it, which is how rep is installed.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
