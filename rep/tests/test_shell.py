@@ -51,5 +51,5 @@ def test_rep_notes_starts_the_file_once_and_each_day_once(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     notes_text = (tmp_path / "learning" / "notes.md").read_text(encoding="utf-8")
     today = (datetime.now() - timedelta(hours=4)).strftime("%Y-%m-%d")
-    assert notes_text.startswith("# rep notes\n") and notes_text.count(f"\n## {today}\n- \n") == 1
+    assert notes_text.startswith("# rep notes: ") and notes_text.count(f"\n## {today}\n- \n") == 1
     assert (tmp_path / "nvim-calls.txt").read_text(encoding="utf-8").splitlines() == ["+", str(tmp_path / "learning" / "notes.md")] * 2

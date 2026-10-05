@@ -4,6 +4,7 @@
 # Lines starting with # are notes for you; only "key: value" lines are data.
 # Empty is fine: leave a field blank rather than guess. Fix typos freely.
 # Times are 24-hour HH:MM: midnight is 00:00, noon 12:00, 3 p.m. 15:00.
+# In nvim: /: $ Enter finds the next empty field, A types at its end, n moves on.
 #
 # --- Morning: the night that ended this morning ---
 # bed: lights out, trying to sleep. Example: 23:40, or 00:15 after midnight.

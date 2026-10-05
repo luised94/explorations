@@ -18,13 +18,18 @@ function rep-notes {
 }
 
 # The current tmux pane, scrollback included, saved to a file to attach
-# instead of copying from the screen. Prints the file's path.
+# instead of copying from the screen. Prints the file's path. The whole
+# scrollback can hold anything typed or shown in that pane, so it says to
+# read the file before sharing it (the person raised the risk of a
+# leak); the files stay in the data root, never synced.
 function rep-screen {
   local screens_directory screen_path
   screens_directory="$(rep where --data-root)/screens" || return
   mkdir -p "$screens_directory"
   screen_path="$screens_directory/$(date +%F-%H%M%S).txt"
-  tmux capture-pane -p -J -S - > "$screen_path" && echo "$screen_path"
+  tmux capture-pane -p -J -S - > "$screen_path" || return
+  echo "$screen_path"
+  echo "rep-screen: $(wc -l < "$screen_path") lines, the whole scrollback; read it before attaching." >&2
 }
 
 # nvim with rep's plugin on (stamp on save, :RepCapture), config untouched.
