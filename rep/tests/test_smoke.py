@@ -898,3 +898,31 @@ def test_answers_left_ungraded_are_offered_again_before_they_leave(tmp_path: Pat
     sheets: list[str] = json.loads(sheet_log.read_text(encoding="utf-8"))
     assert len(sheets) == 3 and "round 1: 1 still without a grade" in sheets[1]
     assert [event["kind"] for event in read_session_events(data_root)].count("amend") == 2
+
+
+# --- explaining before acting (PLAN.md D58) -------------------------------------
+
+
+def test_commands_explain_themselves_instead_of_waiting_or_failing_bare(tmp_path: Path) -> None:
+    data_root = session_home(tmp_path, SESSION_LIBRARY)
+    help_text = run_rep(["--help"], tmp_path).stdout.decode()
+    assert "the daily loop:" in help_text and "rep add --stdin --to capitals < capitals.md" in help_text
+    assert help_text.index("today") < help_text.index("drill") < help_text.index("stamp")  # the loop's order
+    # Nothing piped in: an explanation and exit 2, not a silent wait.
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("rep stamp < file.md > stamped.md", b"")], arguments=["stamp"])
+    assert exit_code == 2, output
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("rep add --stdin --to DECK < file.md", b"")], arguments=["add", "--stdin"])
+    assert exit_code == 2 and "### Q: What is the capital of Peru?" in output, output
+    # Words from the question find an item; several matches list their ids.
+    found = run_rep(["why", "km MEASURE"], tmp_path)
+    assert found.returncode == 0 and b"item        km-measure-7q2m" in found.stdout, found.stderr
+    several = run_rep(["unsuspend", "a"], tmp_path)  # in both questions
+    assert several.returncode == 2 and b"2 items match 'a'; add words, or use an id:" in several.stderr
+    assert b"capital-france-7q2m" in several.stderr and b"km-measure-7q2m" in several.stderr
+    # An empty review says why and what to do.
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Start with a session", b"")], arguments=["review"])
+    assert exit_code == 0 and "no answer waits for a grade, and this device has no session yet" in output, output
+    # `rep today` is the session.
+    exit_code, output = run_rep_on_a_terminal(tmp_path, [("Enter starts; Ctrl-D stops. ", b"\x04")], arguments=["today"])
+    assert exit_code == 0 and "0 due, 2 new" in output, output
+    assert not (data_root / "events").exists() or "session_start" not in (data_root / "events" / "6a2ah35zhe.jsonl").read_text(encoding="utf-8")

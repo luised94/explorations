@@ -1558,6 +1558,28 @@ Approved by the person on 2026-10-05.
   Trade-off: Python functions only, others as whole files; the rankings
   are proxies for importance, and the reader may skip any stop.
 
+D58. Every command explains itself before it acts (M3). Approved by
+the person on 2026-10-05, from going through the commands one by one.
+  Choice: `rep --help` lists the commands in the order of the daily loop
+  and ends with the loop and a first-time example (an item, and the add
+  command). `rep today` names plain `rep`. `rep stamp` and `rep add` with
+  nothing piped in (a terminal on stdin), and `rep add` without --stdin,
+  print how to use them, with an example, and exit 2. `rep why` and `rep
+  unsuspend` take an id or words from the question; several matches list
+  their ids. An empty `rep review` says why it is empty and what to run.
+  Reason: the person, going through the help in order, met each of these
+  as a dead end: stamp waited silently for input until Ctrl-C; add said
+  only that --stdin is required; "ID of what?"; "Nothing to review. What
+  does that mean?"; and reached for `rep today` before reading that plain
+  `rep` runs the session.
+  Rejected: a separate tutorial command (5: help the person must know to
+  ask for; the help and the empty states are where a first-time person
+  already is); dropping stdin for a file argument (6: friendlier, but it
+  changes D29's default deck, the items' citekey, and nvim's capture uses
+  stdin; open for thread 4).
+  Trade-off: longer help; a search that matches several items needs more
+  words or an id.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------

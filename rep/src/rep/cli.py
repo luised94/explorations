@@ -246,10 +246,23 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
     POST  returns an exit code from the table in the module docstring;
           run_record holds the command, its phases and counts.
     """
+    # PLAN.md D58: the help is where a first-time person starts, so it says
+    # the daily loop, in the loop's order, with an example per command.
     argument_parser = argparse.ArgumentParser(
         prog="rep",
-        description="Retrieval practice from your readings. With no command, runs today's session. "
-        "See PLAN.md and CONVENTIONS.md.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Retrieval practice: you answer from memory, grade yourself against the key,\n"
+        "and rep schedules each item to come back just before you would forget it.",
+        epilog="the daily loop:\n"
+        "  rep                  today's session (same as `rep today`): answer, then grade in your editor\n"
+        "  rep drill permit     practise a deck now, as often as you like (--count 10, --tag jol)\n"
+        "  rep review           grade answers left without a grade; regrade your last session\n"
+        "  rep status           what is due by deck, what waits, which data root\n"
+        "first time:\n"
+        "  write items in a file, a question and its answer each:\n"
+        "      ### Q: What is the capital of Peru?\n"
+        "      A: Lima\n"
+        "  then: rep add --stdin --to capitals < capitals.md   (CONVENTIONS.md has the rest)",
     )
     # PLAN.md D42: a flag, not action="version", which needs the version
     # string, and so importlib.metadata, while the parser is built: 39 of 57
@@ -261,9 +274,45 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         help="data folder for this run (default: $REP_DATA_ROOT, else ~/learning)",
     )
     subcommand_parsers = argument_parser.add_subparsers(dest="command", metavar="COMMAND")
+    subcommand_parsers.add_parser("today", help="today's session: what is due, then new items (plain `rep` does the same)")
+    drill_parser = subcommand_parsers.add_parser(
+        "drill", help="practise items you choose, as often as you like: a deck (a library file), a tag, or both"
+    )
+    drill_parser.add_argument("deck", nargs="?", metavar="DECK", help="a library file's name, without .md (default: every deck)")
+    drill_parser.add_argument("--tag", metavar="TAG", help="only items with this tag (with or without #)")
+    drill_parser.add_argument("--count", type=int, metavar="N", help="at most N of them, drawn at random")
+    subcommand_parsers.add_parser(
+        "review", help="grade, in $EDITOR, answers left without a grade, and your last session's answers again"
+    )
+    subcommand_parsers.add_parser(
+        "status", help="which data root, each deck's items, new and due, answers waiting for review, today so far"
+    )
+    add_parser = subcommand_parsers.add_parser(
+        "add",
+        help="add items from a file to a deck: rep add --stdin --to DECK < file.md",
+        description="Add items to a deck (a library file), with ids. The items are read from standard\n"
+        "input, so a file, a pipe and nvim's capture all work the same way.",
+        epilog="example: rep add --stdin --to capitals < capitals.md",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    add_parser.add_argument("--stdin", action="store_true", help="read the items from standard input (needed; see the example)")
+    add_parser.add_argument(
+        "--to",
+        metavar="DECK",
+        help="the deck (library file) to add to (default: <citekey>.md from the items' source)",
+    )
+    item_help = "an item's id (the `id:` line under its question), or words from its question"
+    why_parser = subcommand_parsers.add_parser(
+        "why", help="show an item's place, memory state, attempts and whether today's plan has it",
+        epilog='example: rep why "capital of Palau"',
+    )  # fmt: skip
+    why_parser.add_argument("item_id", metavar="ITEM", help=item_help)
+    unsuspend_parser = subcommand_parsers.add_parser(
+        "unsuspend", help="return a suspended item to sessions", epilog='example: rep unsuspend "capital of Palau"'
+    )
+    unsuspend_parser.add_argument("item_id", metavar="ITEM", help=item_help)
     where_parser = subcommand_parsers.add_parser(
-        "where",
-        help="show where rep keeps its files on this machine, and this device's id",
+        "where", help="where rep keeps its files, its helpers, and this device's id"
     )
     # PLAN.md D43: the nvim plugin asks for the data root this way. Its own
     # dest: the default, data_root, is the global --data-root PATH, which a
@@ -271,51 +320,20 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
     where_parser.add_argument(
         "--data-root", dest="print_data_root_only", action="store_true", help="print only the data root's path"
     )
-    stamp_parser = subcommand_parsers.add_parser(
-        "stamp",
-        help="read a library file on stdin and write it to stdout with an id on every item (nvim runs this on save)",
-    )
-    # stdin has no name; nvim passes the buffer's, so problems land in quickfix
-    # on the right file.
-    stamp_parser.add_argument("--path", metavar="PATH", default="<stdin>", help="file name to use in problem messages")
-    add_parser = subcommand_parsers.add_parser(
-        "add",
-        help="append new items to the library, with ids (the nvim capture key sends them here)",
-    )
-    # Required and alone for now: plain `rep add` is left free for a future
-    # editor-template mode, and PLAN.md D12 names this form.
-    add_parser.add_argument("--stdin", action="store_true", required=True, help="read the items from standard input")
-    add_parser.add_argument(
-        "--to",
-        metavar="NAME",
-        help="library file to append to (default: <citekey>.md from the items' source)",
-    )
-    subcommand_parsers.add_parser(
-        "review",
-        help="grade, in $EDITOR, your last session's answers and every answer still ungraded",
-    )
-    drill_parser = subcommand_parsers.add_parser(
-        "drill", help="practise items you choose, as often as you like: a deck (a library file), a tag, or both"
-    )
-    drill_parser.add_argument("deck", nargs="?", metavar="DECK", help="a library file's name, without .md (default: every deck)")
-    drill_parser.add_argument("--tag", metavar="TAG", help="only items with this tag (with or without #)")
-    drill_parser.add_argument("--count", type=int, metavar="N", help="at most N of them, drawn at random")
-    why_parser = subcommand_parsers.add_parser(
-        "why", help="show an item's place, memory state, attempts and whether today's plan has it"
-    )
-    why_parser.add_argument("item_id", metavar="ID")
-    unsuspend_parser = subcommand_parsers.add_parser("unsuspend", help="return a suspended item to sessions")
-    subcommand_parsers.add_parser(
-        "status", help="which data root, each deck's items, new and due, answers waiting for review, sessions today"
-    )
-    unsuspend_parser.add_argument("item_id", metavar="ID")
     subcommand_parsers.add_parser(
         "lint",
         help="check the whole library and the events; print problems as path:line:col for quickfix",
     )
+    stamp_parser = subcommand_parsers.add_parser(
+        "stamp",
+        help="give ids to the items of a library file: rep stamp < file.md > stamped.md (nvim does it on save)",
+    )
+    # stdin has no name; nvim passes the buffer's, so problems land in quickfix
+    # on the right file.
+    stamp_parser.add_argument("--path", metavar="PATH", default="<stdin>", help="file name to use in problem messages")
 
     parsed_arguments = argument_parser.parse_args(argument_list)
-    run_record["command"] = "session" if parsed_arguments.command is None else parsed_arguments.command
+    run_record["command"] = "session" if parsed_arguments.command in (None, "today") else parsed_arguments.command
     version_requested: bool = parsed_arguments.version
     if version_requested:
         # Before the machine context, as action="version" was: the version
@@ -324,7 +342,8 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
 
         print(f"rep {importlib.metadata.version('rep')}")
         return 0
-    command: str | None = parsed_arguments.command
+    # `rep today` is plain `rep` by name (D58): the person reached for it.
+    command: str | None = None if parsed_arguments.command == "today" else parsed_arguments.command
     data_root_flag: str | None = parsed_arguments.data_root
 
     try:
@@ -444,10 +463,27 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         if command == "why" or command == "unsuspend":
             requested_item_id: str = parsed_arguments.item_id
             fold_result = fold_events(events_load["events"], desired_retention=preset["desired_retention"])
+            # PLAN.md D58: words from the question find the item, so no id
+            # has to be looked up first.
+            if requested_item_id not in library_check["written_item_ids"] and requested_item_id not in fold_result["items"]:
+                search_text = " ".join(requested_item_id.split()).casefold()
+                question_matches = [
+                    located_item for located_item in library_check["located_items"]
+                    if search_text in " ".join(located_item["item"]["question"].split()).casefold()
+                ]  # fmt: skip
+                if len(question_matches) == 1:
+                    requested_item_id = question_matches[0]["item"]["id"]
+                elif len(question_matches) > 1:
+                    print(f"rep: {len(question_matches)} items match {requested_item_id!r}; add words, or use an id:", file=sys.stderr)
+                    for located_item in question_matches[:10]:
+                        print(f"  {located_item['item']['id']:<34} {' / '.join(located_item['item']['question'].splitlines())}", file=sys.stderr)
+                    if len(question_matches) > 10:
+                        print(f"  and {len(question_matches) - 10} more", file=sys.stderr)
+                    return 2
             item_state = fold_result["items"].get(requested_item_id)
             located_item = located_items_by_id.get(requested_item_id)
             if item_state is None and requested_item_id not in library_check["written_item_ids"]:
-                print(f"rep: no item {requested_item_id} in the library or its history", file=sys.stderr)
+                print(f"rep: no item {requested_item_id} in the library or its history; give its id, or words from its question", file=sys.stderr)
                 return 2
 
             if command == "unsuspend":
@@ -521,7 +557,12 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
                 events_load["events"], review_attempt_ids(events_load["events"], device_id), located_items_by_id
             )
             if review_entries == []:
-                print("Nothing to review.")
+                # PLAN.md D58: say why, and what to do instead.
+                print(
+                    "Nothing to review: no answer waits for a grade, and this device has no session yet.\n"
+                    "Review shows your last session's answers to regrade, and any answer left without a grade.\n"
+                    "Start with a session: rep (or rep drill DECK)."
+                )
                 return 0
             sheet_events = grade_on_a_sheet(
                 review_entries,
@@ -910,6 +951,16 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         return 0
 
     if command == "stamp":
+        # PLAN.md D58: a terminal on stdin means nothing was piped in, and
+        # reading would wait in silence (the person met exactly that).
+        if sys.stdin.isatty():
+            print(
+                "rep stamp gives ids to the items of a library file read on standard input:\n"
+                "  rep stamp < file.md > stamped.md\n"
+                "nvim does this on save. To add items to a deck: rep add --stdin --to DECK < file.md",
+                file=sys.stderr,
+            )
+            return 2
         # PLAN.md D24. Bytes, not text: text-mode stdin decodes by the locale, and under
         # the C locale with surrogateescape (measured), so invalid UTF-8
         # would be stamped instead of refused; and a refusal must hand back
@@ -982,6 +1033,20 @@ def run_command(argument_list: list[str], run_record: dict[str, Any]) -> int:
         return 0
 
     if command == "add":
+        # PLAN.md D58: without --stdin, or with nothing piped in, say how
+        # instead of an argparse error or a silent wait.
+        add_reads_stdin: bool = parsed_arguments.stdin
+        if not add_reads_stdin or sys.stdin.isatty():
+            print(
+                "rep add reads items on standard input, so give it a file:\n"
+                "  rep add --stdin --to DECK < file.md\n"
+                "Each item is a question and its answer:\n"
+                "  ### Q: What is the capital of Peru?\n"
+                "  A: Lima\n"
+                "CONVENTIONS.md has the rest: checks, sources, tags.",
+                file=sys.stderr,
+            )
+            return 2
         input_bytes = sys.stdin.buffer.read()
         try:
             input_text = input_bytes.decode("utf-8")
