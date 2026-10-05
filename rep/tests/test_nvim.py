@@ -185,3 +185,29 @@ def test_a_missing_rep_is_reported_once_and_saves_still_work(tmp_path: Path) -> 
     assert len(notifications) == 1
     assert notifications[0].startswith("rep: `rep-is-not-installed where --data-root` failed")
     assert results["written"] == 1
+
+
+def test_the_loaders_work_without_touching_the_config(tmp_path: Path) -> None:
+    # PLAN.md D56: body.lua applies the repository's template to a new day's
+    # form; load.lua turns the plugin on. Both through --cmd luafile.
+    assert NVIM_EXECUTABLE is not None
+    rep_executable = shutil.which("rep")
+    assert rep_executable is not None
+    environment = {**os.environ, "HOME": str(tmp_path), "PATH": f"{Path(rep_executable).parent}:{os.environ['PATH']}"}
+    form_path = tmp_path / "learning" / "body" / "2026-10-05.md"
+    form_path.parent.mkdir(parents=True)
+    subprocess.run(
+        [NVIM_EXECUTABLE, "--headless", "-u", "NONE", "-i", "NONE", "-n", "--cmd", f"luafile {PLUGIN_DIRECTORY / 'body.lua'}",
+         "-c", "call writefile([line('.') . ':' . getline('.')], expand('~/cursor.txt'))", "-c", "write", "-c", "qall!", str(form_path)],
+        env=environment, capture_output=True, timeout=20, check=False,
+    )  # fmt: skip
+    template_text = (PLUGIN_DIRECTORY.parent / "templates" / "body.md").read_text(encoding="utf-8")
+    assert form_path.read_text(encoding="utf-8") == template_text
+    cursor_line_number, cursor_line = (tmp_path / "cursor.txt").read_text(encoding="utf-8").rstrip("\n").split(":", 1)
+    assert cursor_line == "bed: " and template_text.splitlines()[int(cursor_line_number) - 1] == "bed: "
+    subprocess.run(
+        [NVIM_EXECUTABLE, "--headless", "-u", "NONE", "-i", "NONE", "-n", "--cmd", f"luafile {PLUGIN_DIRECTORY / 'load.lua'}",
+         "-c", "call writefile([exists(':RepCapture')], expand('~/loaded.txt'))", "-c", "qall!"],
+        env=environment, capture_output=True, timeout=20, check=False,
+    )  # fmt: skip
+    assert (tmp_path / "loaded.txt").read_text(encoding="utf-8").strip() == "2"

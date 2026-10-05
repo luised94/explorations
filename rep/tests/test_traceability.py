@@ -43,7 +43,13 @@ def test_every_cited_decision_exists_and_every_milestone_decision_is_cited() -> 
     assert set(range(20, 31)) <= traced_numbers, f"milestone markers not found: {sorted(traced_numbers)}"
 
     cited_numbers_by_file: dict[str, set[int]] = {}
-    for source_path in sorted((REPOSITORY_ROOT / "src" / "rep").glob("*.py")):
+    # Code that enforces decisions lives in src, and since D56 and D57 also
+    # in the tools, the shell helpers and the nvim loaders.
+    enforcing_paths = [
+        *sorted((REPOSITORY_ROOT / "src" / "rep").glob("*.py")), *sorted((REPOSITORY_ROOT / "tools").glob("*.py")),
+        *sorted((REPOSITORY_ROOT / "shell").glob("*.sh")), *sorted((REPOSITORY_ROOT / "nvim").rglob("*.lua")),
+    ]  # fmt: skip
+    for source_path in enforcing_paths:
         for reference_list in DECISION_REFERENCE_PATTERN.findall(source_path.read_text(encoding="utf-8")):
             for reference in reference_list.split(", "):
                 cited_numbers_by_file.setdefault(source_path.name, set()).add(int(reference.removeprefix("D")))
@@ -58,7 +64,7 @@ def test_every_cited_decision_exists_and_every_milestone_decision_is_cited() -> 
     for cited_numbers in cited_numbers_by_file.values():
         all_cited_numbers |= cited_numbers
     uncited_decisions = sorted(traced_numbers - all_cited_numbers)
-    assert uncited_decisions == [], f"milestone decisions with no enforcement point in src: {uncited_decisions}"
+    assert uncited_decisions == [], f"milestone decisions with no enforcement point in src, tools, shell or nvim: {uncited_decisions}"
     enforced_pending_decisions = sorted(pending_numbers & all_cited_numbers)
     assert enforced_pending_decisions == [], (
         f"decisions enforced in src but still marked pending; change '(M<n>, pending)' to '(M<n>)': "

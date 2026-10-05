@@ -1490,6 +1490,43 @@ person on 2026-10-05 ("we have to measure", after Mike Acton).
   shows those.
   Revisit: the week's run log showing a phase worth optimizing.
 
+D56. The week's instruments: notes, the body form, the report (M3).
+Approved by the person on 2026-10-05.
+  Choice: rep/shell/rep.sh and rep/shell/body.sh hold the shell side,
+  sourced or symlinked by the person (their bashrc sources a directory),
+  never written into ~/.bashrc: `rep-notes` opens today's section of
+  <data root>/notes.md (the person's convention: "## YYYY-MM-DD", then
+  "- Type: note" lines, types optional; templates/notes.md states it);
+  `body` opens today's body form; `rep-screen` saves the tmux pane with
+  its scrollback to a file; `rep-nvim` starts nvim with the plugin;
+  `rep-week` and `rep-tour` run the tools. Functions are defined as
+  `function name {`, which an alias of the same name cannot break. The
+  nvim side loads on demand with `--cmd "luafile ..."` (nvim/load.lua,
+  nvim/body.lua), so the person's config is untouched until lazy.nvim.
+  Templates live in rep/templates, versioned with the code. The body form
+  records what was drunk (ounces, ABV, kind) and the report converts it;
+  the report flags clock times that read as a slip (bed at 12:00, a drink
+  at 3:00). tools/week_report.py computes cards E1-E5, sessions by time
+  of day, the body forms and the run log, asks the person about each
+  card and seven fixed questions, and writes one file,
+  <data root>/reports/week-<day>.md, with the week's notes copied in, for
+  the next thread.
+  Reason: in the trial, a function and an alias of one name broke the
+  person's .bashrc; the first body form asked for standard drinks, which
+  needs arithmetic and an ABV the person may not know ("is the amount the
+  units of the standard, or the volume?"); "bed: 12:00" meant midnight;
+  the screen was copied by hand from tmux. The next thread needs numbers
+  and the person's answers in one place, gathered the same way each week.
+  Rejected: a `rep report` command (6: a weekly tool in the program the
+  person runs daily; a script costs no command surface); a database for
+  the analysis, duckdb or polars (5: a week's events are a few thousand
+  lines; the standard library reads them in milliseconds); writing into
+  ~/.bashrc or ~/.config/nvim (3: the person's config is their own, and
+  the first try broke it).
+  Trade-off: the shell files assume bash, tmux and GNU date; the report's
+  conversions use typical strengths and caffeine per kind, marked as
+  estimates where used.
+
 --------------------------------------------------------------------------------
 ## 6. Invariants (each enforced where it is introduced)
 --------------------------------------------------------------------------------
